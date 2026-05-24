@@ -1,0 +1,26 @@
+services:
+  yunplex2:
+    build: .
+    container_name: yunplex2
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./data:/app/data
+      # 下载目录也需要挂载
+      - /your/nas/music:/mnt/nas
+    environment:
+      - NITRO_HOST=0.0.0.0
+      - NITRO_PORT=3000
+      # ── 以下为可选配置注入（首次启动时生效，之后在 Web UI 修改） ──
+      # - YUNPLEX2_NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx
+      # - YUNPLEX2_NETEASE_PLAYLIST_IDS=123456789,987654321
+      # - YUNPLEX2_NETEASE_QUALITY=jymaster
+      # - YUNPLEX2_PLEX_SERVER=192.168.1.100
+      # - YUNPLEX2_PLEX_PORT=32400
+      # - YUNPLEX2_PLEX_TOKEN=your-plex-token
+      # - YUNPLEX2_PLEX_SECTION=音乐
+      # - YUNPLEX2_DOWNLOAD_DIR=/mnt/nas
+      # - YUNPLEX2_SYNC_INTERVAL=30
+      # - YUNPLEX2_SYNC_LIMIT=10
+      # - YUNPLEX2_SYNC_ENABLED=true
+    restart: unless-stopped
