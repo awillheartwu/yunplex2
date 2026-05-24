@@ -1,0 +1,51 @@
+{
+  "name": "yunplex2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_OPTIONS=--no-deprecation nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "start": "NODE_OPTIONS=--no-deprecation node .output/server/index.mjs",
+    "commit": "git-cz",
+    "release": "standard-version",
+    "release:minor": "standard-version --release-as minor",
+    "release:major": "standard-version --release-as major",
+    "release:patch": "standard-version --release-as patch"
+  },
+  "dependencies": {
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "better-sqlite3": "^12.10.0",
+    "dayjs": "^1.11.20",
+    "metaflac-js": "^1.0.5",
+    "node-fetch": "^3.3.2",
+    "node-id3": "^0.2.9",
+    "nuxt": "^4.4.6",
+    "plex-api": "^5.3.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@nuxt/telemetry": "^2.8.0",
+    "@nuxtjs/tailwindcss": "^6.12.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "standard-version": "^9.5.0",
+    "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  }
+}

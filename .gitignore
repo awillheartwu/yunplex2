@@ -1,0 +1,12 @@
+node_modules/
+.output/
+.nuxt/
+dist/
+data/data.db
+data/data.db-wal
+data/data.db-shm
+*.log
+.env
+.env.local
+test/
+.DS_Store
