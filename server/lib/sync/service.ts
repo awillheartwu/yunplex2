@@ -19,7 +19,7 @@ import {
 } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
-import type { SyncJob, SongTask, SongStatus } from '../job/types'
+import type { SongTask, SongStatus } from '../job/types'
 import { formatTrackArtist } from '../config/types'
 
 export const STAGE_LABELS: Record<string, string> = {

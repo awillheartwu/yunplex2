@@ -1,6 +1,5 @@
 import pkg from 'NeteaseCloudMusicApi'
 const { login_status, song_url_v1, lyric_new, song_detail, album } = pkg
-import type { NeteaseConfig } from './config/types'
 
 export interface NeteaseSong {
   id: number
@@ -82,7 +81,7 @@ export async function fetchPlaylistSongs(
     fetch(`http://music.163.com/api/song/detail/?id=&ids=[${ids}]`),
   ])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const data = (v3Res as any).body as { songs?: RawSong[] } | undefined
   if (!data?.songs) return []
 

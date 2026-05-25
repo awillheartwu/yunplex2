@@ -14,7 +14,7 @@ function stripTitle(s: string): string {
   return s.toLowerCase().replace(/[/\\:*?"'<>|&\s]+/g, '')
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let client: any = null
 let machineId = ''
 
@@ -38,7 +38,7 @@ export function createPlexClient(config: PlexConfig) {
 
 export async function initPlexClient(config: PlexConfig): Promise<string> {
   createPlexClient(config)
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+   
   const res = await client.query('/')
   machineId = (res as { MediaContainer?: { machineIdentifier?: string } }).MediaContainer
     ?.machineIdentifier ?? ''
