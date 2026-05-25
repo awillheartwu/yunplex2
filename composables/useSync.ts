@@ -21,9 +21,9 @@ export function useSync() {
     loading.value = true
     error.value = null
     try {
-      const result = await api.post<SyncState>('/sync/trigger', { dryRun })
-      state.value = result
-      return result
+      await api.post('/sync/trigger', { dryRun })
+      // Fire-and-forget: start rapid polling to catch the running state
+      startPolling(2000)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '触发同步失败'
       throw err

@@ -16,6 +16,7 @@ import {
   getPlaylistItemId,
   movePlaylistItemToTop,
   movePlaylistItemAfter,
+  getSectionTrackCount,
 } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
@@ -58,7 +59,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
 
     clearAlbumCache()
-    cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
 
     const dryRun = options?.dryRun ?? false
     cancelRequested = false
@@ -68,6 +68,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
     try {
       const cfg = getConfig()
+      cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
 
       // Returns [albumArtist, trackArtist]
@@ -348,10 +349,24 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           throw new Error(err.message)
         }
 
-        log('info', '等待 Plex 扫描完成 (60秒)...')
-        await sleepWithCancel(60000, () => { if (cancelRequested) throw new CancellationError() })
+        // Poll for scan completion instead of fixed 60s wait
+        const trackCountBefore = await getSectionTrackCount(sectionKeyLocal)
+        log('info', `Plex 库刷新前曲目数: ${trackCountBefore}，等待扫描...`)
 
-        job.finishStep(s5, 'success', 'Plex 库刷新完成')
+        const scanTimeout = Date.now() + 90000
+        let scanDone = false
+        while (!scanDone && Date.now() < scanTimeout) {
+          if (cancelRequested) break
+          await new Promise((r) => setTimeout(r, 3000))
+          const current = await getSectionTrackCount(sectionKeyLocal)
+          if (current > trackCountBefore) {
+            log('info', `Plex 扫描完成，新增 ${current - trackCountBefore} 首`)
+            scanDone = true
+          }
+        }
+        if (!scanDone) log('warn', 'Plex 扫描超时 (90s)，继续执行')
+
+        job.finishStep(s5, 'success', scanDone ? 'Plex 库刷新完成' : 'Plex 库刷新超时，继续执行')
 
         // ── Step 6: Update Plex playlist ──
         const s6 = job.startStep('update_plex_playlist', '更新 Plex 歌单')
@@ -509,10 +524,3 @@ async function fetchPlaylistName(playlistId: number): Promise<string | null> {
   } catch { return null }
 }
 
-async function sleepWithCancel(ms: number, check: () => void): Promise<void> {
-  const step = 1000
-  for (let i = 0; i < Math.ceil(ms / step); i++) {
-    check()
-    await new Promise((r) => setTimeout(r, Math.min(step, ms - i * step)))
-  }
-}
