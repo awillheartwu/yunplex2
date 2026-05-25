@@ -20,6 +20,7 @@ import {
 } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
+import { saveDownload } from '../download/store'
 import type { SongTask, SongStatus } from '../job/types'
 import { formatTrackArtist } from '../config/types'
 
@@ -307,6 +308,19 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                   translatedLyric: lyricData?.translated,
                   separateLyricFiles: lyricData?.separateFiles,
                 }, relativePath)
+
+                saveDownload({
+                  id: songId,
+                  songName: songMeta.title,
+                  artist: songMeta.trackArtist || songMeta.albumArtist,
+                  album: songMeta.album,
+                  filePath: result.filePath,
+                  fileType,
+                  quality: cfg.netease.quality,
+                  status: 'success',
+                  downloadedAt: new Date().toISOString(),
+                  jobId: job.getId(),
+                })
 
                 job.updateSong(songId, {
                   status: 'success', phase: 'done',

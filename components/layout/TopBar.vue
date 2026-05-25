@@ -30,11 +30,11 @@ const { theme, toggle: toggleTheme } = useTheme()
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
-  '/config': '配置',
+  '/config': '设置',
   '/logs': '日志',
-  '/task': '任务状态',
+  '/task': '下载状态',
   '/system': '系统',
-  '/jobs': '任务中心',
+  '/jobs': '同步历史',
 }
 
 const pageTitle = computed(() => titles[route.path] || 'YunPlex2')
