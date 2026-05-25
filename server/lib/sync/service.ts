@@ -501,6 +501,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     state.syncCount++
     if (result === 'success') state.successCount++
     else state.failureCount++
+    state.currentStage = 'idle'
     state.progress = null
     state.currentSong = null
   }

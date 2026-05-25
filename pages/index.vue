@@ -105,9 +105,6 @@ class="h-full rounded-full transition-all duration-500" style="background:#5e6ad
         </div>
         <div v-if="recentTracks.length" class="divide-y" style="border-color:var(--border-primary)">
           <div v-for="track in recentTracks.slice(0, 8)" :key="track.id" class="px-4 py-2 flex items-center gap-3 hover:bg-[var(--bg-hover)] transition-colors duration-150">
-            <div class="w-8 h-8 rounded overflow-hidden shrink-0" style="background:var(--bg-input)">
-              <img v-if="track.albumArt" :src="track.albumArt" class="w-full h-full object-cover" loading="lazy" />
-            </div>
             <div class="flex-1 min-w-0">
               <p class="text-xs font-medium truncate" style="color:var(--text-primary)">{{ track.title }}</p>
               <p class="text-2xs truncate" style="color:var(--text-secondary)">{{ track.artist }}</p>
@@ -164,7 +161,7 @@ const plexOnline = ref(false)
 const neteaseOk = ref(false)
 
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
-interface TrackCard { id: string; title: string; artist: string; albumArt?: string; status: string }
+interface TrackCard { id: string; title: string; artist: string; status: string }
 
 const stages = [
   { key: 'idle', label: '空闲' },
@@ -213,7 +210,7 @@ async function fetchData() {
     try {
       const detail = await api.get<{ songs: { id: string; songName: string; artist: string; status: string; metadata?: { releaseDate?: string } }[] }>(`/jobs/${lastJob.id}`)
       recentTracks.value = (detail.songs || []).filter(s => s.status === 'success' || s.status === 'failed_plex_match' || s.status === 'failed_plex_insert').slice(0, 10).map(s => ({
-        id: s.id, title: s.songName, artist: s.artist, status: s.status, albumArt: undefined,
+        id: s.id, title: s.songName, artist: s.artist, status: s.status,
       }))
     } catch { /* non-critical */ }
   }
