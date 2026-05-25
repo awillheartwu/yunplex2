@@ -8,7 +8,7 @@
         :class="step.status === 'success' ? 'bg-[#2a2a2a]' : 'bg-[#1f1f1f]'"
       />
 
-      <div class="flex gap-3 pb-4">
+      <div class="flex gap-4 pb-4">
         <!-- Dot -->
         <div class="relative shrink-0 mt-1">
           <div

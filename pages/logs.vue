@@ -1,11 +1,11 @@
 <template>
-  <div class="max-w-[1600px] space-y-6">
+  <div class="max-w-[1800px] space-y-8">
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold">同步日志</h2>
         <p class="text-2xs text-muted mt-0.5">超过保留天数的日志自动清理，5,000 行硬上限兜底</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         <div class="flex items-center rounded-lg border border-[var(--border-secondary)] overflow-hidden">
           <button
             v-for="f in filters"

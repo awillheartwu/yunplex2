@@ -1,12 +1,12 @@
 <template>
-  <div class="max-w-[1400px] space-y-6">
+  <div class="max-w-[1440px] space-y-8">
     <!-- Page header -->
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold">配置</h2>
         <p class="text-2xs text-muted mt-0.5">管理网易云音乐和 Plex 的连接与同步设置</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         <button class="btn btn-ghost btn-sm" @click="toggleAll">
           {{ allExpanded ? '收起全部' : '展开全部' }}
         </button>
@@ -75,7 +75,7 @@
               <option value="jymaster">超清母带</option>
             </select>
           </FormField>
-          <div class="pt-1 flex items-center gap-3">
+          <div class="pt-1 flex items-center gap-4">
             <button
               class="btn btn-ghost btn-sm"
               :disabled="testing === 'netease'"
@@ -121,7 +121,7 @@
           <FormField label="音乐库名称" hint="Plex 中存放音乐的库名称，用于刷新和同步">
             <input v-model="form.plex.section" type="text" placeholder="音乐" class="form-input" />
           </FormField>
-          <div class="pt-1 flex items-center gap-3">
+          <div class="pt-1 flex items-center gap-4">
             <button
               class="btn btn-ghost btn-sm"
               :disabled="testing === 'plex'"
@@ -231,7 +231,7 @@
                   <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
                   <div class="absolute bottom-full left-0 mb-2 w-72 bg-[var(--bg-app)] border border-[var(--border-secondary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
                     <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
-                    <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-3">
+                    <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
                       <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
                       <span class="text-muted-deep">{{ v.desc }}</span>
                     </div>
@@ -293,7 +293,7 @@
           <Chevron :open="!collapsed.import" />
         </div>
         <div v-show="!collapsed.import" class="p-5 space-y-4">
-          <div class="flex gap-3">
+          <div class="flex gap-4">
             <label class="flex-1">
               <input
                 ref="fileInput"
@@ -320,7 +320,7 @@
               class="form-input font-mono h-32"
               placeholder='粘贴完整配置 JSON 或旧 yunplex 格式...'
             />
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-4">
               <button class="btn btn-primary" :disabled="!importJson || importing" @click="handleImportJson">
                 {{ importing ? '导入中...' : '导入' }}
               </button>

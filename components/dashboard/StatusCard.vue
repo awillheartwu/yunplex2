@@ -1,5 +1,5 @@
 <template>
-  <div class="section-card p-3.5">
+  <div class="section-card p-5">
     <p class="text-2xs font-medium mb-1" style="color:var(--text-tertiary)">{{ label }}</p>
     <div class="flex items-baseline gap-2">
       <span class="text-xl font-semibold tracking-tight" style="color:var(--text-primary)">{{ value }}</span>
