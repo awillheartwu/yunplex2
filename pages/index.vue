@@ -1,78 +1,62 @@
 <template>
-  <div class="max-w-[1600px] space-y-8">
+  <div class="max-w-[1200px] space-y-5">
     <!-- Status cards -->
-    <div class="grid grid-cols-4 gap-4">
+    <div class="grid grid-cols-4 gap-3">
       <StatusCard label="同步状态" :value="statusText" :trend="statusTrend" />
       <StatusCard label="成功次数" :value="String(syncState?.successCount ?? 0)" />
       <StatusCard label="失败次数" :value="String(syncState?.failureCount ?? 0)" :trend="failureTrend" />
       <StatusCard label="上次同步" :value="lastSyncText" />
     </div>
 
-    <!-- Quick actions -->
-    <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
+    <!-- Sync action -->
+    <div class="section-card p-4">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-base font-semibold">同步操作</h2>
-          <p class="text-sm text-muted mt-1">手动触发一次同步任务，或使用预览模式查看差异</p>
+          <p class="text-sm font-semibold" style="color:var(--text-primary)">同步操作</p>
+          <p class="text-xs mt-0.5" style="color:var(--text-secondary)">手动触发同步任务，或使用预览模式查看差异</p>
         </div>
         <div class="flex items-center gap-3">
-          <label class="flex items-center gap-2 text-sm text-muted cursor-pointer select-none">
-            <input
-              v-model="dryRun"
-              type="checkbox"
-              class="w-4 h-4 rounded border-[var(--border-secondary)] bg-[var(--bg-surface)] text-accent focus:ring-accent cursor-pointer"
-            />
-            预览模式
+          <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color:var(--text-secondary)">
+            <input v-model="dryRun" type="checkbox" class="w-3.5 h-3.5 rounded accent-[#5e6ad2] cursor-pointer" />
+            预览
           </label>
-          <button
-            class="btn btn-primary btn-lg"
-            :disabled="syncState?.isRunning || syncLoading"
-            @click="handleSync"
-          >
-            <SidebarIcon :name="syncState?.isRunning ? 'stop' : 'sync'" :active="false" />
-            {{ syncLoading ? '触发中...' : syncState?.isRunning ? '正在同步' : dryRun ? '预览同步' : '手动同步' }}
+          <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">
+            {{ syncLoading ? '触发中...' : syncState?.isRunning ? '同步中' : dryRun ? '预览同步' : '手动同步' }}
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Config summary + Recent logs -->
-    <div class="grid grid-cols-2 gap-6">
-      <!-- Config summary -->
-      <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
-        <h2 class="text-sm font-semibold mb-4">当前配置</h2>
-        <div v-if="config" class="space-y-3">
-          <ConfigRow label="网易云歌单" :value="config.netease.playlistIds.length ? `${config.netease.playlistIds.length} 个歌单` : '未配置'" />
+    <!-- Config + Recent activity -->
+    <div class="grid grid-cols-2 gap-4">
+      <div class="section-card p-4">
+        <p class="text-sm font-semibold mb-3" style="color:var(--text-primary)">当前配置</p>
+        <div v-if="config" class="space-y-2">
+          <ConfigRow label="网易云歌单" :value="config.netease.playlistIds.length ? `${config.netease.playlistIds.length} 个` : '未配置'" />
           <ConfigRow label="音质" :value="qualityLabel" />
           <ConfigRow label="Plex 服务器" :value="config.plex.server || '未配置'" />
           <ConfigRow label="Plex 库" :value="config.plex.section" />
           <ConfigRow label="下载目录" :value="config.download.dir" />
-          <ConfigRow label="同步间隔" :value="`${config.sync.intervalMinutes} 分钟`" />
           <ConfigRow label="自动同步" :value="config.sync.enabled ? '已启用' : '已禁用'" />
         </div>
-        <div v-else class="flex items-center justify-center py-8">
-          <span class="text-muted text-sm">加载中...</span>
+        <div v-else class="flex items-center justify-center py-6">
+          <span class="text-xs" style="color:var(--text-tertiary)">加载中...</span>
         </div>
       </div>
 
-      <!-- Recent logs -->
-      <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold">最近日志</h2>
-          <NuxtLink to="/jobs" class="text-xs text-accent hover:text-accent-hover transition-colors">查看全部</NuxtLink>
+      <div class="section-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-sm font-semibold" style="color:var(--text-primary)">最近活动</p>
+          <NuxtLink to="/jobs" class="text-xs hover:underline" style="color:var(--text-secondary)">查看全部</NuxtLink>
         </div>
-        <div v-if="recentLogs.length > 0" class="space-y-2">
-          <div
-            v-for="log in recentLogs.slice(0, 8)"
-            :key="log.id"
-            class="flex items-start gap-2 text-sm"
-          >
-            <span class="mt-0.5 shrink-0" :class="logLevelColor(log.level)">&bull;</span>
-            <span class="text-[var(--text-primary)] truncate">{{ log.message }}</span>
-            <span class="text-2xs text-muted-deep shrink-0 ml-auto">{{ formatLogTime(log.timestamp) }}</span>
+        <div v-if="recentLogs.length > 0" class="space-y-1">
+          <div v-for="log in recentLogs.slice(0, 7)" :key="log.id" class="flex items-center gap-2 text-xs py-0.5">
+            <span class="shrink-0" :class="logLevelColor(log.level)">&bull;</span>
+            <span class="truncate flex-1" style="color:var(--text-secondary)">{{ log.message }}</span>
+            <span class="shrink-0 text-2xs font-mono" style="color:var(--text-tertiary)">{{ formatLogTime(log.timestamp) }}</span>
           </div>
         </div>
-        <EmptyState v-else title="暂无日志" description="执行同步后日志将显示在这里" />
+        <EmptyState v-else title="暂无活动" description="执行同步后记录将显示在这里" />
       </div>
     </div>
   </div>
@@ -114,10 +98,7 @@ const lastSyncText = computed(() => {
 })
 
 async function handleSync() {
-  try {
-    await triggerSync(dryRun.value)
-    await fetchData()
-  } catch { /* handled in composable */ }
+  try { await triggerSync(dryRun.value); await fetchData() } catch { /* handled */ }
 }
 
 async function fetchData() {
@@ -133,12 +114,12 @@ function logLevelColor(level: string): string {
   switch (level) {
     case 'error': return 'text-danger'
     case 'warn': return 'text-warning'
-    default: return 'text-muted'
+    default: return 'text-[var(--text-tertiary)]'
   }
 }
 
 function formatLogTime(ts: string): string {
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatTime(iso: string): string {
@@ -151,9 +132,6 @@ function formatTime(iso: string): string {
   return `${Math.floor(hours / 24)} 天前`
 }
 
-onMounted(async () => {
-  startPolling(15000)
-  await fetchData()
-})
+onMounted(async () => { startPolling(15000); await fetchData() })
 onUnmounted(() => stopPolling())
 </script>
