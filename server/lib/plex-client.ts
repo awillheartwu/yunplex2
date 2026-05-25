@@ -81,6 +81,14 @@ export async function refreshLibrary(section: string): Promise<string | null> {
   return musicSection.key
 }
 
+export async function getSectionTrackCount(sectionKey: string): Promise<number> {
+  if (!client) throw new Error('Plex client not initialized')
+  const res = await client.query(
+    `/library/sections/${sectionKey}/all?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=1`,
+  )
+  return (res as { MediaContainer?: { totalSize?: number } }).MediaContainer?.totalSize ?? 0
+}
+
 export async function searchTrack(
   sectionKey: string,
   songName: string,
