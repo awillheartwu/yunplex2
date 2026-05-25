@@ -1,6 +1,6 @@
 <template>
   <button
-    class="w-full text-left section-card p-5 hover:border-[var(--border-secondary)] hover:bg-surface-elevated transition-all cursor-pointer group"
+    class="w-full text-left section-card p-5 hover:border-[var(--border-secondary)] hover:[background-color:var(--bg-elevated)] cursor-pointer group transition-all duration-150"
     @click="$emit('select')"
   >
     <div class="flex items-start justify-between gap-4">

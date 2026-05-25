@@ -1,7 +1,7 @@
 <template>
-  <div class="max-w-[1200px] space-y-5">
+  <div class="max-w-[1440px] space-y-8">
     <!-- Status cards -->
-    <div class="grid grid-cols-4 gap-3">
+    <div class="grid grid-cols-4 gap-4">
       <StatusCard label="同步状态" :value="statusText" :trend="statusTrend" />
       <StatusCard label="成功次数" :value="String(syncState?.successCount ?? 0)" />
       <StatusCard label="失败次数" :value="String(syncState?.failureCount ?? 0)" :trend="failureTrend" />
@@ -15,7 +15,7 @@
           <p class="text-sm font-semibold" style="color:var(--text-primary)">同步操作</p>
           <p class="text-xs mt-0.5" style="color:var(--text-secondary)">手动触发同步任务，或使用预览模式查看差异</p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-4">
           <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color:var(--text-secondary)">
             <input v-model="dryRun" type="checkbox" class="w-3.5 h-3.5 rounded accent-[#5e6ad2] cursor-pointer" />
             预览

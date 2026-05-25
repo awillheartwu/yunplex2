@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[1200px] space-y-8">
+  <div class="max-w-[1440px] space-y-8">
     <div>
       <h2 class="text-sm font-semibold">任务状态</h2>
       <p class="text-2xs text-muted mt-0.5">当前同步任务的实时运行状态</p>
@@ -14,7 +14,7 @@
     <template v-if="syncState?.isRunning">
       <!-- Stage indicator -->
       <div class="section-card p-6">
-        <div class="flex items-center gap-3 mb-4">
+        <div class="flex items-center gap-4 mb-4">
           <div class="w-2 h-2 rounded-full bg-accent animate-pulse" />
           <span class="text-sm font-semibold">同步进行中</span>
           <span v-if="syncState.dryRun" class="text-2xs px-1.5 py-0.5 bg-warning/20 text-warning rounded">预览模式</span>
@@ -25,7 +25,7 @@
           <div
             v-for="(stage, idx) in stages"
             :key="stage.key"
-            class="flex items-center gap-3"
+            class="flex items-center gap-4"
           >
             <div
               class="w-6 h-6 rounded-full flex items-center justify-center text-2xs shrink-0"

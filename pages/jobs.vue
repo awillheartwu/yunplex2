@@ -1,12 +1,12 @@
 <template>
-  <div class="max-w-[1600px] space-y-6">
+  <div class="max-w-[1800px] space-y-8">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold">同步任务中心</h2>
         <p class="text-2xs text-muted mt-0.5">查看历次同步任务的执行结果和详情</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         <input
           v-model="searchQuery"
           type="text"

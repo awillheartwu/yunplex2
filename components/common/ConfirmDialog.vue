@@ -8,7 +8,7 @@
       <div class="bg-surface-elevated border border-[var(--border-secondary)] rounded-xl p-8 w-[440px] shadow-2xl">
         <h3 class="text-base font-semibold mb-2">{{ title }}</h3>
         <p class="text-sm text-muted mb-6">{{ message }}</p>
-        <div class="flex justify-end gap-3">
+        <div class="flex justify-end gap-4">
           <button v-if="showCancel" class="btn btn-secondary" @click="onCancel">取消</button>
           <button
             class="btn"

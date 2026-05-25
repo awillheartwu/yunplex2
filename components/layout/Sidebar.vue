@@ -1,7 +1,7 @@
 <template>
-  <aside class="w-[220px] flex flex-col select-none shrink-0" style="background:var(--bg-sidebar)">
+  <aside class="w-[250px] flex flex-col select-none shrink-0" style="background:var(--bg-sidebar)">
     <!-- Logo -->
-    <div class="h-14 flex items-center gap-2.5 px-4 shrink-0" style="border-bottom:1px solid var(--border-primary)">
+    <div class="h-16 flex items-center gap-4 px-5 shrink-0" style="border-bottom:1px solid var(--border-primary)">
       <div class="w-7 h-7 rounded-md bg-accent flex items-center justify-center shadow-sm">
         <svg width="14" height="14" viewBox="0 0 32 32" fill="none">
           <path d="M8 10h6l4 6-4 6H8l4-6-4-6z" fill="#fff" opacity="0.9" />
@@ -12,7 +12,7 @@
     </div>
 
     <!-- Nav -->
-    <nav class="flex-1 px-2.5 py-2 space-y-px">
+    <nav class="flex-1 px-3 py-3 space-y-0.5">
       <SidebarItem
         v-for="item in navItems"
         :key="item.path"
