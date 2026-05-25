@@ -65,7 +65,7 @@ export async function getPlaylistTracks(
   return (res.MediaContainer?.Metadata ?? []).slice(0, limit)
 }
 
-export async function refreshLibrary(section: string): Promise<string | null> {
+export async function getSectionKey(section: string): Promise<string | null> {
   if (!client) throw new Error('Plex client not initialized')
   const sections = (await client.query('/library/sections')) as {
     MediaContainer?: { Directory?: { key: string; type: string; title: string }[] }
@@ -74,11 +74,12 @@ export async function refreshLibrary(section: string): Promise<string | null> {
   const musicSection = dirs
     .filter((d) => d.type === 'artist')
     .find((d) => d.title === section)
+  return musicSection?.key ?? null
+}
 
-  if (!musicSection) return null
-
-  await client.query(`/library/sections/${musicSection.key}/refresh`)
-  return musicSection.key
+export async function refreshLibrary(sectionKey: string): Promise<void> {
+  if (!client) throw new Error('Plex client not initialized')
+  await client.query(`/library/sections/${sectionKey}/refresh`)
 }
 
 export async function getSectionTrackCount(sectionKey: string): Promise<number> {
