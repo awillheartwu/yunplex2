@@ -1,5 +1,11 @@
 <template>
   <div class="max-w-[1800px] space-y-8">
+    <!-- Job detail view -->
+    <template v-if="selectedJob">
+      <JobDetail :job="selectedJob" @back="selectedJob = null" />
+    </template>
+
+    <template v-else>
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
@@ -14,12 +20,8 @@
           class="form-input w-48 text-sm"
           @input="fetchJobs()"
         />
-        <button class="btn btn-danger btn-sm" @click="showClear = true">
-          清空
-        </button>
-        <button class="btn btn-secondary btn-sm" @click="fetchJobs">
-          刷新
-        </button>
+        <button class="btn btn-danger btn-sm" @click="showClear = true">清空</button>
+        <button class="btn btn-secondary btn-sm" @click="fetchJobs">刷新</button>
       </div>
     </div>
 
@@ -38,13 +40,7 @@
       </button>
     </div>
 
-    <!-- Job detail view -->
-    <template v-if="selectedJob">
-      <JobDetail :job="selectedJob" @back="selectedJob = null" />
-    </template>
-
     <!-- Job list -->
-    <template v-else>
       <div v-if="loading" class="flex items-center justify-center py-16">
         <span class="text-muted text-sm">加载中...</span>
       </div>
