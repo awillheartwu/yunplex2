@@ -11,7 +11,7 @@ interface PlexTrack {
 
 /** Strip punctuation, spaces, and special chars for fuzzy title comparison */
 function stripTitle(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
 }
 
  
