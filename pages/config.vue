@@ -30,7 +30,7 @@
     <!-- Form -->
     <template v-else-if="form">
       <!-- Netease -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.netease ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
@@ -91,7 +91,7 @@
       </section>
 
       <!-- Plex -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.plex ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
@@ -137,7 +137,7 @@
       </section>
 
       <!-- Download -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.download ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
@@ -167,7 +167,7 @@
       </section>
 
       <!-- Sync strategy -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.sync ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
@@ -207,7 +207,7 @@
       </section>
 
       <!-- Other strategies -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.other ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
@@ -280,7 +280,7 @@
       </section>
 
       <!-- Import / Export -->
-      <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <section class="section-card overflow-hidden">
         <div
           class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
           :class="collapsed.import ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
