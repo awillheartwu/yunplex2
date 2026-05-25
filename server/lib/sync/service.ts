@@ -402,7 +402,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             const track = await searchTrack(sectionKey!, songTask.songName, songTask.artist, songTask.album)
             if (track) {
               await insertTrackIntoPlaylist(plexPlaylist!.ratingKey, track.ratingKey)
-              const itemId = await getPlaylistItemId(plexPlaylist!.ratingKey, songTask.songName, songTask.album)
+              const itemId = await getPlaylistItemId(plexPlaylist!.ratingKey, track.ratingKey)
               if (itemId) {
                 if (isFirst) {
                   await movePlaylistItemToTop(plexPlaylist!.ratingKey, itemId)
