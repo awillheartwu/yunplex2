@@ -16,7 +16,6 @@ import {
   getPlaylistItemId,
   movePlaylistItemToTop,
   movePlaylistItemAfter,
-  getSectionTrackCount,
   getSectionKey,
 } from '../plex-client'
 import { JobBuilder } from '../job/builder'
@@ -359,17 +358,19 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           await refreshLibrary(sectionKey)
 
-          const trackCountBefore = await getSectionTrackCount(sectionKey)
-          log('info', `Plex 库刷新前曲目数: ${trackCountBefore}，等待扫描...`)
+          // Poll for a newly downloaded song to become searchable
+          const probeSong = job.getJob().songs.find((s) => s.status === 'success')
+          log('info', `等待 Plex 扫描 (探针: ${probeSong?.songName ?? '无'})...`)
 
           const scanTimeout = Date.now() + 90000
           let scanDone = false
           while (!scanDone && Date.now() < scanTimeout) {
             if (cancelRequested) break
             await new Promise((r) => setTimeout(r, 3000))
-            const current = await getSectionTrackCount(sectionKey)
-            if (current > trackCountBefore) {
-              log('info', `Plex 扫描完成，新增 ${current - trackCountBefore} 首`)
+            if (probeSong) {
+              const found = await searchTrack(sectionKey, probeSong.songName, probeSong.artist, probeSong.album)
+              if (found) scanDone = true
+            } else {
               scanDone = true
             }
           }
