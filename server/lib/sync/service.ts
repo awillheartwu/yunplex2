@@ -359,10 +359,10 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           await refreshLibrary(sectionKey)
 
           // Wait for Plex to scan new files — poll for the first track, then
-        // give remaining tracks a per-file cooldown. Max 30s total.
+        // give remaining tracks a per-file cooldown. Max 60s total.
           const allNew = job.getJob().songs.filter((s) => s.status === 'success')
           const probe = allNew[0]
-          const probeTimeout = Date.now() + 30000
+          const probeTimeout = Date.now() + 60000
           let probeFound = false
 
           if (probe) {
@@ -383,8 +383,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             await new Promise((r) => setTimeout(r, wait))
           }
 
-          log('info', probeFound ? 'Plex 扫描完成' : 'Plex 扫描超时 (30s)')
-          job.finishStep(s5, 'success', probeFound ? 'Plex 库刷新完成' : 'Plex 扫描超时 (30s)')
+          log('info', probeFound ? 'Plex 扫描完成' : 'Plex 扫描超时 (60s)')
+          job.finishStep(s5, 'success', probeFound ? 'Plex 库刷新完成' : 'Plex 扫描超时 (60s)')
         }
 
         // ── Step 6: Update Plex playlist ──
@@ -530,7 +530,7 @@ function normalizeTitle(title: string): string {
 }
 
 function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
 }
 
 async function fetchPlaylistName(playlistId: number): Promise<string | null> {
