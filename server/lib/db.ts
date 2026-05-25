@@ -194,6 +194,21 @@ function createSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_jobs_started ON jobs(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+    CREATE TABLE IF NOT EXISTS downloads (
+      id             TEXT PRIMARY KEY,
+      song_name      TEXT NOT NULL,
+      artist         TEXT NOT NULL DEFAULT '',
+      album          TEXT NOT NULL DEFAULT '',
+      file_path      TEXT,
+      file_type      TEXT,
+      quality        TEXT,
+      status         TEXT NOT NULL DEFAULT 'success',
+      downloaded_at  TEXT NOT NULL,
+      job_id         TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_downloads_time ON downloads(downloaded_at DESC);
   `)
 }
 
