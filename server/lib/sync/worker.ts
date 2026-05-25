@@ -16,7 +16,7 @@ export function getWorker() {
 export function startWorker(
   getConfig: () => AppConfig,
   syncService: SyncServiceHandle,
-  dataDir: string,
+  _dataDir: string,
 ) {
   if (worker) {
     stopWorker()

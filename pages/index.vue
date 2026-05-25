@@ -83,7 +83,7 @@ import type { AppConfig } from '~~/server/lib/config/types'
 import type { LogEntry } from '~~/server/lib/log/types'
 
 const api = useApi()
-const { state: syncState, loading: syncLoading, triggerSync, startPolling, stopPolling, fetchStatus } = useSync()
+const { state: syncState, loading: syncLoading, triggerSync, startPolling, stopPolling } = useSync()
 
 const config = ref<AppConfig | null>(null)
 const recentLogs = ref<LogEntry[]>([])

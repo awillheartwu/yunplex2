@@ -32,7 +32,6 @@ export interface SongMeta {
   artistImgUrl: string
 }
 
-type OpResult = 'ok' | 'failed' | 'skipped'
 
 export type SongOps = NonNullable<SongTask['ops']>
 
