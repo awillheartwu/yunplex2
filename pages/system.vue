@@ -6,7 +6,7 @@
     </div>
 
     <!-- Health -->
-    <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
+    <div class="section-card p-5">
       <div class="flex items-center gap-2 mb-4">
         <div class="w-2 h-2 rounded-full bg-success" />
         <h3 class="text-sm font-semibold">服务状态</h3>
@@ -28,7 +28,7 @@
     </div>
 
     <!-- System info -->
-    <div class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+    <div class="section-card overflow-hidden">
       <div class="px-5 py-4 border-b border-[var(--border-primary)]">
         <h3 class="text-sm font-semibold">系统信息</h3>
       </div>

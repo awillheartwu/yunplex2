@@ -6,14 +6,14 @@
     </div>
 
     <!-- Idle state -->
-    <div v-if="!syncState?.isRunning && !syncState?.lastSyncAt" class="bg-surface border border-[var(--border-primary)] rounded-xl p-8">
+    <div v-if="!syncState?.isRunning && !syncState?.lastSyncAt" class="section-card p-8">
       <EmptyState title="暂无任务" description="点击仪表盘的「手动同步」按钮开始第一次同步" />
     </div>
 
     <!-- Running state -->
     <template v-if="syncState?.isRunning">
       <!-- Stage indicator -->
-      <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-6">
+      <div class="section-card p-6">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-2 h-2 rounded-full bg-accent animate-pulse" />
           <span class="text-sm font-semibold">同步进行中</span>
@@ -44,7 +44,7 @@
       </div>
 
       <!-- Progress bar -->
-      <div v-if="syncState.progress" class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
+      <div v-if="syncState.progress" class="section-card p-5">
         <div class="flex items-center justify-between mb-2">
           <span class="text-sm text-muted">下载进度</span>
           <span class="text-sm font-mono">{{ syncState.progress.current }} / {{ syncState.progress.total }}</span>
@@ -68,7 +68,7 @@
 
     <!-- Completed state -->
     <template v-if="!syncState?.isRunning && syncState?.lastSyncAt">
-      <div class="bg-surface border border-[var(--border-primary)] rounded-xl p-5">
+      <div class="section-card p-5">
         <div class="flex items-center gap-2 mb-4">
           <SidebarIcon :name="syncState.lastSyncResult === 'success' ? 'check' : 'warn'" :active="syncState.lastSyncResult === 'success'" />
           <span class="text-sm font-semibold">
@@ -88,7 +88,7 @@
       </div>
 
       <!-- Failures list -->
-      <div v-if="syncState.failures.length > 0" class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+      <div v-if="syncState.failures.length > 0" class="section-card overflow-hidden">
         <div class="px-5 py-3 border-b border-[var(--border-primary)]">
           <h3 class="text-sm font-semibold text-danger">失败项目 ({{ syncState.failures.length }})</h3>
         </div>

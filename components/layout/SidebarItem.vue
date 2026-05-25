@@ -1,10 +1,10 @@
 <template>
   <NuxtLink
     :to="path"
-    class="flex items-center gap-3 px-3 py-2.5 rounded-md text-base transition-colors"
+    class="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors duration-150"
     :class="isActive
       ? 'bg-accent-muted text-accent font-medium'
-      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
+      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'"
   >
     <SidebarIcon :name="icon" :active="isActive" />
     <span>{{ label }}</span>

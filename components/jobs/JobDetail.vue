@@ -42,7 +42,7 @@
     </div>
 
     <!-- Timeline -->
-    <section class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+    <section class="section-card overflow-hidden">
       <div class="px-5 py-3 border-b border-[var(--border-primary)]">
         <h3 class="text-sm font-semibold">执行时间线</h3>
       </div>
@@ -52,7 +52,7 @@
     </section>
 
     <!-- Song results -->
-    <section v-if="job.songs.length > 0" class="bg-surface border border-[var(--border-primary)] rounded-xl overflow-hidden">
+    <section v-if="job.songs.length > 0" class="section-card overflow-hidden">
       <div class="px-5 py-3 border-b border-[var(--border-primary)] flex items-center justify-between">
         <h3 class="text-sm font-semibold">歌曲清单</h3>
         <div class="flex items-center gap-2">

@@ -1,10 +1,7 @@
 <template>
-  <div class="flex items-center justify-between">
-    <span class="text-sm text-muted">{{ label }}</span>
-    <span
-      class="text-sm"
-      :class="isUnset ? 'text-[var(--text-tertiary)] italic' : 'text-[var(--text-primary)]'"
-    >{{ isUnset ? '未配置' : value }}</span>
+  <div class="flex items-center justify-between py-0.5">
+    <span class="text-xs" style="color:var(--text-secondary)">{{ label }}</span>
+    <span class="text-xs font-medium" :class="isUnset ? 'text-[var(--text-tertiary)]' : 'text-[var(--text-primary)]'">{{ isUnset ? '—' : value }}</span>
   </div>
 </template>
 
