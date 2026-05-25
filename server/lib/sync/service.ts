@@ -530,7 +530,7 @@ function normalizeTitle(title: string): string {
 }
 
 function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""]+/g, '')
 }
 
 async function fetchPlaylistName(playlistId: number): Promise<string | null> {
