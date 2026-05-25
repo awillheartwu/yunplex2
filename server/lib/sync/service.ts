@@ -358,39 +358,33 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           await refreshLibrary(sectionKey)
 
-          // Poll: wait for first track, then confirm the rest are ready
+          // Wait for Plex to scan new files — poll for the first track, then
+        // give remaining tracks a per-file cooldown. Max 30s total.
           const allNew = job.getJob().songs.filter((s) => s.status === 'success')
           const probe = allNew[0]
-          log('info', `等待 Plex 扫描 (${allNew.length} 首新歌，探针: ${probe?.songName ?? '无'})...`)
+          const probeTimeout = Date.now() + 30000
+          let probeFound = false
 
-          const scanTimeout = Date.now() + 120000
-          let scanDone = false
-          // Phase 1: wait for the probe to appear
           if (probe) {
-            while (!scanDone && Date.now() < scanTimeout) {
+            log('info', `等待 Plex 扫描 (${allNew.length} 首，探针: ${probe.songName})...`)
+            while (!probeFound && Date.now() < probeTimeout) {
               if (cancelRequested) break
               await new Promise((r) => setTimeout(r, 3000))
               const found = await searchTrack(sectionKey, probe.songName, probe.artist, probe.album)
-              if (found) scanDone = true
+              if (found) probeFound = true
             }
           } else {
-            scanDone = true
+            probeFound = true
           }
-          // Phase 2: probe hit — check remaining songs once more with a short cooldown
-          if (scanDone && allNew.length > 1) {
-            const cooldown = Math.min(allNew.length * 2000, 15000)
-            await new Promise((r) => setTimeout(r, cooldown))
-            let remainingFound = 0
-            for (const s of allNew.slice(1)) {
-              if (cancelRequested) break
-              const found = await searchTrack(sectionKey, s.songName, s.artist, s.album)
-              if (found) remainingFound++
-            }
-            log('info', `Plex 扫描确认: ${remainingFound + 1}/${allNew.length} 首已入库`)
-          }
-          if (!scanDone) log('warn', 'Plex 扫描超时 (120s)，继续执行')
 
-          job.finishStep(s5, 'success', scanDone ? 'Plex 库刷新完成' : 'Plex 库刷新超时')
+          if (probeFound && allNew.length > 1) {
+            // Per-file cooldown: 2s per remaining track
+            const wait = Math.min(allNew.length * 2, 10) * 1000
+            await new Promise((r) => setTimeout(r, wait))
+          }
+
+          log('info', probeFound ? 'Plex 扫描完成' : 'Plex 扫描超时 (30s)')
+          job.finishStep(s5, 'success', probeFound ? 'Plex 库刷新完成' : 'Plex 扫描超时 (30s)')
         }
 
         // ── Step 6: Update Plex playlist ──
