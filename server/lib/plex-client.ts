@@ -196,27 +196,18 @@ export async function insertTrackIntoPlaylist(
 
 export async function getPlaylistItemId(
   playlistKey: string,
-  songName: string,
-  album?: string,
+  trackRatingKey: string,
 ): Promise<number> {
   if (!client) throw new Error('Plex client not initialized')
   const res = (await client.query(`/playlists/${playlistKey}/items`)) as {
-    MediaContainer?: { Metadata?: { title: string; parentTitle?: string; playlistItemID?: number }[] }
+    MediaContainer?: { Metadata?: { ratingKey: string; playlistItemID?: number }[] }
   }
 
   const items = res.MediaContainer?.Metadata ?? []
-  const albumStripped = album ? stripTitle(album) : ''
-  // Search from end — newly inserted tracks are at the bottom
   const arr = Array.isArray(items) ? items : [items]
-  for (let i = arr.length - 1; i >= 0; i--) {
-    const item = arr[i]
-    if (item.title === songName) return item.playlistItemID ?? 0
-    if (stripTitle(item.title) !== stripTitle(songName)) continue
-    // Album disambiguation for same-title tracks
-    if (albumStripped && item.parentTitle && stripTitle(item.parentTitle) !== albumStripped) continue
-    return item.playlistItemID ?? 0
-  }
-  return 0
+  // Direct match by ratingKey — the library track ID we just inserted
+  const found = arr.find((item) => item.ratingKey === trackRatingKey)
+  return found?.playlistItemID ?? 0
 }
 
 export async function movePlaylistItemToTop(
