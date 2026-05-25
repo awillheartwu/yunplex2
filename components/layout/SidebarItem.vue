@@ -1,7 +1,7 @@
 <template>
   <NuxtLink
     :to="path"
-    class="flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors duration-150"
+    class="flex items-center gap-4 px-3 py-2.5 rounded-lg text-[0.9375rem] transition-colors duration-150"
     :class="isActive
       ? 'bg-accent-muted text-accent font-medium'
       : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'"

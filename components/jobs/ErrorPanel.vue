@@ -8,7 +8,7 @@
         <p class="text-sm text-danger font-medium">{{ error.title }}</p>
         <p class="text-sm text-[var(--text-primary)] mt-1">{{ error.message }}</p>
 
-        <div v-if="error.songName || error.artist || error.stage" class="flex items-center gap-3 mt-2 text-2xs text-muted-deep">
+        <div v-if="error.songName || error.artist || error.stage" class="flex items-center gap-4 mt-2 text-2xs text-muted-deep">
           <span v-if="error.songName">歌曲: {{ error.songName }}</span>
           <span v-if="error.artist">艺人: {{ error.artist }}</span>
           <span v-if="error.stage">阶段: {{ stageLabel(error.stage) }}</span>

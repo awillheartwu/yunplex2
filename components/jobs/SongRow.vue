@@ -1,7 +1,7 @@
 <template>
   <div>
     <button
-      class="w-full text-left px-5 py-3 flex items-center gap-3 hover:bg-[var(--bg-surface)] transition-colors"
+      class="w-full text-left px-5 py-3 flex items-center gap-4 hover:bg-[var(--bg-surface)] transition-colors"
       @click="$emit('toggle')"
     >
       <!-- Status dot -->

@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-8">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <button class="flex items-center gap-2 text-sm text-muted hover:text-[var(--text-primary)] transition-colors" @click="$emit('back')">
@@ -18,24 +18,24 @@
     </div>
 
     <!-- Stats -->
-    <div class="grid grid-cols-5 gap-3">
-      <div class="bg-surface border border-[var(--border-primary)] rounded-lg p-3 text-center">
+    <div class="grid grid-cols-5 gap-4">
+      <div class="rounded-lg p-3 text-center" style="background:var(--bg-surface);border:1px solid var(--border-primary)">
         <p class="text-lg font-semibold text-[var(--text-primary)]">{{ job.totalSongs }}</p>
         <p class="text-2xs text-muted-deep">总计</p>
       </div>
-      <div class="bg-surface border border-[var(--border-primary)] rounded-lg p-3 text-center">
+      <div class="rounded-lg p-3 text-center" style="background:var(--bg-surface);border:1px solid var(--border-primary)">
         <p class="text-lg font-semibold text-success">{{ job.successSongs }}</p>
         <p class="text-2xs text-muted-deep">成功</p>
       </div>
-      <div class="bg-surface border border-[var(--border-primary)] rounded-lg p-3 text-center">
+      <div class="rounded-lg p-3 text-center" style="background:var(--bg-surface);border:1px solid var(--border-primary)">
         <p class="text-lg font-semibold text-danger">{{ job.failedSongs }}</p>
         <p class="text-2xs text-muted-deep">失败</p>
       </div>
-      <div class="bg-surface border border-[var(--border-primary)] rounded-lg p-3 text-center">
+      <div class="rounded-lg p-3 text-center" style="background:var(--bg-surface);border:1px solid var(--border-primary)">
         <p class="text-lg font-semibold text-muted">{{ job.skippedSongs }}</p>
         <p class="text-2xs text-muted-deep">已存在</p>
       </div>
-      <div class="bg-surface border border-[var(--border-primary)] rounded-lg p-3 text-center">
+      <div class="rounded-lg p-3 text-center" style="background:var(--bg-surface);border:1px solid var(--border-primary)">
         <p class="text-lg font-semibold text-muted">{{ job.warnings }}</p>
         <p class="text-2xs text-muted-deep">警告</p>
       </div>

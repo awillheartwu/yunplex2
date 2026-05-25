@@ -1,13 +1,13 @@
 <template>
-  <header class="h-14 flex items-center justify-between px-6 shrink-0" style="background:var(--bg-app);border-bottom:1px solid var(--border-primary)">
-    <div class="flex items-center gap-3">
-      <h1 class="text-sm font-semibold tracking-tight" style="color:var(--text-primary)">{{ pageTitle }}</h1>
+  <header class="h-16 flex items-center justify-between px-8 shrink-0" style="background:var(--bg-app);border-bottom:1px solid var(--border-primary)">
+    <div class="flex items-center gap-4">
+      <h1 class="text-base font-semibold tracking-tight" style="color:var(--text-primary)">{{ pageTitle }}</h1>
       <StatusBadge
         v-if="syncState"
         :status="syncState.isRunning ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
       />
     </div>
-    <div class="flex items-center gap-2.5">
+    <div class="flex items-center gap-3">
       <span class="text-2xs text-muted">
         {{ syncState?.lastSyncAt ? `上次同步 ${formatTime(syncState.lastSyncAt)}` : '尚未同步' }}
       </span>
