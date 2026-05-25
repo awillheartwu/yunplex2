@@ -17,6 +17,7 @@ import {
   movePlaylistItemToTop,
   movePlaylistItemAfter,
   getSectionTrackCount,
+  getSectionKey,
 } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
@@ -190,6 +191,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       const newSongs = yunSongs.filter((s) => !s.sync)
 
       // ── Step 3 & 4: Download + Tags ──
+      const sectionKey = await getSectionKey(cfg.plex.section)
+      let needRefresh = false
+
       if (newSongs.length > 0) {
         const s3 = job.startStep('download', '下载歌曲')
         const totalNew = newSongs.length
@@ -239,6 +243,12 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               const targetPath = join(cfg.download.dir, relativePath)
 
               if (existsSync(targetPath)) {
+                // Check if Plex already has this track indexed
+                let plexReady = false
+                if (sectionKey && !dryRun) {
+                  const existing = await searchTrack(sectionKey, song.name, albumArtist, song.album.name)
+                  plexReady = !!existing
+                }
                 job.updateSong(songId, {
                   status: 'success', phase: 'done',
                   filePath: targetPath, fileType,
@@ -248,8 +258,12 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                   },
                   ops: { download: 'skipped', lyric: 'skipped', tags: 'skipped', cover: 'skipped' },
                 })
-                job.finishStep(childId, 'success', `文件已存在，跳过下载 (${fileType.toUpperCase()})`)
+                if (!plexReady) needRefresh = true
+                job.finishStep(childId, 'success', plexReady
+                  ? `已在 Plex 库中，跳过下载 (${fileType.toUpperCase()})`
+                  : `文件已存在，跳过下载 (${fileType.toUpperCase()})`)
               } else {
+                needRefresh = true
                 const lyricData = cfg.download.downloadLyrics
                   ? await fetchLyric(
                       song.id,
@@ -339,42 +353,36 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       // ── Steps 5 & 6: Plex refresh + update ──
       const successfulNew = job.getJob().songs.filter((s) => s.status === 'success').length
       if (!dryRun && successfulNew > 0) {
-        const s5 = job.startStep('refresh_plex', '刷新 Plex 音乐库')
-        setStage('refreshing_plex')
+        if (needRefresh && sectionKey) {
+          const s5 = job.startStep('refresh_plex', '刷新 Plex 音乐库')
+          setStage('refreshing_plex')
 
-        const sectionKeyLocal = await refreshLibrary(cfg.plex.section)
-        if (!sectionKeyLocal) {
-          const err = { title: '找不到 Plex 音乐库', message: `未找到音乐库 "${cfg.plex.section}"`, stage: 'refresh_plex' }
-          job.failStep(s5, '刷新失败', err)
-          throw new Error(err.message)
-        }
+          await refreshLibrary(sectionKey)
 
-        // Poll for scan completion instead of fixed 60s wait
-        const trackCountBefore = await getSectionTrackCount(sectionKeyLocal)
-        log('info', `Plex 库刷新前曲目数: ${trackCountBefore}，等待扫描...`)
+          const trackCountBefore = await getSectionTrackCount(sectionKey)
+          log('info', `Plex 库刷新前曲目数: ${trackCountBefore}，等待扫描...`)
 
-        const scanTimeout = Date.now() + 90000
-        let scanDone = false
-        while (!scanDone && Date.now() < scanTimeout) {
-          if (cancelRequested) break
-          await new Promise((r) => setTimeout(r, 3000))
-          const current = await getSectionTrackCount(sectionKeyLocal)
-          if (current > trackCountBefore) {
-            log('info', `Plex 扫描完成，新增 ${current - trackCountBefore} 首`)
-            scanDone = true
+          const scanTimeout = Date.now() + 90000
+          let scanDone = false
+          while (!scanDone && Date.now() < scanTimeout) {
+            if (cancelRequested) break
+            await new Promise((r) => setTimeout(r, 3000))
+            const current = await getSectionTrackCount(sectionKey)
+            if (current > trackCountBefore) {
+              log('info', `Plex 扫描完成，新增 ${current - trackCountBefore} 首`)
+              scanDone = true
+            }
           }
-        }
-        if (!scanDone) log('warn', 'Plex 扫描超时 (90s)，继续执行')
+          if (!scanDone) log('warn', 'Plex 扫描超时 (90s)，继续执行')
 
-        job.finishStep(s5, 'success', scanDone ? 'Plex 库刷新完成' : 'Plex 库刷新超时，继续执行')
+          job.finishStep(s5, 'success', scanDone ? 'Plex 库刷新完成' : 'Plex 库刷新超时，继续执行')
+        }
 
         // ── Step 6: Update Plex playlist ──
         const s6 = job.startStep('update_plex_playlist', '更新 Plex 歌单')
         setStage('updating_plex_playlist')
 
         const doneSongs = job.getJob().songs.filter((s) => s.status === 'success')
-        // Build NetEase order in Plex: process newest-first, anchor each
-        // after the previous insertion (NetEase playlist is newest-first)
         let afterItemId: number | null = null
         let isFirst = true
         for (const songTask of doneSongs) {
@@ -382,7 +390,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           const childId = job.startStep('plex_insert', `${songTask.songName} - ${songTask.artist}`, s6)
 
           try {
-            const track = await searchTrack(sectionKeyLocal, songTask.songName, songTask.artist, songTask.album)
+            const track = await searchTrack(sectionKey!, songTask.songName, songTask.artist, songTask.album)
             if (track) {
               await insertTrackIntoPlaylist(plexPlaylist!.ratingKey, track.ratingKey)
               const itemId = await getPlaylistItemId(plexPlaylist!.ratingKey, songTask.songName, songTask.album)
