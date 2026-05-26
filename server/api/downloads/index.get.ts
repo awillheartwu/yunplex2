@@ -1,5 +1,5 @@
-import { success } from '../../../lib/response'
-import { listDownloads } from '../../../lib/download/store'
+import { success } from '../../lib/response'
+import { listDownloads } from '../../lib/download/store'
 
 export default defineEventHandler((event) => {
   const query = getQuery(event)
