@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[1800px] space-y-8">
+  <div class="space-y-8">
     <!-- Job detail view -->
     <template v-if="selectedJob">
       <JobDetail :job="selectedJob" @back="selectedJob = null" />
