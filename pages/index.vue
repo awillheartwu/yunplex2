@@ -155,7 +155,7 @@ class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
         <div class="space-y-1 text-xs">
           <div class="flex justify-between"><span style="color:var(--text-secondary)">目录</span><span class="truncate ml-2" style="color:var(--text-primary);max-width:140px">{{ config?.download.dir || '—' }}</span></div>
           <div class="flex justify-between"><span style="color:var(--text-secondary)">音质</span><span style="color:var(--text-primary)">{{ qualityLabel }}</span></div>
-          <div class="flex justify-between"><span style="color:var(--text-secondary)">同步次数</span><span style="color:var(--text-primary)">{{ syncState?.syncCount ?? 0 }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">同步次数</span><span style="color:var(--text-primary)">{{ totalSyncs }}</span></div>
         </div>
       </div>
       <div class="section-card p-3.5">
@@ -183,6 +183,7 @@ const recentErrors = ref<(LogEntry & { songName?: string })[]>([])
 const dryRun = ref(false)
 const plexOnline = ref(false)
 const neteaseOk = ref(false)
+const totalSyncs = ref(0)
 
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
 interface TrackCard { id: string; title: string; artist: string; status: string }
@@ -209,11 +210,12 @@ function isStageDone(key: string): boolean {
 async function fetchData() {
   const [cfg, jobsRes, logs] = await Promise.all([
     api.get<AppConfig>('/config'),
-    api.get<{ items: JobSummary[] }>('/jobs', { limit: '10' }),
+    api.get<{ items: JobSummary[]; total: number }>('/jobs', { limit: '10' }),
     api.get<LogEntry[]>('/logs', { limit: '30' }),
   ])
   config.value = cfg
   recentJobs.value = jobsRes.items || []
+  totalSyncs.value = jobsRes.total || 0
   plexOnline.value = !!cfg.plex.server
   neteaseOk.value = !!cfg.netease.cookie
 
