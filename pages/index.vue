@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[1280px] mx-auto space-y-4">
+  <div class="space-y-4">
     <!-- ═══ Status bar ═══ -->
     <div class="flex items-center gap-3 flex-wrap">
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium" style="background:var(--bg-surface);border-color:var(--border-primary);color:var(--text-secondary)">
@@ -47,22 +47,6 @@
             <p class="text-xl font-semibold tracking-tight mt-0.5" :class="syncState?.lastSyncResult === 'failure' ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.lastSyncResult === 'success' ? '成功' : syncState?.lastSyncResult === 'failure' ? '异常' : '—' }}</p>
           </div>
         </div>
-        <!-- Stage progress bar (horizontal steps) -->
-        <div class="flex items-center gap-1.5">
-          <template v-for="(stage, idx) in activeStages" :key="stage.key">
-            <span
-class="text-2xs shrink-0"
-              :style="{ color: syncState?.currentStage === stage.key ? 'var(--text-primary)' : isStageDone(stage.key) ? 'var(--text-tertiary)' : 'var(--border-secondary)' }"
-              :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
-            <svg v-if="idx < activeStages.length - 1" width="12" height="12" viewBox="0 0 12 12" fill="none" class="shrink-0">
-              <path d="M4.5 3l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#5e6ad2' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </template>
-        </div>
-        <div v-if="syncState?.isRunning && syncState?.progress" class="mt-2 h-1 rounded-full overflow-hidden" style="background:var(--bg-input)">
-          <div class="h-full rounded-full transition-all duration-500" style="background:#5e6ad2" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
-        </div>
-        <p v-if="syncState?.isRunning && syncState?.currentSong" class="text-2xs mt-1.5 truncate font-mono" style="color:var(--text-tertiary)">{{ syncState.currentSong }}</p>
       </div>
 
       <!-- Issues -->
@@ -83,6 +67,25 @@ class="text-2xs shrink-0"
         </div>
       </div>
     </div>
+
+    <!-- ═══ Sync stage bar ═══ -->
+    <NuxtLink to="/task" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
+      <div class="flex items-center gap-2 flex-1 min-w-0">
+        <template v-for="(stage, idx) in activeStages" :key="stage.key">
+          <span
+class="text-2xs shrink-0"
+            :style="{ color: syncState?.currentStage === stage.key ? '#5e6ad2' : isStageDone(stage.key) ? 'var(--text-secondary)' : 'var(--text-tertiary)' }"
+            :class="syncState?.currentStage === stage.key ? 'font-semibold' : ''">{{ stage.label }}</span>
+          <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
+            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#5e6ad2' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </template>
+      </div>
+      <div v-if="syncState?.isRunning && syncState?.progress" class="w-24 h-1 rounded-full overflow-hidden shrink-0" style="background:var(--bg-input)">
+        <div class="h-full rounded-full transition-all duration-500" style="background:#5e6ad2" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
+      </div>
+      <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">下载状态 →</span>
+    </NuxtLink>
 
     <!-- ═══ Row 2: Recently Added + Timeline ═══ -->
     <div class="grid grid-cols-3 gap-4">
@@ -125,14 +128,14 @@ class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
           <NuxtLink to="/jobs" class="text-2xs hover:underline" style="color:var(--text-secondary)">历史</NuxtLink>
         </div>
         <div v-if="recentJobs.length" class="divide-y" style="border-color:var(--border-primary)">
-          <div v-for="job in recentJobs.slice(0, 5)" :key="job.id" class="px-4 py-2.5">
+          <NuxtLink v-for="job in recentJobs.slice(0, 5)" :key="job.id" :to="`/jobs?id=${job.id}`" class="block px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors duration-150">
             <div class="flex items-center gap-2 mb-0.5">
               <div class="w-2 h-2 rounded-full shrink-0" :class="job.status === 'success' ? 'bg-success' : job.status === 'partial' ? 'bg-warning' : 'bg-danger'" />
               <span class="text-2xs font-mono" style="color:var(--text-tertiary)">{{ formatRelative(job.startedAt) }}</span>
               <span class="text-2xs font-mono ml-auto" style="color:var(--text-tertiary)">{{ formatDuration(job.durationMs) }}</span>
             </div>
             <p class="text-xs ml-4" style="color:var(--text-secondary)">{{ job.successSongs }} 成功{{ job.failedSongs > 0 ? ' · ' + job.failedSongs + ' 失败' : '' }}{{ job.skippedSongs > 0 ? ' · ' + job.skippedSongs + ' 跳过' : '' }}</p>
-          </div>
+          </NuxtLink>
         </div>
         <div v-else class="flex items-center justify-center py-12">
           <p class="text-xs" style="color:var(--text-tertiary)">执行首次同步后展示</p>

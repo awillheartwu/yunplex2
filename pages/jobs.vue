@@ -123,5 +123,10 @@ async function handleClear() {
   } catch { /* ignore */ }
 }
 
-onMounted(() => fetchJobs())
+onMounted(async () => {
+  await fetchJobs()
+  const route = useRoute()
+  const jobId = route.query.id as string | undefined
+  if (jobId) await selectJob(jobId)
+})
 </script>
