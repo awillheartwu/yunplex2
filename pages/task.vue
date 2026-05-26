@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[1440px] space-y-8">
+  <div class="space-y-8">
     <div>
       <h2 class="text-sm font-semibold">任务状态</h2>
       <p class="text-2xs text-muted mt-0.5">当前同步任务的实时运行状态</p>
