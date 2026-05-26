@@ -1,110 +1,102 @@
 <template>
-  <div class="max-w-[1800px] space-y-5">
+  <div class="max-w-[1280px] mx-auto space-y-4">
     <!-- ═══ Status bar ═══ -->
     <div class="flex items-center gap-3 flex-wrap">
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium" style="background:var(--bg-surface);border-color:var(--border-primary);color:var(--text-secondary)">
-        <span class="w-2 h-2 rounded-full" :class="plexOnline ? 'bg-success' : 'bg-danger'" />
-        Plex {{ plexOnline ? '在线' : '离线' }}
+        <span class="w-2 h-2 rounded-full" :class="plexOnline ? 'bg-success' : 'bg-danger'" /> Plex {{ plexOnline ? '在线' : '离线' }}
       </div>
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium" style="background:var(--bg-surface);border-color:var(--border-primary);color:var(--text-secondary)">
-        <span class="w-2 h-2 rounded-full" :class="neteaseOk ? 'bg-success' : 'bg-danger'" />
-        网易云 {{ neteaseOk ? '已登录' : '未配置' }}
+        <span class="w-2 h-2 rounded-full" :class="neteaseOk ? 'bg-success' : 'bg-danger'" /> 网易云 {{ neteaseOk ? '已登录' : '未配置' }}
       </div>
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium" style="background:var(--bg-surface);border-color:var(--border-primary);color:var(--text-secondary)">
-        <span class="w-2 h-2 rounded-full" :class="syncState?.isRunning ? 'bg-warning animate-pulse' : 'bg-muted-deep'" />
-        {{ syncState?.isRunning ? '同步中' : '空闲' }}
+        <span class="w-2 h-2 rounded-full" :class="syncState?.isRunning ? 'bg-warning animate-pulse' : 'bg-muted-deep'" /> {{ syncState?.isRunning ? '同步中' : '空闲' }}
       </div>
-      <span v-if="syncState?.lastSyncAt" class="text-xs text-muted-deep ml-1">
-        上次 {{ formatRelative(syncState.lastSyncAt) }}
-      </span>
+      <span v-if="syncState?.lastSyncAt" class="text-xs text-muted-deep">上次 {{ formatRelative(syncState.lastSyncAt) }}</span>
       <div class="flex items-center gap-1.5 ml-auto">
         <label class="flex items-center gap-1 text-xs cursor-pointer select-none" style="color:var(--text-secondary)">
-          <input v-model="dryRun" type="checkbox" class="w-3 h-3 rounded accent-[#5e6ad2] cursor-pointer" />
-          预览
+          <input v-model="dryRun" type="checkbox" class="w-3 h-3 rounded accent-[#5e6ad2] cursor-pointer" /> 预览
         </label>
-        <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">
-          {{ syncState?.isRunning ? '同步中' : '手动同步' }}
-        </button>
+        <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">{{ syncState?.isRunning ? '同步中' : '手动同步' }}</button>
         <button v-if="syncState?.isRunning" class="btn btn-danger btn-sm" @click="handleCancel">停止</button>
       </div>
     </div>
 
-    <!-- ═══ Core stats + Sync stage ═══ -->
+    <!-- ═══ Row 1: Sync Overview + Issues ═══ -->
     <div class="grid grid-cols-3 gap-4">
-      <!-- Stats cards -->
-      <div class="grid grid-cols-2 gap-2.5">
-        <div class="section-card p-3">
-          <p class="text-2xs font-medium" style="color:var(--text-tertiary)">已同步曲目</p>
-          <p class="text-lg font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ syncState?.successCount ?? 0 }}</p>
+      <!-- Sync Overview (2 columns wide) -->
+      <div class="col-span-2 section-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-sm font-semibold" style="color:var(--text-primary)">同步概览</p>
         </div>
-        <div class="section-card p-3">
-          <p class="text-2xs font-medium" style="color:var(--text-tertiary)">失败次数</p>
-          <p class="text-lg font-semibold tracking-tight mt-0.5" :class="(syncState?.failureCount ?? 0) > 0 ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.failureCount ?? 0 }}</p>
-        </div>
-        <div class="section-card p-3">
-          <p class="text-2xs font-medium" style="color:var(--text-tertiary)">歌单监控</p>
-          <p class="text-lg font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ config?.netease.playlistIds.length ?? 0 }}</p>
-        </div>
-        <div class="section-card p-3">
-          <p class="text-2xs font-medium" style="color:var(--text-tertiary)">最后一次</p>
-          <p class="text-lg font-semibold tracking-tight mt-0.5" :class="syncState?.lastSyncResult === 'failure' ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.lastSyncResult === 'success' ? '成功' : syncState?.lastSyncResult === 'failure' ? '异常' : '—' }}</p>
-        </div>
-      </div>
-
-      <!-- Sync stage panel -->
-      <div class="section-card p-3.5">
-        <p class="text-2xs font-medium mb-2" style="color:var(--text-tertiary)">同步阶段</p>
-        <div class="space-y-1">
-          <div v-for="stage in stages" :key="stage.key" class="flex items-center gap-2 text-xs">
-            <span
-class="w-1.5 h-1.5 rounded-full shrink-0"
-              :class="syncState?.currentStage === stage.key ? 'bg-accent animate-pulse' : isStageDone(stage.key) ? 'bg-muted-deep' : 'bg-[var(--border-secondary)]'" />
-            <span
-:class="syncState?.currentStage === stage.key ? 'font-medium' : ''"
-              :style="syncState?.currentStage === stage.key ? 'color:var(--text-primary)' : isStageDone(stage.key) ? 'color:var(--text-tertiary)' : 'color:var(--text-tertiary)'">{{ stage.label }}</span>
-            <span v-if="syncState?.currentStage === stage.key && syncState?.progress" class="text-2xs font-mono ml-auto" style="color:var(--text-secondary)">
-              {{ syncState.progress.current }}/{{ syncState.progress.total }}
-            </span>
+        <!-- 4 metrics in one row -->
+        <div class="grid grid-cols-4 gap-3 mb-3">
+          <div>
+            <p class="text-2xs font-medium" style="color:var(--text-tertiary)">已同步曲目</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ syncState?.successCount ?? 0 }}</p>
+          </div>
+          <div>
+            <p class="text-2xs font-medium" style="color:var(--text-tertiary)">失败次数</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" :class="(syncState?.failureCount ?? 0) > 0 ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.failureCount ?? 0 }}</p>
+          </div>
+          <div>
+            <p class="text-2xs font-medium" style="color:var(--text-tertiary)">歌单监控</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ config?.netease.playlistIds.length ?? 0 }}</p>
+          </div>
+          <div>
+            <p class="text-2xs font-medium" style="color:var(--text-tertiary)">最后结果</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" :class="syncState?.lastSyncResult === 'failure' ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.lastSyncResult === 'success' ? '成功' : syncState?.lastSyncResult === 'failure' ? '异常' : '—' }}</p>
           </div>
         </div>
-        <!-- Progress bar when running -->
-        <div v-if="syncState?.isRunning && syncState?.progress" class="mt-2.5 h-1 rounded-full overflow-hidden" style="background:var(--bg-input)">
-          <div
-class="h-full rounded-full transition-all duration-500" style="background:#5e6ad2"
-            :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
+        <!-- Stage progress bar (horizontal steps) -->
+        <div class="flex items-center gap-1.5">
+          <template v-for="(stage, idx) in activeStages" :key="stage.key">
+            <span
+class="text-2xs shrink-0"
+              :style="{ color: syncState?.currentStage === stage.key ? 'var(--text-primary)' : isStageDone(stage.key) ? 'var(--text-tertiary)' : 'var(--border-secondary)' }"
+              :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
+            <svg v-if="idx < activeStages.length - 1" width="12" height="12" viewBox="0 0 12 12" fill="none" class="shrink-0">
+              <path d="M4.5 3l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#5e6ad2' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </template>
         </div>
-        <p v-if="syncState?.isRunning && syncState?.currentSong" class="text-2xs mt-1.5 truncate font-mono" style="color:var(--text-tertiary)">
-          {{ syncState.currentSong }}
-        </p>
+        <div v-if="syncState?.isRunning && syncState?.progress" class="mt-2 h-1 rounded-full overflow-hidden" style="background:var(--bg-input)">
+          <div class="h-full rounded-full transition-all duration-500" style="background:#5e6ad2" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
+        </div>
+        <p v-if="syncState?.isRunning && syncState?.currentSong" class="text-2xs mt-1.5 truncate font-mono" style="color:var(--text-tertiary)">{{ syncState.currentSong }}</p>
       </div>
 
-      <!-- Errors panel -->
-      <div class="section-card p-3.5">
+      <!-- Issues -->
+      <div class="section-card p-4">
         <div class="flex items-center justify-between mb-2">
-          <p class="text-2xs font-medium" style="color:var(--text-tertiary)">最近问题</p>
+          <p class="text-xs font-semibold" style="color:var(--text-primary)">最近问题</p>
           <span v-if="recentErrors.length" class="text-2xs font-medium text-danger">{{ recentErrors.length }}</span>
         </div>
         <div v-if="recentErrors.length" class="space-y-1.5">
-          <div v-for="(err, i) in recentErrors.slice(0, 6)" :key="i" class="flex items-start gap-2 text-xs">
-            <span class="text-danger shrink-0 mt-0.5">!</span>
-            <span class="truncate" style="color:var(--text-secondary)">{{ err.songName || err.message }}</span>
-            <span class="text-2xs shrink-0 ml-auto" style="color:var(--text-tertiary)">{{ formatTimeCompact(err.timestamp) }}</span>
+          <div v-for="(err, i) in recentErrors.slice(0, 5)" :key="i" class="flex items-start gap-1.5 text-xs">
+            <span class="text-danger shrink-0 mt-0.5 font-bold">!</span>
+            <span class="truncate flex-1" style="color:var(--text-secondary)">{{ err.songName || err.message }}</span>
+            <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">{{ formatTimeCompact(err.timestamp) }}</span>
           </div>
         </div>
-        <div v-else class="text-xs text-center py-4" style="color:var(--text-tertiary)">暂无问题</div>
+        <div v-else class="flex items-center justify-center py-6">
+          <p class="text-xs" style="color:var(--text-tertiary)">暂无问题</p>
+        </div>
       </div>
     </div>
 
-    <!-- ═══ Recently added + Timeline ═══ -->
-    <div class="grid grid-cols-2 gap-4">
-      <!-- Recently added tracks -->
-      <div class="section-card overflow-hidden">
+    <!-- ═══ Row 2: Recently Added + Timeline ═══ -->
+    <div class="grid grid-cols-3 gap-4">
+      <!-- Recently Added (2 columns) -->
+      <div class="col-span-2 section-card overflow-hidden">
         <div class="px-4 py-2.5 flex items-center justify-between" style="border-bottom:1px solid var(--border-primary)">
           <p class="text-xs font-semibold" style="color:var(--text-primary)">最近添加</p>
           <span class="text-2xs" style="color:var(--text-tertiary)">{{ recentTracks.length }} 首</span>
         </div>
         <div v-if="recentTracks.length" class="divide-y" style="border-color:var(--border-primary)">
-          <div v-for="track in recentTracks.slice(0, 8)" :key="track.id" class="px-4 py-2 flex items-center gap-3 hover:bg-[var(--bg-hover)] transition-colors duration-150">
+          <div v-for="track in recentTracks.slice(0, 6)" :key="track.id" class="px-4 py-2.5 flex items-center gap-3 hover:bg-[var(--bg-hover)] transition-colors duration-150">
+            <div class="w-9 h-9 rounded overflow-hidden shrink-0 flex items-center justify-center" style="background:var(--bg-input)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#5e6ad2" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="#5e6ad2" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
             <div class="flex-1 min-w-0">
               <p class="text-xs font-medium truncate" style="color:var(--text-primary)">{{ track.title }}</p>
               <p class="text-2xs truncate" style="color:var(--text-secondary)">{{ track.artist }}</p>
@@ -116,30 +108,62 @@ class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
             </span>
           </div>
         </div>
-        <div v-else class="flex items-center justify-center py-10">
-          <p class="text-xs" style="color:var(--text-tertiary)">执行首次同步后展示</p>
+        <div v-else class="flex items-center justify-center py-12">
+          <div class="text-center">
+            <div class="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center" style="background:var(--bg-input)">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <p class="text-xs" style="color:var(--text-tertiary)">执行首次同步后显示新增歌曲</p>
+          </div>
         </div>
       </div>
 
-      <!-- Recent timeline -->
+      <!-- Timeline (1 column) -->
       <div class="section-card overflow-hidden">
         <div class="px-4 py-2.5 flex items-center justify-between" style="border-bottom:1px solid var(--border-primary)">
           <p class="text-xs font-semibold" style="color:var(--text-primary)">同步时间线</p>
-          <NuxtLink to="/jobs" class="text-2xs hover:underline" style="color:var(--text-secondary)">任务中心</NuxtLink>
+          <NuxtLink to="/jobs" class="text-2xs hover:underline" style="color:var(--text-secondary)">历史</NuxtLink>
         </div>
         <div v-if="recentJobs.length" class="divide-y" style="border-color:var(--border-primary)">
-          <div v-for="job in recentJobs.slice(0, 6)" :key="job.id" class="px-4 py-2.5 flex items-center gap-3">
-            <div class="w-2.5 h-2.5 rounded-full shrink-0" :class="job.status === 'success' ? 'bg-success' : job.status === 'partial' ? 'bg-warning' : 'bg-danger'" />
-            <div class="flex-1 min-w-0">
-              <p class="text-xs truncate" style="color:var(--text-primary)">{{ job.summary || '同步任务' }}</p>
-              <p class="text-2xs" style="color:var(--text-secondary)">{{ job.successSongs }} 成功{{ job.failedSongs > 0 ? ' · ' + job.failedSongs + ' 失败' : '' }}{{ job.skippedSongs > 0 ? ' · ' + job.skippedSongs + ' 跳过' : '' }}</p>
+          <div v-for="job in recentJobs.slice(0, 5)" :key="job.id" class="px-4 py-2.5">
+            <div class="flex items-center gap-2 mb-0.5">
+              <div class="w-2 h-2 rounded-full shrink-0" :class="job.status === 'success' ? 'bg-success' : job.status === 'partial' ? 'bg-warning' : 'bg-danger'" />
+              <span class="text-2xs font-mono" style="color:var(--text-tertiary)">{{ formatRelative(job.startedAt) }}</span>
+              <span class="text-2xs font-mono ml-auto" style="color:var(--text-tertiary)">{{ formatDuration(job.durationMs) }}</span>
             </div>
-            <span class="text-2xs shrink-0 font-mono" style="color:var(--text-tertiary)">{{ formatDuration(job.durationMs) }}</span>
-            <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">{{ formatRelative(job.startedAt) }}</span>
+            <p class="text-xs ml-4" style="color:var(--text-secondary)">{{ job.successSongs }} 成功{{ job.failedSongs > 0 ? ' · ' + job.failedSongs + ' 失败' : '' }}{{ job.skippedSongs > 0 ? ' · ' + job.skippedSongs + ' 跳过' : '' }}</p>
           </div>
         </div>
-        <div v-else class="flex items-center justify-center py-10">
+        <div v-else class="flex items-center justify-center py-12">
           <p class="text-xs" style="color:var(--text-tertiary)">执行首次同步后展示</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Row 3: System panels ═══ -->
+    <div class="grid grid-cols-3 gap-4">
+      <div class="section-card p-3.5">
+        <p class="text-2xs font-medium mb-2" style="color:var(--text-tertiary)">Plex 状态</p>
+        <div class="space-y-1 text-xs">
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">服务器</span><span style="color:var(--text-primary)">{{ config?.plex.server || '—' }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">资料库</span><span style="color:var(--text-primary)">{{ config?.plex.section || '—' }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">连接</span><span :class="plexOnline ? 'text-success' : 'text-danger'">{{ plexOnline ? '正常' : '离线' }}</span></div>
+        </div>
+      </div>
+      <div class="section-card p-3.5">
+        <p class="text-2xs font-medium mb-2" style="color:var(--text-tertiary)">下载状态</p>
+        <div class="space-y-1 text-xs">
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">目录</span><span class="truncate ml-2" style="color:var(--text-primary);max-width:140px">{{ config?.download.dir || '—' }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">音质</span><span style="color:var(--text-primary)">{{ qualityLabel }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">同步次数</span><span style="color:var(--text-primary)">{{ syncState?.syncCount ?? 0 }}</span></div>
+        </div>
+      </div>
+      <div class="section-card p-3.5">
+        <p class="text-2xs font-medium mb-2" style="color:var(--text-tertiary)">系统状态</p>
+        <div class="space-y-1 text-xs">
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">自动同步</span><span :class="config?.sync.enabled ? 'text-success' : ''" style="color:var(--text-primary)">{{ config?.sync.enabled ? '已启用' : '已禁用' }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">同步间隔</span><span style="color:var(--text-primary)">{{ config?.sync.intervalMinutes ?? 30 }} 分钟</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">日志保留</span><span style="color:var(--text-primary)">{{ config?.sync.logRetentionDays ?? 30 }} 天</span></div>
         </div>
       </div>
     </div>
@@ -163,27 +187,24 @@ const neteaseOk = ref(false)
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
 interface TrackCard { id: string; title: string; artist: string; status: string }
 
-const stages = [
-  { key: 'idle', label: '空闲' },
+const qualityLabels: Record<string, string> = { standard: '标准', higher: '较高', exhigh: '极高', lossless: '无损', hires: 'Hi-Res', jyeffect: '高清环绕声', jymaster: '超清母带' }
+const qualityLabel = computed(() => config.value ? (qualityLabels[config.value.netease.quality] || config.value.netease.quality) : '—')
+
+const activeStages = [
   { key: 'fetching_playlist', label: '获取歌单' },
-  { key: 'comparing', label: '对比 Plex 歌单' },
-  { key: 'downloading', label: '下载歌曲' },
-  { key: 'processing_tags', label: '写入元数据' },
-  { key: 'refreshing_plex', label: '刷新 Plex 库' },
-  { key: 'updating_plex_playlist', label: '更新 Plex 歌单' },
+  { key: 'comparing', label: '对比 Plex' },
+  { key: 'downloading', label: '下载' },
+  { key: 'processing_tags', label: '写入标签' },
+  { key: 'refreshing_plex', label: '刷新 Plex' },
+  { key: 'updating_plex_playlist', label: '更新歌单' },
 ]
 
 const stageOrder = ['idle', 'fetching_playlist', 'comparing', 'downloading', 'processing_tags', 'refreshing_plex', 'updating_plex_playlist']
 function isStageDone(key: string): boolean {
   const current = syncState.value?.currentStage
   if (!current || current === 'idle') return false
-  if (current === 'error' || current === 'cancelled') return stageOrder.indexOf(key) <= stageOrder.indexOf('updating_plex_playlist')
-  const ci = stageOrder.indexOf(current)
-  const ki = stageOrder.indexOf(key)
-  return ki < ci
+  return stageOrder.indexOf(key) < stageOrder.indexOf(current)
 }
-
-let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function fetchData() {
   const [cfg, jobsRes, logs] = await Promise.all([
@@ -196,7 +217,6 @@ async function fetchData() {
   plexOnline.value = !!cfg.plex.server
   neteaseOk.value = !!cfg.netease.cookie
 
-  // Extract errors from logs
   recentErrors.value = (logs || []).filter(l => l.level === 'error').slice(0, 10).map(l => {
     let songName: string | undefined
     const match = l.message?.match(/下载失败:\s*(.+)/)
@@ -204,25 +224,17 @@ async function fetchData() {
     return { ...l, songName }
   })
 
-  // Extract recent tracks from last successful/partial job
   const lastJob = jobsRes.items?.find(j => j.status === 'success' || j.status === 'partial' || j.status === 'failed')
   if (lastJob) {
     try {
-      const detail = await api.get<{ songs: { id: string; songName: string; artist: string; status: string; metadata?: { releaseDate?: string } }[] }>(`/jobs/${lastJob.id}`)
-      recentTracks.value = (detail.songs || []).filter(s => s.status === 'success' || s.status === 'failed_plex_match' || s.status === 'failed_plex_insert').slice(0, 10).map(s => ({
-        id: s.id, title: s.songName, artist: s.artist, status: s.status,
-      }))
+      const detail = await api.get<{ songs: { id: string; songName: string; artist: string; status: string }[] }>(`/jobs/${lastJob.id}`)
+      recentTracks.value = (detail.songs || []).filter(s => s.status === 'success' || s.status === 'failed_plex_match' || s.status === 'failed_plex_insert').slice(0, 10).map(s => ({ id: s.id, title: s.songName, artist: s.artist, status: s.status }))
     } catch { /* non-critical */ }
   }
 }
 
-async function handleSync() {
-  try { await triggerSync(dryRun.value); startPolling(2000); await fetchData() } catch { /* handled */ }
-}
-
-async function handleCancel() {
-  try { await cancelSync(); await fetchData() } catch { /* handled */ }
-}
+async function handleSync() { try { await triggerSync(dryRun.value); startPolling(2000); await fetchData() } catch { /* handled */ } }
+async function handleCancel() { try { await cancelSync(); await fetchData() } catch { /* handled */ } }
 
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -234,10 +246,7 @@ function formatRelative(iso: string): string {
   return `${Math.floor(hours / 24)}天前`
 }
 
-function formatTimeCompact(ts: string): string {
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-}
-
+function formatTimeCompact(ts: string): string { return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const sec = Math.round(ms / 1000)
@@ -246,5 +255,5 @@ function formatDuration(ms: number): string {
 }
 
 onMounted(async () => { startPolling(15000); await fetchData() })
-onUnmounted(() => { stopPolling(); if (pollTimer) clearInterval(pollTimer) })
+onUnmounted(() => stopPolling())
 </script>
