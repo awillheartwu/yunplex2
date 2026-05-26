@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[1800px] space-y-8">
+  <div class="space-y-8">
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold">同步日志</h2>
