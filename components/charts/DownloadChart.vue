@@ -14,7 +14,11 @@
       <span class="text-2xs" style="color:var(--text-tertiary)">近 {{ days }} 天 · 共 {{ totalCount }} 首</span>
     </div>
 
+    <div v-if="totalCount === 0" class="flex-1 flex items-center justify-center">
+      <span class="text-xs text-muted">暂无下载数据</span>
+    </div>
     <v-chart
+      v-else
       class="chart flex-1"
       :option="option"
       :autoresize="true"

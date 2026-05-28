@@ -96,6 +96,11 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN full_compare_after_skips INTEGER').run()
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN full_compare_after_days INTEGER').run()
   },
+  /* v13: drop redundant downloads table, add time index on download_tasks */
+  (d) => {
+    d.prepare('DROP TABLE IF EXISTS downloads').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_time ON download_tasks(updated_at DESC)').run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {
@@ -260,21 +265,6 @@ function createSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_jobs_started ON jobs(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-
-    CREATE TABLE IF NOT EXISTS downloads (
-      id             TEXT PRIMARY KEY,
-      song_name      TEXT NOT NULL,
-      artist         TEXT NOT NULL DEFAULT '',
-      album          TEXT NOT NULL DEFAULT '',
-      file_path      TEXT,
-      file_type      TEXT,
-      quality        TEXT,
-      status         TEXT NOT NULL DEFAULT 'success',
-      downloaded_at  TEXT NOT NULL,
-      job_id         TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_downloads_time ON downloads(downloaded_at DESC);
 
     CREATE TABLE IF NOT EXISTS download_tasks (
       id              TEXT PRIMARY KEY,

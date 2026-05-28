@@ -33,7 +33,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     jobRetentionSuccessDays: 7,
     jobRetentionFailedDays: 90,
     downloadTaskRetentionDays: 30,
-    downloadHistoryRetentionDays: 0,
   },
   other: {
     multiArtistFormat: 'ampersand',

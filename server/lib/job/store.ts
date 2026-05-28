@@ -31,8 +31,9 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
     params.push(filter.status)
   }
   if (filter.search) {
-    conditions.push('(summary LIKE ? OR id LIKE ?)')
-    params.push(`%${filter.search}%`, `%${filter.search}%`)
+    conditions.push('(summary LIKE ? OR id LIKE ? OR data LIKE ?)')
+    const q = `%${filter.search}%`
+    params.push(q, q, q)
   }
   if (filter.from) {
     conditions.push('started_at >= ?')

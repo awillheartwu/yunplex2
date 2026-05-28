@@ -10,7 +10,6 @@ import { downloadSong, buildDownloadPath, sanitizePath } from '../tag-writer'
 import { searchTrack, getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
-import { saveDownload, cleanupOldDownloads } from '../download/store'
 import type { SongStatus } from '../job/types'
 import { formatTrackArtist } from '../config/types'
 import { getEnabledSources, updateSource } from '../playlist/store'
@@ -76,7 +75,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       const cfg = getConfig()
       cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
       cleanupOldDownloadTasks(cfg.sync.downloadTaskRetentionDays ?? 30)
-      cleanupOldDownloads(cfg.sync.downloadHistoryRetentionDays ?? 0)
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
 
       // Returns [albumArtist, trackArtist]
@@ -285,8 +283,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           for (const xt of extraTracks) {
             job.addSongs(source.id, [{
               songName: xt.title,
-              artist: '',
-              album: '',
+              artist: xt.artist,
+              album: xt.album,
               status: 'removed' as SongStatus,
             }])
             const songId = job.getJob().songs.find(
@@ -397,12 +395,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                   log('error', `下载失败: ${r.song.name}`, task.error)
                 }
               } else if (task.status === 'done') {
-                saveDownload({
-                  id: songId,
-                  songName: task.songName, artist: task.artist, album: task.album,
-                  filePath: task.filePath, fileType: task.fileType, quality: task.quality,
-                  status: 'success', downloadedAt: new Date().toISOString(), jobId: task.jobId,
-                })
                 job.updateSong(songId, {
                   status: 'success', phase: 'done',
                   filePath: task.filePath, fileType: task.fileType,

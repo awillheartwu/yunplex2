@@ -39,7 +39,6 @@ export interface SyncStrategyConfig {
   jobRetentionSuccessDays: number
   jobRetentionFailedDays: number
   downloadTaskRetentionDays: number
-  downloadHistoryRetentionDays: number
   forceFullCompare: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number

@@ -1,5 +1,4 @@
 import type { DownloadTask, QueueStatus } from '~~/server/lib/download/queue'
-import type { DownloadRecord } from '~~/server/lib/download/store'
 import { sseSubscribe, sseConnected } from './sse'
 
 const PAGE_SIZE = 30
@@ -23,7 +22,7 @@ export function useDownloadQueue() {
   const failedHasMore = computed(() => failedTasks.value.length < failedTotal.value)
 
   // History
-  const historyItems = ref<DownloadRecord[]>([])
+  const historyItems = ref<DownloadTask[]>([])
   const historyEarliestDate = ref<string | null>(null)
   const historyTotal = ref(0)
   const historyOffset = ref(0)
@@ -35,25 +34,28 @@ export function useDownloadQueue() {
   const retryingOne = ref<string | null>(null)
   const dateFilter = ref<{ from: string | null; to: string | null }>({ from: null, to: null })
 
-  function dateParams(): Record<string, string> {
+  function dateParams(search?: string): Record<string, string> {
     const p: Record<string, string> = {}
     if (dateFilter.value.from) p.from = dateFilter.value.from
     if (dateFilter.value.to) p.to = `${dateFilter.value.to}T23:59:59.999Z`
+    if (search) p.search = search
     return p
   }
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
   const unsubs: Array<() => void> = []
 
+  const historySearch = ref('')
+
   async function fetchAll() {
     loading.value = true
     try {
-      const dp = dateParams()
+      const dp = dateParams(historySearch.value || undefined)
       const [status, active, failed, history] = await Promise.all([
         api.get<QueueStatus>('/downloads/queue-status'),
         api.get<{ items: DownloadTask[] }>('/downloads/tasks', { status: 'pending,downloading,tagging', limit: '50' }),
         api.get<{ items: DownloadTask[]; total: number }>('/downloads/tasks', { status: 'failed', limit: String(PAGE_SIZE), offset: '0' }),
-        api.get<{ items: DownloadRecord[]; total: number; earliestDate: string | null }>('/downloads/history', { limit: String(PAGE_SIZE), offset: '0', ...dp }),
+        api.get<{ items: DownloadTask[]; total: number; earliestDate: string | null }>('/downloads/history', { limit: String(PAGE_SIZE), offset: '0', ...dp }),
       ])
       queueStatus.value = status
       activeTasks.value = active.items
@@ -88,8 +90,8 @@ export function useDownloadQueue() {
     historyLoadingMore.value = true
     try {
       const newOffset = historyOffset.value + PAGE_SIZE
-      const dp = dateParams()
-      const res = await api.get<{ items: DownloadRecord[]; total: number }>('/downloads/history', { limit: String(PAGE_SIZE), offset: String(newOffset), ...dp })
+      const dp = dateParams(historySearch.value || undefined)
+      const res = await api.get<{ items: DownloadTask[]; total: number }>('/downloads/history', { limit: String(PAGE_SIZE), offset: String(newOffset), ...dp })
       historyItems.value.push(...res.items)
       historyTotal.value = res.total
       historyOffset.value = newOffset
@@ -156,6 +158,6 @@ export function useDownloadQueue() {
     failedTasks, failedTotal, failedHasMore, failedLoadingMore, loadMoreFailed,
     historyItems, historyEarliestDate, historyTotal, historyHasMore, historyLoadingMore, loadMoreHistory,
     retrying, retryingOne, retryOne, retryAll, clearAll,
-    dateFilter, fetchAll,
+    dateFilter, historySearch, fetchAll,
   }
 }

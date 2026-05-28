@@ -28,17 +28,6 @@ export function useJobs() {
   }
 
   const hasMore = computed(() => jobs.value.length < total.value)
-  const filteredJobs = computed(() => {
-    let list = jobs.value
-    if (activeFilter.value) {
-      list = list.filter((j) => j.status === activeFilter.value)
-    }
-    if (searchQuery.value) {
-      const q = searchQuery.value.toLowerCase()
-      list = list.filter((j) => j.summary.toLowerCase().includes(q) || j.id.includes(q))
-    }
-    return list
-  })
 
   async function fetchJobs() {
     loading.value = true
@@ -81,7 +70,7 @@ export function useJobs() {
   }
 
   return {
-    jobs: filteredJobs,
+    jobs,
     total,
     loading,
     loadingMore,
