@@ -6,7 +6,6 @@ import { DEFAULT_CONFIG } from './config/defaults'
 
 let db: Database.Database | null = null
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>): T {
   const result = { ...base }
   for (const key of Object.keys(partial) as (keyof T)[]) {
