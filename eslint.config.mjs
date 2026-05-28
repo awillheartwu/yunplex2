@@ -32,8 +32,13 @@ export default ts.config(
         defineNitroPlugin: 'readonly',
         useApi: 'readonly',
         useSync: 'readonly',
+        useSyncStatus: 'readonly',
         useJobs: 'readonly',
+        useDownloadQueue: 'readonly',
+        useSourceSync: 'readonly',
         useTheme: 'readonly',
+        sseSubscribe: 'readonly',
+        sseConnected: 'readonly',
       },
     },
     rules: {

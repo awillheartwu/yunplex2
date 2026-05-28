@@ -1,5 +1,5 @@
 import pkg from 'NeteaseCloudMusicApi'
-const { login_status, song_url_v1, lyric_new, song_detail, album } = pkg
+const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist } = pkg
 
 export interface NeteaseSong {
   id: number
@@ -63,38 +63,49 @@ export async function checkCookie(cookie: string): Promise<{
 
 export async function fetchPlaylistSongs(
   playlistId: number,
-  limit: number,
+  limit: number | undefined,
   cookie: string,
-): Promise<NeteaseSong[]> {
+): Promise<{ songs: NeteaseSong[]; trackUpdateTime: number | null; trackIds: { id: number }[]; playlistName: string | null }> {
   const url = `https://music.163.com/api/v1/playlist/detail?id=${playlistId}`
   const res = await fetch(url)
-  const body = (await res.json()) as { playlist?: { trackIds: { id: number }[] } }
-  const trackIds = body.playlist?.trackIds?.slice(0, limit) ?? []
+  const body = (await res.json()) as { playlist?: { name?: string; trackIds: { id: number }[]; trackUpdateTime?: number } }
+  const allIds = body.playlist?.trackIds ?? []
+  const trackUpdateTime = body.playlist?.trackUpdateTime ?? null
+  const playlistName = body.playlist?.name ?? null
+  const slicedIds = limit && limit > 0 ? allIds.slice(0, limit) : allIds
 
-  if (trackIds.length === 0) return []
+  if (slicedIds.length === 0) return { songs: [], trackUpdateTime, trackIds: slicedIds, playlistName }
 
-  // Use v3 song_detail for richer metadata (duration, disc, album artist, etc.)
-  // Also call old API in parallel — v3 sometimes returns publishTime=0
-  const ids = trackIds.map((t) => String(t.id)).join(',')
-  const [v3Res, oldRes] = await Promise.all([
-    song_detail({ ids, cookie }),
-    fetch(`http://music.163.com/api/song/detail/?id=&ids=[${ids}]`),
-  ])
+  // Batch song_detail — API rejects too many IDs at once (safe limit: ~500)
+  const BATCH_SIZE = 400
+  const allSongs: RawSong[] = []
 
-   
-  const data = (v3Res as any).body as { songs?: RawSong[] } | undefined
-  if (!data?.songs) return []
+  for (let offset = 0; offset < slicedIds.length; offset += BATCH_SIZE) {
+    const batch = slicedIds.slice(offset, offset + BATCH_SIZE)
+    const ids = batch.map((t) => String(t.id)).join(',')
 
-  const oldData = await oldRes.json() as { songs?: { album?: { publishTime?: number } }[] } | undefined
+    const [v3Res, oldRes] = await Promise.all([
+      song_detail({ ids, cookie }),
+      fetch(`http://music.163.com/api/song/detail/?id=&ids=[${ids}]`),
+    ])
 
-  return data.songs.map((s, i) => {
-    const song = mapRawSong(s)
-    // Fallback: old API often has publishTime when v3 doesn't
-    if (!song.album.publishTime) {
-      song.album.publishTime = oldData?.songs?.[i]?.album?.publishTime ?? 0
+    const data = (v3Res as any).body as { songs?: RawSong[] } | undefined
+    const oldData = await oldRes.json() as { songs?: { album?: { publishTime?: number } }[] } | undefined
+
+    if (data?.songs) {
+      for (const s of data.songs) {
+        const song = mapRawSong(s)
+        // Fallback: old API often has publishTime when v3 doesn't
+        if (!song.album.publishTime && oldData?.songs) {
+          const match = oldData.songs.find((os: any) => os?.id === s.id)
+          if (match?.album?.publishTime) song.album.publishTime = match.album.publishTime
+        }
+        allSongs.push(song)
+      }
     }
-    return song
-  })
+  }
+
+  return { songs: allSongs, trackUpdateTime, trackIds: slicedIds, playlistName }
 }
 
 interface RawSong {
@@ -250,7 +261,7 @@ export async function fetchLyric(
   return { original, translated, merged, separateFiles }
 }
 
-function mergeLyrics(
+export function mergeLyrics(
   original: string,
   translated: string,
   order: 'original_first' | 'translated_first',
@@ -283,4 +294,43 @@ function mergeLyrics(
   }
 
   return merged.join('\n')
+}
+
+// ── User playlists ──
+
+export interface UserPlaylist {
+  id: number
+  name: string
+  trackCount: number
+  playCount: number
+  coverImgUrl: string
+  creator: { nickname: string; userId: number }
+  subscribed: boolean
+}
+
+export async function fetchUserPlaylists(
+  uid: number,
+  cookie: string,
+  limit = 100,
+  offset = 0,
+): Promise<UserPlaylist[]> {
+  const res = await user_playlist({ uid, limit, offset, cookie })
+  const body = (res as any).body as { playlist?: any[] }
+  return (body.playlist || []).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    trackCount: p.trackCount,
+    playCount: p.playCount,
+    coverImgUrl: p.coverImgUrl || '',
+    creator: { nickname: p.creator?.nickname || '', userId: p.creator?.userId || 0 },
+    subscribed: p.subscribed || false,
+  }))
+}
+
+export async function fetchPlaylistName(playlistId: number): Promise<string | null> {
+  try {
+    const res = await fetch(`https://music.163.com/api/v1/playlist/detail?id=${playlistId}`)
+    const body = (await res.json()) as { playlist?: { name?: string } }
+    return body.playlist?.name ?? null
+  } catch { return null }
 }

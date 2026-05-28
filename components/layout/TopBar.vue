@@ -30,9 +30,10 @@ const { theme, toggle: toggleTheme } = useTheme()
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
+  '/sources': '歌单源',
+  '/downloads': '下载中心',
   '/config': '设置',
   '/logs': '日志',
-  '/task': '下载状态',
   '/system': '系统',
   '/jobs': '同步历史',
 }

@@ -1,5 +1,6 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
+import { stripPunct } from './sync/matchers'
 
 interface PlexTrack {
   ratingKey: string
@@ -11,9 +12,8 @@ interface PlexTrack {
 
 /** Strip punctuation, spaces, and special chars for fuzzy title comparison */
 function stripTitle(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
+  return stripPunct(s)
 }
-
  
 let client: any = null
 let machineId = ''
@@ -54,6 +54,43 @@ export async function findPlaylist(playlistName: string) {
   return metadata.find((item) => item.title === playlistName) ?? null
 }
 
+/** Direct playlist lookup by ratingKey — used when ID binding is established */
+export async function getPlaylistByRatingKey(ratingKey: string): Promise<{ title: string; ratingKey: string } | null> {
+  if (!client) throw new Error('Plex client not initialized')
+  try {
+    const res = (await client.query(`/playlists/${ratingKey}`)) as {
+      MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] | { title: string; ratingKey: string } }
+    }
+    const raw = res.MediaContainer?.Metadata
+    if (!raw) return null
+    const item = Array.isArray(raw) ? raw[0] : raw
+    return item ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function listPlaylists(): Promise<Array<{ title: string; ratingKey: string }>> {
+  if (!client) throw new Error('Plex client not initialized')
+  const res = (await client.query('/playlists')) as {
+    MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] }
+  }
+  const items = res.MediaContainer?.Metadata ?? []
+  return Array.isArray(items) ? items : [items]
+}
+
+export async function createPlaylist(name: string, sectionKey: string): Promise<{ title: string; ratingKey: string }> {
+  if (!client) throw new Error('Plex client not initialized')
+  if (!machineId) throw new Error('Plex client not initialized (no machineId)')
+  const uri = `server://${machineId}/com.plexapp.plugins.library/library/metadata/${sectionKey}`
+  const res = (await client.postQuery(`/playlists?type=audio&title=${encodeURIComponent(name)}&smart=0&uri=${encodeURIComponent(uri)}`)) as {
+    MediaContainer?: { Metadata?: Array<{ title: string; ratingKey: string }> }
+  }
+  const item = res.MediaContainer?.Metadata?.[0]
+  if (!item) throw new Error('创建 Plex 歌单失败，未返回结果')
+  return item
+}
+
 export async function getPlaylistTracks(
   playlistKey: string,
   limit: number,
@@ -80,6 +117,12 @@ export async function getSectionKey(section: string): Promise<string | null> {
 export async function refreshLibrary(sectionKey: string): Promise<void> {
   if (!client) throw new Error('Plex client not initialized')
   await client.query(`/library/sections/${sectionKey}/refresh`)
+}
+
+/** Scan only a specific directory — much faster than full library refresh */
+export async function refreshPath(sectionKey: string, dirPath: string): Promise<void> {
+  if (!client) throw new Error('Plex client not initialized')
+  await client.query(`/library/sections/${sectionKey}/refresh?path=${encodeURIComponent(dirPath)}`)
 }
 
 export async function getSectionTrackCount(sectionKey: string): Promise<number> {
@@ -157,9 +200,8 @@ function findMatch(
   )
   if (exact) return exact
 
-  // 2) Relaxed: stripped title + artist + album (lenient)
+  // 2) Relaxed: stripped title + artist (album optional — Netease/Plex often disagree)
   const songStripped = stripTitle(coreTitle)
-  const albumStripped = album ? stripTitle(album) : ''
   const relaxed = results.find((item) => {
     const pt = stripTitle(item.title)
     const titleMatch = pt === songStripped || pt.includes(songStripped) || songStripped.includes(pt)
@@ -167,21 +209,15 @@ function findMatch(
       item.grandparentTitle.toLowerCase() === artist.toLowerCase() ||
       item.grandparentTitle.toLowerCase().includes(artist.toLowerCase()) ||
       artist.toLowerCase().includes(item.grandparentTitle.toLowerCase())
-    if (!titleMatch || !artistMatch) return false
-    if (!albumStripped || !item.parentTitle) return true
-    const pa = stripTitle(item.parentTitle)
-    return albumStripped === pa || albumStripped.includes(pa) || pa.includes(albumStripped)
+    return titleMatch && artistMatch
   })
   if (relaxed) return relaxed
 
-  // 3) Last resort: title stripped match only (with loose album check)
-  return results.find((item) => {
-    const pt = stripTitle(item.title)
-    if (!(pt === songStripped || pt.includes(songStripped) || songStripped.includes(pt))) return false
-    if (!albumStripped || !item.parentTitle) return true
-    const pa = stripTitle(item.parentTitle)
-    return albumStripped === pa || albumStripped.includes(pa) || pa.includes(albumStripped)
-  }) ?? null
+  // NOTE: no pure-title fallback — the relaxed artist check above already
+  // handles artist name variations (e.g. "The Weeknd" vs "The Weeknd & Daft Punk").
+  // Matching by title alone causes false positives for different songs with the
+  // same title (e.g. "The Weeknd - Secrets" vs "OneRepublic - Secrets").
+  return null
 }
 
 export async function insertTrackIntoPlaylist(
@@ -225,4 +261,27 @@ export async function movePlaylistItemAfter(
 ): Promise<void> {
   if (!client) throw new Error('Plex client not initialized')
   await client.putQuery(`/playlists/${playlistKey}/items/${playlistItemId}/move?after=${afterItemId}`)
+}
+
+/** Direct metadata lookup by ratingKey — used to verify cached tracks still exist */
+export async function getTrackByRatingKey(ratingKey: string): Promise<PlexTrack | null> {
+  if (!client) throw new Error('Plex client not initialized')
+  try {
+    const res = (await client.query(`/library/metadata/${ratingKey}`)) as {
+      MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
+    }
+    const raw = res.MediaContainer?.Metadata
+    if (!raw) return null
+    return Array.isArray(raw) ? raw[0] ?? null : raw
+  } catch {
+    return null
+  }
+}
+
+export async function removeTrackFromPlaylist(
+  playlistKey: string,
+  playlistItemId: number,
+): Promise<void> {
+  if (!client) throw new Error('Plex client not initialized')
+  await client.deleteQuery(`/playlists/${playlistKey}/items/${playlistItemId}`)
 }

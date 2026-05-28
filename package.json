@@ -13,9 +13,12 @@
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prepare": "husky"
   },
   "dependencies": {
     "NeteaseCloudMusicApi": "^4.32.0",
@@ -32,6 +35,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nuxt/telemetry": "^2.8.0",
+    "@nuxt/test-utils": "^4.0.3",
     "@nuxtjs/tailwindcss": "^6.12.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",
@@ -41,10 +45,12 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.9.1",
     "globals": "^17.6.0",
+    "happy-dom": "^20.9.0",
     "prettier": "^3.8.3",
     "standard-version": "^9.5.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.59.4"
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^4.1.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -37,18 +37,23 @@ export function appendLog(
 
 export function readLogs(
   _dataDir: string,
-  filter?: { level?: LogLevel; limit?: number },
-): LogEntry[] {
+  filter?: { level?: LogLevel; limit?: number; offset?: number },
+): { items: LogEntry[]; total: number } {
   const db = getDb()
   const limit = filter?.limit ?? 100
+  const offset = filter?.offset ?? 0
 
   if (filter?.level) {
-    return db
-      .prepare('SELECT * FROM logs WHERE level = ? ORDER BY timestamp DESC LIMIT ?')
-      .all(filter.level, limit) as LogEntry[]
+    const total = (db.prepare('SELECT COUNT(*) as cnt FROM logs WHERE level = ?').get(filter.level) as { cnt: number }).cnt
+    const items = db
+      .prepare('SELECT * FROM logs WHERE level = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?')
+      .all(filter.level, limit, offset) as LogEntry[]
+    return { items, total }
   }
 
-  return db.prepare('SELECT * FROM logs ORDER BY timestamp DESC LIMIT ?').all(limit) as LogEntry[]
+  const total = (db.prepare('SELECT COUNT(*) as cnt FROM logs').get() as { cnt: number }).cnt
+  const items = db.prepare('SELECT * FROM logs ORDER BY timestamp DESC LIMIT ? OFFSET ?').all(limit, offset) as LogEntry[]
+  return { items, total }
 }
 
 export function clearLogs(_dataDir: string): void {

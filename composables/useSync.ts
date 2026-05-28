@@ -1,16 +1,25 @@
 import type { SyncState } from '~~/server/lib/log/types'
+import { sseSubscribe, sseConnected } from './sse'
 
-export function useSync() {
+// Shared state across all useSyncStatus() callers
+const sharedState = ref<SyncState | null>(null)
+
+/**
+ * Sync status — SSE-first with polling fallback.
+ * Use for dashboard, TopBar, or anywhere you need isRunning / currentStage.
+ */
+export function useSyncStatus() {
   const api = useApi()
-  const state = ref<SyncState | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const isSseConnected = computed(() => sseConnected.value)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  const unsubs: Array<() => void> = []
 
   async function fetchStatus() {
     try {
-      state.value = await api.get<SyncState>('/sync/status')
+      sharedState.value = await api.get<SyncState>('/sync/status')
       error.value = null
     } catch (err) {
       error.value = err instanceof Error ? err.message : '获取同步状态失败'
@@ -22,8 +31,7 @@ export function useSync() {
     error.value = null
     try {
       await api.post('/sync/trigger', { dryRun })
-      // Fire-and-forget: start rapid polling to catch the running state
-      startPolling(2000)
+      if (!sseConnected.value) startPolling(2000)
     } catch (err) {
       error.value = err instanceof Error ? err.message : '触发同步失败'
       throw err
@@ -54,16 +62,38 @@ export function useSync() {
     }
   }
 
-  onUnmounted(() => stopPolling())
+  onMounted(() => {
+    // Subscribe to SSE for real-time stage/song updates
+    unsubs.push(sseSubscribe('stage-change', (data) => {
+      if (sharedState.value && data.stage) {
+        sharedState.value.currentStage = data.stage as SyncState['currentStage']
+      }
+    }))
+    unsubs.push(sseSubscribe('song-progress', (data) => {
+      if (sharedState.value && data.songName) {
+        sharedState.value.currentSong = data.songName as string
+      }
+    }))
+    unsubs.push(sseSubscribe('log', () => {
+      // Log events trigger a full status refresh to keep stats in sync
+      fetchStatus()
+    }))
+
+    // Fallback polling if SSE is down
+    if (!sseConnected.value) startPolling(5000)
+  })
+
+  onUnmounted(() => {
+    stopPolling()
+    for (const unsub of unsubs) unsub()
+  })
 
   return {
-    state,
-    loading,
-    error,
-    fetchStatus,
-    triggerSync,
-    cancelSync,
-    startPolling,
-    stopPolling,
+    state: sharedState, loading, error, isSseConnected,
+    fetchStatus, triggerSync, cancelSync,
+    startPolling, stopPolling,
   }
 }
+
+// Backward-compat alias — existing code imports useSync
+export { useSyncStatus as useSync }

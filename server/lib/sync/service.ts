@@ -1,28 +1,25 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { getDb } from '../db'
 import dayjs from 'dayjs'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache } from '../netease'
-import { downloadSong, buildDownloadPath } from '../tag-writer'
-import {
-  initPlexClient,
-  findPlaylist,
-  getPlaylistTracks,
-  refreshLibrary,
-  searchTrack,
-  insertTrackIntoPlaylist,
-  getPlaylistItemId,
-  movePlaylistItemToTop,
-  movePlaylistItemAfter,
-  getSectionKey,
-} from '../plex-client'
+import { checkCookie, fetchPlaylistSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache, fetchPlaylistName } from '../netease'
+import { downloadSong, buildDownloadPath, sanitizePath } from '../tag-writer'
+import { searchTrack, getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
-import { saveDownload } from '../download/store'
-import type { SongTask, SongStatus } from '../job/types'
+import { saveDownload, cleanupOldDownloads } from '../download/store'
+import type { SongStatus } from '../job/types'
 import { formatTrackArtist } from '../config/types'
+import { getEnabledSources, updateSource } from '../playlist/store'
+import type { PlaylistSource } from '../playlist/types'
+import { enqueueTask, processAll, listDownloadTasks, cleanupOldDownloadTasks } from '../download/queue'
+import type { DownloadTask } from '../download/queue'
+import { emitEvent } from './events'
+import { reconcileSource, triggerRescan, findTrackWithRetry, applyFullReorder } from './plex-reconciler'
+import type { TrackResolution } from './types'
 
 export const STAGE_LABELS: Record<string, string> = {
   idle: '空闲',
@@ -32,6 +29,7 @@ export const STAGE_LABELS: Record<string, string> = {
   processing_tags: '写入元数据',
   refreshing_plex: '刷新 Plex 库',
   updating_plex_playlist: '更新 Plex 歌单',
+  reorder: '重排歌单',
   cancelled: '已取消',
   error: '同步错误',
 }
@@ -48,20 +46,27 @@ function createInitialState(): SyncState {
 export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
   let state = createInitialState()
   let cancelRequested = false
+  let currentSourceName = ''
 
   function getState(): SyncState { return { ...state } }
 
   function log(level: 'info' | 'warn' | 'error', message: string, detail?: string) {
     const cfg = getConfig()
-    appendLog(dataDir, { level, message, detail, stage: state.currentStage }, cfg.sync.logRetentionDays ?? 30)
+    const entry = appendLog(dataDir, { level, message, detail, stage: state.currentStage }, cfg.sync.logRetentionDays ?? 30)
+    emitEvent({
+      type: 'log',
+      data: { id: entry.id, level, message, detail, stage: entry.stage, timestamp: entry.timestamp },
+      timestamp: entry.timestamp,
+    })
   }
 
-  async function runSync(options?: { dryRun?: boolean }): Promise<SyncState> {
+  async function runSync(options?: { dryRun?: boolean; sourceIds?: string[]; forceFull?: boolean }): Promise<SyncState> {
     if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
 
     clearAlbumCache()
 
     const dryRun = options?.dryRun ?? false
+    const targetIds = options?.sourceIds
     cancelRequested = false
     state = { ...createInitialState(), isRunning: true, startedAt: new Date().toISOString(), dryRun }
 
@@ -70,6 +75,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     try {
       const cfg = getConfig()
       cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
+      cleanupOldDownloadTasks(cfg.sync.downloadTaskRetentionDays ?? 30)
+      cleanupOldDownloads(cfg.sync.downloadHistoryRetentionDays ?? 0)
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
 
       // Returns [albumArtist, trackArtist]
@@ -87,149 +94,243 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
         // Legacy: still used for display/log messages
         return splitArtists(artists)[0]
       }
-      job.setConfig({
-        playlistId: cfg.netease.playlistIds[0],
-        quality: cfg.netease.quality,
-        server: cfg.plex.server,
-        section: cfg.plex.section,
-      })
-
       // ── Validate ──
       if (!cfg.netease.cookie) throw new Error('未配置网易云 Cookie')
-      if (cfg.netease.playlistIds.length === 0) throw new Error('未配置歌单 ID')
       if (!cfg.plex.server || !cfg.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
 
-      // ── Step 1: Fetch playlist ──
-      const s1 = job.startStep('fetch_playlist', '获取网易云歌单')
-      setStage('fetching_playlist')
-      log('info', '验证网易云 Cookie...')
+      const allSources = getEnabledSources()
+      const sources = targetIds
+        ? allSources.filter((s) => targetIds.includes(s.id))
+        : allSources
+      if (sources.length === 0) throw new Error('没有启用的歌单源，请在「歌单源」页面添加')
 
-      const cookieCheck = await checkCookie(cfg.netease.cookie)
-      if (!cookieCheck.valid) {
-        const err = { title: 'Cookie 验证失败', message: '网易云 Cookie 已失效，请重新获取并更新配置', stage: 'fetch_playlist' }
-        job.failStep(s1, 'Cookie 验证失败', err)
-        throw new Error(err.message)
-      }
+      // ── Sync each source ──
+      let totalSuccess = 0
+      let totalFailed = 0
 
-      const playlistId = cfg.netease.playlistIds[0]
-      const yunSongs = await fetchPlaylistSongs(playlistId, cfg.sync.songLimit, cfg.netease.cookie)
-      job.finishStep(s1, 'success', `歌单获取完成，共 ${yunSongs.length} 首歌曲`)
+      for (const source of sources) {
+        if (cancelRequested) break
+        currentSourceName = source.name || `网易云歌单 #${source.neteasePlaylistId}`
+        const rawLimit = source.syncLimit ?? cfg.sync.songLimit
+        const sourceSongLimit = rawLimit === 0 ? undefined : rawLimit
+        const playlistId = source.neteasePlaylistId
+        const playlistName = currentSourceName
 
-      if (yunSongs.length === 0) {
-        const j = job.finish('success', '歌单为空，无需同步')
-        saveJob(j)
-        finishState('success')
-        return { ...state }
-      }
-
-      // Register all songs
-      const allSongs = yunSongs.map((s) => ({
-        songName: s.name,
-        artist: joinArtist(s.artists),
-        album: s.album.name,
-        status: 'pending' as SongStatus,
-      }))
-      job.addSongs(allSongs)
-
-      // ── Step 2: Compare ──
-      const s2 = job.startStep('compare', '对比 Plex 歌单')
-      setStage('comparing')
-      log('info', '连接 Plex...')
-
-      await initPlexClient(cfg.plex)
-      const playlistName = (await fetchPlaylistName(playlistId)) || `网易云歌单 #${playlistId}`
-      const plexPlaylist = await findPlaylist(playlistName)
-      if (!plexPlaylist) {
-        const err = { title: '未找到 Plex 歌单', message: `Plex 中未找到同名歌单 "${playlistName}"，请在 Plex 中创建`, stage: 'compare' }
-        job.failStep(s2, '歌单不存在', err)
-        throw new Error(err.message)
-      }
-
-      const plexTracks = await getPlaylistTracks(plexPlaylist.ratingKey, cfg.sync.songLimit)
-
-      for (let i = 0; i < yunSongs.length; i++) {
-        const yunName = yunSongs[i].name
-        const [albumArtist] = splitArtists(yunSongs[i].artists)
-
-        const exists = plexTracks.some((pt) => {
-          const yunCore = normalizeTitle(yunName)
-          const plexCore = normalizeTitle(pt.title)
-          const titleMatch =
-            (yunCore && plexCore && yunCore === plexCore) ||
-            (yunCore && plexCore && stripPunct(yunCore) === stripPunct(plexCore))
-          if (!titleMatch) return false
-
-          // Artist: lenient includes
-          const artistMatch = !albumArtist || !pt.grandparentTitle ||
-            albumArtist.toLowerCase() === pt.grandparentTitle.toLowerCase() ||
-            albumArtist.toLowerCase().includes(pt.grandparentTitle.toLowerCase()) ||
-            pt.grandparentTitle.toLowerCase().includes(albumArtist.toLowerCase())
-
-          // Album: lenient stripped (disambiguate same-title on different albums)
-          const yunAlbum = normalizeTitle(yunSongs[i].album.name)
-          const plexAlbum = normalizeTitle(pt.parentTitle || '')
-          const albumMatch = !yunAlbum || !plexAlbum ||
-            yunAlbum === plexAlbum ||
-            stripPunct(yunAlbum) === stripPunct(plexAlbum) ||
-            stripPunct(yunAlbum).includes(stripPunct(plexAlbum)) ||
-            stripPunct(plexAlbum).includes(stripPunct(yunAlbum))
-
-          return artistMatch && albumMatch
+        job.setConfig({
+          playlistId,
+          quality: cfg.netease.quality,
+          server: cfg.plex.server,
+          section: cfg.plex.section,
         })
 
-        if (exists) {
-          const songId = job.getJob().songs[i]?.id
-          if (songId) {
-            job.updateSong(songId, { status: 'skipped_existing', phase: 'done' })
-            yunSongs[i].sync = true
+        try {
+          // ── Step 1: Fetch playlist ──
+          const s1 = job.startStep('fetch_playlist', `获取歌单: ${playlistName}`)
+          setStage('fetching_playlist')
+          log('info', `获取歌单: ${playlistName} (ID: ${playlistId})`)
+
+          const cookieCheck = await checkCookie(cfg.netease.cookie)
+          if (!cookieCheck.valid) {
+            const err = { title: 'Cookie 验证失败', message: '网易云 Cookie 已失效，请重新获取并更新配置', stage: 'fetch_playlist' }
+            job.failStep(s1, 'Cookie 验证失败', err)
+            throw new Error(err.message)
           }
-        }
-      }
 
-      const newCount = yunSongs.filter((s) => !s.sync).length
-      job.finishStep(s2, 'success', `发现 ${newCount} 首新歌曲，${yunSongs.length - newCount} 首已存在`)
-      const newSongs = yunSongs.filter((s) => !s.sync)
+          const { songs: yunSongs, trackUpdateTime, trackIds, playlistName: nePlaylistName } = await fetchPlaylistSongs(playlistId, sourceSongLimit, cfg.netease.cookie)
 
-      // ── Step 3 & 4: Download + Tags ──
-      const sectionKey = await getSectionKey(cfg.plex.section)
-      let needRefresh = false
+          // Detect Netease playlist rename
+          if (nePlaylistName && nePlaylistName !== source.neteasePlaylistName) {
+            log('info', `歌单名称已更改: 「${source.neteasePlaylistName}」→「${nePlaylistName}」`)
+            updateSource(source.id, { neteasePlaylistName: nePlaylistName })
+            source.neteasePlaylistName = nePlaylistName
+          }
 
-      if (newSongs.length > 0) {
-        const s3 = job.startStep('download', '下载歌曲')
-        const totalNew = newSongs.length
+          // Get Plex playlist updatedAt for bilateral change detection
+          let plexUpdatedAt: number | null = null
+          if (source.plexPlaylistRatingKey) {
+            try {
+              const res = await fetch(`http://${cfg.plex.server}:${cfg.plex.port}/playlists/${source.plexPlaylistRatingKey}?X-Plex-Token=${cfg.plex.token}`)
+              const xml = await res.text()
+              const m = xml.match(/updatedAt="(\d+)"/)
+              if (m) plexUpdatedAt = parseInt(m[1], 10)
+            } catch { /* non-critical */ }
+          }
 
-        for (let i = 0; i < newSongs.length; i++) {
-          if (cancelRequested) {
-            for (let j = i; j < totalNew; j++) {
-              const id = job.getJob().songs.find(
-                (st) => st.songName === newSongs[j].name && st.status === 'pending',
-              )?.id
-              if (id) job.updateSong(id, { status: 'pending' })
+          const neteaseChanged = !trackUpdateTime || trackUpdateTime !== source.lastTrackUpdateTime
+          const manualForce = options?.forceFull || cfg.sync.forceFullCompare || source.forceFullCompare
+
+          // Auto-force after N skips or N days since last full compare
+          let autoForce = false
+          const skips = source.consecutiveSkips || 0
+          const skipLimit = source.fullCompareAfterSkips ?? cfg.sync.fullCompareAfterSkips
+          const dayLimit = source.fullCompareAfterDays ?? cfg.sync.fullCompareAfterDays
+          if (skipLimit > 0 && skips >= skipLimit) autoForce = true
+          if (dayLimit > 0 && source.lastFullCompareAt) {
+            const daysSince = (Date.now() - new Date(source.lastFullCompareAt).getTime()) / 86400000
+            if (daysSince >= dayLimit) autoForce = true
+          }
+
+          const currentIdOrder = trackIds.map(t => t.id)
+
+          // Incremental diff: compare with last snapshot
+          let oldSnapshot: number[] = []
+          try { if (source.trackIdSnapshot) oldSnapshot = JSON.parse(source.trackIdSnapshot) } catch { /* ignore */ }
+
+          const addedIds = currentIdOrder.filter(id => !oldSnapshot.includes(id))
+          const removedIds = oldSnapshot.filter(id => !currentIdOrder.includes(id))
+          const orderChanged = oldSnapshot.length > 0 && JSON.stringify(currentIdOrder) !== JSON.stringify(oldSnapshot)
+          const isPureAddition = addedIds.length > 0 && removedIds.length === 0 && !orderChanged
+          const isPureDeletion = addedIds.length === 0 && removedIds.length > 0 && !orderChanged
+          const isPureReorder = addedIds.length === 0 && removedIds.length === 0 && orderChanged
+          const canIncremental = isPureAddition || isPureDeletion || isPureReorder
+
+          const changedMsg = neteaseChanged ? '网易云已变' : '未变化'
+          const diffMsg = canIncremental
+            ? (isPureAddition ? `+${addedIds.length}首` : isPureDeletion ? `-${removedIds.length}首` : '重排')
+            : (addedIds.length || removedIds.length ? `+${addedIds.length}/-${removedIds.length}${orderChanged?'/重排':''}` : '')
+          job.finishStep(s1, 'success', `歌单获取完成，共 ${yunSongs.length} 首（${changedMsg}${diffMsg ? '，'+diffMsg : ''}）`)
+
+          // Skip entirely if Netease unchanged (Plex updatedAt is unreliable, snapshot diff covers Plex changes)
+          if (!neteaseChanged && !manualForce && !autoForce && !dryRun) {
+            log('info', `歌单「${playlistName}」未变化，跳过对比（连续跳过 ${skips + 1} 次）`)
+            updateSource(source.id, {
+              lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null,
+              lastJobId: job.getId(), trackCount: yunSongs.length,
+              lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt,
+              consecutiveSkips: skips + 1,
+            })
+            continue
+          }
+
+          if (autoForce) log('info', `歌单「${playlistName}」触发自动全量对比（超过${cfg.sync.fullCompareAfterSkips > 0 ? '跳过次数' : '时间间隔'}）`)
+
+          // Decision: full vs incremental shortcut
+          const needFullCompare = manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0
+
+          // Pure reorder: skip download, just reorder Plex playlist
+          if (isPureReorder && !needFullCompare) {
+            log('info', `歌单「${playlistName}」仅顺序变化，跳过下载直接重排`)
+            const allSongs = yunSongs.map(s => ({ songName: s.name, artist: joinArtist(s.artists), album: s.album.name, status: 'skipped_existing' as SongStatus }))
+            job.addSongs(source.id, allSongs)
+            for (const s of job.getJob().songs) {
+              if (s.sourceId === source.id) job.updateSong(s.id, { status: 'skipped_existing', phase: 'done' })
             }
-            const j = job.finish('cancelled', '用户取消')
+            // Quick-resolve Plex playlist for reorder
+            if (!dryRun) {
+              const { initPlexClient, findPlaylist, getPlaylistByRatingKey, getSectionKey } = await import('../plex-client')
+              await initPlexClient(cfg.plex)
+              let pp = source.plexPlaylistRatingKey ? await getPlaylistByRatingKey(source.plexPlaylistRatingKey) : null
+              if (!pp) { const pn = source.plexPlaylistName || source.neteasePlaylistName; pp = await findPlaylist(pn) }
+              if (pp) {
+                const sk = (await getSectionKey(cfg.plex.section)) ?? ''
+                const targetOrder: string[] = []
+                const db = getDb()
+                for (const s of yunSongs) {
+                  const cached = db.prepare('SELECT plex_rating_key FROM song_lookup WHERE netease_song_id = ?').get(s.id) as { plex_rating_key: string } | undefined
+                  if (cached?.plex_rating_key) targetOrder.push(cached.plex_rating_key)
+                }
+                if (targetOrder.length > 0) {
+                  const currentItems = (await getPlaylistTracks(pp.ratingKey, 99999)).filter(t => t.playlistItemID).map(t => ({ ratingKey: t.ratingKey, playlistItemId: t.playlistItemID! }))
+                  await applyFullReorder(pp.ratingKey, targetOrder, currentItems, sk, () => cancelRequested, (lvl, msg) => log(lvl as 'info'|'warn'|'error', msg))
+                }
+              }
+            }
+            updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null, lastJobId: job.getId(), trackCount: yunSongs.length, lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt, consecutiveSkips: 0, lastFullCompareAt: new Date().toISOString(), trackIdSnapshot: JSON.stringify(currentIdOrder) })
+            totalSuccess += yunSongs.length
+            continue
+          }
+
+          if (yunSongs.length === 0) {
+            const j = job.finish('success', '歌单为空，无需同步')
             saveJob(j)
             finishState('success')
             return { ...state }
           }
 
-          const song = newSongs[i]
-          const [albumArtist, trackArtist] = splitArtists(song.artists)
-          const displayArtist = trackArtist || albumArtist
-          const songId = job.getJob().songs.find(
-            (s) => s.songName === song.name && s.status === 'pending',
-          )?.id
-          if (!songId) continue
+          // Register all songs to job
+          const allSongs = yunSongs.map((s) => ({
+            songName: s.name,
+            artist: joinArtist(s.artists),
+            album: s.album.name,
+            status: 'pending' as SongStatus,
+          }))
+          job.addSongs(source.id, allSongs)
 
-          const childId = job.startStep('download_single', `${song.name} - ${displayArtist}`, s3)
+          // ── Step 2: Reconcile (tiered lookup: DB → Plex → disk → download) ──
+          setStage('comparing')
+          log('info', '连接 Plex...')
 
-          try {
-            if (dryRun) {
-              log('info', `[预览] 将下载: ${song.name}`)
-              job.updateSong(songId, { status: 'success', phase: 'done' })
-              job.finishStep(childId, 'success', '[预览] 跳过下载')
-            } else {
-              log('info', `下载: ${song.name}`)
+          const { resolutions, plexPlaylist: plexPlaylistResult, sectionKey, extraTracks } = await reconcileSource(
+            source, yunSongs, cfg, job, splitArtists,
+            () => cancelRequested,
+            (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
+          )
+          const plexPlaylist = plexPlaylistResult
+
+          // Update job song statuses from TrackResolution results
+          for (const r of resolutions) {
+            const songId = job.getJob().songs.find(
+              (s) => s.songName === r.song.name && s.status === 'pending' && s.sourceId === source.id,
+            )?.id
+            if (!songId) continue
+            if (r.resolution === 'matched_plex_playlist' || r.resolution === 'found_in_plex_library') {
+              job.updateSong(songId, { status: 'skipped_existing', phase: 'done' })
+            } else if (r.resolution === 'unavailable') {
+              job.updateSong(songId, { status: 'failed_download', phase: 'download', error: { title: '歌曲不可用', message: '网易云无下载链接', stage: 'download', songName: r.song.name, artist: splitArtists(r.song.artists)[0] } })
+            }
+            // needs_download / found_on_disk stay pending
+          }
+
+          // Register removed tracks (in Plex playlist but not Netease)
+          for (const xt of extraTracks) {
+            job.addSongs(source.id, [{
+              songName: xt.title,
+              artist: '',
+              album: '',
+              status: 'removed' as SongStatus,
+            }])
+            const songId = job.getJob().songs.find(
+              (s) => s.songName === xt.title && s.status === 'removed' && s.sourceId === source.id,
+            )?.id
+            if (songId) job.updateSong(songId, { phase: 'done' })
+          }
+
+          // ── Step 3: Download needs_download songs ──
+          const songsToDownload = resolutions.filter((r) => r.resolution === 'needs_download')
+          const songsOnDisk = resolutions.filter((r) => r.resolution === 'found_on_disk')
+          const needsRefresh = songsToDownload.length > 0 || songsOnDisk.length > 0
+
+          if (!dryRun && songsToDownload.length > 0) {
+            const s3 = job.startStep('download', '下载歌曲')
+            setStage('downloading')
+
+            const songDataMap = new Map(songsToDownload.map((r) => [r.song.id, r.song]))
+
+            for (const r of songsToDownload) {
+              const [, trackArtist] = splitArtists(r.song.artists)
+              enqueueTask({
+                sourceId: source.id,
+                songId: r.song.id,
+                songName: r.song.name,
+                artist: trackArtist || splitArtists(r.song.artists)[0],
+                album: r.song.album.name,
+                quality: cfg.netease.quality,
+                jobId: job.getId(),
+              })
+            }
+
+            const processor = async (task: DownloadTask, onProgress: (pct: number) => void) => {
+              const song = songDataMap.get(task.songId)
+              if (!song) throw new Error('歌曲数据未找到')
+
+              const [albumArtist, trackArtist] = splitArtists(song.artists)
               const { url, type: fileType } = await getSongUrl(song.id, cfg.netease.quality, cfg.netease.cookie)
+
+              const lyricData = cfg.download.downloadLyrics
+                ? await fetchLyric(song.id, cfg.netease.cookie, cfg.other?.lyricOrder ?? 'original_first', cfg.other?.downloadTranslatedLyric ?? true)
+                : undefined
+
+              const albumDetail = await fetchAlbumDetail(song.album.id, cfg.netease.cookie)
 
               const pathVars = {
                 artist: albumArtist,
@@ -243,238 +344,206 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               const targetPath = join(cfg.download.dir, relativePath)
 
               if (existsSync(targetPath)) {
-                // Check if Plex already has this track indexed
-                let plexReady = false
-                if (sectionKey && !dryRun) {
-                  const existing = await searchTrack(sectionKey, song.name, albumArtist, song.album.name)
-                  plexReady = !!existing
+                return { filePath: targetPath, fileType }
+              }
+
+              const songMeta = {
+                title: song.name, albumArtist, trackArtist,
+                album: song.album.name, trackNumber: song.no,
+                publishTime: song.album.publishTime || albumDetail?.publishTime || 0,
+                picUrl: song.album.picUrl, duration: song.dt,
+                discNumber: song.disc || '1',
+                totalDiscs: albumDetail?.totalDiscs ?? 1,
+                totalTracks: albumDetail?.size ?? 0,
+                genre: albumDetail?.genre ?? '',
+                releaseDate: (song.album.publishTime || albumDetail?.publishTime || 0) > 0
+                  ? dayjs(song.album.publishTime || albumDetail?.publishTime).format('YYYY-MM-DD') : '',
+                albumDescription: albumDetail?.description ?? '',
+                recordLabel: albumDetail?.company ?? '',
+                releaseType: albumDetail?.type ?? '',
+                artistImgUrl: albumDetail?.artistImgUrl ?? '',
+              }
+
+              const result = await downloadSong(url, songMeta, fileType, cfg.download.dir, {
+                writeLyrics: cfg.download.downloadLyrics,
+                embedMetadata: cfg.download.embedMetadata,
+                embedCover: cfg.download.embedCover,
+                saveAlbumCover: cfg.download.saveAlbumCover ?? false,
+                saveArtistImage: cfg.download.saveArtistImage ?? false,
+                lyrics: lyricData?.merged,
+                translatedLyric: lyricData?.translated,
+                separateLyricFiles: lyricData?.separateFiles,
+              }, relativePath, onProgress)
+
+              return { filePath: result.filePath, fileType }
+            }
+
+            await processAll(processor, job.getId(), cfg.sync.downloadConcurrency || 3)
+            setStage('processing_tags')
+
+            // Update job songs from queue
+            const allTasks = listDownloadTasks({ status: undefined })
+            for (const r of songsToDownload) {
+              const songId = job.getJob().songs.find(
+                (s) => s.songName === r.song.name && s.status === 'pending' && s.sourceId === source.id,
+              )?.id
+              if (!songId) continue
+
+              const task = allTasks.items.find((t) => t.songId === r.song.id && t.jobId === job.getId())
+              if (!task || task.status === 'failed') {
+                job.updateSong(songId, { status: 'failed_download', phase: 'download' })
+                if (task?.error) {
+                  addFailure(r.song.name, task.error)
+                  log('error', `下载失败: ${r.song.name}`, task.error)
                 }
-                job.updateSong(songId, {
-                  status: 'success', phase: 'done',
-                  filePath: targetPath, fileType,
-                  metadata: {
-                    trackNumber: song.no, quality: cfg.netease.quality,
-                    duration: song.dt, disc: song.disc || '1',
-                  },
-                  ops: { download: 'skipped', lyric: 'skipped', tags: 'skipped', cover: 'skipped' },
-                })
-                if (!plexReady) needRefresh = true
-                job.finishStep(childId, 'success', plexReady
-                  ? `已在 Plex 库中，跳过下载 (${fileType.toUpperCase()})`
-                  : `文件已存在，跳过下载 (${fileType.toUpperCase()})`)
-              } else {
-                needRefresh = true
-                const lyricData = cfg.download.downloadLyrics
-                  ? await fetchLyric(
-                      song.id,
-                      cfg.netease.cookie,
-                      cfg.other?.lyricOrder ?? 'original_first',
-                      cfg.other?.downloadTranslatedLyric ?? true,
-                    )
-                  : undefined
-
-                const albumDetail = await fetchAlbumDetail(song.album.id, cfg.netease.cookie)
-
-                const songMeta = {
-                  title: song.name,
-                  albumArtist,
-                  trackArtist,
-                  album: song.album.name,
-                  trackNumber: song.no,
-                  // v3 / old API first, album detail as fallback (common for singles)
-                  publishTime: song.album.publishTime || albumDetail?.publishTime || 0,
-                  picUrl: song.album.picUrl,
-                  duration: song.dt,
-                  discNumber: song.disc || '1',
-                  totalDiscs: albumDetail?.totalDiscs ?? 1,
-                  totalTracks: albumDetail?.size ?? 0,
-                  genre: albumDetail?.genre ?? '',
-                  releaseDate: (song.album.publishTime || albumDetail?.publishTime || 0) > 0
-                    ? dayjs(song.album.publishTime || albumDetail?.publishTime).format('YYYY-MM-DD')
-                    : '',
-                  albumDescription: albumDetail?.description ?? '',
-                  recordLabel: albumDetail?.company ?? '',
-                  releaseType: albumDetail?.type ?? '',
-                  artistImgUrl: albumDetail?.artistImgUrl ?? '',
-                }
-
-                const result = await downloadSong(url, songMeta, fileType, cfg.download.dir, {
-                  writeLyrics: cfg.download.downloadLyrics,
-                  embedMetadata: cfg.download.embedMetadata,
-                  embedCover: cfg.download.embedCover,
-                  saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-                  saveArtistImage: cfg.download.saveArtistImage ?? false,
-                  lyrics: lyricData?.merged,
-                  translatedLyric: lyricData?.translated,
-                  separateLyricFiles: lyricData?.separateFiles,
-                }, relativePath)
-
+              } else if (task.status === 'done') {
                 saveDownload({
                   id: songId,
-                  songName: songMeta.title,
-                  artist: songMeta.trackArtist || songMeta.albumArtist,
-                  album: songMeta.album,
-                  filePath: result.filePath,
-                  fileType,
-                  quality: cfg.netease.quality,
-                  status: 'success',
-                  downloadedAt: new Date().toISOString(),
-                  jobId: job.getId(),
+                  songName: task.songName, artist: task.artist, album: task.album,
+                  filePath: task.filePath, fileType: task.fileType, quality: task.quality,
+                  status: 'success', downloadedAt: new Date().toISOString(), jobId: task.jobId,
                 })
-
                 job.updateSong(songId, {
                   status: 'success', phase: 'done',
-                  filePath: result.filePath, fileType,
-                  metadata: {
-                    trackNumber: song.no,
-                    quality: cfg.netease.quality,
-                    duration: song.dt,
-                    disc: song.disc || '1',
-                    genre: albumDetail?.genre ?? '',
-                    label: albumDetail?.company ?? '',
-                    releaseDate: songMeta.releaseDate,
-                  },
-                  ops: result.ops,
+                  filePath: task.filePath, fileType: task.fileType,
+                  metadata: { trackNumber: r.song.no, quality: cfg.netease.quality, duration: r.song.dt, disc: r.song.disc || '1' },
                 })
-                const opsSummary = opsSummaryText(result.ops)
-                job.finishStep(childId, 'success', `下载完成 (${fileType.toUpperCase()})${opsSummary}`)
               }
-
-              updateProgress(i + 1, totalNew, song.name)
             }
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : '下载失败'
-            log('error', `下载失败: ${song.name}`, errorMsg)
-            job.updateSong(songId, {
-              status: 'failed_download', phase: 'download',
-              error: { title: '歌曲下载失败', message: errorMsg, stage: 'download', songName: song.name, artist },
-            })
-            job.failStep(childId, '下载失败', {
-              title: '歌曲下载失败', message: errorMsg, stage: 'download',
-              songName: song.name, artist,
-              context: { songId: song.id, quality: cfg.netease.quality },
-            })
-            addFailure(song.name, errorMsg)
-          }
-        }
 
-        const failCount = job.getJob().songs.filter((s) => ['failed_download', 'failed_tags'].includes(s.status)).length
-        const okCount = newSongs.length - failCount
-        job.finishStep(s3, failCount > 0 ? 'partial' : 'success', `${okCount} 首成功，${failCount} 首失败`)
-      }
-
-      // ── Steps 5 & 6: Plex refresh + update ──
-      const successfulNew = job.getJob().songs.filter((s) => s.status === 'success').length
-      if (!dryRun && successfulNew > 0) {
-        if (needRefresh && sectionKey) {
-          const s5 = job.startStep('refresh_plex', '刷新 Plex 音乐库')
-          setStage('refreshing_plex')
-
-          await refreshLibrary(sectionKey)
-
-          // Wait for Plex to scan new files — poll for the first track, then
-        // give remaining tracks a per-file cooldown. Max 60s total.
-          const allNew = job.getJob().songs.filter((s) => s.status === 'success')
-          const probe = allNew[0]
-          const probeTimeout = Date.now() + 60000
-          let probeFound = false
-
-          if (probe) {
-            log('info', `等待 Plex 扫描 (${allNew.length} 首，探针: ${probe.songName})...`)
-            while (!probeFound && Date.now() < probeTimeout) {
-              if (cancelRequested) break
-              await new Promise((r) => setTimeout(r, 3000))
-              const found = await searchTrack(sectionKey, probe.songName, probe.artist, probe.album)
-              if (found) probeFound = true
+            const okCount = songsToDownload.filter((r) => {
+              const js = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)
+              return js?.status === 'success'
+            }).length
+            const failCount = songsToDownload.length - okCount
+            job.finishStep(s3, failCount > 0 ? 'partial' : 'success', `${okCount} 首成功，${failCount} 首失败`)
+          } else if (dryRun && songsToDownload.length > 0) {
+            const s3 = job.startStep('download', '下载歌曲')
+            for (const r of songsToDownload) {
+              log('info', `[预览] 将下载: ${r.song.name}`)
             }
-          } else {
-            probeFound = true
+            job.finishStep(s3, 'success', `[预览] 共 ${songsToDownload.length} 首`)
           }
 
-          if (probeFound && allNew.length > 1) {
-            // Per-file cooldown: 2s per remaining track
-            const wait = Math.min(allNew.length * 2, 10) * 1000
-            await new Promise((r) => setTimeout(r, wait))
-          }
+          // ── Step 4: Reorder Plex playlist (with retry-based lookup for new tracks) ──
+          if (!dryRun) {
+            const s4 = job.startStep('reorder', '重排 Plex 歌单')
+            setStage('updating_plex_playlist')
 
-          log('info', probeFound ? 'Plex 扫描完成' : 'Plex 扫描超时 (60s)')
-          job.finishStep(s5, 'success', probeFound ? 'Plex 库刷新完成' : 'Plex 扫描超时 (60s)')
-        }
+            // Trigger Plex scan if needed (fire and forget — we'll retry-search below)
+            if (needsRefresh && sectionKey) {
+              await triggerRescan(sectionKey)
+            }
 
-        // ── Step 6: Update Plex playlist ──
-        const s6 = job.startStep('update_plex_playlist', '更新 Plex 歌单')
-        setStage('updating_plex_playlist')
-
-        const doneSongs = job.getJob().songs.filter((s) => s.status === 'success')
-        let afterItemId: number | null = null
-        let isFirst = true
-        for (const songTask of doneSongs) {
-          if (cancelRequested) break
-          const childId = job.startStep('plex_insert', `${songTask.songName} - ${songTask.artist}`, s6)
-
-          try {
-            const track = await searchTrack(sectionKey!, songTask.songName, songTask.artist, songTask.album)
-            if (track) {
-              await insertTrackIntoPlaylist(plexPlaylist!.ratingKey, track.ratingKey)
-              const itemId = await getPlaylistItemId(plexPlaylist!.ratingKey, track.ratingKey)
-              if (itemId) {
-                if (isFirst) {
-                  await movePlaylistItemToTop(plexPlaylist!.ratingKey, itemId)
-                  isFirst = false
-                } else if (afterItemId) {
-                  await movePlaylistItemAfter(plexPlaylist!.ratingKey, itemId, afterItemId)
+            // Build target order: all resolved tracks with plexRatingKeys
+            // For needs_download / found_on_disk, retry-search with backoff
+            const targetOrder: string[] = []
+            for (const r of resolutions) {
+              if (r.resolution === 'needs_download') {
+                const [albumArtist] = splitArtists(r.song.artists)
+                const rk = await findTrackWithRetry(sectionKey, r.song, albumArtist, cfg.sync.plexScanRetries, cfg.sync.plexScanRetryDelaySec * 1000)
+                if (rk) {
+                  r.plexRatingKey = rk
+                  r.resolution = 'found_in_plex_library'
+                  log('info', `Plex 已索引: ${r.song.name}`)
+                } else {
+                  log('warn', `Plex 未找到: ${r.song.name}（请手动扫描 Plex）`)
                 }
-                afterItemId = itemId
               }
-              job.finishStep(childId, 'success', '已添加到歌单')
-            } else {
-              job.updateSong(songTask.id, {
-                status: 'failed_plex_match',
-                error: { title: 'Plex 匹配失败', message: 'Plex 中搜索不到该歌曲', stage: 'plex_match', songName: songTask.songName, artist: songTask.artist },
-              })
-              job.failStep(childId, 'Plex 匹配失败', {
-                title: 'Plex 匹配失败', message: 'Plex 中搜索不到该歌曲', stage: 'plex_match',
-                songName: songTask.songName, artist: songTask.artist,
-              })
+              if (r.resolution === 'found_on_disk') {
+                const [albumArtist] = splitArtists(r.song.artists)
+                const rk = await findTrackWithRetry(sectionKey, r.song, albumArtist, cfg.sync.plexScanRetries, cfg.sync.plexScanRetryDelaySec * 1000)
+                if (rk) {
+                  r.plexRatingKey = rk
+                  r.resolution = 'found_in_plex_library'
+                }
+              }
+              if (r.plexRatingKey) targetOrder.push(r.plexRatingKey)
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : '插入失败'
-            job.updateSong(songTask.id, {
-              status: 'failed_plex_insert',
-              error: { title: 'Plex 插入失败', message: msg, stage: 'plex_insert', songName: songTask.songName, artist: songTask.artist },
-            })
-            job.failStep(childId, 'Plex 插入失败', {
-              title: 'Plex 插入失败', message: msg, stage: 'plex_insert',
-              songName: songTask.songName, artist: songTask.artist,
-            })
+
+            // Fetch current playlist items for the LCS
+            const currentItems = (await getPlaylistTracks(plexPlaylist.ratingKey, 99999))
+              .filter((t) => t.playlistItemID)
+              .map((t) => ({ ratingKey: t.ratingKey, playlistItemId: t.playlistItemID! }))
+
+            await applyFullReorder(
+              plexPlaylist.ratingKey, targetOrder, currentItems, sectionKey,
+              () => cancelRequested,
+              (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
+            )
+
+            job.finishStep(s4, 'success', 'Plex 歌单重排完成')
           }
-        }
 
-        job.finishStep(s6, 'success', 'Plex 歌单更新完成')
-      }
+          // ── Finalize source ──
+          const succCount = job.getJob().songs.filter((s) => s.status === 'success' && s.sourceId === source.id).length
+          const failCount = job.getJob().songs.filter((s) =>
+            ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status) && s.sourceId === source.id,
+          ).length
 
-      // ── Finalize ──
-      const succCount = job.getJob().songs.filter((s) => s.status === 'success').length
-      const failCount = job.getJob().songs.filter((s) =>
-        ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status),
-      ).length
+          let sourceStatus: PlaylistSource['lastStatus'] = 'success'
+          if (failCount > 0 && succCount > 0) sourceStatus = 'partial'
+          else if (failCount > 0 && succCount === 0) sourceStatus = 'failed'
 
-      let jobStatus: 'success' | 'partial' | 'failed' = 'success'
-      if (failCount > 0 && succCount > 0) jobStatus = 'partial'
-      else if (failCount > 0 && succCount === 0) jobStatus = 'failed'
+          // Re-fetch plexUpdatedAt after reorder (playlist was modified)
+          let finalPlexUpdatedAt = plexUpdatedAt
+          if (plexPlaylist?.ratingKey) {
+            try {
+              const r = await fetch(`http://${cfg.plex.server}:${cfg.plex.port}/playlists/${plexPlaylist.ratingKey}?X-Plex-Token=${cfg.plex.token}`)
+              const x = await r.text(); const m2 = x.match(/updatedAt="(\d+)"/)
+              if (m2) finalPlexUpdatedAt = parseInt(m2[1], 10)
+            } catch { /* non-critical */ }
+          }
 
-      const summary = dryRun
-        ? `[预览] 发现 ${newSongs.length} 首新歌曲`
-        : failCount > 0
-          ? `成功 ${succCount} 首，失败 ${failCount} 首`
-          : `新增 ${succCount} 首歌曲`
+          updateSource(source.id, {
+            lastSyncedAt: new Date().toISOString(),
+            lastStatus: sourceStatus,
+            lastError: failCount > 0 ? `${failCount} 首失败` : null,
+            lastJobId: job.getId(),
+            trackCount: yunSongs.length,
+            plexPlaylistRatingKey: plexPlaylist?.ratingKey || '',
+            lastTrackUpdateTime: trackUpdateTime,
+            plexUpdatedAt: finalPlexUpdatedAt,
+            consecutiveSkips: 0,
+            lastFullCompareAt: new Date().toISOString(),
+            trackIdSnapshot: JSON.stringify(currentIdOrder),
+          })
 
-      const finishedJob = job.finish(jobStatus, summary)
-      saveJob(finishedJob)
+          totalSuccess += succCount
+          totalFailed += failCount
 
-      log('info', summary)
-      finishState(finishedJob.status === 'success' ? 'success' : 'failure')
-      return { ...state }
+          log('info', `歌单「${playlistName}」: ${succCount} 成功, ${failCount} 失败`)
+    } catch (err) {
+      if (err instanceof CancellationError) throw err
+
+      const message = err instanceof Error ? err.message : '未知错误'
+      log('error', `歌单「${source.name}」同步失败: ${message}`)
+      updateSource(source.id, {
+        lastSyncedAt: new Date().toISOString(),
+        lastStatus: 'failed',
+        lastError: message,
+      })
+      totalFailed++
+    }
+  }
+
+  // ── Overall finalize ──
+  const jobStatus: 'success' | 'partial' | 'failed' =
+    totalFailed === 0 ? 'success' :
+    totalSuccess > 0 ? 'partial' : 'failed'
+
+  const finishedJob = job.finish(jobStatus, '')
+  const summary = dryRun
+    ? `[预览] ${sources.length} 个歌单源`
+    : finishedJob.failedSongs > 0
+      ? `${sources.length} 个源，成功 ${finishedJob.successSongs} 首，失败 ${finishedJob.failedSongs} 首`
+      : `${sources.length} 个源，共同步 ${finishedJob.totalSongs} 首歌曲`
+  finishedJob.summary = summary
+  saveJob(finishedJob)
+
+  log('info', summary)
+  finishState(finishedJob.status === 'success' ? 'success' : 'failure')
+  return { ...state }
     } catch (err) {
       if (err instanceof CancellationError) {
         const j = job.finish('cancelled', '用户取消')
@@ -495,16 +564,24 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     }
   }
 
+  async function runSyncForSource(sourceId: string, options?: { dryRun?: boolean; forceFull?: boolean }): Promise<SyncState> {
+    if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
+    return runSync({ dryRun: options?.dryRun, sourceIds: [sourceId], forceFull: options?.forceFull })
+  }
+
   function cancelSync(): boolean {
     if (!state.isRunning) return false
     cancelRequested = true
     return true
   }
 
-  function setStage(stage: SyncState['currentStage']) { state.currentStage = stage }
-  function updateProgress(current: number, total: number, songName?: string) {
-    state.progress = { current, total }
-    if (songName) state.currentSong = songName
+  function setStage(stage: SyncState['currentStage']) {
+    state.currentStage = stage
+    emitEvent({
+      type: 'stage-change',
+      data: { stage, label: STAGE_LABELS[stage] || stage, sourceName: currentSourceName },
+      timestamp: new Date().toISOString(),
+    })
   }
   function addFailure(songName: string, reason: string) {
     state.failures.push({ songName, reason, timestamp: new Date().toISOString() })
@@ -520,39 +597,11 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     state.currentSong = null
   }
 
-  return { getState, runSync, cancelSync }
-}
-
-function opsSummaryText(ops: NonNullable<SongTask['ops']>): string {
-  const parts: string[] = []
-  parts.push(ops.download === 'ok' ? '✓文件' : '✗文件')
-  if (ops.lyric === 'ok') parts.push('✓歌词')
-  else if (ops.lyric === 'failed') parts.push('✗歌词')
-  if (ops.tags === 'ok') parts.push('✓标签')
-  else if (ops.tags === 'failed') parts.push('✗标签')
-  if (ops.cover === 'ok') parts.push('✓封面')
-  else if (ops.cover === 'failed') parts.push('✗封面')
-  return '  ' + parts.join(' ')
+  return { getState, runSync, runSyncForSource, cancelSync }
 }
 
 class CancellationError extends Error { constructor() { super('Cancelled') } }
 
-function normalizeTitle(title: string): string {
-  return title
-    .replace(/\s*\([^)]*\)\s*/g, ' ')
-    .replace(/\s*\[[^\]]*\]\s*/g, ' ')
-    .trim()
-}
 
-function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
-}
 
-async function fetchPlaylistName(playlistId: number): Promise<string | null> {
-  try {
-    const res = await fetch(`https://music.163.com/api/v1/playlist/detail?id=${playlistId}`)
-    const body = (await res.json()) as { playlist?: { name?: string } }
-    return body.playlist?.name ?? null
-  } catch { return null }
-}
 

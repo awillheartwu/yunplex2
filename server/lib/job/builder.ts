@@ -27,6 +27,7 @@ export class JobBuilder {
       successSongs: 0,
       failedSongs: 0,
       skippedSongs: 0,
+      removedSongs: 0,
       warnings: 0,
       dryRun,
       steps: [],
@@ -41,11 +42,12 @@ export class JobBuilder {
     Object.assign(this.job.config, c)
   }
 
-  addSongs(songs: { songName: string; artist: string; album: string; status: SongStatus }[]): void {
-    this.job.totalSongs = songs.length
+  addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus }[]): void {
+    this.job.totalSongs += songs.length
     for (const s of songs) {
       const st: SongTask = {
         id: uid(),
+        sourceId,
         songName: s.songName,
         artist: s.artist,
         album: s.album,
@@ -149,6 +151,7 @@ export class JobBuilder {
       ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status),
     ).length
     this.job.skippedSongs = this.job.songs.filter((s) => s.status === 'skipped_existing').length
+    this.job.removedSongs = this.job.songs.filter((s) => s.status === 'removed').length
 
     return this.job
   }

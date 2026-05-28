@@ -40,11 +40,14 @@
           <span v-if="job.dryRun" class="px-1.5 py-0.5 text-2xs rounded bg-[#f1c40f18] text-warning font-medium">预览</span>
         </div>
         <p class="text-sm text-muted mb-2">{{ job.summary }}</p>
-        <div class="flex items-center gap-4 text-2xs text-muted-deep">
+        <div class="flex items-center gap-x-3 gap-y-0.5 text-2xs flex-wrap" style="color:var(--text-tertiary)">
           <span>{{ formatDuration(job.durationMs) }}</span>
-          <span v-if="job.successSongs > 0" class="text-success">+{{ job.successSongs }}</span>
-          <span v-if="job.failedSongs > 0" class="text-danger">{{ job.failedSongs }} 失败</span>
-          <span v-if="job.skippedSongs > 0">{{ job.skippedSongs }} 跳过</span>
+          <span style="color:var(--text-tertiary)">·</span>
+          <span>{{ job.totalSongs }} 首已处理</span>
+          <span v-if="job.successSongs > 0" class="text-success">{{ job.successSongs }} 已成功</span>
+          <span v-if="job.skippedSongs > 0">{{ job.skippedSongs }} 已存在</span>
+          <span v-if="job.removedSongs > 0" class="text-warning">{{ job.removedSongs }} 已移除</span>
+          <span v-if="job.failedSongs > 0" class="text-danger">{{ job.failedSongs }} 下载失败</span>
         </div>
       </div>
 
@@ -70,8 +73,8 @@ const statusConfig = computed(() => {
     case 'success': return { bg: 'bg-[#2ecc7120]', color: '#2ecc71', label: '同步成功' }
     case 'partial': return { bg: 'bg-[#f1c40f20]', color: '#f1c40f', label: '部分成功' }
     case 'failed': return { bg: 'bg-[#e74c3c20]', color: '#e74c3c', label: '同步失败' }
-    case 'running': return { bg: 'bg-accent-muted', color: '#5e6ad2', label: '同步中' }
-    case 'cancelled': return { bg: 'bg-[#6b6b6b20]', color: '#6b6b6b', label: '已取消' }
+    case 'running': return { bg: 'bg-accent-muted', color: '#818cf8', label: '同步中' }
+    case 'cancelled': return { bg: 'bg-[#71717a20]', color: '#71717a', label: '已取消' }
   }
 })
 

@@ -9,6 +9,7 @@ export type SongStatus =
   | 'downloading'
   | 'success'
   | 'skipped_existing'
+  | 'removed'
   | 'failed_download'
   | 'failed_tags'
   | 'failed_plex_match'
@@ -18,6 +19,7 @@ export type SongStatus =
 
 export interface SongTask {
   id: string
+  sourceId?: string
   songName: string
   artist: string
   album: string
@@ -81,6 +83,7 @@ export interface SyncJob {
   successSongs: number
   failedSongs: number
   skippedSongs: number
+  removedSongs: number
   warnings: number
   dryRun: boolean
   steps: JobStep[]
@@ -100,6 +103,8 @@ export interface JobFilter {
   search?: string
   limit?: number
   offset?: number
+  from?: string
+  to?: string
 }
 
 export interface JobSummary {
@@ -113,5 +118,6 @@ export interface JobSummary {
   successSongs: number
   failedSongs: number
   skippedSongs: number
+  removedSongs: number
   dryRun: boolean
 }

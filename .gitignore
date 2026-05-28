@@ -5,8 +5,20 @@ dist/
 data/data.db
 data/data.db-wal
 data/data.db-shm
+data/seed.json
 *.log
 .env
 .env.local
 test/
 .DS_Store
+.claude/
+.agents/
+
+# Scripts & tests
+scripts/
+tests/
+vitest.config.ts
+
+# Local tooling
+.husky/
+skills-lock.json
