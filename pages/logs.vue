@@ -24,11 +24,15 @@
     </div>
 
     <!-- Count bar -->
-    <div v-if="logs.length > 0" class="flex items-center justify-between text-2xs text-muted-deep mb-1">
+    <div v-if="loading" class="flex items-center justify-center py-16">
+      <span class="text-sm text-muted">加载中...</span>
+    </div>
+    <template v-else-if="logs.length > 0">
+    <div class="flex items-center justify-between text-2xs text-muted-deep mb-1">
       <span>共 {{ total }} 条记录</span>
     </div>
 
-    <div v-if="logs.length > 0" class="bg-[var(--bg-input)] border border-[var(--border-primary)] rounded-xl overflow-hidden font-mono text-sm">
+    <div class="section-card overflow-hidden font-mono text-sm">
       <div class="overflow-x-auto">
         <div
           v-for="log in logs"
@@ -42,6 +46,7 @@
         </div>
       </div>
     </div>
+    </template>
 
     <EmptyState v-else-if="!loading" title="暂无日志" :description="activeFilter ? '当前筛选条件下没有匹配的日志' : '执行同步任务后日志将出现在这里'" />
 
@@ -141,10 +146,13 @@ function logLevelColor(level: string): string {
 
 function formatTime(ts: string): string {
   const d = new Date(ts)
+  const y = d.getFullYear()
   const mo = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
-  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  return `${mo}-${dd} ${time}`
+  const h = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${y}-${mo}-${dd} ${h}:${mi}:${ss}`
 }
 
 let sse: EventSource | null = null

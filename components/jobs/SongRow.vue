@@ -34,57 +34,57 @@
     <!-- Expanded detail -->
     <div v-if="expanded" class="px-5 pb-4 pl-12">
       <div class="bg-[var(--bg-app)] rounded-lg p-3 space-y-2">
-        <!-- Operations status -->
-        <div v-if="song.ops" class="flex items-center gap-4 mb-2">
-          <span class="text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
-            {{ song.ops.download === 'ok' ? '✓' : '✗' }} 下载
-          </span>
-          <span v-if="song.ops.lyric !== 'skipped'" class="text-2xs" :class="song.ops.lyric === 'ok' ? 'text-success' : 'text-danger'">
-            {{ song.ops.lyric === 'ok' ? '✓' : '✗' }} 歌词
-          </span>
-          <span v-if="song.ops.tags !== 'skipped'" class="text-2xs" :class="song.ops.tags === 'ok' ? 'text-success' : 'text-danger'">
-            {{ song.ops.tags === 'ok' ? '✓' : '✗' }} 标签
-          </span>
-          <span v-if="song.ops.cover !== 'skipped'" class="text-2xs" :class="song.ops.cover === 'ok' ? 'text-success' : 'text-danger'">
-            {{ song.ops.cover === 'ok' ? '✓' : '✗' }} 封面
-          </span>
-        </div>
-
-        <template v-if="song.filePath">
-          <div class="flex justify-between text-2xs">
-            <span class="text-muted-deep">文件路径</span>
-            <span class="text-muted font-mono">{{ song.filePath }}</span>
-          </div>
-          <div class="flex justify-between text-2xs">
-            <span class="text-muted-deep">格式</span>
-            <span class="text-muted">{{ song.fileType?.toUpperCase() }}</span>
-          </div>
+        <!-- Skipped existing -->
+        <template v-if="song.status === 'skipped_existing'">
+          <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
         </template>
-        <template v-if="song.metadata">
-          <div v-if="song.metadata.quality" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">音质</span>
-            <span class="text-muted">{{ song.metadata.quality }}</span>
+
+        <!-- Removed -->
+        <template v-else-if="song.status === 'removed'">
+          <p class="text-2xs text-muted-deep">此歌曲已从 Plex 歌单中移除（不再存在于网易云歌单）</p>
+        </template>
+
+        <!-- Success / Failed — show ops + details -->
+        <template v-else>
+          <div v-if="song.ops" class="flex items-center gap-4 mb-2">
+            <span class="text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
+              {{ song.ops.download === 'ok' ? '✓' : '✗' }} 下载
+            </span>
+            <span v-if="song.ops.lyric !== 'skipped'" class="text-2xs" :class="song.ops.lyric === 'ok' ? 'text-success' : 'text-danger'">
+              {{ song.ops.lyric === 'ok' ? '✓' : '✗' }} 歌词
+            </span>
+            <span v-if="song.ops.tags !== 'skipped'" class="text-2xs" :class="song.ops.tags === 'ok' ? 'text-success' : 'text-danger'">
+              {{ song.ops.tags === 'ok' ? '✓' : '✗' }} 标签
+            </span>
+            <span v-if="song.ops.cover !== 'skipped'" class="text-2xs" :class="song.ops.cover === 'ok' ? 'text-success' : 'text-danger'">
+              {{ song.ops.cover === 'ok' ? '✓' : '✗' }} 封面
+            </span>
           </div>
-          <div v-if="song.metadata.duration" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">时长</span>
-            <span class="text-muted">{{ formatDuration(song.metadata.duration) }}</span>
-          </div>
-          <div v-if="song.metadata.disc" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">碟号</span>
-            <span class="text-muted">{{ song.metadata.disc }}</span>
-          </div>
-          <div v-if="song.metadata.releaseDate" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">发行日期</span>
-            <span class="text-muted">{{ song.metadata.releaseDate }}</span>
-          </div>
-          <div v-if="song.metadata.genre" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">流派</span>
-            <span class="text-muted">{{ song.metadata.genre }}</span>
-          </div>
-          <div v-if="song.metadata.label" class="flex justify-between text-2xs">
-            <span class="text-muted-deep">厂牌</span>
-            <span class="text-muted">{{ song.metadata.label }}</span>
-          </div>
+
+          <template v-if="song.filePath">
+            <div class="flex justify-between text-2xs">
+              <span class="text-muted-deep">文件路径</span>
+              <span class="text-muted font-mono truncate max-w-[280px]">{{ song.filePath }}</span>
+            </div>
+            <div class="flex justify-between text-2xs">
+              <span class="text-muted-deep">格式</span>
+              <span class="text-muted">{{ song.fileType?.toUpperCase() }}</span>
+            </div>
+          </template>
+          <template v-if="song.metadata">
+            <div v-if="song.metadata.quality" class="flex justify-between text-2xs">
+              <span class="text-muted-deep">音质</span>
+              <span class="text-muted">{{ song.metadata.quality }}</span>
+            </div>
+            <div v-if="song.metadata.duration" class="flex justify-between text-2xs">
+              <span class="text-muted-deep">时长</span>
+              <span class="text-muted">{{ formatDuration(song.metadata.duration) }}</span>
+            </div>
+            <div v-if="song.metadata.trackNumber" class="flex justify-between text-2xs">
+              <span class="text-muted-deep">曲目号</span>
+              <span class="text-muted">{{ song.metadata.trackNumber }}</span>
+            </div>
+          </template>
         </template>
         <ErrorPanel v-if="song.error" :error="song.error" />
       </div>

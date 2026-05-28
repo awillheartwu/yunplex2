@@ -240,9 +240,6 @@
             <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除">
               <input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" />
             </FormField>
-            <FormField label="下载历史保留天数" hint="最终成功的下载记录保留天数，0 = 永不清除">
-              <input v-model.number="form.sync.downloadHistoryRetentionDays" type="number" min="0" max="3650" class="form-input" />
-            </FormField>
           </div>
         </div>
       </section>

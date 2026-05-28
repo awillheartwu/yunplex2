@@ -56,32 +56,38 @@ export function getDownloadTask(id: string): DownloadTask | null {
 }
 
 export function listDownloadTasks(opts: {
-  status?: string; limit?: number; offset?: number
-} = {}): { items: DownloadTask[]; total: number } {
+  status?: string; limit?: number; offset?: number; from?: string; to?: string; search?: string
+} = {}): { items: DownloadTask[]; total: number; earliestDate: string | null } {
   const db = getDb()
   const limit = opts.limit ?? 50
   const offset = opts.offset ?? 0
 
-  let where = ''
+  const conditions: string[] = []
   const params: unknown[] = []
   if (opts.status) {
     const statuses = opts.status.split(',').map((s) => s.trim()).filter(Boolean)
     if (statuses.length === 1) {
-      where = 'WHERE status = ?'
+      conditions.push('status = ?')
       params.push(statuses[0])
     } else if (statuses.length > 1) {
       const placeholders = statuses.map(() => '?').join(', ')
-      where = `WHERE status IN (${placeholders})`
+      conditions.push(`status IN (${placeholders})`)
       params.push(...statuses)
     }
   }
+  if (opts.from) { conditions.push('updated_at >= ?'); params.push(opts.from) }
+  if (opts.to) { conditions.push('updated_at <= ?'); params.push(opts.to) }
+  if (opts.search) { conditions.push('(song_name LIKE ? OR artist LIKE ? OR album LIKE ?)'); const q = `%${opts.search}%`; params.push(q, q, q) }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
   const total = (db.prepare(`SELECT COUNT(*) as cnt FROM download_tasks ${where}`).get(...params) as { cnt: number }).cnt
   const rows = db.prepare(
-    `SELECT * FROM download_tasks ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    `SELECT * FROM download_tasks ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
   ).all(...params, limit, offset) as TaskRow[]
 
-  return { items: rows.map(rowToTask), total }
+  const earliest = db.prepare('SELECT MIN(updated_at) as d FROM download_tasks WHERE status = ?').get('done') as { d: string | null }
+  return { items: rows.map(rowToTask), total, earliestDate: earliest.d ? earliest.d.slice(0, 10) : null }
 }
 
 export function getQueueStatus(): QueueStatus {

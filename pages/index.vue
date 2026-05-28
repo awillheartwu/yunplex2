@@ -36,7 +36,13 @@
       </div>
     </div>
 
+    <!-- Loading -->
+    <div v-if="dashboardLoading" class="flex items-center justify-center py-20">
+      <span class="text-sm text-muted">加载中...</span>
+    </div>
+
     <!-- ═══ Row 1: Sync Overview + Issues ═══ -->
+    <template v-else>
     <div class="grid grid-cols-3 gap-4">
       <!-- Sync Overview (2 columns wide) -->
       <div class="col-span-2 section-card p-4">
@@ -59,7 +65,7 @@
           </div>
           <div>
             <p class="text-2xs font-medium" style="color:var(--text-tertiary)">最后结果</p>
-            <p class="text-xl font-semibold tracking-tight mt-0.5" :class="syncState?.lastSyncResult === 'failure' ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.lastSyncResult === 'success' ? '成功' : syncState?.lastSyncResult === 'failure' ? '异常' : '—' }}</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" :class="syncState?.lastSyncResult === 'failure' ? 'text-danger' : ''" style="color:var(--text-primary)">{{ syncState?.lastSyncResult === 'success' ? '成功' : syncState?.lastSyncResult === 'failure' ? '异常' : '未同步' }}</p>
           </div>
         </div>
       </div>
@@ -97,12 +103,12 @@ class="text-2xs shrink-0"
             :style="{ color: stageTextColor(stage.key) }"
             :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
           <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
-            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#818cf8' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </template>
       </div>
       <div v-if="syncState?.isRunning && syncState?.progress" class="w-24 h-1 rounded-full overflow-hidden shrink-0" style="background:var(--bg-input)">
-        <div class="h-full rounded-full transition-all duration-500" style="background:#818cf8" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
+        <div class="h-full rounded-full transition-all duration-500 bg-accent" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
       </div>
       <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">下载中心 →</span>
     </NuxtLink>
@@ -163,6 +169,7 @@ class="text-2xs shrink-0"
         </div>
       </div>
     </div>
+  </template>
   </div>
 </template>
 
@@ -195,6 +202,7 @@ const totalSyncs = ref(0)
 const sourceCount = ref(0)
 const lastDownloadAt = ref('')
 const syncedTrackCount = ref(0)
+const dashboardLoading = ref(true)
 
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
 const qualityLabels: Record<string, string> = { standard: '标准', higher: '较高', exhigh: '极高', lossless: '无损', hires: 'Hi-Res', jyeffect: '高清环绕声', jymaster: '超清母带' }
@@ -241,11 +249,12 @@ function stageTextColor(key: string): string {
   const ci = stageOrder.indexOf(current)
   const ki = stageOrder.indexOf(key)
   if (ki < ci) return 'var(--text-secondary)'
-  if (ki === ci) return '#818cf8'
+  if (ki === ci) return 'var(--accent)'
   return 'var(--text-tertiary)'
 }
 
 async function fetchData() {
+  dashboardLoading.value = true
   const [cfg, jobsRes, logs] = await Promise.all([
     api.get<AppConfig>('/config'),
     api.get<{ items: JobSummary[]; total: number }>('/jobs', { limit: '10' }),
@@ -278,9 +287,9 @@ async function fetchData() {
   } catch { /* non-critical */ }
 
   try {
-    const dl = await api.get<{ items: { downloadedAt: string }[] }>('/downloads/history', { limit: '1' })
+    const dl = await api.get<{ items: { updatedAt: string }[] }>('/downloads/history', { limit: '1' })
     if (dl.items?.length > 0) {
-      const d = new Date(dl.items[0].downloadedAt)
+      const d = new Date(dl.items[0].updatedAt)
       lastDownloadAt.value = d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }
   } catch { /* non-critical */ }
@@ -289,6 +298,7 @@ async function fetchData() {
   try {
     dailyStats.value = await api.get<{ date: string; count: number }[]>('/downloads/daily-stats', { days: '7' })
   } catch { /* non-critical */ }
+  dashboardLoading.value = false
 }
 
 async function handleSync() { try { await triggerSync(dryRun.value); startPolling(2000); await fetchData() } catch { /* handled */ } }

@@ -31,8 +31,8 @@
         <div
           v-for="(s, idx) in sources" :key="s.id"
           draggable="true"
-          class="transition-colors"
-          :class="dragOverIdx === idx ? 'bg-[var(--accent-glow)]' : ''"
+          class="transition-colors relative"
+          :class="dragOverIdx === idx ? 'border-t-2 border-t-[var(--accent)]' : ''"
           @dragstart="onDragStart(idx, $event)"
           @dragover.prevent="onDragOver(idx)"
           @dragleave="onDragLeave"
@@ -410,11 +410,15 @@ async function fetchSources() {
 // Toggle enabled from list row
 async function toggleEnabled(s: PlaylistSource) {
   togglingId.value = s.id
+  const prev = s.enabled
+  s.enabled = !s.enabled
   try {
     await api.put(`/playlist-sources/${s.id}`, { enabled: !s.enabled })
-    s.enabled = !s.enabled
-  } catch { /* ignore */ }
-  finally { togglingId.value = null }
+  } catch {
+    s.enabled = prev
+  } finally {
+    togglingId.value = null
+  }
 }
 
 // Expand songs

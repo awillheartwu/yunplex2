@@ -18,7 +18,7 @@
           type="text"
           placeholder="搜索..."
           class="form-input w-48 text-sm"
-          @input="fetchJobs()"
+          @input="onSearchInput"
         />
         <DateRange v-model="dateFilter" :min-date="earliestDate" />
         <button class="btn btn-danger btn-sm" @click="showClear = true">清空</button>
@@ -100,6 +100,12 @@ const selectedJob = ref<SyncJob | null>(null)
 const showClear = ref(false)
 const router = useRouter()
 const route = useRoute()
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => fetchJobs(), 300)
+}
 
 const filters = [
   { label: '全部', value: '' },
