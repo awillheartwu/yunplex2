@@ -277,7 +277,7 @@
                 <span>用 / 分隔目录层级</span>
                 <span class="relative inline-flex group">
                   <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
-                  <div class="absolute bottom-full left-0 mb-2 w-72 bg-[var(--bg-app)] border border-[var(--border-secondary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                  <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
                     <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
                     <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
                       <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>

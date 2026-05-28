@@ -584,9 +584,15 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     state.syncCount++
     if (result === 'success') state.successCount++
     else state.failureCount++
+    state.isRunning = false
     state.currentStage = 'idle'
     state.progress = null
     state.currentSong = null
+    emitEvent({
+      type: 'stage-change',
+      data: { stage: 'idle', label: '空闲', sourceName: currentSourceName },
+      timestamp: new Date().toISOString(),
+    })
   }
 
   return { getState, runSync, runSyncForSource, cancelSync }

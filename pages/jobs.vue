@@ -55,7 +55,7 @@
           </svg>
         </div>
         <p class="text-sm font-medium text-muted">暂无同步记录</p>
-        <p class="text-2xs text-muted-deep mt-1">执行同步后，任务记录将显示在这里</p>
+        <p class="text-2xs text-muted-deep mt-1">{{ hasActiveFilter ? '当前筛选条件下没有匹配的任务' : '执行同步后，任务记录将显示在这里' }}</p>
       </div>
 
       <div v-else class="space-y-3">
@@ -100,6 +100,8 @@ const selectedJob = ref<SyncJob | null>(null)
 const showClear = ref(false)
 const router = useRouter()
 const route = useRoute()
+
+const hasActiveFilter = computed(() => !!activeFilter.value || !!searchQuery.value || !!dateFilter.value.from || !!dateFilter.value.to)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 function onSearchInput() {
