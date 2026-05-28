@@ -78,7 +78,7 @@ export async function fetchPlaylistSongs(
 
   // Batch song_detail — API rejects too many IDs at once (safe limit: ~500)
   const BATCH_SIZE = 400
-  const allSongs: RawSong[] = []
+  const allSongs: NeteaseSong[] = []
 
   for (let offset = 0; offset < slicedIds.length; offset += BATCH_SIZE) {
     const batch = slicedIds.slice(offset, offset + BATCH_SIZE)
@@ -183,9 +183,10 @@ export async function fetchAlbumDetail(albumId: number, cookie: string): Promise
       genre: (a as { genre?: string }).genre || tagsStr || '',
       artist: a.artist?.name ?? a.artists?.[0]?.name ?? '',
       size: a.size ?? (Array.isArray(data.songs) ? data.songs.length : 0),
+      subType: (a as { subType?: string }).subType ?? '',
       totalDiscs,
       type: (a as { type?: string }).type ?? '',
-      artistImgUrl: a.artist?.img1v1Url ?? (Array.isArray(a.artists) ? a.artists[0]?.img1v1Url ?? '' : ''),
+      artistImgUrl: (a.artist as any)?.img1v1Url ?? (Array.isArray(a.artists) ? (a.artists[0] as any)?.img1v1Url ?? '' : ''),
       info: a.info,
     }
 
@@ -221,11 +222,11 @@ export async function getSongUrl(
 ): Promise<{ url: string; type: string }> {
   const level = QUALITY_LEVELS[quality] || 'jymaster'
 
-  let res = await song_url_v1({ id: songId, level, cookie })
+  let res = await song_url_v1({ id: songId, level: level as any, cookie })
   let data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
 
   if (!data || (data.type !== 'flac' && data.type !== 'mp3')) {
-    res = await song_url_v1({ id: songId, level: 'hires', cookie })
+    res = await song_url_v1({ id: songId, level: 'hires' as any, cookie })
     data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
   }
 
@@ -254,7 +255,7 @@ export async function fetchLyric(
 
   const original = body?.lrc?.lyric ?? ''
   const translated = includeTranslation ? (body?.tlyric?.lyric ?? '') : ''
-  const separateFiles = order === 'separate'
+  const separateFiles = (order as string) === 'separate'
 
   const merged = separateFiles ? original : mergeLyrics(original, translated, order)
 
@@ -275,7 +276,7 @@ export function mergeLyrics(
   const transMap = new Map<string, string>()
   for (const line of transLines) {
     const m = line.match(/^(\[\d{2}:\d{2}[.\d]*\])(.*)/)
-    if (m) transMap.set(m[1], m[2])
+    if (m) transMap.set(m[1]!, m[2]!)
   }
 
   const merged: string[] = []

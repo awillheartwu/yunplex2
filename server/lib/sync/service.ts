@@ -5,9 +5,9 @@ import dayjs from 'dayjs'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache, fetchPlaylistName } from '../netease'
-import { downloadSong, buildDownloadPath, sanitizePath } from '../tag-writer'
-import { searchTrack, getPlaylistTracks } from '../plex-client'
+import { checkCookie, fetchPlaylistSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache } from '../netease'
+import { downloadSong, buildDownloadPath } from '../tag-writer'
+import { getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
 import type { SongStatus } from '../job/types'
@@ -18,7 +18,6 @@ import { enqueueTask, processAll, listDownloadTasks, cleanupOldDownloadTasks } f
 import type { DownloadTask } from '../download/queue'
 import { emitEvent } from './events'
 import { reconcileSource, triggerRescan, findTrackWithRetry, applyFullReorder } from './plex-reconciler'
-import type { TrackResolution } from './types'
 
 export const STAGE_LABELS: Record<string, string> = {
   idle: '空闲',
@@ -73,8 +72,14 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
     try {
       const cfg = getConfig()
-      cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
-      cleanupOldDownloadTasks(cfg.sync.downloadTaskRetentionDays ?? 30)
+      const cleanedJobs = cleanupOldJobs(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
+      const cleanedTasks = cleanupOldDownloadTasks(cfg.sync.downloadTaskRetentionDays ?? 30)
+      if (cleanedJobs > 0 || cleanedTasks > 0) {
+        const parts: string[] = []
+        if (cleanedJobs > 0) parts.push(`${cleanedJobs} 条旧任务`)
+        if (cleanedTasks > 0) parts.push(`${cleanedTasks} 条下载队列`)
+        log('info', `清理过期数据: ${parts.join('、')}`)
+      }
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
 
       // Returns [albumArtist, trackArtist]
@@ -82,7 +87,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       // trackArtist: empty for single artist, formatted for collabs (e.g. "A, B & C")
       const splitArtists = (artists: { name: string }[]): [string, string] => {
         if (artists.length === 0) return ['', '']
-        const albumArtist = artists[0].name
+        const albumArtist = artists[0]!.name
         if (artists.length === 1) return [albumArtist, '']
         const trackArtist = formatTrackArtist(artists.map((a) => a.name), multiFormat)
         return [albumArtist, trackArtist]
@@ -150,7 +155,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               const res = await fetch(`http://${cfg.plex.server}:${cfg.plex.port}/playlists/${source.plexPlaylistRatingKey}?X-Plex-Token=${cfg.plex.token}`)
               const xml = await res.text()
               const m = xml.match(/updatedAt="(\d+)"/)
-              if (m) plexUpdatedAt = parseInt(m[1], 10)
+              if (m) plexUpdatedAt = parseInt(m[1]!, 10)
             } catch { /* non-critical */ }
           }
 
@@ -301,6 +306,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           if (!dryRun && songsToDownload.length > 0) {
             const s3 = job.startStep('download', '下载歌曲')
             setStage('downloading')
+            log('info', `开始下载 ${songsToDownload.length} 首歌曲`)
 
             const songDataMap = new Map(songsToDownload.map((r) => [r.song.id, r.song]))
 
@@ -325,7 +331,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               const { url, type: fileType } = await getSongUrl(song.id, cfg.netease.quality, cfg.netease.cookie)
 
               const lyricData = cfg.download.downloadLyrics
-                ? await fetchLyric(song.id, cfg.netease.cookie, cfg.other?.lyricOrder ?? 'original_first', cfg.other?.downloadTranslatedLyric ?? true)
+                ? await fetchLyric(song.id, cfg.netease.cookie, (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first', cfg.other?.downloadTranslatedLyric ?? true)
                 : undefined
 
               const albumDetail = await fetchAlbumDetail(song.album.id, cfg.netease.cookie)
@@ -483,7 +489,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             try {
               const r = await fetch(`http://${cfg.plex.server}:${cfg.plex.port}/playlists/${plexPlaylist.ratingKey}?X-Plex-Token=${cfg.plex.token}`)
               const x = await r.text(); const m2 = x.match(/updatedAt="(\d+)"/)
-              if (m2) finalPlexUpdatedAt = parseInt(m2[1], 10)
+              if (m2) finalPlexUpdatedAt = parseInt(m2[1]!, 10)
             } catch { /* non-critical */ }
           }
 

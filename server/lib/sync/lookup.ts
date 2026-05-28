@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { getDb } from '../db'
 import { searchTrack, getPlaylistTracks, getTrackByRatingKey } from '../plex-client'
 import type { NeteaseSong } from '../netease'
-import type { TrackResolution, Resolution, SongLookupRow } from './types'
+import type { TrackResolution, SongLookupRow } from './types'
 
 /**
  * Build a TrackResolution for each song in the Netease playlist.
@@ -31,7 +30,7 @@ export async function resolveTracks(
   const usedPlexKeys = new Set<string>()
 
   for (let i = 0; i < yunSongs.length; i++) {
-    const song = yunSongs[i]
+    const song = yunSongs[i]!
     const [albumArtist] = splitArtists(song.artists)
     const resolution = await resolveOne(song, i, plexPlaylistTracks, playlistItemMap, sectionKey, downloadDir, albumArtist, db)
     resolutions.push(resolution)
@@ -105,7 +104,7 @@ async function resolveOne(
 }
 
 /** Quick Plex metadata lookup — one cheap API call to verify track still exists */
-async function quickVerify(plexRatingKey: string, sectionKey: string, _db: ReturnType<typeof getDb>, _song: NeteaseSong): Promise<boolean> {
+async function quickVerify(plexRatingKey: string, _sectionKey: string, _db: ReturnType<typeof getDb>, _song: NeteaseSong): Promise<boolean> {
   const track = await getTrackByRatingKey(plexRatingKey)
   return track !== null
 }
@@ -133,7 +132,7 @@ function stripPunct(s: string): string {
 function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
   const y = normalizeTitle(yunTitle)
   const p = normalizeTitle(plexTitle)
-  return (y && p && y === p) || (y && p && stripPunct(y) === stripPunct(p))
+  return !!(y && p && (y === p || stripPunct(y) === stripPunct(p)))
 }
 
 function fuzzyArtist(plexArtist: string, yunArtist: string): boolean {

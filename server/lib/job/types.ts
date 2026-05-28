@@ -2,7 +2,7 @@
 
 export type JobStatus = 'running' | 'success' | 'partial' | 'failed' | 'cancelled'
 
-export type StepStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
+export type StepStatus = 'pending' | 'running' | 'success' | 'partial' | 'failed' | 'skipped' | 'cancelled'
 
 export type SongStatus =
   | 'pending'
