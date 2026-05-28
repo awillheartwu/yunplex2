@@ -3,7 +3,6 @@ import type { AppConfig } from './types'
 export const DEFAULT_CONFIG: AppConfig = {
   netease: {
     cookie: '',
-    playlistIds: [],
     quality: 'jymaster',
   },
   plex: {
@@ -23,15 +22,24 @@ export const DEFAULT_CONFIG: AppConfig = {
   sync: {
     intervalMinutes: 30,
     songLimit: 10,
+    downloadConcurrency: 3,
+    plexScanRetries: 5,
+    plexScanRetryDelaySec: 15,
+    forceFullCompare: false,
+    fullCompareAfterSkips: 5,
+    fullCompareAfterDays: 7,
     enabled: false,
     logRetentionDays: 30,
     jobRetentionSuccessDays: 7,
     jobRetentionFailedDays: 90,
+    downloadTaskRetentionDays: 30,
+    downloadHistoryRetentionDays: 0,
   },
   other: {
     multiArtistFormat: 'ampersand',
     lyricOrder: 'original_first',
     downloadTranslatedLyric: true,
     pathFormat: '{artist}/{album}/{title}',
+    fontScale: 1.0,
   },
 }

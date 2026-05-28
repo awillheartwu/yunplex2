@@ -1,6 +1,5 @@
 export interface NeteaseConfig {
   cookie: string
-  playlistIds: number[]
   quality: AudioQuality
 }
 
@@ -32,15 +31,23 @@ export interface DownloadConfig {
 export interface SyncStrategyConfig {
   intervalMinutes: number
   songLimit: number
+  downloadConcurrency: number
+  plexScanRetries: number
+  plexScanRetryDelaySec: number
   enabled: boolean
   logRetentionDays: number
   jobRetentionSuccessDays: number
   jobRetentionFailedDays: number
+  downloadTaskRetentionDays: number
+  downloadHistoryRetentionDays: number
+  forceFullCompare: boolean
+  fullCompareAfterSkips: number
+  fullCompareAfterDays: number
 }
 
 export type MultiArtistFormat = 'feat' | 'ft' | 'featuring' | 'ampersand' | 'slash' | 'comma' | 'with' | 'and' | 'plus'
 
-function joinList(names: string[], conjunction: string): string {
+export function joinList(names: string[], conjunction: string): string {
   if (names.length === 0) return ''
   if (names.length === 1) return names[0]
   if (names.length === 2) return names[0] + conjunction + names[1]
@@ -88,6 +95,7 @@ export interface OtherConfig {
   lyricOrder: LyricOrder
   downloadTranslatedLyric: boolean
   pathFormat: string
+  fontScale: number
 }
 
 export interface AppConfig {

@@ -36,9 +36,78 @@ export function initDb(dataDir: string): Database.Database {
   db.pragma('foreign_keys = ON')
 
   createSchema(db)
+  runMigrations(db)
   seedConfig(db, dataDir)
 
   return db
+}
+
+// ── Schema migrations ──
+
+const MIGRATIONS: Array<(d: Database.Database) => void> = [
+  /* v1: initial schema — covered by createSchema */
+  /* v2: add last_job_id to playlist_sources */
+  (d) => { d.prepare('ALTER TABLE playlist_sources ADD COLUMN last_job_id TEXT').run() },
+  /* v3: add auto_create_plex_playlist to playlist_sources */
+  (d) => { d.prepare('ALTER TABLE playlist_sources ADD COLUMN auto_create_plex_playlist INTEGER NOT NULL DEFAULT 0').run() },
+  /* v4: song_lookup table for Plex track caching */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS song_lookup (
+        netease_song_id   INTEGER PRIMARY KEY,
+        plex_rating_key   TEXT,
+        file_path         TEXT,
+        last_verified_at  TEXT NOT NULL
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_song_lookup_rating_key ON song_lookup(plex_rating_key)').run()
+  },
+  /* v5: add last_track_update_time to playlist_sources */
+  (d) => { d.prepare('ALTER TABLE playlist_sources ADD COLUMN last_track_update_time INTEGER').run() },
+  /* v6: add force_full_compare to playlist_sources */
+  (d) => { d.prepare('ALTER TABLE playlist_sources ADD COLUMN force_full_compare INTEGER NOT NULL DEFAULT 0').run() },
+  /* v7: add skip tracking + plex timestamp to playlist_sources */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN consecutive_skips INTEGER NOT NULL DEFAULT 0').run()
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN last_full_compare_at TEXT').run()
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN plex_updated_at INTEGER').run()
+  },
+  /* v8: add track ID snapshot for incremental diff */
+  (d) => { d.prepare('ALTER TABLE playlist_sources ADD COLUMN track_id_snapshot TEXT').run() },
+  /* v9: add netease playlist name for display */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN netease_playlist_name TEXT NOT NULL DEFAULT \'\'').run()
+    d.prepare("UPDATE playlist_sources SET netease_playlist_name = name WHERE netease_playlist_name = ''").run()
+  },
+  /* v10: add sort_order for drag-and-drop ordering */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0').run()
+    // Backfill: assign sort_order based on created_at (oldest first)
+    const rows = d.prepare('SELECT id FROM playlist_sources ORDER BY created_at ASC').all() as { id: string }[]
+    const stmt = d.prepare('UPDATE playlist_sources SET sort_order = ? WHERE id = ?')
+    rows.forEach((r, i) => stmt.run(i, r.id))
+  },
+  /* v11: add removed_songs to jobs */
+  (d) => {
+    d.prepare('ALTER TABLE jobs ADD COLUMN removed_songs INTEGER NOT NULL DEFAULT 0').run()
+  },
+  /* v12: per-source skip/full-compare overrides */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN full_compare_after_skips INTEGER').run()
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN full_compare_after_days INTEGER').run()
+  },
+]
+
+function runMigrations(d: Database.Database): void {
+  const currentVersion = (d.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  for (let i = currentVersion; i < MIGRATIONS.length; i++) {
+    const m = MIGRATIONS[i]
+    if (!m) continue
+    try { m(d) } catch { /* already applied or harmless */ }
+  }
+  if (currentVersion < MIGRATIONS.length) {
+    d.pragma(`user_version = ${MIGRATIONS.length}`)
+  }
 }
 
 // ── Config seeding (runs once on empty DB) ──
@@ -65,7 +134,6 @@ function seedConfig(d: Database.Database, dataDir: string): void {
   const envMap: Record<string, [string, string]> = {
     YUNPLEX2_NETEASE_COOKIE: ['netease', 'cookie'],
     YUNPLEX2_NETEASE_QUALITY: ['netease', 'quality'],
-    YUNPLEX2_NETEASE_PLAYLIST_IDS: ['netease', 'playlistIds'],
     YUNPLEX2_PLEX_SERVER: ['plex', 'server'],
     YUNPLEX2_PLEX_PORT: ['plex', 'port'],
     YUNPLEX2_PLEX_TOKEN: ['plex', 'token'],
@@ -116,16 +184,13 @@ function seedConfig(d: Database.Database, dataDir: string): void {
   )
 }
 
-function coerceValue(key: string, val: string): string | number | boolean | number[] {
+export function coerceValue(key: string, val: string): string | number | boolean {
   if (key === 'port' || key === 'intervalMinutes' || key === 'songLimit') {
     const n = parseInt(val, 10)
     return isNaN(n) ? val : n
   }
   if (key === 'enabled') {
     return val === 'true' || val === '1'
-  }
-  if (key === 'playlistIds') {
-    return val.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n))
   }
   return val
 }
@@ -184,6 +249,7 @@ function createSchema(db: Database.Database): void {
       success_songs  INTEGER NOT NULL DEFAULT 0,
       failed_songs   INTEGER NOT NULL DEFAULT 0,
       skipped_songs  INTEGER NOT NULL DEFAULT 0,
+      removed_songs  INTEGER NOT NULL DEFAULT 0,
       warnings       INTEGER NOT NULL DEFAULT 0,
       dry_run        INTEGER NOT NULL DEFAULT 0,
       source         TEXT NOT NULL DEFAULT '网易云音乐',
@@ -209,6 +275,68 @@ function createSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_downloads_time ON downloads(downloaded_at DESC);
+
+    CREATE TABLE IF NOT EXISTS download_tasks (
+      id              TEXT PRIMARY KEY,
+      source_id       TEXT NOT NULL,
+      song_id         INTEGER NOT NULL,
+      song_name       TEXT NOT NULL,
+      artist          TEXT NOT NULL DEFAULT '',
+      album           TEXT NOT NULL DEFAULT '',
+      status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','downloading','tagging','done','failed')),
+      progress        INTEGER NOT NULL DEFAULT 0,
+      file_path       TEXT,
+      file_type       TEXT,
+      quality         TEXT,
+      error           TEXT,
+      retry_count     INTEGER NOT NULL DEFAULT 0,
+      job_id          TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id);
+
+    CREATE TABLE IF NOT EXISTS playlist_sources (
+      id                      TEXT PRIMARY KEY,
+      netease_playlist_id     INTEGER NOT NULL UNIQUE,
+      name                    TEXT NOT NULL DEFAULT '',
+      enabled                 INTEGER NOT NULL DEFAULT 1,
+      plex_playlist_name      TEXT NOT NULL DEFAULT '',
+      plex_playlist_rating_key TEXT NOT NULL DEFAULT '',
+      sync_limit              INTEGER,
+      last_synced_at          TEXT,
+      last_status             TEXT NOT NULL DEFAULT 'idle',
+      last_error              TEXT,
+      last_job_id             TEXT,
+      auto_create_plex_playlist INTEGER NOT NULL DEFAULT 0,
+      track_count              INTEGER NOT NULL DEFAULT 0,
+      last_track_update_time  INTEGER,
+      force_full_compare      INTEGER NOT NULL DEFAULT 0,
+      consecutive_skips       INTEGER NOT NULL DEFAULT 0,
+      full_compare_after_skips INTEGER,
+      full_compare_after_days  INTEGER,
+      last_full_compare_at    TEXT,
+      plex_updated_at         INTEGER,
+      track_id_snapshot       TEXT,
+      netease_playlist_name   TEXT NOT NULL DEFAULT '',
+      sort_order              INTEGER NOT NULL DEFAULT 0,
+      created_at              TEXT NOT NULL,
+      updated_at              TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_playlist_sources_enabled ON playlist_sources(enabled);
+
+    CREATE TABLE IF NOT EXISTS song_lookup (
+      netease_song_id   INTEGER PRIMARY KEY,
+      plex_rating_key   TEXT,
+      file_path         TEXT,
+      last_verified_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_song_lookup_rating_key ON song_lookup(plex_rating_key);
+
   `)
 }
 

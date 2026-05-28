@@ -5,7 +5,7 @@
       <div
         v-if="idx < steps.length - 1"
         class="absolute left-[11px] top-8 w-px h-[calc(100%-16px)]"
-        :class="step.status === 'success' ? 'bg-[#2a2a2a]' : 'bg-[#1f1f1f]'"
+        :style="{ background: step.status === 'success' ? 'var(--border-secondary)' : 'var(--border-primary)' }"
       />
 
       <div class="flex gap-4 pb-4">
@@ -74,10 +74,10 @@ function dotClass(status: string): string {
 
 function dotColor(status: string): string {
   switch (status) {
-    case 'success': return '#2ecc71'
-    case 'failed': return '#e74c3c'
-    case 'running': return '#5e6ad2'
-    default: return '#4a4a4a'
+    case 'success': return '#22c55e'
+    case 'failed': return '#ef4444'
+    case 'running': return '#818cf8'
+    default: return '#71717a'
   }
 }
 

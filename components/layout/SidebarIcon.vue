@@ -77,6 +77,23 @@
     <template v-else-if="name === 'x'">
       <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" :stroke="color" stroke-width="1.5" stroke-linecap="round" />
     </template>
+    <!-- Source / playlist source -->
+    <template v-else-if="name === 'source'">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" :stroke="color" stroke-width="1.3" />
+      <path d="M5.5 6.5h5M5.5 9h4" :stroke="color" stroke-width="1.3" stroke-linecap="round" />
+      <circle cx="10" cy="6.5" r="1.3" :stroke="color" stroke-width="1.3" />
+    </template>
+    <!-- Retention / Database -->
+    <template v-else-if="name === 'database'">
+      <ellipse cx="8" cy="3" rx="5" ry="1.5" :stroke="color" stroke-width="1.3" />
+      <path d="M3 3v10c0 .8 2.2 1.5 5 1.5s5-.7 5-1.5V3" :stroke="color" stroke-width="1.3" />
+      <path d="M3 8c0 .8 2.2 1.5 5 1.5s5-.7 5-1.5" :stroke="color" stroke-width="1.3" />
+    </template>
+    <!-- Import / Export -->
+    <template v-else-if="name === 'import-export'">
+      <path d="M11.5 2H13a1 1 0 011 1v10a1 1 0 01-1 1h-1.5M4.5 2H3a1 1 0 00-1 1v10a1 1 0 001 1h1.5" :stroke="color" stroke-width="1.3" stroke-linecap="round" />
+      <path d="M5.5 10l2.5 2.5L10.5 10M8 12.5v-9" :stroke="color" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+    </template>
   </svg>
 </template>
 
@@ -86,5 +103,5 @@ const props = defineProps<{
   active?: boolean
 }>()
 
-const color = computed(() => (props.active ? '#5e6ad2' : '#6b6b6b'))
+const color = computed(() => (props.active ? '#818cf8' : '#71717a'))
 </script>

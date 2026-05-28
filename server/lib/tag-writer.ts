@@ -73,6 +73,7 @@ export async function downloadSong(
     separateLyricFiles?: boolean
   },
   relativePath: string,
+  onProgress?: (pct: number) => void,
 ): Promise<DownloadResult> {
   const ops: SongOps = {
     download: 'ok',
@@ -88,10 +89,25 @@ export async function downloadSong(
 
   const filePath = join(downloadDir, relativePath)
 
-  // Download audio file
+  // Download audio file with streaming progress
   try {
     const songRes = await fetch(url)
-    const buffer = Buffer.from(await songRes.arrayBuffer())
+    const contentLength = parseInt(songRes.headers.get('content-length') || '0', 10)
+    const reader = songRes.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const chunks: Uint8Array[] = []
+    let received = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      received += value.length
+      if (contentLength > 0 && onProgress) {
+        onProgress(Math.round(received / contentLength * 100))
+      }
+    }
+    const buffer = Buffer.concat(chunks)
     await writeFile(filePath, buffer)
     ops.download = 'ok'
   } catch {

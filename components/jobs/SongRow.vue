@@ -102,6 +102,7 @@ const statusConfig = computed(() => {
   switch (props.song.status) {
     case 'success': return { dot: 'bg-success', badge: 'bg-[#2ecc7120] text-success', label: '成功' }
     case 'skipped_existing': return { dot: 'bg-muted-deep', badge: 'bg-[#6b6b6b20] text-muted-deep', label: '已存在' }
+    case 'removed': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: '已移除' }
     case 'failed_download': return { dot: 'bg-danger', badge: 'bg-[#e74c3c20] text-danger', label: '下载失败' }
     case 'failed_tags': return { dot: 'bg-danger', badge: 'bg-[#e74c3c20] text-danger', label: '标签失败' }
     case 'failed_plex_match': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: 'Plex 匹配失败' }

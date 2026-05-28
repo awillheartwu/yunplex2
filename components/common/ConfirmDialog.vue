@@ -2,14 +2,15 @@
   <Teleport to="body">
     <div
       v-if="visible"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)"
       @click.self="onCancel"
     >
-      <div class="bg-surface-elevated border border-[var(--border-secondary)] rounded-xl p-8 w-[440px] shadow-2xl">
-        <h3 class="text-base font-semibold mb-2">{{ title }}</h3>
-        <p class="text-sm text-muted mb-6">{{ message }}</p>
-        <div class="flex justify-end gap-4">
-          <button v-if="showCancel" class="btn btn-secondary" @click="onCancel">取消</button>
+      <div class="section-card p-6 w-[420px] max-w-[90vw] shadow-lg" style="border-color:var(--border-secondary)">
+        <h3 class="text-sm font-semibold mb-2">{{ title }}</h3>
+        <p class="text-xs text-muted mb-6">{{ message }}</p>
+        <div class="flex justify-end gap-3">
+          <button v-if="showCancel" class="btn btn-secondary btn-sm" @click="onCancel">取消</button>
           <button
             class="btn"
             :class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"

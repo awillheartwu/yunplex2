@@ -12,9 +12,24 @@
         <span class="w-2 h-2 rounded-full" :class="syncState?.isRunning ? 'bg-warning animate-pulse' : 'bg-muted-deep'" /> {{ syncState?.isRunning ? '同步中' : '空闲' }}
       </div>
       <span v-if="syncState?.lastSyncAt" class="text-xs text-muted-deep">上次 {{ formatRelative(syncState.lastSyncAt) }}</span>
-      <div class="flex items-center gap-1.5 ml-auto">
+      <button
+        class="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-all duration-200"
+        :style="{
+          background: autoSync ? 'var(--accent-glow)' : 'var(--bg-surface)',
+          borderColor: autoSync ? 'var(--accent)' : 'var(--border-primary)',
+          color: autoSync ? 'var(--accent)' : 'var(--text-secondary)'
+        }"
+        :disabled="autoSyncLoading"
+        @click="toggleAutoSync"
+      >
+        <span class="relative w-7 h-4 rounded-full transition-all duration-200 shrink-0" :style="{ background: autoSync ? 'var(--accent)' : 'var(--border-secondary)' }">
+          <span class="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform" :class="autoSync ? 'right-0.5' : 'left-0.5'" />
+        </span>
+        {{ autoSyncLoading ? '...' : (autoSync ? '自动同步开' : '自动同步关') }}
+      </button>
+      <div class="flex items-center gap-1.5">
         <label class="flex items-center gap-1 text-xs cursor-pointer select-none" style="color:var(--text-secondary)">
-          <input v-model="dryRun" type="checkbox" class="w-3 h-3 rounded accent-[#5e6ad2] cursor-pointer" /> 预览
+          <input v-model="dryRun" type="checkbox" class="cursor-pointer" /> 预览
         </label>
         <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">{{ syncState?.isRunning ? '同步中' : '手动同步' }}</button>
         <button v-if="syncState?.isRunning" class="btn btn-danger btn-sm" @click="handleCancel">停止</button>
@@ -32,7 +47,7 @@
         <div class="grid grid-cols-4 gap-3 mb-3">
           <div>
             <p class="text-2xs font-medium" style="color:var(--text-tertiary)">已同步曲目</p>
-            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ syncState?.successCount ?? 0 }}</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ syncedTrackCount }}</p>
           </div>
           <div>
             <p class="text-2xs font-medium" style="color:var(--text-tertiary)">失败次数</p>
@@ -40,7 +55,7 @@
           </div>
           <div>
             <p class="text-2xs font-medium" style="color:var(--text-tertiary)">歌单监控</p>
-            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ config?.netease.playlistIds.length ?? 0 }}</p>
+            <p class="text-xl font-semibold tracking-tight mt-0.5" style="color:var(--text-primary)">{{ sourceCount }}</p>
           </div>
           <div>
             <p class="text-2xs font-medium" style="color:var(--text-tertiary)">最后结果</p>
@@ -55,21 +70,25 @@
           <p class="text-xs font-semibold" style="color:var(--text-primary)">最近问题</p>
           <span v-if="recentErrors.length" class="text-2xs font-medium text-danger">{{ recentErrors.length }}</span>
         </div>
-        <div v-if="recentErrors.length" class="space-y-1.5">
-          <div v-for="(err, i) in recentErrors.slice(0, 5)" :key="i" class="flex items-start gap-1.5 text-xs">
+        <div v-if="recentErrors.length" class="space-y-0.5">
+          <NuxtLink
+            v-for="(err, i) in recentErrors.slice(0, 5)" :key="i"
+            to="/jobs"
+            class="flex items-start gap-1.5 text-xs px-2 py-1.5 rounded-md cursor-pointer transition-colors -mx-2 hover:bg-[var(--bg-hover)]"
+          >
             <span class="text-danger shrink-0 mt-0.5 font-bold">!</span>
             <span class="truncate flex-1" style="color:var(--text-secondary)">{{ err.songName || err.message }}</span>
-            <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">{{ formatTimeCompact(err.timestamp) }}</span>
-          </div>
+            <span class="text-2xs shrink-0 mt-0.5" style="color:var(--text-tertiary)">{{ formatTimeCompact(err.timestamp) }}</span>
+          </NuxtLink>
         </div>
-        <div v-else class="flex items-center justify-center py-6">
+        <NuxtLink v-else to="/logs" class="flex items-center justify-center py-6 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors rounded-md">
           <p class="text-xs" style="color:var(--text-tertiary)">暂无问题</p>
-        </div>
+        </NuxtLink>
       </div>
     </div>
 
     <!-- ═══ Sync stage bar ═══ -->
-    <NuxtLink to="/task" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
+    <NuxtLink to="/downloads" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <template v-for="(stage, idx) in activeStages" :key="stage.key">
           <span class="w-2 h-2 rounded-full shrink-0" :class="stageDotClass(stage.key)" />
@@ -78,48 +97,21 @@ class="text-2xs shrink-0"
             :style="{ color: stageTextColor(stage.key) }"
             :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
           <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
-            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#5e6ad2' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? '#818cf8' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </template>
       </div>
       <div v-if="syncState?.isRunning && syncState?.progress" class="w-24 h-1 rounded-full overflow-hidden shrink-0" style="background:var(--bg-input)">
-        <div class="h-full rounded-full transition-all duration-500" style="background:#5e6ad2" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
+        <div class="h-full rounded-full transition-all duration-500" style="background:#818cf8" :style="{ width: (syncState.progress.current / syncState.progress.total * 100) + '%' }" />
       </div>
-      <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">下载状态 →</span>
+      <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">下载中心 →</span>
     </NuxtLink>
 
     <!-- ═══ Row 2: Recently Added + Timeline ═══ -->
     <div class="grid grid-cols-3 gap-4">
-      <!-- Recently Added (2 columns) -->
-      <div class="col-span-2 section-card overflow-hidden">
-        <div class="px-4 py-2.5 flex items-center justify-between" style="border-bottom:1px solid var(--border-primary)">
-          <p class="text-xs font-semibold" style="color:var(--text-primary)">最近添加</p>
-          <span class="text-2xs" style="color:var(--text-tertiary)">{{ recentTracks.length }} 首</span>
-        </div>
-        <div v-if="recentTracks.length" class="divide-y" style="border-color:var(--border-primary)">
-          <div v-for="track in recentTracks.slice(0, 6)" :key="track.id" class="px-4 py-2.5 flex items-center gap-3 hover:bg-[var(--bg-hover)] transition-colors duration-150">
-            <div class="w-9 h-9 rounded overflow-hidden shrink-0 flex items-center justify-center" style="background:var(--bg-input)">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#5e6ad2" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="#5e6ad2" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-xs font-medium truncate" style="color:var(--text-primary)">{{ track.title }}</p>
-              <p class="text-2xs truncate" style="color:var(--text-secondary)">{{ track.artist }}</p>
-            </div>
-            <span
-class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
-              :class="track.status === 'success' ? 'bg-[#2ecc7118] text-success' : track.status === 'failed_plex_match' ? 'bg-[#f1c40f18] text-warning' : 'bg-[#e74c3c18] text-danger'">
-              {{ track.status === 'success' ? '已同步' : track.status === 'failed_plex_match' ? '未匹配' : '失败' }}
-            </span>
-          </div>
-        </div>
-        <div v-else class="flex items-center justify-center py-12">
-          <div class="text-center">
-            <div class="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center" style="background:var(--bg-input)">
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </div>
-            <p class="text-xs" style="color:var(--text-tertiary)">执行首次同步后显示新增歌曲</p>
-          </div>
-        </div>
+      <!-- Download Chart (2 columns) -->
+      <div class="col-span-2 section-card p-4 flex flex-col">
+        <DownloadChart :data="dailyStats" :days="7" class="flex-1" />
       </div>
 
       <!-- Timeline (1 column) -->
@@ -128,7 +120,7 @@ class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
           <p class="text-xs font-semibold" style="color:var(--text-primary)">同步时间线</p>
           <NuxtLink to="/jobs" class="text-2xs hover:underline" style="color:var(--text-secondary)">历史</NuxtLink>
         </div>
-        <div v-if="recentJobs.length" class="divide-y" style="border-color:var(--border-primary)">
+        <div v-if="recentJobs.length" class="divide-y divide-[var(--border-primary)]">
           <NuxtLink v-for="job in recentJobs.slice(0, 5)" :key="job.id" :to="`/jobs?id=${job.id}`" class="block px-4 py-2.5 hover:bg-[var(--bg-hover)] transition-colors duration-150">
             <div class="flex items-center gap-2 mb-0.5">
               <div class="w-2 h-2 rounded-full shrink-0" :class="job.status === 'success' ? 'bg-success' : job.status === 'partial' ? 'bg-warning' : 'bg-danger'" />
@@ -159,7 +151,7 @@ class="text-2xs px-1.5 py-0.5 rounded font-medium shrink-0"
         <div class="space-y-1 text-xs">
           <div class="flex justify-between"><span style="color:var(--text-secondary)">目录</span><span class="truncate ml-2" style="color:var(--text-primary);max-width:140px">{{ config?.download.dir || '—' }}</span></div>
           <div class="flex justify-between"><span style="color:var(--text-secondary)">音质</span><span style="color:var(--text-primary)">{{ qualityLabel }}</span></div>
-          <div class="flex justify-between"><span style="color:var(--text-secondary)">同步次数</span><span style="color:var(--text-primary)">{{ totalSyncs }}</span></div>
+          <div class="flex justify-between"><span style="color:var(--text-secondary)">最近下载</span><span style="color:var(--text-primary)">{{ lastDownloadAt || '—' }}</span></div>
         </div>
       </div>
       <div class="section-card p-3.5">
@@ -181,17 +173,30 @@ import type { LogEntry } from '~~/server/lib/log/types'
 const api = useApi()
 const { state: syncState, loading: syncLoading, triggerSync, cancelSync, startPolling, stopPolling } = useSync()
 const config = ref<AppConfig | null>(null)
+const autoSync = ref(false)
+const autoSyncLoading = ref(false)
+
+async function toggleAutoSync() {
+  if (!config.value) return
+  autoSyncLoading.value = true
+  try {
+    await api.put('/config', { ...config.value, sync: { ...config.value.sync, enabled: !autoSync.value } })
+    autoSync.value = !autoSync.value
+  } catch { /* ignore */ }
+  finally { autoSyncLoading.value = false }
+}
 const recentJobs = ref<JobSummary[]>([])
-const recentTracks = ref<TrackCard[]>([])
+const dailyStats = ref<{ date: string; count: number }[]>([])
 const recentErrors = ref<(LogEntry & { songName?: string })[]>([])
 const dryRun = ref(false)
 const plexOnline = ref(false)
 const neteaseOk = ref(false)
 const totalSyncs = ref(0)
+const sourceCount = ref(0)
+const lastDownloadAt = ref('')
+const syncedTrackCount = ref(0)
 
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
-interface TrackCard { id: string; title: string; artist: string; status: string }
-
 const qualityLabels: Record<string, string> = { standard: '标准', higher: '较高', exhigh: '极高', lossless: '无损', hires: 'Hi-Res', jyeffect: '高清环绕声', jymaster: '超清母带' }
 const qualityLabel = computed(() => config.value ? (qualityLabels[config.value.netease.quality] || config.value.netease.quality) : '—')
 
@@ -236,7 +241,7 @@ function stageTextColor(key: string): string {
   const ci = stageOrder.indexOf(current)
   const ki = stageOrder.indexOf(key)
   if (ki < ci) return 'var(--text-secondary)'
-  if (ki === ci) return '#5e6ad2'
+  if (ki === ci) return '#818cf8'
   return 'var(--text-tertiary)'
 }
 
@@ -244,28 +249,46 @@ async function fetchData() {
   const [cfg, jobsRes, logs] = await Promise.all([
     api.get<AppConfig>('/config'),
     api.get<{ items: JobSummary[]; total: number }>('/jobs', { limit: '10' }),
-    api.get<LogEntry[]>('/logs', { limit: '30' }),
+    api.get<{ items: LogEntry[]; total: number }>('/logs', { limit: '30' }),
   ])
   config.value = cfg
+  autoSync.value = cfg.sync.enabled
   recentJobs.value = jobsRes.items || []
   totalSyncs.value = jobsRes.total || 0
   plexOnline.value = !!cfg.plex.server
   neteaseOk.value = !!cfg.netease.cookie
 
-  recentErrors.value = (logs || []).filter(l => l.level === 'error').slice(0, 10).map(l => {
+  // Source count
+  try {
+    const srcs = await api.get<{ length: number }[]>('/playlist-sources', { enabled: '1' })
+    sourceCount.value = Array.isArray(srcs) ? srcs.length : 0
+  } catch { /* non-critical */ }
+
+  recentErrors.value = (logs?.items || []).filter((l: LogEntry) => l.level === 'error').slice(0, 10).map((l: LogEntry) => {
     let songName: string | undefined
     const match = l.message?.match(/下载失败:\s*(.+)/)
     if (match) songName = match[1]
     return { ...l, songName }
   })
 
-  const lastJob = jobsRes.items?.find(j => j.status === 'success' || j.status === 'partial' || j.status === 'failed')
-  if (lastJob) {
-    try {
-      const detail = await api.get<{ songs: { id: string; songName: string; artist: string; status: string }[] }>(`/jobs/${lastJob.id}`)
-      recentTracks.value = (detail.songs || []).filter(s => s.status === 'success' || s.status === 'failed_plex_match' || s.status === 'failed_plex_insert').slice(0, 10).map(s => ({ id: s.id, title: s.songName, artist: s.artist, status: s.status }))
-    } catch { /* non-critical */ }
-  }
+  // Download stats
+  try {
+    const qs = await api.get<{ done: number }>('/downloads/queue-status')
+    syncedTrackCount.value = qs.done ?? 0
+  } catch { /* non-critical */ }
+
+  try {
+    const dl = await api.get<{ items: { downloadedAt: string }[] }>('/downloads/history', { limit: '1' })
+    if (dl.items?.length > 0) {
+      const d = new Date(dl.items[0].downloadedAt)
+      lastDownloadAt.value = d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    }
+  } catch { /* non-critical */ }
+
+  // Daily download stats for chart
+  try {
+    dailyStats.value = await api.get<{ date: string; count: number }[]>('/downloads/daily-stats', { days: '7' })
+  } catch { /* non-critical */ }
 }
 
 async function handleSync() { try { await triggerSync(dryRun.value); startPolling(2000); await fetchData() } catch { /* handled */ } }

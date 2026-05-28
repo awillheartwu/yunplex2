@@ -2,14 +2,14 @@
   <div class="space-y-8">
     <!-- Job detail view -->
     <template v-if="selectedJob">
-      <JobDetail :job="selectedJob" @back="selectedJob = null" />
+      <JobDetail :job="selectedJob" @back="backToList" />
     </template>
 
     <template v-else>
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-sm font-semibold">同步任务中心</h2>
+        <h2 class="text-sm font-semibold">同步历史</h2>
         <p class="text-2xs text-muted mt-0.5">查看历次同步任务的执行结果和详情</p>
       </div>
       <div class="flex items-center gap-4">
@@ -20,6 +20,7 @@
           class="form-input w-48 text-sm"
           @input="fetchJobs()"
         />
+        <DateRange v-model="dateFilter" :min-date="earliestDate" />
         <button class="btn btn-danger btn-sm" @click="showClear = true">清空</button>
         <button class="btn btn-secondary btn-sm" @click="fetchJobs">刷新</button>
       </div>
@@ -67,15 +68,13 @@
           :job="job"
           @select="selectJob(job.id)"
         />
-        <div v-if="hasMore" class="flex justify-center pt-2">
-          <button
-            class="btn btn-ghost btn-sm"
-            :disabled="loadingMore"
-            @click="loadMore"
-          >
-            {{ loadingMore ? '加载中...' : `加载更多 (${jobs.length} / ${total})` }}
-          </button>
-        </div>
+        <Pagination
+          :has-more="hasMore"
+          :loading="loadingMore"
+          :current-count="jobs.length"
+          :total="total"
+          @load-more="loadMore"
+        />
       </div>
     </template>
 
@@ -96,9 +95,11 @@
 import type { SyncJob } from '~~/server/lib/job/types'
 
 const api = useApi()
-const { jobs, total, loading, loadingMore, hasMore, activeFilter, searchQuery, fetchJobs, loadMore, setFilter } = useJobs()
+const { jobs, total, loading, loadingMore, hasMore, activeFilter, searchQuery, dateFilter, earliestDate, fetchJobs, loadMore, setFilter } = useJobs()
 const selectedJob = ref<SyncJob | null>(null)
 const showClear = ref(false)
+const router = useRouter()
+const route = useRoute()
 
 const filters = [
   { label: '全部', value: '' },
@@ -110,10 +111,24 @@ const filters = [
 async function selectJob(id: string) {
   try {
     selectedJob.value = await api.get<SyncJob>(`/jobs/${id}`)
+    router.push({ query: { id } })
   } catch {
     // keep showing list
   }
 }
+
+function backToList() {
+  selectedJob.value = null
+  router.push({ query: {} })
+}
+
+watch(() => route.query.id, (newId) => {
+  if (!newId) {
+    selectedJob.value = null
+  } else if (typeof newId === 'string' && (!selectedJob.value || selectedJob.value.id !== newId)) {
+    selectJob(newId)
+  }
+})
 
 async function handleClear() {
   showClear.value = false
@@ -122,6 +137,8 @@ async function handleClear() {
     await fetchJobs()
   } catch { /* ignore */ }
 }
+
+watch(dateFilter, () => fetchJobs(), { deep: true })
 
 onMounted(async () => {
   await fetchJobs()
