@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import type { SyncJob } from '~~/server/lib/job/types'
+import type { SyncJob, JobStatus } from '~~/server/lib/job/types'
 
 const api = useApi()
 const { jobs, total, loading, loadingMore, hasMore, activeFilter, searchQuery, dateFilter, earliestDate, fetchJobs, loadMore, setFilter } = useJobs()
@@ -109,7 +109,7 @@ function onSearchInput() {
   searchTimer = setTimeout(() => fetchJobs(), 300)
 }
 
-const filters = [
+const filters: { label: string; value: JobStatus | '' }[] = [
   { label: '全部', value: '' },
   { label: '成功', value: 'success' },
   { label: '部分失败', value: 'partial' },

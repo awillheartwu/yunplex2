@@ -85,7 +85,7 @@ const offset = ref(0)
 
 const hasMore = computed(() => logs.value.length < total.value)
 
-const filters = [
+const filters: { label: string; value: LogLevel | '' }[] = [
   { label: '全部', value: '' },
   { label: '信息', value: 'info' },
   { label: '警告', value: 'warn' },

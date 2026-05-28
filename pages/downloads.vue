@@ -13,7 +13,8 @@
 
     <!-- Tabs -->
     <div class="flex items-center gap-1">
-      <button v-for="t in tabs" :key="t.key"
+      <button
+v-for="t in tabs" :key="t.key"
         class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
         :class="activeTab === t.key
           ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
@@ -61,7 +62,8 @@
 
           <!-- Progress bar -->
           <div class="w-full h-2 rounded-full overflow-hidden" style="background:var(--bg-input)">
-            <div class="h-full rounded-full transition-all duration-500 bg-accent"
+            <div
+class="h-full rounded-full transition-all duration-500 bg-accent"
               :style="{ width: overallPct + '%' }" />
           </div>
           <div class="flex justify-between mt-1.5">
@@ -97,14 +99,16 @@
             <span class="text-2xs text-muted">{{ g.doneCount }}/{{ g.totalCount }} 完成</span>
             <div class="flex-1 ml-4">
               <div class="h-1 rounded-full overflow-hidden" style="background:var(--bg-input)">
-                <div class="h-full rounded-full transition-all duration-300 bg-accent"
+                <div
+class="h-full rounded-full transition-all duration-300 bg-accent"
                   :style="{ width: g.progressPct + '%' }" />
               </div>
             </div>
           </div>
           <!-- Song rows (collapsible) -->
           <div v-if="showSongDetail" class="divide-y divide-[var(--border-primary)]">
-            <div v-for="song in g.songs" :key="song.taskId"
+            <div
+v-for="song in g.songs" :key="song.taskId"
               class="px-5 py-2.5 flex items-center gap-4 text-xs"
             >
               <!-- Status icon -->
@@ -118,7 +122,8 @@
               <!-- Progress mini bar -->
               <div v-if="song.status === 'downloading' || song.status === 'tagging'" class="w-20 shrink-0">
                 <div class="h-1 rounded-full overflow-hidden" style="background:var(--bg-input)">
-                  <div class="h-full rounded-full transition-all" :class="song.status === 'tagging' ? 'bg-warning' : 'bg-accent'"
+                  <div
+class="h-full rounded-full transition-all" :class="song.status === 'tagging' ? 'bg-warning' : 'bg-accent'"
                     :style="{ width: song.progress + '%' }" />
                 </div>
               </div>
@@ -133,7 +138,8 @@
         <p class="text-xs font-medium mb-4" style="color:var(--text-primary)">最近同步</p>
         <div class="space-y-3">
           <div v-for="s in lastSyncSources" :key="s.id" class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full shrink-0"
+            <span
+class="w-2 h-2 rounded-full shrink-0"
               :class="s.lastStatus === 'success' ? 'bg-success' : s.lastStatus === 'partial' ? 'bg-warning' : 'bg-danger'" />
             <span class="text-sm flex-1" style="color:var(--text-primary)">{{ s.name }}</span>
             <span class="text-2xs text-muted">{{ s.trackCount }} 首</span>
@@ -177,7 +183,8 @@
       <div v-else class="space-y-3">
         <div class="section-card overflow-hidden">
           <div class="divide-y divide-[var(--border-primary)]">
-            <div v-for="d in historyItems" :key="d.id"
+            <div
+v-for="d in historyItems" :key="d.id"
               class="px-5 py-3 flex items-start gap-4 hover:bg-[var(--bg-hover)] transition-colors">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
@@ -202,7 +209,8 @@
       </div>
     </template>
 
-    <ConfirmDialog :visible="showClear" title="清空下载历史" message="确定要清空所有下载历史记录吗？" confirm-label="清空" variant="danger"
+    <ConfirmDialog
+:visible="showClear" title="清空下载历史" message="确定要清空所有下载历史记录吗？" confirm-label="清空" variant="danger"
       @confirm="handleClear" @cancel="showClear = false" />
   </div>
 </template>
@@ -361,7 +369,7 @@ function handleQueueUpdate(data: Record<string, unknown>) {
 }
 
 function handleSongProgress(data: Record<string, unknown>) {
-  const { taskId, songName, status, sourceId } = data
+  const { taskId, status } = data
   if (typeof taskId !== 'string') return
   const existing = syncTasks.value.find(t => t.taskId === taskId)
   if (existing) {
@@ -406,15 +414,6 @@ const stageLabels: Record<string, string> = {
   reorder:'重排歌单', cancelled:'已取消', error:'同步错误',
 }
 function stageLabel(s: string): string { return stageLabels[s] || s }
-function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins}分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}小时前`
-  return `${Math.floor(hours / 24)}天前`
-}
 
 function songStatusLabel(s: string): string {
   switch (s) { case 'pending': return '排队'; case 'downloading': return '下载中'; case 'tagging': return '写标签'; case 'done': return '完成'; case 'failed': return '失败'; default: return s }
