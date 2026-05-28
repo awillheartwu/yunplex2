@@ -1,6 +1,22 @@
 import { success } from '../../lib/response'
 import { getDataDir } from '../../lib/config/store'
 import { resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+
+function platformLabel(): string {
+  const p = process.platform
+  if (p === 'darwin') return 'macOS'
+  if (p === 'win32') return 'Windows'
+  if (isDocker()) return 'Linux (Docker)'
+  return 'Linux'
+}
+
+function isDocker(): boolean {
+  try {
+    return existsSync('/.dockerenv') ||
+      (existsSync('/proc/1/cgroup') && readFileSync('/proc/1/cgroup', 'utf-8').includes('docker'))
+  } catch { return false }
+}
 
 export default defineEventHandler(() => {
   const dataDir = getDataDir()
@@ -10,7 +26,7 @@ export default defineEventHandler(() => {
     nodeVersion: process.version,
     dataDir: resolve(dataDir),
     dbFile: resolve(dataDir, 'data.db'),
-    platform: process.platform,
-    dockerHint: '如果使用 Docker，请确保 /app/data 目录已挂载到宿主机以持久化数据',
+    platform: platformLabel(),
+    docker: isDocker(),
   })
 })

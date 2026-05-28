@@ -2,8 +2,7 @@ import { sseSubscribe, sseConnected } from './sse'
 
 /**
  * Per-source sync — fire-and-forget trigger with SSE-driven state tracking.
- * Use on the sources page. The syncing state is optimistic:
- * set when the user clicks sync, cleared when SSE reports stage → idle.
+ * Uses SSE to clear syncing indicator; falls back to a 30s timeout.
  */
 export function useSourceSync() {
   const api = useApi()
@@ -11,29 +10,38 @@ export function useSourceSync() {
   const error = ref<string | null>(null)
 
   const unsubs: Array<() => void> = []
+  let timeout: ReturnType<typeof setTimeout> | null = null
+
+  function clearSyncing() {
+    syncingSourceId.value = null
+    if (timeout) { clearTimeout(timeout); timeout = null }
+  }
 
   async function syncSource(sourceId: string) {
     error.value = null
     syncingSourceId.value = sourceId
+    if (timeout) clearTimeout(timeout)
+    // Fallback: clear after 30s if SSE doesn't fire
+    timeout = setTimeout(clearSyncing, 30000)
     try {
       await api.post(`/playlist-sources/${sourceId}/sync`)
     } catch (err) {
-      syncingSourceId.value = null
+      clearSyncing()
       error.value = err instanceof Error ? err.message : '触发同步失败'
       throw err
     }
   }
 
   onMounted(() => {
-    // When sync finishes (stage goes back to idle), clear the syncing indicator
     unsubs.push(sseSubscribe('stage-change', (data) => {
       if (data.stage === 'idle') {
-        syncingSourceId.value = null
+        clearSyncing()
       }
     }))
   })
 
   onUnmounted(() => {
+    clearSyncing()
     for (const unsub of unsubs) unsub()
   })
 
