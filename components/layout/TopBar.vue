@@ -11,6 +11,13 @@
       <span class="text-2xs text-muted">
         {{ syncState?.lastSyncAt ? `上次同步 ${formatTime(syncState.lastSyncAt)}` : '尚未同步' }}
       </span>
+      <a
+        :href="githubUrl"
+        target="_blank"
+        class="text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
+        style="color:var(--text-tertiary)"
+        title="GitHub"
+      >v{{ version }}</a>
       <button
         class="text-xs cursor-pointer px-1.5 py-0.5 rounded transition-colors duration-150"
         :class="theme === 'dark' ? 'text-warning hover:bg-[var(--bg-hover)]' : 'text-muted hover:bg-[var(--bg-hover)]'"
@@ -27,6 +34,18 @@
 const route = useRoute()
 const { state: syncState, startPolling, stopPolling } = useSync()
 const { theme, toggle: toggleTheme } = useTheme()
+
+const version = ref('0.1.0')
+const githubUrl = 'https://github.com/awillheartwu/yunplex2'
+
+onMounted(async () => {
+  try {
+    const api = useApi()
+    const info = await api.get<{ version: string }>('/system/info')
+    version.value = info.version
+  } catch { /* use default */ }
+  startPolling(15000)
+})
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
@@ -52,6 +71,5 @@ function formatTime(iso: string): string {
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-onMounted(() => startPolling(15000))
 onUnmounted(() => stopPolling())
 </script>

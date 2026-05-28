@@ -17,7 +17,7 @@ export async function resolveTracks(
   sectionKey: string,
   downloadDir: string,
   splitArtists: (artists: { name: string }[]) => [string, string],
-): Promise<{ resolutions: TrackResolution[]; extraTracks: Array<{ playlistItemId: number; title: string }> }> {
+): Promise<{ resolutions: TrackResolution[]; extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }> }> {
   const db = getDb()
   const plexPlaylistTracks = await getPlaylistTracks(plexPlaylistRatingKey, 99999)
 
@@ -39,10 +39,10 @@ export async function resolveTracks(
   }
 
   // Extra tracks: in Plex playlist but not matched to any Netease song
-  const extraTracks: Array<{ playlistItemId: number; title: string }> = []
+  const extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }> = []
   for (const pt of plexPlaylistTracks) {
     if (pt.playlistItemID && !usedPlexKeys.has(pt.ratingKey)) {
-      extraTracks.push({ playlistItemId: pt.playlistItemID, title: pt.title })
+      extraTracks.push({ playlistItemId: pt.playlistItemID, title: pt.title, artist: pt.grandparentTitle || '', album: pt.parentTitle || '' })
     }
   }
 

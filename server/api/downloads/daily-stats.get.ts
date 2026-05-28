@@ -7,10 +7,10 @@ export default defineEventHandler((event) => {
 
   const db = getDb()
   const rows = db.prepare(`
-    SELECT DATE(downloaded_at) as date, COUNT(*) as count
-    FROM downloads
-    WHERE downloaded_at >= DATE('now', ? || ' days')
-    GROUP BY DATE(downloaded_at)
+    SELECT DATE(updated_at) as date, COUNT(*) as count
+    FROM download_tasks
+    WHERE status = 'done' AND updated_at >= DATE('now', ? || ' days')
+    GROUP BY DATE(updated_at)
     ORDER BY date ASC
   `).all(`-${days}`) as { date: string; count: number }[]
 

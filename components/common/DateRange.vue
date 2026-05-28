@@ -106,9 +106,14 @@ const baseDate = ref(new Date())
 function openPanel() {
   if (triggerEl.value) {
     const rect = triggerEl.value.getBoundingClientRect()
+    const panelW = 420
     panelTop.value = rect.bottom + 6
     // Align right edge of panel with right edge of button
-    panelLeft.value = rect.right - 420 // min-width
+    let left = rect.right - panelW
+    // Clamp: don't go beyond viewport edges
+    if (left < 8) left = 8
+    if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8
+    panelLeft.value = left
   }
   open.value = true
 }

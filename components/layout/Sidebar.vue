@@ -37,20 +37,6 @@
       </SidebarGroup>
     </nav>
 
-    <!-- Version -->
-    <a
-      :href="githubUrl || undefined"
-      :target="githubUrl ? '_blank' : undefined"
-      class="block px-4 py-2 cursor-pointer transition-colors hover:bg-[var(--bg-hover)] shrink-0"
-      :class="githubUrl ? '' : 'pointer-events-none'"
-      :title="githubUrl ? 'GitHub' : ''"
-    >
-      <span
-        class="text-2xs whitespace-nowrap transition-all duration-200"
-        style="color:var(--text-tertiary)"
-      >{{ collapsed ? 'v' + version : 'YunPlex2 v' + version }}</span>
-    </a>
-
     <!-- Toggle + Footer -->
     <div class="shrink-0" style="border-top:1px solid var(--border-primary)">
       <button
@@ -74,16 +60,6 @@
 const STORAGE_KEY = 'yunplex-sidebar-collapsed'
 
 const collapsed = ref(false)
-const version = ref('0.1.0')
-const githubUrl = ''
-
-async function fetchVersion() {
-  try {
-    const api = useApi()
-    const info = await api.get<{ version: string }>('/system/info')
-    version.value = info.version
-  } catch { /* use default */ }
-}
 
 function saveState() {
   try { localStorage.setItem(STORAGE_KEY, String(collapsed.value)) } catch { /* ignore */ }
@@ -94,7 +70,6 @@ onMounted(() => {
     const v = localStorage.getItem(STORAGE_KEY)
     if (v === 'true') collapsed.value = true
   } catch { /* ignore */ }
-  fetchVersion()
 })
 
 const navGroups = [

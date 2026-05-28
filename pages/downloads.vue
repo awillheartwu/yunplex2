@@ -15,9 +15,9 @@
     <div class="flex items-center gap-1">
       <button v-for="t in tabs" :key="t.key"
         class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
-        :style="activeTab === t.key
-          ? { background: 'var(--bg-surface)', color: 'var(--text-primary)' }
-          : { color: 'var(--text-tertiary)' }"
+        :class="activeTab === t.key
+          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
+          : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
         @click="activeTab = t.key"
       >{{ t.label }}</button>
     </div>
@@ -26,8 +26,13 @@
     <template v-if="activeTab === 'sync'">
       <!-- Sync status module (always visible) -->
       <div class="section-card overflow-hidden">
-        <!-- Expanded: running / mock -->
-        <div v-if="isSyncing" class="p-5">
+        <!-- Loading -->
+        <div v-if="syncLoading" class="px-5 py-4 flex items-center gap-2">
+          <span class="text-xs text-muted">加载中...</span>
+        </div>
+
+        <!-- Expanded: running -->
+        <div v-else-if="isSyncing" class="p-5">
           <div class="flex items-center gap-2 mb-3">
             <span class="w-2.5 h-2.5 rounded-full bg-accent animate-pulse shrink-0" />
             <span class="text-sm font-semibold" style="color:var(--text-primary)">同步进行中</span>
@@ -148,6 +153,21 @@
 
     <!-- ═══ Tab: History ═══ -->
     <template v-if="activeTab === 'history'">
+      <!-- Filter bar (always visible) -->
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-2xs text-muted-deep shrink-0">共 {{ historyTotal }} 条</span>
+        <div class="flex items-center gap-2">
+          <input
+            v-model="historySearch"
+            type="text"
+            placeholder="搜索歌名..."
+            class="form-input w-36 text-xs"
+            @input="onHistorySearch"
+          />
+          <DateRange v-model="dateFilter" :min-date="historyEarliestDate" />
+        </div>
+      </div>
+
       <div v-if="loading" class="flex items-center justify-center py-16">
         <span class="text-muted text-sm">加载中...</span>
       </div>
@@ -155,17 +175,13 @@
         <EmptyState title="暂无下载记录" description="执行同步任务后，已完成的下载记录将显示在这里" />
       </div>
       <div v-else class="space-y-3">
-        <div class="flex items-center justify-between gap-3">
-          <span class="text-2xs text-muted-deep shrink-0">共 {{ historyTotal }} 条</span>
-          <DateRange v-model="dateFilter" :min-date="historyEarliestDate" />
-        </div>
         <div class="section-card overflow-hidden">
           <div class="divide-y divide-[var(--border-primary)]">
             <div v-for="d in historyItems" :key="d.id"
               class="px-5 py-3 flex items-start gap-4 hover:bg-[var(--bg-hover)] transition-colors">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs" :class="d.status === 'success' ? 'text-success' : 'text-danger'">{{ d.status === 'success' ? '✓' : '✗' }}</span>
+                  <span class="text-xs" :class="d.status === 'done' ? 'text-success' : 'text-danger'">{{ d.status === 'done' ? '✓' : '✗' }}</span>
                   <p class="text-sm truncate" style="color:var(--text-primary)">{{ d.songName }}</p>
                 </div>
                 <p class="text-2xs text-muted-deep mt-0.5 truncate">{{ d.artist }} · {{ d.album }}</p>
@@ -175,7 +191,7 @@
                 <span v-if="d.quality" class="text-2xs px-1.5 py-0.5 rounded text-muted" style="background:var(--bg-input)">{{ qualityLabel(d.quality) }}</span>
                 <span v-if="d.fileType" class="text-2xs px-1.5 py-0.5 rounded text-muted" style="background:var(--bg-input)">{{ d.fileType.toUpperCase() }}</span>
               </div>
-              <span class="text-2xs text-muted-deep shrink-0 text-right pt-0.5 whitespace-nowrap">{{ formatTimeFull(d.downloadedAt) }}</span>
+              <span class="text-2xs text-muted-deep shrink-0 text-right pt-0.5 whitespace-nowrap">{{ formatTimeFull(d.updatedAt) }}</span>
             </div>
           </div>
         </div>
@@ -198,7 +214,7 @@ const api = useApi()
 const { state: syncState } = useSyncStatus()
 const {
   historyItems, historyEarliestDate, historyTotal, historyHasMore, historyLoadingMore, loadMoreHistory,
-  dateFilter, clearAll, fetchAll: refreshAll,
+  dateFilter, historySearch, clearAll, fetchAll: refreshAll,
 } = useDownloadQueue()
 
 const activeTab = ref<'sync' | 'history'>('sync')
@@ -304,9 +320,11 @@ const sourceGroups = computed<SourceGroup[]>(() => {
 })
 
 const lastSyncSources = ref<PlaylistSource[]>([])
+const syncLoading = ref(true)
 
 // ── Fetch source names + initial state ──
 async function fetchSyncState() {
+  syncLoading.value = true
   // Load source name map
   try {
     const srcs = await api.get<PlaylistSource[]>('/playlist-sources')
@@ -321,6 +339,7 @@ async function fetchSyncState() {
       taskId: t.id, sourceId: t.sourceId, songName: t.songName, status: t.status, progress: t.progress ?? 0,
     }))
   } catch { /* ignore */ }
+  syncLoading.value = false
 }
 
 // ── SSE handlers ──
@@ -406,6 +425,12 @@ function songStatusColor(s: string): string {
 
 const tabs = [{ key: 'sync' as const, label: '实时同步进度' }, { key: 'history' as const, label: '下载历史' }]
 const showSongDetail = ref(true)
+
+let historySearchTimer: ReturnType<typeof setTimeout> | null = null
+function onHistorySearch() {
+  if (historySearchTimer) clearTimeout(historySearchTimer)
+  historySearchTimer = setTimeout(() => refreshAll(), 300)
+}
 
 function formatTimeFull(ts: string): string {
   const d = new Date(ts)

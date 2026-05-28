@@ -47,10 +47,15 @@
 
     <!-- Timeline -->
     <section class="section-card overflow-hidden">
-      <div class="px-5 py-3 border-b border-[var(--border-primary)]">
+      <div
+        class="px-5 py-3 border-b border-[var(--border-primary)] flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
+        :class="timelineCollapsed ? 'border-b-transparent' : ''"
+        @click="timelineCollapsed = !timelineCollapsed"
+      >
         <h3 class="text-sm font-semibold">执行时间线</h3>
+        <svg class="shrink-0 transition-transform" :class="timelineCollapsed ? '' : 'rotate-90'" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="#6b6b6b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
-      <div class="p-5">
+      <div v-show="!timelineCollapsed" class="p-5">
         <JobTimeline :steps="job.steps" />
       </div>
     </section>
@@ -63,10 +68,15 @@
           <button
             v-for="f in songFilters"
             :key="f.value"
-            class="text-2xs px-2 py-1 rounded transition-colors"
-            :class="songFilter === f.value ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]' : 'text-muted hover:text-[var(--text-primary)]'"
+            class="text-2xs px-2 py-1 rounded transition-colors cursor-pointer"
+            :class="songFilter === f.value ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium' : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
             @click="songFilter = f.value"
           >{{ f.label }}</button>
+          <span class="text-muted-deep" style="font-size:10px">|</span>
+          <button
+            class="text-2xs px-2 py-1 rounded transition-colors text-muted hover:text-[var(--text-primary)]"
+            @click="collapseAllGroups"
+          >全部折叠</button>
         </div>
       </div>
 
@@ -121,11 +131,17 @@ const expandedSong = ref<string | null>(null)
 const songFilter = ref<SongStatus | ''>('')
 const sourceNameMap = ref<Record<string, string>>({})
 const playlistTotalSongs = ref(0)
+const timelineCollapsed = ref(false)
 const collapsedGroups = reactive(new Set<string>())
 
 function toggleGroup(sourceId: string) {
   if (collapsedGroups.has(sourceId)) collapsedGroups.delete(sourceId)
   else collapsedGroups.add(sourceId)
+}
+function collapseAllGroups() {
+  for (const g of songGroups.value) {
+    collapsedGroups.add(g.sourceId)
+  }
 }
 
 interface SongGroup {
@@ -201,6 +217,11 @@ async function fetchSourceNames() {
     playlistTotalSongs.value = sources
       .filter(s => s.enabled)
       .reduce((sum, s) => sum + (s.trackCount || 0), 0)
+
+    // Auto-collapse groups with >100 songs
+    for (const g of songGroups.value) {
+      if (g.songs.length > 100) collapsedGroups.add(g.sourceId)
+    }
   } catch { /* ignore */ }
 }
 
