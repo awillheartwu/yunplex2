@@ -21,7 +21,7 @@ export function getJob(id: string): SyncJob | null {
   return JSON.parse(row.data) as SyncJob
 }
 
-export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: number } {
+export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: number; earliestDate: string | null } {
   const db = getDb()
   const conditions: string[] = []
   const params: unknown[] = []
@@ -34,6 +34,14 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
     conditions.push('(summary LIKE ? OR id LIKE ?)')
     params.push(`%${filter.search}%`, `%${filter.search}%`)
   }
+  if (filter.from) {
+    conditions.push('started_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    conditions.push('started_at <= ?')
+    params.push(filter.to)
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const limit = filter.limit ?? 50
@@ -41,14 +49,15 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
 
   const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM jobs ${where}`).get(...params) as { cnt: number }
   const rows = db.prepare(
-    `SELECT id, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, dry_run
+    `SELECT id, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, removed_songs, dry_run
      FROM jobs ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
   ).all(...params, limit, offset) as Array<{
     id: string; started_at: string; finished_at: string | null; status: string;
     duration_ms: number; summary: string; total_songs: number; success_songs: number;
-    failed_songs: number; skipped_songs: number; dry_run: number;
+    failed_songs: number; skipped_songs: number; removed_songs: number; dry_run: number;
   }>
 
+  const earliest = db.prepare('SELECT MIN(started_at) as d FROM jobs').get() as { d: string | null }
   return {
     items: rows.map((r) => ({
       id: r.id,
@@ -61,9 +70,11 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
       successSongs: r.success_songs,
       failedSongs: r.failed_songs,
       skippedSongs: r.skipped_songs,
+      removedSongs: r.removed_songs ?? 0,
       dryRun: r.dry_run === 1,
     })),
     total: totalRow.cnt,
+    earliestDate: earliest.d ? earliest.d.slice(0, 10) : null,
   }
 }
 

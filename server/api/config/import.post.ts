@@ -39,8 +39,6 @@ function convertLegacy(legacy: Record<string, unknown>): Record<string, unknown>
   const netease = config.netease as Record<string, unknown>
   if (legacy.cookie) netease.cookie = legacy.cookie
   if (legacy.YUN_COOKIE) netease.cookie = legacy.YUN_COOKIE
-  if (legacy.playlist) netease.playlistIds = [Number(legacy.playlist)]
-  if (legacy.PLAYLIST) netease.playlistIds = [Number(legacy.PLAYLIST)]
   if (legacy.quality) netease.quality = legacy.quality
   if (legacy.LEVEL) {
     const levelMap: Record<string, string> = {
