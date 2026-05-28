@@ -111,7 +111,7 @@
                   :class="forceFullId === s.id ? 'icon-active' : ''"
                   @click="syncSource(s, true)"
                 >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="forceFullId === s.id ? 'animate-spin' : ''">
                     <path d="M13.5 8a5.5 5.5 0 00-9.9-3M2.5 8a5.5 5.5 0 009.9 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
                     <path d="M2.5 2v3.5H6M13.5 14v-3.5H10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                     <circle cx="8" cy="8" r="2" fill="currentColor" />
@@ -529,12 +529,24 @@ async function handleDelete() {
 async function syncSource(s: PlaylistSource, forceFull = false) {
   try {
     if (forceFull) {
+      forceFullId.value = s.id
       await api.post(`/playlist-sources/${s.id}/sync`, { forceFull: true })
     } else {
       await triggerSourceSync(s.id)
     }
-  } catch { /* ignore */ }
+  } catch {
+    if (forceFull) forceFullId.value = null
+  }
 }
+
+// SSE: clear spinners when sync finishes
+onMounted(() => {
+  sseSubscribe('stage-change', (data) => {
+    if (data.stage === 'idle') {
+      forceFullId.value = null
+    }
+  })
+})
 
 function lastStatusLabel(s: PlaylistSource): string {
   if (!s.lastSyncedAt) return '未同步'
