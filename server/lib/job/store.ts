@@ -92,14 +92,13 @@ export function getJobCount(): number {
   return row.cnt
 }
 
-export function cleanupOldJobs(successDays: number, failedDays: number): void {
+export function cleanupOldJobs(successDays: number, failedDays: number): number {
   const db = getDb()
-  // Successful jobs expire after successDays
-  db.prepare(
+  const r1 = db.prepare(
     "DELETE FROM jobs WHERE status IN ('success','cancelled') AND started_at < datetime('now', ?)",
   ).run(`-${successDays} days`)
-  // Failed/partial jobs expire after failedDays
-  db.prepare(
+  const r2 = db.prepare(
     "DELETE FROM jobs WHERE status IN ('failed','partial') AND started_at < datetime('now', ?)",
   ).run(`-${failedDays} days`)
+  return r1.changes + r2.changes
 }

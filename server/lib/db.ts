@@ -6,7 +6,8 @@ import { DEFAULT_CONFIG } from './config/defaults'
 
 let db: Database.Database | null = null
 
-function deepMerge<T extends Record<string, unknown>>(base: T, partial: Partial<T>): T {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>): T {
   const result = { ...base }
   for (const key of Object.keys(partial) as (keyof T)[]) {
     const v = partial[key]
@@ -127,7 +128,7 @@ function seedConfig(d: Database.Database, dataDir: string): void {
   if (process.env.YUNPLEX2_CONFIG) {
     try {
       const envConfig = JSON.parse(process.env.YUNPLEX2_CONFIG)
-      seeded = deepMerge(DEFAULT_CONFIG, envConfig as Partial<AppConfig>)
+      seeded = deepMerge(DEFAULT_CONFIG, envConfig as Record<string, any>) as AppConfig
       console.log('[YunPlex2] 配置已从 YUNPLEX2_CONFIG 环境变量注入')
     } catch {
       console.warn('[YunPlex2] YUNPLEX2_CONFIG 解析失败，跳过')
@@ -160,7 +161,7 @@ function seedConfig(d: Database.Database, dataDir: string): void {
   }
 
   if (envUsed) {
-    seeded = deepMerge(seeded ?? DEFAULT_CONFIG, envPatch as Partial<AppConfig>)
+    seeded = deepMerge(seeded ?? DEFAULT_CONFIG, envPatch as Record<string, any>) as AppConfig
     console.log('[YunPlex2] 配置已从独立环境变量注入')
   }
 
@@ -170,7 +171,7 @@ function seedConfig(d: Database.Database, dataDir: string): void {
     if (existsSync(seedFile)) {
       try {
         const fileConfig = JSON.parse(readFileSync(seedFile, 'utf-8'))
-        seeded = deepMerge(DEFAULT_CONFIG, fileConfig as Partial<AppConfig>)
+        seeded = deepMerge(DEFAULT_CONFIG, fileConfig as Record<string, any>) as AppConfig
         console.log('[YunPlex2] 配置已从 seed.json 文件注入')
       } catch {
         console.warn('[YunPlex2] seed.json 解析失败，跳过')
@@ -337,7 +338,7 @@ export function readConfigFromDb(): AppConfig {
   if (!row) return { ...DEFAULT_CONFIG }
   try {
     const parsed = JSON.parse(row.value)
-    return deepMerge(DEFAULT_CONFIG, parsed as Partial<AppConfig>) as AppConfig
+    return deepMerge(DEFAULT_CONFIG, parsed as Record<string, any>) as AppConfig
   } catch {
     return { ...DEFAULT_CONFIG }
   }

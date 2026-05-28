@@ -8,9 +8,7 @@ import {
   findPlaylist,
   getPlaylistByRatingKey,
   createPlaylist,
-  getPlaylistTracks,
   refreshLibrary,
-  refreshPath,
   searchTrack,
   getSectionKey,
 } from '../plex-client'
@@ -24,7 +22,7 @@ interface PlexPlaylist {
 
 export interface ReconcileResult {
   resolutions: TrackResolution[]
-  extraTracks: Array<{ playlistItemId: number; title: string }>
+  extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }>
   plexPlaylist: PlexPlaylist
   sectionKey: string
 }

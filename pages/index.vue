@@ -103,7 +103,7 @@ class="text-2xs shrink-0"
             :style="{ color: stageTextColor(stage.key) }"
             :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
           <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
-            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1].key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1]!.key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </template>
       </div>
@@ -289,7 +289,7 @@ async function fetchData() {
   try {
     const dl = await api.get<{ items: { updatedAt: string }[] }>('/downloads/history', { limit: '1' })
     if (dl.items?.length > 0) {
-      const d = new Date(dl.items[0].updatedAt)
+      const d = new Date(dl.items[0]!.updatedAt)
       lastDownloadAt.value = d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }
   } catch { /* non-critical */ }

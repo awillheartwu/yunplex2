@@ -129,7 +129,7 @@ export class JobBuilder {
     if (update.ops !== undefined) song.ops = update.ops
 
     const idx = this.job.songs.findIndex((s) => s.id === songId)
-    if (idx >= 0) this.job.songs[idx] = { ...this.job.songs[idx], ...update }
+    if (idx >= 0) this.job.songs[idx] = { ...this.job.songs[idx]!, ...update } as SongTask
   }
 
   // Finalize

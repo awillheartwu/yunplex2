@@ -1,14 +1,14 @@
 <template>
-  <div class="relative" ref="containerRef">
+  <div ref="containerRef" class="relative">
     <!-- Trigger -->
     <button
+      ref="triggerEl"
       class="flex items-center gap-1.5 text-xs px-3 rounded-lg border transition-colors cursor-pointer shrink-0 h-8 overflow-hidden"
       :style="{
         background: open ? 'var(--bg-surface)' : 'var(--bg-app)',
         borderColor: hasFilter ? 'var(--accent)' : 'var(--border-primary)',
         color: hasFilter ? 'var(--accent)' : 'var(--text-secondary)',
       }"
-      ref="triggerEl"
       @click="open ? closePanel() : openPanel()"
     >
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -23,7 +23,8 @@
     <!-- Popover (Teleport to body to avoid stacking-context traps) -->
     <Teleport to="body">
       <div v-if="open" class="fixed inset-0 z-50" @click.self="closePanel()" />
-      <div v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
+      <div
+v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
         :style="{ top: panelTop + 'px', left: panelLeft + 'px', background: 'var(--bg-surface)', borderColor: 'var(--border-primary)', minWidth: '420px' }"
       >
         <!-- Calendar grids -->

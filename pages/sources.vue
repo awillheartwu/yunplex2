@@ -170,7 +170,7 @@
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><path d="M8 5v6M5 8h6" stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round"/></svg>
               <h3 class="text-sm font-semibold" style="color:var(--text-primary)">添加歌单源</h3>
             </div>
-            <button class="btn btn-ghost text-xs" :disabled="playlistLoading" @click="fetchPlaylists">刷新歌单</button>
+            <button class="btn btn-ghost text-xs" :disabled="playlistLoading" @click="() => fetchPlaylists()">刷新歌单</button>
           </div>
 
           <template v-if="!playlistError">

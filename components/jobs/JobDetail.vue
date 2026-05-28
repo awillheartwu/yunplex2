@@ -161,7 +161,7 @@ const badgeStatus = computed<'ok' | 'error' | 'warning' | 'running' | 'idle'>(()
   }
 })
 
-const songFilters = [
+const songFilters: { label: string; value: SongStatus | '' }[] = [
   { label: '全部', value: '' },
   { label: '成功', value: 'success' },
   { label: '失败', value: 'failed_download' },

@@ -1,7 +1,13 @@
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 
-let worker: ReturnType<typeof startWorker> | null = null
+interface WorkerHandle {
+  schedule: () => void
+  update: () => void
+  stop: () => void
+}
+
+let worker: WorkerHandle | null = null
 
 interface SyncServiceHandle {
   getState: () => SyncState
@@ -17,7 +23,7 @@ export function startWorker(
   getConfig: () => AppConfig,
   syncService: SyncServiceHandle,
   _dataDir: string,
-) {
+): WorkerHandle {
   if (worker) {
     stopWorker()
   }
