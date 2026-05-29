@@ -101,6 +101,15 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
     d.prepare('DROP TABLE IF EXISTS downloads').run()
     d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_time ON download_tasks(updated_at DESC)').run()
   },
+  /* v14: add type (playlist/album) and subscribed to playlist_sources */
+  (d) => {
+    d.prepare("ALTER TABLE playlist_sources ADD COLUMN type TEXT NOT NULL DEFAULT 'playlist'").run()
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN subscribed INTEGER NOT NULL DEFAULT 0').run()
+  },
+  /* v15: add skip_plex_playlist for album sources */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN skip_plex_playlist INTEGER NOT NULL DEFAULT 0').run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {
@@ -312,6 +321,9 @@ function createSchema(db: Database.Database): void {
       track_id_snapshot       TEXT,
       netease_playlist_name   TEXT NOT NULL DEFAULT '',
       sort_order              INTEGER NOT NULL DEFAULT 0,
+      type                    TEXT NOT NULL DEFAULT 'playlist',
+      subscribed              INTEGER NOT NULL DEFAULT 0,
+      skip_plex_playlist      INTEGER NOT NULL DEFAULT 0,
       created_at              TEXT NOT NULL,
       updated_at              TEXT NOT NULL
     );

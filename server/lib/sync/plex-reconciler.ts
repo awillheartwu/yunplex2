@@ -44,6 +44,7 @@ export async function reconcileSource(
   splitArtists: (artists: { name: string }[]) => [string, string],
   _cancelRequested: () => boolean,
   _log: (level: string, msg: string) => void,
+  skipPlexPlaylist = false,
 ): Promise<ReconcileResult> {
   await initPlexClient(cfg.plex)
 
@@ -52,7 +53,7 @@ export async function reconcileSource(
     ? await getPlaylistByRatingKey(source.plexPlaylistRatingKey)
     : null
 
-  if (!plexPlaylist) {
+  if (!plexPlaylist && !skipPlexPlaylist) {
     const plexName = source.plexPlaylistName || source.neteasePlaylistName
     plexPlaylist = await findPlaylist(plexName)
 
@@ -71,7 +72,7 @@ export async function reconcileSource(
 
   const { resolutions, extraTracks } = await resolveTracks(
     yunSongs,
-    plexPlaylist.ratingKey,
+    skipPlexPlaylist ? '' : plexPlaylist!.ratingKey,
     sectionKey,
     cfg.download.dir,
     splitArtists,
@@ -83,11 +84,12 @@ export async function reconcileSource(
   const existingCount = resolutions.filter((r) => r.resolution === 'matched_plex_playlist').length
   const unavailableCount = resolutions.filter((r) => r.resolution === 'unavailable').length
 
-  const parts = [`发现 ${newCount} 首新歌曲，${existingCount} 首已存在`]
+  const isAlbum = source.type === 'album'
+  const parts = [`待下载 ${newCount} 首${existingCount > 0 ? `，已存在 ${existingCount} 首` : ''}`]
   if (extraTracks.length > 0) parts.push(`${extraTracks.length} 首待清理`)
   if (unavailableCount > 0) parts.push(`${unavailableCount} 首不可用`)
   job.finishStep(
-    job.startStep('compare', '对比 Plex 歌单'),
+    job.startStep('compare', isAlbum ? (skipPlexPlaylist ? '分析专辑曲目' : '对比 Plex 歌单') : '对比 Plex 歌单'),
     'success',
     parts.join('，'),
   )
@@ -95,7 +97,7 @@ export async function reconcileSource(
   return {
     resolutions,
     extraTracks,
-    plexPlaylist: { ratingKey: plexPlaylist.ratingKey, title: plexPlaylist.title ?? '' },
+    plexPlaylist: { ratingKey: plexPlaylist?.ratingKey ?? '', title: plexPlaylist?.title ?? '' },
     sectionKey,
   }
 }

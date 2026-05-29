@@ -3,12 +3,25 @@
     <div class="flex items-center justify-between">
       <div>
         <h2 class="text-sm font-semibold">歌单源</h2>
-        <p class="text-2xs text-muted mt-0.5">管理网易云歌单同步源，支持多歌单独立启停</p>
+        <p class="text-2xs text-muted mt-0.5">管理网易云歌单 & 专辑同步源，支持多源独立启停</p>
       </div>
       <div class="flex items-center gap-3">
         <button class="btn btn-secondary" @click="fetchSources">刷新</button>
-        <button class="btn btn-primary" @click="openAdd">添加歌单源</button>
+        <button v-if="sourceTab === 'playlist'" class="btn btn-primary" @click="openAddPlaylist">添加歌单源</button>
+        <button v-else class="btn btn-primary" @click="openAddAlbum">添加专辑</button>
       </div>
+    </div>
+
+    <!-- Type tabs -->
+    <div class="flex items-center gap-1">
+      <button
+        v-for="t in sourceTabs" :key="t.key"
+        class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
+        :class="sourceTab === t.key
+          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
+          : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
+        @click="sourceTab = t.key"
+      >{{ t.label }}</button>
     </div>
 
     <!-- Loading -->
@@ -20,7 +33,7 @@
     <div v-else-if="sources.length === 0" class="section-card p-8">
       <EmptyState title="暂无歌单源" description="添加网易云歌单 ID 以开始同步管理">
         <template #extra>
-          <button class="btn btn-primary mt-4" @click="openAdd">添加歌单源</button>
+          <button class="btn btn-primary mt-4" @click="openAddPlaylist">添加歌单源</button>
         </template>
       </EmptyState>
     </div>
@@ -29,7 +42,7 @@
     <div v-else class="section-card overflow-hidden">
       <div class="divide-y divide-[var(--border-primary)]">
         <div
-          v-for="(s, idx) in sources" :key="s.id"
+          v-for="(s, idx) in filteredSources" :key="s.id"
           draggable="true"
           class="transition-colors relative"
           :class="dragOverIdx === idx ? 'border-t-2 border-t-[var(--accent)]' : ''"
@@ -50,8 +63,9 @@
               </svg>
             </span>
 
-            <!-- Toggle -->
+            <!-- Toggle (playlist only) -->
             <button
+              v-if="s.type === 'playlist'"
               class="relative w-9 h-5 rounded-full transition-all duration-200 shrink-0 cursor-pointer"
               :style="{ background: s.enabled ? 'var(--accent)' : 'var(--border-secondary)' }"
               :title="s.enabled ? '已启用，点击禁用' : '已禁用，点击启用'"
@@ -64,9 +78,11 @@
             <!-- Info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
+                <span class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="s.type === 'album' ? 'bg-[var(--accent-glow)] text-[var(--accent)]' : 'bg-[var(--bg-input)] text-muted'">{{ s.type === 'album' ? '专辑' : '歌单' }}</span>
+                <span v-if="s.type === 'playlist'" class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="s.subscribed ? 'bg-[var(--bg-input)] text-muted' : 'bg-[var(--bg-input)] text-[var(--accent)]'">{{ s.subscribed ? '收藏' : '自建' }}</span>
                 <p class="text-sm font-medium truncate">{{ s.name || '(待获取)' }}</p>
                 <span class="text-2xs px-1.5 py-0.5 rounded" style="background:var(--bg-input);color:var(--text-secondary)">{{ s.neteasePlaylistName }}</span>
-                <span v-if="!s.enabled" class="text-2xs px-1.5 py-0.5 rounded text-muted-deep" style="background:var(--bg-input)">已禁用</span>
+                <span v-if="!s.enabled && s.type === 'playlist'" class="text-2xs px-1.5 py-0.5 rounded text-muted-deep" style="background:var(--bg-input)">已禁用</span>
               </div>
               <div class="flex items-center gap-3 mt-0.5">
                 <span class="text-2xs" style="color:var(--text-tertiary)">ID: {{ s.neteasePlaylistId }}</span>
@@ -91,6 +107,8 @@
 
             <!-- Icon actions -->
             <div class="flex items-center gap-0.5 shrink-0">
+              <!-- Playlist: two sync buttons -->
+              <template v-if="s.type === 'playlist'">
               <span class="tooltip-wrap">
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
@@ -119,6 +137,24 @@
                 </button>
                 <span class="tooltip-label">强制全量对比</span>
               </span>
+              </template>
+              <!-- Album: single re-download button -->
+              <template v-else>
+              <span class="tooltip-wrap">
+                <button
+                  class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
+                  :class="syncingSourceId === s.id ? 'icon-active' : ''"
+                  @click="syncSource(s, true)"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="syncingSourceId === s.id ? 'animate-spin' : ''">
+                    <path d="M13.5 8a5.5 5.5 0 00-9.9-3M2.5 8a5.5 5.5 0 009.9 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    <path d="M2.5 2v3.5H6M13.5 14v-3.5H10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="8" cy="8" r="2" fill="currentColor" />
+                  </svg>
+                </button>
+                <span class="tooltip-label">{{ s.lastSyncedAt ? '重新下载' : '开始下载' }}</span>
+              </span>
+              </template>
               <span class="tooltip-wrap">
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
@@ -160,82 +196,21 @@
       </div>
     </div>
 
-    <!-- Add dialog -->
-    <Teleport to="body">
-      <div v-if="showAdd" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)" @click.self="showAdd = false">
-        <div class="w-[520px] max-h-[80vh] max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
-          <!-- Header -->
-          <div class="flex items-center justify-between px-5 py-4 shrink-0" style="border-bottom:1px solid var(--border-primary)">
-            <div class="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><path d="M8 5v6M5 8h6" stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round"/></svg>
-              <h3 class="text-sm font-semibold" style="color:var(--text-primary)">添加歌单源</h3>
-            </div>
-            <button class="btn btn-ghost text-xs" :disabled="playlistLoading" @click="() => fetchPlaylists()">刷新歌单</button>
-          </div>
+    <!-- Add playlist dialog -->
+    <AddPlaylistDialog
+      :visible="showAdd"
+      :source-ids="sources.map(s => s.neteasePlaylistId)"
+      @update:visible="showAdd = $event"
+      @created="fetchSources"
+    />
 
-          <template v-if="!playlistError">
-            <div v-if="playlistLoading" class="text-sm text-muted py-12 text-center">加载歌单列表...</div>
-            <div v-else class="overflow-y-auto flex-1 px-4 py-2 space-y-0.5">
-              <label
-                v-for="p in availablePlaylists"
-                :key="p.id"
-                class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border"
-                :style="{ borderColor: isPlaylistAdded(p.id) ? 'var(--border-primary)' : 'transparent', background: selectedPlaylistIds.includes(p.id) ? 'var(--accent-glow)' : 'transparent' }"
-                :class="isPlaylistAdded(p.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'"
-              >
-                <input
-                  v-model="selectedPlaylistIds"
-                  type="checkbox"
-                  :value="p.id"
-                  :disabled="isPlaylistAdded(p.id)"
-                  class="shrink-0 rounded"
-                />
-                <img v-if="p.coverImgUrl" :src="`${p.coverImgUrl}?param=60y60`" class="w-10 h-10 rounded-lg object-cover shrink-0" />
-                <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm truncate" style="color:var(--text-primary)">{{ p.name }}</p>
-                  <p class="text-2xs text-muted-deep mt-0.5">{{ p.trackCount }} 首{{ p.subscribed ? ' · 已收藏' : '' }}{{ p.creator?.nickname ? ' · ' + p.creator.nickname : '' }}</p>
-                </div>
-                <span v-if="isPlaylistAdded(p.id)" class="text-2xs px-2 py-0.5 rounded text-muted-deep shrink-0" style="background:var(--bg-input)">已添加</span>
-              </label>
-            </div>
-            <div v-if="playlistHasMore" class="flex justify-center py-3 shrink-0">
-              <button class="btn btn-ghost text-xs" :disabled="playlistLoadingMore" @click="loadMorePlaylists">
-                {{ playlistLoadingMore ? '加载中...' : '加载更多歌单' }}
-              </button>
-            </div>
-            <!-- Footer -->
-            <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
-              <span class="text-2xs text-muted">已选 {{ selectedPlaylistIds.length }} 个歌单</span>
-              <div class="flex gap-2">
-                <button class="btn btn-secondary" @click="showAdd = false">取消</button>
-                <button class="btn btn-primary" :disabled="addLoading || selectedPlaylistIds.length === 0" @click="handleAddSelected">
-                  {{ addLoading ? '添加中...' : '确认添加' }}
-                </button>
-              </div>
-            </div>
-          </template>
-
-          <template v-else>
-            <div class="px-5 py-4 flex-1">
-              <p class="text-2xs text-warning mb-4">{{ playlistError }}</p>
-              <div>
-                <label class="text-xs font-medium block mb-1.5" style="color:var(--text-primary)">手动输入歌单 ID</label>
-                <input v-model="addForm.playlistId" type="number" placeholder="输入歌单 ID（数字）" class="form-input w-full text-sm" @keyup.enter="handleAddSingle" />
-              </div>
-            </div>
-            <div class="flex justify-end gap-2 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
-              <button class="btn btn-secondary" @click="showAdd = false">取消</button>
-              <button class="btn btn-primary" :disabled="addLoading" @click="handleAddSingle">
-                {{ addLoading ? '添加中...' : '确认添加' }}
-              </button>
-            </div>
-          </template>
-        </div>
-      </div>
-    </Teleport>
+    <!-- Add album dialog -->
+    <AddAlbumDialog
+      :visible="showAddAlbum"
+      :source-ids="sources.filter(s => s.type === 'album').map(s => s.neteasePlaylistId)"
+      @update:visible="(v) => { showAddAlbum = v; if (!v) fetchSources() }"
+      @created="fetchSources"
+    />
 
     <!-- Edit dialog -->
     <Teleport to="body">
@@ -244,13 +219,13 @@
           <!-- Header -->
           <div class="flex items-center gap-2 px-5 py-4" style="border-bottom:1px solid var(--border-primary)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <h3 class="text-sm font-semibold" style="color:var(--text-primary)">编辑歌单源</h3>
+            <h3 class="text-sm font-semibold" style="color:var(--text-primary)">{{ editTarget.type === 'album' ? '编辑专辑源' : '编辑歌单源' }}</h3>
           </div>
 
           <div class="px-5 py-4 space-y-4">
-            <!-- Netease playlist name (read-only) -->
+            <!-- Netease source name (read-only) -->
             <div>
-              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">网易云歌单</label>
+              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">{{ editTarget.type === 'album' ? '网易云专辑' : '网易云歌单' }}</label>
               <div class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg" style="background:var(--bg-input);color:var(--text-secondary)">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
                 {{ editTarget.neteasePlaylistName }}
@@ -263,6 +238,13 @@
               <input v-model="editForm.name" type="text" class="form-input w-full text-sm" />
             </div>
 
+            <!-- Album-only: skip Plex playlist -->
+            <template v-if="editTarget.type === 'album'">
+              <ToggleField v-model="editForm.skipPlexPlaylist" label="仅下载不入歌单" hint="只下载到本地并导入 Plex 库，不创建 Plex 歌单也不重排" />
+            </template>
+
+            <!-- Playlist-only settings -->
+            <template v-if="editTarget.type === 'playlist'">
             <!-- Plex playlist -->
             <div>
               <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">Plex 目标歌单</label>
@@ -302,6 +284,7 @@
                 </div>
               </div>
             </template>
+            </template>
           </div>
 
           <!-- Footer -->
@@ -329,12 +312,10 @@
 </template>
 
 <script setup lang="ts">
-import type { PlaylistSource } from '~~/server/lib/playlist/types'
+import type { PlaylistSource, SourceType } from '~~/server/lib/playlist/types'
+import AddPlaylistDialog from '~/components/sources/AddPlaylistDialog.vue'
+import AddAlbumDialog from '~/components/sources/AddAlbumDialog.vue'
 
-interface NeteasePlaylist {
-  id: number; name: string; trackCount: number; playCount: number
-  coverImgUrl: string; creator: { nickname: string; userId: number }; subscribed: boolean
-}
 interface PlexPlaylistItem { title: string; ratingKey: string }
 
 const api = useApi()
@@ -344,82 +325,28 @@ const loading = ref(false)
 const togglingId = ref<string | null>(null)
 const forceFullId = ref<string | null>(null)
 
-// Add
+// Tabs
+const sourceTab = ref<SourceType>('playlist')
+const sourceTabs = [
+  { key: 'playlist' as const, label: '歌单' },
+  { key: 'album' as const, label: '专辑' },
+]
+const filteredSources = computed(() => sources.value.filter(s => s.type === sourceTab.value))
+
+// Add dialogs
 const showAdd = ref(false)
-const addLoading = ref(false)
-const availablePlaylists = ref<NeteasePlaylist[]>([])
-const playlistLoading = ref(false)
-const playlistLoadingMore = ref(false)
-const playlistOffset = ref(0)
-const playlistHasMore = ref(true)
-const playlistError = ref('')
-const selectedPlaylistIds = ref<number[]>([])
-const addForm = reactive({ playlistId: '' })
+const showAddAlbum = ref(false)
 
 // Edit
 const editTarget = ref<PlaylistSource | null>(null)
 const editLoading = ref(false)
-const editForm = reactive({ name: '', plexPlaylistName: '', syncLimit: null as number | null, enabled: true, autoCreatePlexPlaylist: true, forceFullCompare: false, fullCompareAfterSkips: null as number | null, fullCompareAfterDays: null as number | null })
+const editForm = reactive({ name: '', plexPlaylistName: '', syncLimit: null as number | null, enabled: true, autoCreatePlexPlaylist: true, forceFullCompare: false, fullCompareAfterSkips: null as number | null, fullCompareAfterDays: null as number | null, skipPlexPlaylist: false })
 const plexPlaylists = ref<PlexPlaylistItem[]>([])
 const plexError = ref('')
 
 const confirmDelete = ref<PlaylistSource | null>(null)
 
-// Drag & drop
-const dragIdx = ref<number | null>(null)
-const dragOverIdx = ref<number | null>(null)
-
-function onDragStart(idx: number, e: DragEvent) {
-  dragIdx.value = idx
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-  }
-}
-function onDragOver(idx: number) {
-  if (dragIdx.value === null || dragIdx.value === idx) return
-  dragOverIdx.value = idx
-}
-function onDragLeave() {
-  dragOverIdx.value = null
-}
-async function onDrop(idx: number) {
-  if (dragIdx.value === null || dragIdx.value === idx) return
-  const items = [...sources.value]
-  const [moved] = items.splice(dragIdx.value, 1)
-  if (!moved) return
-  items.splice(idx, 0, moved)
-  sources.value = items
-  dragIdx.value = null
-  dragOverIdx.value = null
-  // Persist
-  try {
-    await api.put('/playlist-sources/reorder', { orderedIds: items.map(s => s.id) })
-  } catch { /* ignore */ }
-}
-function onDragEnd() {
-  dragIdx.value = null
-  dragOverIdx.value = null
-}
-
-async function fetchSources() {
-  loading.value = true
-  try { sources.value = await api.get<PlaylistSource[]>('/playlist-sources') } catch { /* ignore */ }
-  finally { loading.value = false }
-}
-
-// Toggle enabled from list row
-async function toggleEnabled(s: PlaylistSource) {
-  togglingId.value = s.id
-  const prev = s.enabled
-  s.enabled = !s.enabled
-  try {
-    await api.put(`/playlist-sources/${s.id}`, { enabled: !s.enabled })
-  } catch {
-    s.enabled = prev
-  } finally {
-    togglingId.value = null
-  }
-}
+function openAddAlbum() { showAddAlbum.value = true }
 
 // Expand songs
 const expandedId = ref<string | null>(null)
@@ -443,49 +370,52 @@ function songStatusDot(status: string): string {
   }
 }
 
-function isPlaylistAdded(pid: number): boolean { return sources.value.some(s => s.neteasePlaylistId === pid) }
-async function fetchPlaylists(reset = true) {
-  if (reset) {
-    playlistLoading.value = true; playlistError.value = ''
-    playlistOffset.value = 0; playlistHasMore.value = true
-  }
+async function fetchSources() {
+  loading.value = true
+  try { sources.value = await api.get<PlaylistSource[]>('/playlist-sources') } catch { /* ignore */ }
+  finally { loading.value = false }
+}
+
+// Toggle enabled from list row
+async function toggleEnabled(s: PlaylistSource) {
+  togglingId.value = s.id
+  const prev = s.enabled
+  s.enabled = !s.enabled
   try {
-    const items = await api.get<NeteasePlaylist[]>('/netease/playlists', { offset: String(playlistOffset.value) })
-    if (reset) availablePlaylists.value = items
-    else availablePlaylists.value.push(...items)
-    playlistHasMore.value = items.length >= 100
+    await api.put(`/playlist-sources/${s.id}`, { enabled: !s.enabled })
+  } catch {
+    s.enabled = prev
+  } finally {
+    togglingId.value = null
   }
-  catch (err) { playlistError.value = err instanceof Error ? err.message : '获取歌单列表失败，请检查 Cookie 配置'; availablePlaylists.value = [] }
-  finally { playlistLoading.value = false }
 }
 
-async function loadMorePlaylists() {
-  playlistLoadingMore.value = true
-  playlistOffset.value += 100
-  try {
-    const items = await api.get<NeteasePlaylist[]>('/netease/playlists', { offset: String(playlistOffset.value) })
-    availablePlaylists.value.push(...items)
-    playlistHasMore.value = items.length >= 100
-  } catch { /* ignore */ }
-  finally { playlistLoadingMore.value = false }
-}
+// Drag & drop
+const dragIdx = ref<number | null>(null)
+const dragOverIdx = ref<number | null>(null)
 
-function openAdd() { addForm.playlistId = ''; selectedPlaylistIds.value = []; showAdd.value = true; fetchPlaylists() }
-
-async function handleAddSelected() {
-  if (selectedPlaylistIds.value.length === 0) return
-  addLoading.value = true
-  try { for (const pid of selectedPlaylistIds.value) { await api.post('/playlist-sources', { neteasePlaylistId: pid }) }; showAdd.value = false; await fetchSources() }
-  catch { /* ignore */ } finally { addLoading.value = false }
+function onDragStart(idx: number, e: DragEvent) {
+  dragIdx.value = idx
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 }
-
-async function handleAddSingle() {
-  const id = parseInt(addForm.playlistId, 10)
-  if (isNaN(id) || id <= 0) return
-  addLoading.value = true
-  try { await api.post('/playlist-sources', { neteasePlaylistId: id }); showAdd.value = false; await fetchSources() }
-  catch { /* ignore */ } finally { addLoading.value = false }
+function onDragOver(idx: number) {
+  if (dragIdx.value === null || dragIdx.value === idx) return
+  dragOverIdx.value = idx
 }
+function onDragLeave() { dragOverIdx.value = null }
+async function onDrop(idx: number) {
+  if (dragIdx.value === null || dragIdx.value === idx) return
+  const items = [...sources.value]
+  const [moved] = items.splice(dragIdx.value, 1)
+  if (!moved) return
+  items.splice(idx, 0, moved)
+  sources.value = items
+  dragIdx.value = null; dragOverIdx.value = null
+  try { await api.put('/playlist-sources/reorder', { orderedIds: items.map(s => s.id) }) } catch { /* ignore */ }
+}
+function onDragEnd() { dragIdx.value = null; dragOverIdx.value = null }
+
+function openAddPlaylist() { showAdd.value = true }
 
 async function fetchPlexPlaylists() {
   plexError.value = ''
@@ -503,6 +433,7 @@ function openEdit(s: PlaylistSource) {
   editForm.forceFullCompare = s.forceFullCompare ?? false
   editForm.fullCompareAfterSkips = s.fullCompareAfterSkips
   editForm.fullCompareAfterDays = s.fullCompareAfterDays
+  editForm.skipPlexPlaylist = s.skipPlexPlaylist ?? false
   plexPlaylists.value = []; plexError.value = ''
   fetchPlexPlaylists()
 }
@@ -515,6 +446,7 @@ async function handleEdit() {
       name: editForm.name, plexPlaylistName: editForm.plexPlaylistName || '',
       syncLimit: editForm.syncLimit, enabled: editForm.enabled, autoCreatePlexPlaylist: editForm.autoCreatePlexPlaylist, forceFullCompare: editForm.forceFullCompare,
       fullCompareAfterSkips: editForm.fullCompareAfterSkips, fullCompareAfterDays: editForm.fullCompareAfterDays,
+      skipPlexPlaylist: editForm.skipPlexPlaylist,
     })
     editTarget.value = null; await fetchSources()
   } catch { /* ignore */ } finally { editLoading.value = false }
@@ -530,12 +462,13 @@ async function syncSource(s: PlaylistSource, forceFull = false) {
   try {
     if (forceFull) {
       forceFullId.value = s.id
+      syncingSourceId.value = s.id
       await api.post(`/playlist-sources/${s.id}/sync`, { forceFull: true })
     } else {
       await triggerSourceSync(s.id)
     }
   } catch {
-    if (forceFull) forceFullId.value = null
+    if (forceFull) { forceFullId.value = null; syncingSourceId.value = null }
   }
 }
 

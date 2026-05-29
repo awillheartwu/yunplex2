@@ -210,6 +210,28 @@
         </div>
       </section>
 
+      <!-- Album Sync -->
+      <section class="section-card overflow-hidden">
+        <div
+          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
+          :class="collapsed.album ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
+          @click="toggle('album')"
+        >
+          <div>
+            <div class="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><circle cx="8" cy="8" r="3" fill="var(--accent)" opacity="0.3"/></svg>
+              <h3 class="text-sm font-semibold">专辑同步</h3>
+            </div>
+            <p class="text-2xs text-muted mt-0.5">收藏专辑的同步行为与默认策略</p>
+          </div>
+          <Chevron :open="!collapsed.album" />
+        </div>
+        <div v-show="!collapsed.album" class="p-5 space-y-3">
+          <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
+          <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
+        </div>
+      </section>
+
       <!-- Data Retention -->
       <section class="section-card overflow-hidden">
         <div
@@ -438,11 +460,11 @@ const saveOk = ref(true)
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
 
 // ── Collapsible sections ──
-type SectionKey = 'netease' | 'plex' | 'download' | 'sync' | 'retention' | 'other' | 'import'
+type SectionKey = 'netease' | 'plex' | 'download' | 'sync' | 'album' | 'retention' | 'other' | 'import'
 const collapsed = ref<Partial<Record<SectionKey, boolean>>>({})
 
 const allExpanded = computed(() => {
-  const keys: SectionKey[] = ['netease', 'plex', 'download', 'sync', 'retention', 'other', 'import']
+  const keys: SectionKey[] = ['netease', 'plex', 'download', 'sync', 'album', 'retention', 'other', 'import']
   return keys.every((k) => !collapsed.value[k])
 })
 

@@ -1,6 +1,6 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
-import { stripPunct } from './sync/matchers'
+import { stripPunct, s2t } from './sync/matchers'
 
 interface PlexTrack {
   ratingKey: string
@@ -147,7 +147,7 @@ export async function searchTrack(
     .trim()
 
   const cleanTitle = coreTitle
-    .replace(/[/\\:*?"<>|]/g, ' ')
+    .replace(/[/\\:*?"<>|'""‘’'']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -213,10 +213,26 @@ function findMatch(
   })
   if (relaxed) return relaxed
 
-  // NOTE: no pure-title fallback — the relaxed artist check above already
-  // handles artist name variations (e.g. "The Weeknd" vs "The Weeknd & Daft Punk").
-  // Matching by title alone causes false positives for different songs with the
-  // same title (e.g. "The Weeknd - Secrets" vs "OneRepublic - Secrets").
+  // 3) Relaxed with s2t title conversion — handles simplified vs traditional Chinese
+  // (e.g. Netease "苦难精算师" vs Plex "苦難精算師")
+  const tCoreTitle = s2t(coreTitle)
+  if (tCoreTitle !== coreTitle) {
+    const tStripped = stripTitle(tCoreTitle)
+    const s2tMatch = results.find((item) => {
+      const pt = stripTitle(item.title)
+      const titleMatch = pt === tStripped || pt.includes(tStripped) || tStripped.includes(pt)
+      const artistMatch =
+        item.grandparentTitle.toLowerCase() === artist.toLowerCase() ||
+        item.grandparentTitle.toLowerCase().includes(artist.toLowerCase()) ||
+        artist.toLowerCase().includes(item.grandparentTitle.toLowerCase())
+      return titleMatch && artistMatch
+    })
+    if (s2tMatch) return s2tMatch
+  }
+
+  // NOTE: no pure-title fallback — the relaxed + s2t artist check above covers
+  // artist name variations and Chinese character variants. Matching by title
+  // alone causes false positives (e.g. "The Weeknd - Secrets" vs "OneRepublic - Secrets").
   return null
 }
 
