@@ -17,7 +17,10 @@
             <input v-model="search" type="text" placeholder="搜索歌单..." class="form-input w-full text-xs" />
             <!-- Created playlists -->
             <template v-if="created.length > 0">
-              <p class="text-2xs text-muted-deep px-1">我创建的</p>
+              <div class="flex items-center gap-2 px-1 py-1 border-l-2" style="border-color:var(--accent)">
+                <span class="text-xs font-semibold" style="color:var(--text-primary)">我创建的</span>
+                <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:var(--accent-glow);color:var(--accent)">{{ created.length }}</span>
+              </div>
               <div class="space-y-0.5">
                 <label
                   v-for="p in created" :key="p.id"
@@ -41,7 +44,10 @@
 
             <!-- Subscribed playlists -->
             <template v-if="subscribed.length > 0">
-              <p class="text-2xs text-muted-deep px-1">收藏的歌单</p>
+              <div class="flex items-center gap-2 px-1 py-1 border-l-2" style="border-color:var(--success,#22c55e)">
+                <span class="text-xs font-semibold" style="color:var(--text-primary)">收藏的歌单</span>
+                <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e)">{{ subscribed.length }}</span>
+              </div>
               <div class="space-y-0.5">
                 <label
                   v-for="p in subscribed" :key="p.id"
