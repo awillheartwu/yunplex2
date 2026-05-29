@@ -12,9 +12,11 @@
         <template v-if="!error">
           <div v-if="loading" class="text-sm text-muted py-12 text-center">加载专辑列表...</div>
           <div v-else-if="list.length === 0" class="text-sm text-muted py-12 text-center">暂无可添加的专辑</div>
-          <div v-else class="overflow-y-auto flex-1 px-4 py-2 space-y-0.5">
+          <div v-else class="overflow-y-auto flex-1 px-4 py-2 space-y-3">
+            <input v-model="search" type="text" placeholder="搜索专辑或艺人..." class="form-input w-full text-xs" />
+            <div class="space-y-0.5">
             <label
-              v-for="a in list" :key="a.id"
+              v-for="a in filteredList" :key="a.id"
               class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border"
               :style="{ borderColor: isAdded(a.id) ? 'var(--border-primary)' : 'transparent', background: selectedIds.includes(a.id) ? 'var(--accent-glow)' : 'transparent' }"
               :class="isAdded(a.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'"
@@ -30,6 +32,7 @@
               </div>
               <span v-if="isAdded(a.id)" class="text-2xs px-2 py-0.5 rounded text-muted-deep shrink-0" style="background:var(--bg-input)">已添加</span>
             </label>
+            </div>
           </div>
           <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
             <span class="text-2xs text-muted">已选 {{ selectedIds.length }} 张专辑</span>
@@ -70,6 +73,12 @@ const error = ref('')
 const selectedIds = ref<number[]>([])
 
 function isAdded(aid: number): boolean { return props.sourceIds.includes(aid) }
+const search = ref('')
+const filteredList = computed(() => {
+  if (!search.value) return list.value
+  const q = search.value.toLowerCase()
+  return list.value.filter(a => a.name.toLowerCase().includes(q) || a.artist?.name?.toLowerCase().includes(q))
+})
 
 async function fetchList() {
   loading.value = true; error.value = ''

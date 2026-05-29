@@ -115,7 +115,7 @@
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
                   :class="syncingSourceId === s.id ? 'icon-active' : ''"
-                  :disabled="syncingSourceId === s.id || !s.enabled"
+                  :disabled="isAnySyncing || !s.enabled"
                   @click="syncSource(s)"
                 >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="syncingSourceId === s.id ? 'animate-spin' : ''">
@@ -129,6 +129,7 @@
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
                   :class="forceFullId === s.id ? 'icon-active' : ''"
+                  :disabled="isAnySyncing"
                   @click="syncSource(s, true)"
                 >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="forceFullId === s.id ? 'animate-spin' : ''">
@@ -146,6 +147,7 @@
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
                   :class="syncingSourceId === s.id ? 'icon-active' : ''"
+                  :disabled="isAnySyncing"
                   @click="syncSource(s, true)"
                 >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="syncingSourceId === s.id ? 'animate-spin' : ''">
@@ -480,6 +482,8 @@ async function handleDelete() {
   const id = confirmDelete.value.id; confirmDelete.value = null
   try { await api.del(`/playlist-sources/${id}`); await fetchSources() } catch { /* ignore */ }
 }
+
+const isAnySyncing = computed(() => syncingSourceId.value !== null || forceFullId.value !== null)
 
 async function syncSource(s: PlaylistSource, forceFull = false) {
   try {
