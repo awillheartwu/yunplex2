@@ -1,6 +1,6 @@
 <template>
-  <div class="flex items-center justify-between py-1">
-    <div>
+  <div class="flex items-center justify-between py-1 gap-4">
+    <div class="min-w-0">
       <p class="text-sm font-medium text-[var(--text-primary)]">{{ label }}</p>
       <p v-if="hint" class="text-2xs text-muted-deep mt-0.5">{{ hint }}</p>
     </div>
@@ -8,7 +8,7 @@
       type="button"
       role="switch"
       :aria-checked="modelValue"
-      class="relative w-9 h-5 rounded-full transition-colors cursor-pointer"
+      class="relative w-9 h-5 rounded-full transition-colors cursor-pointer shrink-0"
       :style="{ background: modelValue ? 'var(--accent)' : 'var(--border-secondary)' }"
       @click="emit('update:modelValue', !modelValue)"
     >

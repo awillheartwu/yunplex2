@@ -95,7 +95,7 @@ class="h-full rounded-full transition-all duration-500 bg-accent"
         <div v-for="g in sourceGroups" :key="g.sourceId" class="section-card overflow-hidden">
           <!-- Group header -->
           <div class="px-5 py-3 flex items-center gap-3 border-b border-[var(--border-primary)]" :style="showSongDetail ? { background: 'var(--bg-app)' } : { background: 'var(--bg-app)', borderBottom: 'none' }">
-            <span v-if="g.sourceType === 'album'" class="text-2xs px-1.5 py-0.5 rounded shrink-0 bg-[var(--accent-glow)] text-[var(--accent)]">专辑</span>
+            <SourceBadge :type="(g.sourceType as 'playlist' | 'album')" :subscribed="sourceSubscribedMap[g.sourceId]" />
             <span class="text-xs font-medium">{{ g.sourceName }}</span>
             <span class="text-2xs text-muted">{{ g.doneCount }}/{{ g.totalCount }} 完成</span>
             <div class="flex-1 ml-4">
@@ -190,7 +190,7 @@ v-for="d in historyItems" :key="d.id"
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-xs" :class="d.status === 'done' ? 'text-success' : 'text-danger'">{{ d.status === 'done' ? '✓' : '✗' }}</span>
-                  <span v-if="sourceTypeMap[d.sourceId]" class="text-2xs px-1 py-0 rounded shrink-0" :class="sourceTypeMap[d.sourceId] === 'album' ? 'bg-[var(--accent-glow)] text-[var(--accent)]' : 'bg-[var(--bg-input)] text-muted'">{{ sourceTypeMap[d.sourceId] === 'album' ? '专辑' : '歌单' }}</span>
+                  <SourceBadge v-if="sourceTypeMap[d.sourceId]" :type="(sourceTypeMap[d.sourceId] as 'playlist' | 'album')" :subscribed="sourceSubscribedMap[d.sourceId]" />
                   <p class="text-sm truncate" style="color:var(--text-primary)">{{ d.songName }}</p>
                 </div>
                 <p class="text-2xs text-muted-deep mt-0.5 truncate">{{ d.artist }} · {{ d.album }}</p>
@@ -240,6 +240,7 @@ interface SyncTaskEntry {
 const syncTasks = ref<SyncTaskEntry[]>([])
 const sourceNameMap = ref<Record<string, string>>({})
 const sourceTypeMap = ref<Record<string, string>>({})
+const sourceSubscribedMap = ref<Record<string, boolean>>({})
 
 const isSyncing = computed(() => syncState.value?.isRunning || (syncState.value?.currentStage && syncState.value.currentStage !== 'idle'))
 
@@ -343,6 +344,7 @@ async function fetchSyncState() {
     for (const s of srcs) {
       sourceNameMap.value[s.id] = s.name
       sourceTypeMap.value[s.id] = (s as any).type || 'playlist'
+      sourceSubscribedMap.value[s.id] = (s as any).subscribed ?? false
     }
     lastSyncSources.value = srcs.filter(s => s.lastSyncedAt)
     lastSyncSources.value = srcs.filter(s => s.lastSyncedAt)

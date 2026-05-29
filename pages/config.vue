@@ -205,6 +205,9 @@
               <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖">
                 <input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" />
               </FormField>
+              <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置">
+                <input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" />
+              </FormField>
             </div>
           </template>
         </div>
@@ -474,7 +477,7 @@ function toggle(key: SectionKey) {
 
 function toggleAll() {
   if (allExpanded.value) {
-    collapsed.value = { netease: true, plex: true, download: true, sync: true, retention: true, other: true, import: true }
+    collapsed.value = { netease: true, plex: true, download: true, sync: true, album: true, retention: true, other: true, import: true }
   } else {
     collapsed.value = {}
   }

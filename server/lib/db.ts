@@ -110,6 +110,14 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   (d) => {
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN skip_plex_playlist INTEGER NOT NULL DEFAULT 0').run()
   },
+  /* v16: add copyright_restricted_ids for caching undownloadable songs */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN copyright_restricted_ids TEXT').run()
+  },
+  /* v17: add ignored_failure_ids for failure tracking across syncs */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN ignored_failure_ids TEXT').run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {
@@ -324,6 +332,8 @@ function createSchema(db: Database.Database): void {
       type                    TEXT NOT NULL DEFAULT 'playlist',
       subscribed              INTEGER NOT NULL DEFAULT 0,
       skip_plex_playlist      INTEGER NOT NULL DEFAULT 0,
+      copyright_restricted_ids TEXT,
+      ignored_failure_ids     TEXT,
       created_at              TEXT NOT NULL,
       updated_at              TEXT NOT NULL
     );
