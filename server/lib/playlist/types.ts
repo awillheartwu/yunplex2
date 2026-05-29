@@ -1,8 +1,12 @@
+export type SourceType = 'playlist' | 'album'
+
 export interface PlaylistSource {
   id: string
   neteasePlaylistId: number
   name: string
   neteasePlaylistName: string
+  type: SourceType
+  subscribed: boolean
   enabled: boolean
   plexPlaylistName: string
   plexPlaylistRatingKey: string
@@ -21,6 +25,7 @@ export interface PlaylistSource {
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
+  skipPlexPlaylist: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -31,6 +36,8 @@ export interface PlaylistSourceRow {
   netease_playlist_id: number
   name: string
   netease_playlist_name: string
+  type: string
+  subscribed: number
   enabled: number
   plex_playlist_name: string
   plex_playlist_rating_key: string
@@ -49,6 +56,7 @@ export interface PlaylistSourceRow {
   last_full_compare_at: string | null
   plex_updated_at: number | null
   track_id_snapshot: string | null
+  skip_plex_playlist: number
   sort_order: number
   created_at: string
   updated_at: string
@@ -60,6 +68,8 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     neteasePlaylistId: row.netease_playlist_id,
     name: row.name,
     neteasePlaylistName: row.netease_playlist_name,
+    type: row.type as SourceType,
+    subscribed: row.subscribed === 1,
     enabled: row.enabled === 1,
     plexPlaylistName: row.plex_playlist_name,
     plexPlaylistRatingKey: row.plex_playlist_rating_key,
@@ -78,6 +88,7 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     lastFullCompareAt: row.last_full_compare_at,
     plexUpdatedAt: row.plex_updated_at,
     trackIdSnapshot: row.track_id_snapshot,
+    skipPlexPlaylist: row.skip_plex_playlist === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

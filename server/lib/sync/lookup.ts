@@ -18,7 +18,9 @@ export async function resolveTracks(
   splitArtists: (artists: { name: string }[]) => [string, string],
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }> }> {
   const db = getDb()
-  const plexPlaylistTracks = await getPlaylistTracks(plexPlaylistRatingKey, 99999)
+  const plexPlaylistTracks = plexPlaylistRatingKey
+    ? await getPlaylistTracks(plexPlaylistRatingKey, 99999)
+    : []
 
   // Build lookup: plexRatingKey → playlistItemID
   const playlistItemMap = new Map<string, number>()

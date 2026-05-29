@@ -102,6 +102,7 @@
               <path d="M6 3l5 5-5 5" stroke="#9d9d9d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="#9d9d9d" stroke-width="1.3"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="#9d9d9d" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="sourceTypeMap[group.sourceId] === 'album' ? 'bg-[var(--accent-glow)] text-[var(--accent)]' : 'bg-[var(--bg-input)] text-muted'">{{ sourceTypeMap[group.sourceId] === 'album' ? '专辑' : '歌单' }}</span>
             <span class="text-xs font-medium flex-1">{{ group.sourceName }}</span>
             <span class="text-2xs text-muted">{{ group.stats }}</span>
           </button>
@@ -130,6 +131,7 @@ const api = useApi()
 const expandedSong = ref<string | null>(null)
 const songFilter = ref<SongStatus | ''>('')
 const sourceNameMap = ref<Record<string, string>>({})
+const sourceTypeMap = ref<Record<string, string>>({})
 const playlistTotalSongs = ref(0)
 const timelineCollapsed = ref(false)
 const collapsedGroups = reactive(new Set<string>())
@@ -210,9 +212,10 @@ const songGroups = computed<SongGroup[]>(() => {
 
 async function fetchSourceNames() {
   try {
-    const sources = await api.get<Array<{ id: string; name: string; trackCount: number; enabled: boolean }>>('/playlist-sources')
+    const sources = await api.get<Array<{ id: string; name: string; type: string; trackCount: number; enabled: boolean }>>('/playlist-sources')
     for (const s of sources) {
       sourceNameMap.value[s.id] = s.name
+      sourceTypeMap.value[s.id] = s.type
     }
     playlistTotalSongs.value = sources
       .filter(s => s.enabled)

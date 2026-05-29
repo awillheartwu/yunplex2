@@ -15,6 +15,10 @@ export default defineEventHandler(async (event) => {
     syncLimit?: number | null
     autoCreatePlexPlaylist?: boolean
     forceFullCompare?: boolean
+    fullCompareAfterSkips?: number | null
+    fullCompareAfterDays?: number | null
+    skipPlexPlaylist?: boolean
+    neteasePlaylistName?: string
   }>(event)
 
   const updated = updateSource(id, {
@@ -25,6 +29,10 @@ export default defineEventHandler(async (event) => {
     syncLimit: body.syncLimit,
     autoCreatePlexPlaylist: body.autoCreatePlexPlaylist,
     forceFullCompare: body.forceFullCompare,
+    fullCompareAfterSkips: body.fullCompareAfterSkips,
+    fullCompareAfterDays: body.fullCompareAfterDays,
+    skipPlexPlaylist: body.skipPlexPlaylist,
+    neteasePlaylistName: body.neteasePlaylistName,
   })
 
   return success(updated, '歌单源更新成功')

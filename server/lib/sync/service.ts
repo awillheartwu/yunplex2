@@ -5,14 +5,14 @@ import dayjs from 'dayjs'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache } from '../netease'
+import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache } from '../netease'
 import { downloadSong, buildDownloadPath } from '../tag-writer'
 import { getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
 import type { SongStatus } from '../job/types'
 import { formatTrackArtist } from '../config/types'
-import { getEnabledSources, updateSource } from '../playlist/store'
+import { getEnabledSources, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { enqueueTask, processAll, listDownloadTasks, cleanupOldDownloadTasks } from '../download/queue'
 import type { DownloadTask } from '../download/queue'
@@ -21,7 +21,7 @@ import { reconcileSource, triggerRescan, findTrackWithRetry, applyFullReorder } 
 
 export const STAGE_LABELS: Record<string, string> = {
   idle: '空闲',
-  fetching_playlist: '获取歌单',
+  fetching_playlist: '获取源曲目',
   comparing: '对比歌曲',
   downloading: '下载歌曲',
   processing_tags: '写入元数据',
@@ -103,9 +103,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
       const allSources = getEnabledSources()
       const sources = targetIds
-        ? allSources.filter((s) => targetIds.includes(s.id))
+        ? listSources().filter((s) => targetIds.includes(s.id)) // manual trigger: include disabled (e.g. albums)
         : allSources
-      if (sources.length === 0) throw new Error('没有启用的歌单源，请在「歌单源」页面添加')
+      if (sources.length === 0) throw new Error('没有可同步的歌单源，请在「歌单源」页面添加')
 
       // ── Sync each source ──
       let totalSuccess = 0
@@ -118,6 +118,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
         const sourceSongLimit = rawLimit === 0 ? undefined : rawLimit
         const playlistId = source.neteasePlaylistId
         const playlistName = currentSourceName
+        const isAlbum = source.type === 'album'
+        const skipPlexPL = isAlbum && (source.skipPlexPlaylist || cfg.sync.skipPlexPlaylist)
 
         job.setConfig({
           playlistId,
@@ -128,9 +130,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
         try {
           // ── Step 1: Fetch playlist ──
-          const s1 = job.startStep('fetch_playlist', `获取歌单: ${playlistName}`)
+          const s1 = job.startStep('fetch_playlist', `获取${isAlbum ? '专辑' : '歌单'}: ${playlistName}`)
           setStage('fetching_playlist')
-          log('info', `获取歌单: ${playlistName} (ID: ${playlistId})`)
+          log('info', `获取${isAlbum ? '专辑' : '歌单'}: ${playlistName} (ID: ${playlistId})`)
 
           const cookieCheck = await checkCookie(cfg.netease.cookie)
           if (!cookieCheck.valid) {
@@ -139,7 +141,10 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             throw new Error(err.message)
           }
 
-          const { songs: yunSongs, trackUpdateTime, trackIds, playlistName: nePlaylistName } = await fetchPlaylistSongs(playlistId, sourceSongLimit, cfg.netease.cookie)
+          const { songs: yunSongs, trackUpdateTime: rawTrackUpdateTime, trackIds, playlistName: nePlaylistName } = source.type === 'album'
+            ? { songs: await fetchAlbumSongs(playlistId, cfg.netease.cookie), trackUpdateTime: null, trackIds: [], playlistName: source.neteasePlaylistName }
+            : await fetchPlaylistSongs(playlistId, sourceSongLimit, cfg.netease.cookie)
+          const trackUpdateTime = rawTrackUpdateTime
 
           // Detect Netease playlist rename
           if (nePlaylistName && nePlaylistName !== source.neteasePlaylistName) {
@@ -147,6 +152,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             updateSource(source.id, { neteasePlaylistName: nePlaylistName })
             source.neteasePlaylistName = nePlaylistName
           }
+
+          // ── Album: always full compare, no skip/incremental ──
+          // (isAlbum and skipPlexPL declared above)
 
           // Get Plex playlist updatedAt for bilateral change detection
           let plexUpdatedAt: number | null = null
@@ -194,7 +202,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           job.finishStep(s1, 'success', `歌单获取完成，共 ${yunSongs.length} 首（${changedMsg}${diffMsg ? '，'+diffMsg : ''}）`)
 
           // Skip entirely if Netease unchanged (Plex updatedAt is unreliable, snapshot diff covers Plex changes)
-          if (!neteaseChanged && !manualForce && !autoForce && !dryRun) {
+          // Albums never skip — always full
+          if (!isAlbum && !neteaseChanged && !manualForce && !autoForce && !dryRun) {
             log('info', `歌单「${playlistName}」未变化，跳过对比（连续跳过 ${skips + 1} 次）`)
             updateSource(source.id, {
               lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null,
@@ -207,8 +216,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           if (autoForce) log('info', `歌单「${playlistName}」触发自动全量对比（超过${cfg.sync.fullCompareAfterSkips > 0 ? '跳过次数' : '时间间隔'}）`)
 
-          // Decision: full vs incremental shortcut
-          const needFullCompare = manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0
+          // Decision: full vs incremental shortcut (albums always full)
+          const needFullCompare = isAlbum || manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0
 
           // Pure reorder: skip download, just reorder Plex playlist
           if (isPureReorder && !needFullCompare) {
@@ -267,6 +276,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             source, yunSongs, cfg, job, splitArtists,
             () => cancelRequested,
             (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
+            skipPlexPL,
           )
           const plexPlaylist = plexPlaylistResult
 
@@ -424,7 +434,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           }
 
           // ── Step 4: Reorder Plex playlist (with retry-based lookup for new tracks) ──
-          if (!dryRun) {
+          if (!dryRun && !skipPlexPL) {
             const s4 = job.startStep('reorder', '重排 Plex 歌单')
             setStage('updating_plex_playlist')
 
