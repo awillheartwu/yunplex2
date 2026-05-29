@@ -308,8 +308,29 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             if (songId) job.updateSong(songId, { phase: 'done' })
           }
 
-          // ── Step 3: Download needs_download songs ──
-          const songsToDownload = resolutions.filter((r) => r.resolution === 'needs_download')
+          // ── Step 3: Filter known copyright-restricted and ignored-failure songs ──
+          const knownRestricted: number[] = source.copyrightRestrictedIds
+            ? JSON.parse(source.copyrightRestrictedIds)
+            : []
+          const failureMap: Record<number, number> = source.ignoredFailureIds
+            ? JSON.parse(source.ignoredFailureIds)
+            : {}
+          const maxFailures = cfg.sync.maxFailureAttempts
+
+          const allNeedsDownload = resolutions.filter((r) => r.resolution === 'needs_download')
+          for (const r of allNeedsDownload) {
+            if (knownRestricted.includes(r.song.id)) {
+              r.resolution = 'copyright_restricted'
+              const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
+              if (sid) job.updateSong(sid, { status: 'copyright_restricted', phase: 'download' })
+            } else if ((failureMap[r.song.id] || 0) >= maxFailures) {
+              r.resolution = 'ignored_failure'
+              const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
+              if (sid) job.updateSong(sid, { status: 'ignored_failure', phase: 'download' })
+            }
+          }
+          const songsToDownload = allNeedsDownload.filter((r) => r.resolution === 'needs_download')
+
           const songsOnDisk = resolutions.filter((r) => r.resolution === 'found_on_disk')
           const needsRefresh = songsToDownload.length > 0 || songsOnDisk.length > 0
 
@@ -405,10 +426,16 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
               const task = allTasks.items.find((t) => t.songId === r.song.id && t.jobId === job.getId())
               if (!task || task.status === 'failed') {
-                job.updateSong(songId, { status: 'failed_download', phase: 'download' })
+                const isCopyright = task?.error?.includes('无法获取歌曲') || task?.error?.includes('下载链接')
+                const songStatus: SongStatus = isCopyright ? 'copyright_restricted' : 'failed_download'
+                job.updateSong(songId, { status: songStatus, phase: 'download' })
                 if (task?.error) {
-                  addFailure(r.song.name, task.error)
-                  log('error', `下载失败: ${r.song.name}`, task.error)
+                  if (isCopyright) {
+                    log('warn', `版权受限: ${r.song.name}`, task.error)
+                  } else {
+                    addFailure(r.song.name, task.error)
+                    log('error', `下载失败: ${r.song.name}`, task.error)
+                  }
                 }
               } else if (task.status === 'done') {
                 job.updateSong(songId, {
@@ -424,6 +451,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               return js?.status === 'success'
             }).length
             const failCount = songsToDownload.length - okCount
+            log('info', `下载完成: ${okCount} 成功, ${failCount} 失败`)
             job.finishStep(s3, failCount > 0 ? 'partial' : 'success', `${okCount} 首成功，${failCount} 首失败`)
           } else if (dryRun && songsToDownload.length > 0) {
             const s3 = job.startStep('download', '下载歌曲')
@@ -431,6 +459,17 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               log('info', `[预览] 将下载: ${r.song.name}`)
             }
             job.finishStep(s3, 'success', `[预览] 共 ${songsToDownload.length} 首`)
+          }
+
+          // Mark copyright-restricted resolutions (skip Plex retry)
+          const allTasks = listDownloadTasks({ status: undefined })
+          for (const r of resolutions) {
+            if (r.resolution === 'needs_download') {
+              const task = allTasks.items.find((t) => t.songId === r.song.id && t.jobId === job.getId())
+              if (task?.status === 'failed' && (task.error?.includes('无法获取歌曲') || task.error?.includes('下载链接'))) {
+                r.resolution = 'copyright_restricted'
+              }
+            }
           }
 
           // ── Step 4: Reorder Plex playlist (with retry-based lookup for new tracks) ──
@@ -443,6 +482,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               await triggerRescan(sectionKey)
             }
 
+            log('info', '开始 Plex 查找重试')
             // Build target order: all resolved tracks with plexRatingKeys
             // For needs_download / found_on_disk, retry-search with backoff
             const targetOrder: string[] = []
@@ -456,6 +496,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                   log('info', `Plex 已索引: ${r.song.name}`)
                 } else {
                   log('warn', `Plex 未找到: ${r.song.name}（请手动扫描 Plex）`)
+                  const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
+                  if (sid) job.updateSong(sid, { status: 'failed_plex_match', phase: 'plex_match' })
                 }
               }
               if (r.resolution === 'found_on_disk') {
@@ -464,6 +506,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                 if (rk) {
                   r.plexRatingKey = rk
                   r.resolution = 'found_in_plex_library'
+                } else {
+                  const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
+                  if (sid) job.updateSong(sid, { status: 'failed_plex_match', phase: 'plex_match' })
                 }
               }
               if (r.plexRatingKey) targetOrder.push(r.plexRatingKey)
@@ -488,6 +533,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           const failCount = job.getJob().songs.filter((s) =>
             ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status) && s.sourceId === source.id,
           ).length
+          const restrictedCount = job.getJob().songs.filter((s) => s.status === 'copyright_restricted' && s.sourceId === source.id).length
+          const ignoredCount = job.getJob().songs.filter((s) => s.status === 'ignored_failure' && s.sourceId === source.id).length
 
           let sourceStatus: PlaylistSource['lastStatus'] = 'success'
           if (failCount > 0 && succCount > 0) sourceStatus = 'partial'
@@ -506,7 +553,10 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           updateSource(source.id, {
             lastSyncedAt: new Date().toISOString(),
             lastStatus: sourceStatus,
-            lastError: failCount > 0 ? `${failCount} 首失败` : null,
+            lastError: failCount > 0 ? `${failCount} 首失败`
+              : restrictedCount > 0 || ignoredCount > 0
+                ? `${[restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '', ignoredCount > 0 ? `${ignoredCount} 首已忽略` : ''].filter(Boolean).join('，')}`
+                : null,
             lastJobId: job.getId(),
             trackCount: yunSongs.length,
             plexPlaylistRatingKey: plexPlaylist?.ratingKey || '',
@@ -517,10 +567,44 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             trackIdSnapshot: JSON.stringify(currentIdOrder),
           })
 
+          // Update copyright-restricted and failure caches
+          const newRestricted = job.getJob().songs
+            .filter((s) => s.status === 'copyright_restricted' && s.sourceId === source.id)
+            .map((s) => resolutions.find((r) => r.song.name === s.songName)?.song.id)
+            .filter(Boolean) as number[]
+          if (newRestricted.length > 0) {
+            const merged = [...new Set([...knownRestricted, ...newRestricted])]
+            updateSource(source.id, { copyrightRestrictedIds: JSON.stringify(merged) })
+          }
+
+          // Track failure counts: increment for failed (download/Plex) songs
+          const failedSongIds = job.getJob().songs
+            .filter((s) =>
+              ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status) && s.sourceId === source.id,
+            )
+            .map((s) => resolutions.find((r) => r.song.name === s.songName)?.song.id)
+            .filter(Boolean) as number[]
+          // Also track songs marked as needs_download but not found by findTrackWithRetry (resolution still needs_download after reorder)
+          const unfoundSongIds = resolutions
+            .filter((r) => r.resolution === 'needs_download' && !r.plexRatingKey)
+            .map((r) => r.song.id)
+          // Track failure counts: always increment, never reset (only clear via button)
+          if (failedSongIds.length > 0 || unfoundSongIds.length > 0) {
+            const newFailures: Record<number, number> = { ...failureMap }
+            for (const sid of [...failedSongIds, ...unfoundSongIds]) {
+              newFailures[sid] = (newFailures[sid] || 0) + 1
+            }
+            updateSource(source.id, { ignoredFailureIds: JSON.stringify(newFailures) })
+          }
+
           totalSuccess += succCount
           totalFailed += failCount
 
-          log('info', `歌单「${playlistName}」: ${succCount} 成功, ${failCount} 失败`)
+          const parts = [`${succCount} 成功`]
+          if (failCount > 0) parts.push(`${failCount} 失败`)
+          if (restrictedCount > 0) parts.push(`${restrictedCount} 版权受限`)
+          if (ignoredCount > 0) parts.push(`${ignoredCount} 已忽略`)
+          log('info', `歌单「${playlistName}」: ${parts.join(', ')}`)
     } catch (err) {
       if (err instanceof CancellationError) throw err
 
@@ -543,8 +627,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
   const finishedJob = job.finish(jobStatus, '')
   const summary = dryRun
     ? `[预览] ${sources.length} 个歌单源`
-    : finishedJob.failedSongs > 0
-      ? `${sources.length} 个源，成功 ${finishedJob.successSongs} 首，失败 ${finishedJob.failedSongs} 首`
+    : finishedJob.failedSongs > 0 || finishedJob.warnings > 0
+      ? `${sources.length} 个源，成功 ${finishedJob.successSongs} 首${finishedJob.failedSongs > 0 ? `，失败 ${finishedJob.failedSongs} 首` : ''}${finishedJob.warnings > 0 ? `，${finishedJob.warnings} 首已忽略` : ''}`
       : `${sources.length} 个源，共同步 ${finishedJob.totalSongs} 首歌曲`
   finishedJob.summary = summary
   saveJob(finishedJob)

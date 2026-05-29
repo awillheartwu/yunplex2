@@ -152,6 +152,9 @@ export class JobBuilder {
     ).length
     this.job.skippedSongs = this.job.songs.filter((s) => s.status === 'skipped_existing').length
     this.job.removedSongs = this.job.songs.filter((s) => s.status === 'removed').length
+    this.job.warnings = this.job.songs.filter((s) =>
+      ['copyright_restricted', 'ignored_failure'].includes(s.status),
+    ).length
 
     return this.job
   }

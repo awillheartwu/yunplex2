@@ -30,6 +30,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     fullCompareAfterDays: 7,
     autoDownloadAlbum: false,
     skipPlexPlaylist: false,
+    maxFailureAttempts: 3,
     enabled: false,
     logRetentionDays: 30,
     jobRetentionSuccessDays: 7,

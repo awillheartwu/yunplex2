@@ -14,6 +14,7 @@
         <template v-if="!error">
           <div v-if="loading" class="text-sm text-muted py-12 text-center">加载歌单列表...</div>
           <div v-else class="overflow-y-auto flex-1 px-4 py-2 space-y-3">
+            <input v-model="search" type="text" placeholder="搜索歌单..." class="form-input w-full text-xs" />
             <!-- Created playlists -->
             <template v-if="created.length > 0">
               <p class="text-2xs text-muted-deep px-1">我创建的</p>
@@ -119,8 +120,14 @@ const selectedIds = ref<number[]>([])
 const manualId = ref('')
 
 function isAdded(pid: number): boolean { return props.sourceIds.includes(pid) }
-const created = computed(() => list.value.filter(p => !p.subscribed))
-const subscribed = computed(() => list.value.filter(p => p.subscribed))
+const search = ref('')
+const filtered = computed(() => {
+  if (!search.value) return list.value
+  const q = search.value.toLowerCase()
+  return list.value.filter(p => p.name.toLowerCase().includes(q) || p.creator?.nickname?.toLowerCase().includes(q))
+})
+const created = computed(() => filtered.value.filter(p => !p.subscribed))
+const subscribed = computed(() => filtered.value.filter(p => p.subscribed))
 
 async function fetchList(reset = true) {
   if (reset) { loading.value = true; error.value = ''; offset.value = 0; hasMore.value = true }
@@ -149,7 +156,10 @@ async function handleAddSelected() {
   if (selectedIds.value.length === 0) return
   saving.value = true
   try {
-    for (const pid of selectedIds.value) await api.post('/playlist-sources', { neteasePlaylistId: pid })
+    for (const pid of selectedIds.value) {
+      const p = list.value.find(x => x.id === pid)
+      await api.post('/playlist-sources', { neteasePlaylistId: pid, subscribed: p?.subscribed ?? false })
+    }
     emit('update:visible', false)
     emit('created')
   } catch { /* ignore */ } finally { saving.value = false }
@@ -160,7 +170,8 @@ async function handleAddSingle() {
   if (isNaN(id) || id <= 0) return
   saving.value = true
   try {
-    await api.post('/playlist-sources', { neteasePlaylistId: id })
+    const p = list.value.find(x => x.id === id)
+    await api.post('/playlist-sources', { neteasePlaylistId: id, subscribed: p?.subscribed ?? false })
     emit('update:visible', false)
     emit('created')
   } catch { /* ignore */ } finally { saving.value = false }

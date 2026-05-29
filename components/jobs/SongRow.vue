@@ -39,6 +39,16 @@
           <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
         </template>
 
+        <!-- Ignored failure -->
+        <template v-else-if="song.status === 'ignored_failure'">
+          <p class="text-2xs text-muted-deep">此歌曲多次下载或匹配失败，已被忽略。可按"清除忽略"重试</p>
+        </template>
+
+        <!-- Copyright restricted -->
+        <template v-else-if="song.status === 'copyright_restricted'">
+          <p class="text-2xs text-muted-deep">此歌曲受版权保护，网易云不提供下载链接</p>
+        </template>
+
         <!-- Removed -->
         <template v-else-if="song.status === 'removed'">
           <p class="text-2xs text-muted-deep">此歌曲已从 Plex 歌单中移除（不再存在于网易云歌单）</p>
@@ -107,6 +117,8 @@ const statusConfig = computed(() => {
     case 'failed_tags': return { dot: 'bg-danger', badge: 'bg-[#e74c3c20] text-danger', label: '标签失败' }
     case 'failed_plex_match': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: 'Plex 匹配失败' }
     case 'failed_plex_insert': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: 'Plex 插入失败' }
+    case 'copyright_restricted': return { dot: 'bg-[#f59e0b]', badge: 'bg-[#f59e0b20] text-[var(--warning,#f59e0b)]', label: '版权受限' }
+    case 'ignored_failure': return { dot: 'bg-[#71717a]', badge: 'bg-[#71717a20] text-muted-deep', label: '已忽略' }
     default: return { dot: 'bg-[#4a4a4a]', badge: 'bg-[#6b6b6b20] text-muted', label: '等待中' }
   }
 })

@@ -14,6 +14,8 @@ export type SongStatus =
   | 'failed_tags'
   | 'failed_plex_match'
   | 'failed_plex_insert'
+  | 'copyright_restricted'
+  | 'ignored_failure'
 
 // ── Core entities ──
 
@@ -119,5 +121,6 @@ export interface JobSummary {
   failedSongs: number
   skippedSongs: number
   removedSongs: number
+  warnings: number
   dryRun: boolean
 }
