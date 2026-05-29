@@ -1,6 +1,6 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
-import { stripPunct, s2t } from './sync/matchers'
+import { stripPunct, s2t, normalizeForSearch } from './sync/matchers'
 
 interface PlexTrack {
   ratingKey: string
@@ -146,10 +146,8 @@ export async function searchTrack(
     .replace(/\s*\[[^\]]*\]\s*/g, ' ')
     .trim()
 
-  const cleanTitle = coreTitle
-    .replace(/[/\\:*?"<>|'""‘’'']/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, " ").replace(/\\s+/g, " ").trim()
+  const searchTitle = normalizeForSearch(songName)
 
   // ── Strategy A: search by artist (most reliable — title search often misses) ──
   const artistRes = await client.query(
@@ -162,7 +160,7 @@ export async function searchTrack(
   }
 
   // ── Strategy B: title-based search as fallback ──
-  const titles = [...new Set([songName, coreTitle, cleanTitle].filter(Boolean))]
+  const titles = [...new Set([songName, coreTitle, cleanTitle, searchTitle].filter(Boolean))]
   for (const searchTitle of titles) {
     const res = await client.query(
       `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(searchTitle)}`,
@@ -213,18 +211,21 @@ function findMatch(
   })
   if (relaxed) return relaxed
 
-  // 3) Relaxed with s2t title conversion — handles simplified vs traditional Chinese
-  // (e.g. Netease "苦难精算师" vs Plex "苦難精算師")
+  // 3) Relaxed with s2t conversion — handles simplified vs traditional Chinese
+  // (e.g. Netease "苦难精算师" vs Plex "苦難精算師", "草东" vs "草東")
   const tCoreTitle = s2t(coreTitle)
-  if (tCoreTitle !== coreTitle) {
+  const tArtist = s2t(artist)
+  const needS2t = tCoreTitle !== coreTitle || tArtist !== artist
+  if (needS2t) {
     const tStripped = stripTitle(tCoreTitle)
+    const tArtistLower = tArtist.toLowerCase()
     const s2tMatch = results.find((item) => {
       const pt = stripTitle(item.title)
       const titleMatch = pt === tStripped || pt.includes(tStripped) || tStripped.includes(pt)
       const artistMatch =
-        item.grandparentTitle.toLowerCase() === artist.toLowerCase() ||
-        item.grandparentTitle.toLowerCase().includes(artist.toLowerCase()) ||
-        artist.toLowerCase().includes(item.grandparentTitle.toLowerCase())
+        item.grandparentTitle.toLowerCase() === tArtistLower ||
+        item.grandparentTitle.toLowerCase().includes(tArtistLower) ||
+        tArtistLower.includes(item.grandparentTitle.toLowerCase())
       return titleMatch && artistMatch
     })
     if (s2tMatch) return s2tMatch

@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterDays?: number | null
     skipPlexPlaylist?: boolean
     neteasePlaylistName?: string
+    copyrightRestrictedIds?: string | null
+    ignoredFailureIds?: string | null
   }>(event)
 
   const updated = updateSource(id, {
@@ -33,6 +35,8 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,
     neteasePlaylistName: body.neteasePlaylistName,
+    copyrightRestrictedIds: body.copyrightRestrictedIds,
+    ignoredFailureIds: body.ignoredFailureIds,
   })
 
   return success(updated, '歌单源更新成功')

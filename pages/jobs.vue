@@ -149,8 +149,10 @@ async function handleClear() {
 watch(dateFilter, () => fetchJobs(), { deep: true })
 
 onMounted(async () => {
-  await fetchJobs()
   const route = useRoute()
+  const filter = route.query.filter as string | undefined
+  if (filter) activeFilter.value = filter as JobStatus | ''
+  await fetchJobs()
   const jobId = route.query.id as string | undefined
   if (jobId) await selectJob(jobId)
 })

@@ -102,7 +102,7 @@
               <path d="M6 3l5 5-5 5" stroke="#9d9d9d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="#9d9d9d" stroke-width="1.3"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="#9d9d9d" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <span class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="sourceTypeMap[group.sourceId] === 'album' ? 'bg-[var(--accent-glow)] text-[var(--accent)]' : 'bg-[var(--bg-input)] text-muted'">{{ sourceTypeMap[group.sourceId] === 'album' ? '专辑' : '歌单' }}</span>
+            <SourceBadge :type="(sourceTypeMap[group.sourceId] as 'playlist' | 'album') || 'playlist'" :subscribed="sourceSubscribedMap[group.sourceId]" />
             <span class="text-xs font-medium flex-1">{{ group.sourceName }}</span>
             <span class="text-2xs text-muted">{{ group.stats }}</span>
           </button>
@@ -132,6 +132,7 @@ const expandedSong = ref<string | null>(null)
 const songFilter = ref<SongStatus | ''>('')
 const sourceNameMap = ref<Record<string, string>>({})
 const sourceTypeMap = ref<Record<string, string>>({})
+const sourceSubscribedMap = ref<Record<string, boolean>>({})
 const playlistTotalSongs = ref(0)
 const timelineCollapsed = ref(false)
 const collapsedGroups = reactive(new Set<string>())
@@ -169,6 +170,7 @@ const songFilters: { label: string; value: SongStatus | '' }[] = [
   { label: '失败', value: 'failed_download' },
   { label: '已存在', value: 'skipped_existing' },
   { label: '已移除', value: 'removed' },
+  { label: '已忽略', value: 'copyright_restricted' },
 ]
 
 function applyFilter(songs: SongTask[]): SongTask[] {
@@ -176,6 +178,11 @@ function applyFilter(songs: SongTask[]): SongTask[] {
   if (songFilter.value === 'failed_download') {
     return songs.filter((s) =>
       ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status),
+    )
+  }
+  if (songFilter.value === 'copyright_restricted') {
+    return songs.filter((s) =>
+      ['copyright_restricted', 'ignored_failure'].includes(s.status),
     )
   }
   return songs.filter((s) => s.status === songFilter.value)
@@ -216,6 +223,7 @@ async function fetchSourceNames() {
     for (const s of sources) {
       sourceNameMap.value[s.id] = s.name
       sourceTypeMap.value[s.id] = s.type
+      sourceSubscribedMap.value[s.id] = (s as any).subscribed ?? false
     }
     playlistTotalSongs.value = sources
       .filter(s => s.enabled)

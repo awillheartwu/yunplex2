@@ -50,12 +50,12 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
 
   const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM jobs ${where}`).get(...params) as { cnt: number }
   const rows = db.prepare(
-    `SELECT id, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, removed_songs, dry_run
+    `SELECT id, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, removed_songs, warnings, dry_run
      FROM jobs ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
   ).all(...params, limit, offset) as Array<{
     id: string; started_at: string; finished_at: string | null; status: string;
     duration_ms: number; summary: string; total_songs: number; success_songs: number;
-    failed_songs: number; skipped_songs: number; removed_songs: number; dry_run: number;
+    failed_songs: number; skipped_songs: number; removed_songs: number; warnings: number; dry_run: number;
   }>
 
   const earliest = db.prepare('SELECT MIN(started_at) as d FROM jobs').get() as { d: string | null }
@@ -72,6 +72,7 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
       failedSongs: r.failed_songs,
       skippedSongs: r.skipped_songs,
       removedSongs: r.removed_songs ?? 0,
+      warnings: r.warnings ?? 0,
       dryRun: r.dry_run === 1,
     })),
     total: totalRow.cnt,

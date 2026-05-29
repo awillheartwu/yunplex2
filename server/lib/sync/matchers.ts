@@ -8,10 +8,23 @@ export function normalizeTitle(title: string): string {
 }
 
 export function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""‘’“”]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""''""]+/g, '')
 }
 
-/** Simplified → Traditional Chinese conversion via chinese-conv. */
+/**
+ * Aggressively normalize a title/artist string for Plex search queries.
+ * Strips all bracket variants (Western, Chinese), punctuation, smart quotes,
+ * then collapses whitespace. Safe for any language.
+ */
+export function normalizeForSearch(text: string): string {
+  return text
+    .replace(/[（(][^）)]*[）)]/g, ' ')
+    .replace(/[【〔《「『〈][^】〕》」』〉]*[】〕》」』〉]/g, ' ')
+    .replace(/[/\\:*?"'<>|&'""''!@#$%^&*+=~.,;:-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function s2t(text: string): string {
   return tify(text)
 }

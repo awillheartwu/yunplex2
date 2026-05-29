@@ -79,7 +79,7 @@
         <div v-if="recentErrors.length" class="space-y-0.5">
           <NuxtLink
             v-for="(err, i) in recentErrors.slice(0, 5)" :key="i"
-            to="/jobs"
+            :to="`/jobs?filter=failed`"
             class="flex items-start gap-1.5 text-xs px-2 py-1.5 rounded-md cursor-pointer transition-colors -mx-2 hover:bg-[var(--bg-hover)]"
           >
             <span class="text-danger shrink-0 mt-0.5 font-bold">!</span>
@@ -133,7 +133,7 @@ class="text-2xs shrink-0"
               <span class="text-2xs font-mono" style="color:var(--text-tertiary)">{{ formatRelative(job.startedAt) }}</span>
               <span class="text-2xs font-mono ml-auto" style="color:var(--text-tertiary)">{{ formatDuration(job.durationMs) }}</span>
             </div>
-            <p class="text-xs ml-4" style="color:var(--text-secondary)">{{ job.successSongs }} 成功{{ job.failedSongs > 0 ? ' · ' + job.failedSongs + ' 失败' : '' }}{{ job.skippedSongs > 0 ? ' · ' + job.skippedSongs + ' 跳过' : '' }}</p>
+            <p class="text-xs ml-4" style="color:var(--text-secondary)">{{ job.successSongs }} 成功{{ job.failedSongs > 0 ? ' · ' + job.failedSongs + ' 失败' : '' }}{{ job.skippedSongs > 0 ? ' · ' + job.skippedSongs + ' 跳过' : '' }}{{ job.warnings > 0 ? ' · ' + job.warnings + ' 版权受限' : '' }}</p>
           </NuxtLink>
         </div>
         <div v-else class="flex items-center justify-center py-12">
@@ -204,7 +204,7 @@ const lastDownloadAt = ref('')
 const syncedTrackCount = ref(0)
 const dashboardLoading = ref(true)
 
-interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number }
+interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number; warnings: number }
 const qualityLabels: Record<string, string> = { standard: '标准', higher: '较高', exhigh: '极高', lossless: '无损', hires: 'Hi-Res', jyeffect: '高清环绕声', jymaster: '超清母带' }
 const qualityLabel = computed(() => config.value ? (qualityLabels[config.value.netease.quality] || config.value.netease.quality) : '—')
 

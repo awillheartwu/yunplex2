@@ -78,8 +78,7 @@
             <!-- Info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="s.type === 'album' ? 'bg-[var(--accent-glow)] text-[var(--accent)]' : 'bg-[var(--bg-input)] text-muted'">{{ s.type === 'album' ? '专辑' : '歌单' }}</span>
-                <span v-if="s.type === 'playlist'" class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="s.subscribed ? 'bg-[var(--bg-input)] text-muted' : 'bg-[var(--bg-input)] text-[var(--accent)]'">{{ s.subscribed ? '收藏' : '自建' }}</span>
+                <SourceBadge :type="s.type" :subscribed="s.subscribed" />
                 <p class="text-sm font-medium truncate">{{ s.name || '(待获取)' }}</p>
                 <span class="text-2xs px-1.5 py-0.5 rounded" style="background:var(--bg-input);color:var(--text-secondary)">{{ s.neteasePlaylistName }}</span>
                 <span v-if="!s.enabled && s.type === 'playlist'" class="text-2xs px-1.5 py-0.5 rounded text-muted-deep" style="background:var(--bg-input)">已禁用</span>
@@ -88,6 +87,9 @@
                 <span class="text-2xs" style="color:var(--text-tertiary)">ID: {{ s.neteasePlaylistId }}</span>
                 <span class="text-2xs" style="color:var(--text-tertiary)">Plex: {{ s.plexPlaylistName || s.neteasePlaylistName || '自动匹配' }}</span>
                 <span class="text-2xs" style="color:var(--text-tertiary)">{{ s.trackCount }} 首</span>
+                <span class="text-2xs px-1.5 py-0.5 rounded shrink-0" :class="ignoredCount(s) > 0 ? 'cursor-pointer hover:opacity-80 text-warning' : 'text-muted-deep pointer-events-none'" :title="ignoredCount(s) > 0 ? `${ignoredCount(s)} 首被忽略，点击清除` : '无忽略歌曲'" style="background:var(--bg-input)" @click.stop="ignoredCount(s) > 0 && clearIgnored(s)">
+                  {{ ignoredCount(s) > 0 ? `${ignoredCount(s)} 首忽略 ✕` : '无忽略' }}
+                </span>
               </div>
             </div>
 
@@ -340,7 +342,7 @@ const showAddAlbum = ref(false)
 // Edit
 const editTarget = ref<PlaylistSource | null>(null)
 const editLoading = ref(false)
-const editForm = reactive({ name: '', plexPlaylistName: '', syncLimit: null as number | null, enabled: true, autoCreatePlexPlaylist: true, forceFullCompare: false, fullCompareAfterSkips: null as number | null, fullCompareAfterDays: null as number | null, skipPlexPlaylist: false })
+const editForm = reactive({ name: '', plexPlaylistName: '', syncLimit: null as number | null, enabled: true, autoCreatePlexPlaylist: true, forceFullCompare: false, fullCompareAfterSkips: null as number | null, fullCompareAfterDays: null as number | null, skipPlexPlaylist: false, subscribed: false })
 const plexPlaylists = ref<PlexPlaylistItem[]>([])
 const plexError = ref('')
 
@@ -365,9 +367,28 @@ function songStatusDot(status: string): string {
   switch (status) {
     case 'success': return 'bg-success'
     case 'failed_download': case 'failed_plex_match': case 'failed_plex_insert': return 'bg-danger'
+    case 'copyright_restricted': return 'bg-[var(--warning,#f59e0b)]'
+    case 'ignored_failure': return 'bg-[#71717a]'
     case 'skipped_existing': return 'bg-[var(--border-secondary)]'
     default: return 'bg-muted-deep'
   }
+}
+
+function ignoredCount(s: PlaylistSource): number {
+  let n = 0
+  if (s.copyrightRestrictedIds) {
+    try { n += JSON.parse(s.copyrightRestrictedIds).length } catch { /* ignore */ }
+  }
+  if (s.ignoredFailureIds) {
+    try { n += Object.keys(JSON.parse(s.ignoredFailureIds)).length } catch { /* ignore */ }
+  }
+  return n
+}
+async function clearIgnored(s: PlaylistSource) {
+  try {
+    await api.put(`/playlist-sources/${s.id}`, { ignoredFailureIds: null, copyrightRestrictedIds: null })
+    await fetchSources()
+  } catch { /* ignore */ }
 }
 
 async function fetchSources() {
@@ -434,6 +455,7 @@ function openEdit(s: PlaylistSource) {
   editForm.fullCompareAfterSkips = s.fullCompareAfterSkips
   editForm.fullCompareAfterDays = s.fullCompareAfterDays
   editForm.skipPlexPlaylist = s.skipPlexPlaylist ?? false
+  editForm.subscribed = s.subscribed ?? false
   plexPlaylists.value = []; plexError.value = ''
   fetchPlexPlaylists()
 }
@@ -447,6 +469,7 @@ async function handleEdit() {
       syncLimit: editForm.syncLimit, enabled: editForm.enabled, autoCreatePlexPlaylist: editForm.autoCreatePlexPlaylist, forceFullCompare: editForm.forceFullCompare,
       fullCompareAfterSkips: editForm.fullCompareAfterSkips, fullCompareAfterDays: editForm.fullCompareAfterDays,
       skipPlexPlaylist: editForm.skipPlexPlaylist,
+      subscribed: editForm.subscribed,
     })
     editTarget.value = null; await fetchSources()
   } catch { /* ignore */ } finally { editLoading.value = false }
@@ -461,14 +484,16 @@ async function handleDelete() {
 async function syncSource(s: PlaylistSource, forceFull = false) {
   try {
     if (forceFull) {
-      forceFullId.value = s.id
-      syncingSourceId.value = s.id
+      // Album button uses syncingSourceId spinner; playlist forceFull uses forceFullId
+      if (s.type === 'album') syncingSourceId.value = s.id
+      else forceFullId.value = s.id
       await api.post(`/playlist-sources/${s.id}/sync`, { forceFull: true })
     } else {
       await triggerSourceSync(s.id)
     }
   } catch {
-    if (forceFull) { forceFullId.value = null; syncingSourceId.value = null }
+    forceFullId.value = null
+    syncingSourceId.value = null
   }
 }
 
