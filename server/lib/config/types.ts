@@ -42,6 +42,8 @@ export interface SyncStrategyConfig {
   forceFullCompare: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
+  autoDownloadAlbum: boolean
+  skipPlexPlaylist: boolean
 }
 
 export type MultiArtistFormat = 'feat' | 'ft' | 'featuring' | 'ampersand' | 'slash' | 'comma' | 'with' | 'and' | 'plus'

@@ -28,6 +28,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     forceFullCompare: false,
     fullCompareAfterSkips: 5,
     fullCompareAfterDays: 7,
+    autoDownloadAlbum: false,
+    skipPlexPlaylist: false,
     enabled: false,
     logRetentionDays: 30,
     jobRetentionSuccessDays: 7,

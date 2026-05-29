@@ -23,13 +23,16 @@
   "dependencies": {
     "NeteaseCloudMusicApi": "^4.32.0",
     "better-sqlite3": "^12.10.0",
+    "chinese-conv": "^4.0.0",
     "dayjs": "^1.11.20",
+    "echarts": "^6.1.0",
     "metaflac-js": "^1.0.5",
     "node-fetch": "^3.3.2",
     "node-id3": "^0.2.9",
     "nuxt": "^4.4.6",
     "plex-api": "^5.3.2",
     "vue": "^3.5.13",
+    "vue-echarts": "^8.0.1",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {

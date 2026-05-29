@@ -25,8 +25,12 @@ export function getEnabledSources(): PlaylistSource[] {
 export async function createSource(
   neteasePlaylistId: number,
   _cookie: string,
+  opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; trackCount?: number; name?: string; artist?: string },
 ): Promise<PlaylistSource> {
-  const neName = await fetchPlaylistName(neteasePlaylistId)
+  const isAlbum = opts?.type === 'album'
+  const neName = isAlbum
+    ? opts?.name || null
+    : await fetchPlaylistName(neteasePlaylistId)
   const taskName = neName ? `${neName}任务` : '(待获取)'
   const db = getDb()
   const id = randomUUID()
@@ -34,9 +38,9 @@ export async function createSource(
   const maxOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM playlist_sources').get() as { mx: number }).mx
 
   db.prepare(`
-    INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, enabled, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 1, ?, '', NULL, NULL, 'idle', NULL, 1, 0, ?, ?, ?)
-  `).run(id, neteasePlaylistId, taskName, neName || '', neName || '', maxOrder + 1, now, now)
+    INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
+  `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, isAlbum ? 0 : 1, neName || '', opts?.trackCount || 0, maxOrder + 1, now, now)
 
   return getSource(id)!
 }
@@ -59,6 +63,7 @@ export function updateSource(id: string, partial: Partial<{
   consecutiveSkips: number
   fullCompareAfterSkips: number | null
   fullCompareAfterDays: number | null
+  skipPlexPlaylist: boolean
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
@@ -84,6 +89,7 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.consecutiveSkips !== undefined) { sets.push('consecutive_skips = ?'); vals.push(partial.consecutiveSkips) }
   if (partial.fullCompareAfterSkips !== undefined) { sets.push('full_compare_after_skips = ?'); vals.push(partial.fullCompareAfterSkips) }
   if (partial.fullCompareAfterDays !== undefined) { sets.push('full_compare_after_days = ?'); vals.push(partial.fullCompareAfterDays) }
+  if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(partial.skipPlexPlaylist ? 1 : 0) }
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
   if (partial.plexUpdatedAt !== undefined) { sets.push('plex_updated_at = ?'); vals.push(partial.plexUpdatedAt) }
   if (partial.trackIdSnapshot !== undefined) { sets.push('track_id_snapshot = ?'); vals.push(partial.trackIdSnapshot) }
@@ -112,6 +118,8 @@ export function reorderSources(orderedIds: string[]): void {
 
 export function deleteSource(id: string): boolean {
   const db = getDb()
+  // Cascade: clean up orphaned download tasks
+  db.prepare('DELETE FROM download_tasks WHERE source_id = ?').run(id)
   const result = db.prepare('DELETE FROM playlist_sources WHERE id = ?').run(id)
   return result.changes > 0
 }

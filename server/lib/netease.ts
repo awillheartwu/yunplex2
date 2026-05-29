@@ -1,5 +1,5 @@
 import pkg from 'NeteaseCloudMusicApi'
-const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist } = pkg
+const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist } = pkg
 
 export interface NeteaseSong {
   id: number
@@ -309,6 +309,16 @@ export interface UserPlaylist {
   subscribed: boolean
 }
 
+export interface UserAlbum {
+  id: number
+  name: string
+  size: number
+  picUrl: string
+  artist: { name: string }
+  publishTime: number
+  subTime: number
+}
+
 export async function fetchUserPlaylists(
   uid: number,
   cookie: string,
@@ -326,6 +336,34 @@ export async function fetchUserPlaylists(
     creator: { nickname: p.creator?.nickname || '', userId: p.creator?.userId || 0 },
     subscribed: p.subscribed || false,
   }))
+}
+
+export async function fetchUserAlbums(
+  cookie: string,
+  _uid?: number,
+  limit = 100,
+  offset = 0,
+): Promise<UserAlbum[]> {
+  const res = await album_sublist({ limit, offset, cookie })
+  const body = (res as any).body as { data?: any[]; count?: number; code?: number }
+  return (body.data || []).map((a: any) => ({
+    id: a.id,
+    name: a.name,
+    size: a.size || 0,
+    picUrl: a.picUrl || '',
+    artist: { name: a.artists?.[0]?.name || a.artist?.name || '' },
+    publishTime: a.publishTime || 0,
+    subTime: a.subTime || 0,
+  }))
+}
+
+export async function fetchAlbumSongs(
+  albumId: number,
+  cookie: string,
+): Promise<NeteaseSong[]> {
+  const res = await album({ id: albumId, cookie })
+  const body = (res as any).body as { album?: { name?: string }; songs?: RawSong[] }
+  return (body.songs || []).map(mapRawSong)
 }
 
 export async function fetchPlaylistName(playlistId: number): Promise<string | null> {
