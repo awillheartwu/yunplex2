@@ -29,32 +29,25 @@
 
     <!-- Form -->
     <template v-else-if="form">
-      <!-- Netease -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.netease ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('netease')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="music" :active="true" />
-              <h3 class="text-sm font-semibold">网易云音乐</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">用于获取歌单和歌曲下载链接的认证信息</p>
-          </div>
-          <Chevron :open="!collapsed.netease" />
-        </div>
-        <div v-show="!collapsed.netease" class="p-5 space-y-4">
+      <!-- Tab bar -->
+      <div class="flex items-center gap-1">
+        <button
+          v-for="t in tabs" :key="t.key"
+          class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
+          :class="activeTab === t.key
+            ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
+            : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
+          @click="activeTab = t.key"
+        >{{ t.label }}</button>
+      </div>
+
+      <!-- ═══ Tab: 连接 ═══ -->
+      <template v-if="activeTab === 'connection'">
+        <!-- Netease -->
+        <ConfigSection title="网易云音乐" description="用于获取歌单和歌曲下载链接的认证信息" :collapsed="!!collapsed.netease" @toggle="toggle('netease')">
+          <template #icon><SidebarIcon name="music" :active="true" /></template>
           <FormField label="Cookie" hint="从浏览器开发者工具中复制网易云音乐的 Cookie" required>
-            <input
-              v-model="form.netease.cookie"
-              type="password"
-              placeholder="MUSIC_U=xxx; __csrf=xxx; ..."
-              class="form-input font-mono"
-              @focus="($event.target as HTMLInputElement).type='text'"
-              @blur="($event.target as HTMLInputElement).type='password'"
-            />
+            <input v-model="form.netease.cookie" type="password" placeholder="MUSIC_U=xxx; __csrf=xxx; ..." class="form-input font-mono" @focus="($event.target as HTMLInputElement).type='text'" @blur="($event.target as HTMLInputElement).type='password'" />
           </FormField>
           <div class="p-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)]">
             <p class="text-xs text-muted">歌单管理请前往「<NuxtLink to="/sources" class="text-accent hover:underline">歌单源</NuxtLink>」页面。</p>
@@ -71,44 +64,21 @@
             </select>
           </FormField>
           <div class="pt-1 flex items-center gap-4">
-            <button
-              class="btn btn-ghost btn-sm"
-              :disabled="testing === 'netease'"
-              @click="testConnection('netease')"
-            >
+            <button class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
               {{ testing === 'netease' ? '测试中...' : '测试网易云连接' }}
             </button>
             <span v-if="testResult['netease']" class="text-sm" :class="testResult['netease'].ok ? 'text-success' : 'text-danger'">
               {{ testResult['netease'].ok ? '✓' : '✗' }} {{ testResult['netease'].msg }}
             </span>
           </div>
-        </div>
-      </section>
+        </ConfigSection>
 
-      <!-- Plex -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.plex ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('plex')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="sync" :active="true" />
-              <h3 class="text-sm font-semibold">Plex Media Server</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">连接 Plex 媒体服务器以同步歌单</p>
-          </div>
-          <Chevron :open="!collapsed.plex" />
-        </div>
-        <div v-show="!collapsed.plex" class="p-5 space-y-4">
+        <!-- Plex -->
+        <ConfigSection title="Plex Media Server" description="连接 Plex 媒体服务器以同步歌单" :collapsed="!!collapsed.plex" @toggle="toggle('plex')">
+          <template #icon><SidebarIcon name="sync" :active="true" /></template>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="服务器地址" required>
-              <input v-model="form.plex.server" type="text" placeholder="192.168.1.100" class="form-input" />
-            </FormField>
-            <FormField label="端口" required>
-              <input v-model.number="form.plex.port" type="number" placeholder="32400" class="form-input" />
-            </FormField>
+            <FormField label="服务器地址" required><input v-model="form.plex.server" type="text" placeholder="192.168.1.100" class="form-input" /></FormField>
+            <FormField label="端口" required><input v-model.number="form.plex.port" type="number" placeholder="32400" class="form-input" /></FormField>
           </div>
           <FormField label="Token (X-Plex-Token)" hint="在 Plex 网页版的 XML 响应中可以找到" required>
             <input v-model="form.plex.token" type="password" placeholder="your-plex-token" class="form-input font-mono" @focus="($event.target as HTMLInputElement).type='text'" @blur="($event.target as HTMLInputElement).type='password'" />
@@ -117,296 +87,152 @@
             <input v-model="form.plex.section" type="text" placeholder="音乐" class="form-input" />
           </FormField>
           <div class="pt-1 flex items-center gap-4">
-            <button
-              class="btn btn-ghost btn-sm"
-              :disabled="testing === 'plex'"
-              @click="testConnection('plex')"
-            >
-              {{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}
-            </button>
-            <span v-if="testResult['plex']" class="text-sm" :class="testResult['plex'].ok ? 'text-success' : 'text-danger'">
-              {{ testResult['plex'].ok ? '✓' : '✗' }} {{ testResult['plex'].msg }}
-            </span>
+            <button class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button>
+            <span v-if="testResult['plex']" class="text-sm" :class="testResult['plex'].ok ? 'text-success' : 'text-danger'">{{ testResult['plex'].ok ? '✓' : '✗' }} {{ testResult['plex'].msg }}</span>
           </div>
-        </div>
-      </section>
+        </ConfigSection>
+      </template>
 
+      <!-- ═══ Tab: 下载 ═══ -->
+      <template v-if="activeTab === 'download'">
       <!-- Download -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.download ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('download')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="download" :active="true" />
-              <h3 class="text-sm font-semibold">下载与文件</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">歌曲文件的存储路径和元数据处理选项</p>
-          </div>
-          <Chevron :open="!collapsed.download" />
+      <ConfigSection title="下载与文件" description="歌曲文件的存储路径和元数据处理选项" :collapsed="!!collapsed.download" @toggle="toggle('download')">
+        <template #icon><SidebarIcon name="download" :active="true" /></template>
+        <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
+          <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
+        </FormField>
+        <div class="space-y-3">
+          <ToggleField v-model="form.download.downloadLyrics" label="下载歌词" hint="下载 .lrc 歌词文件与歌曲放在一起" />
+          <ToggleField v-model="form.download.embedMetadata" label="写入元数据标签" hint="将歌曲名、艺术家、专辑等信息写入 ID3/FLAC 标签" />
+          <ToggleField v-model="form.download.embedCover" label="嵌入封面图" hint="将专辑封面嵌入到音频文件中" />
+          <ToggleField v-model="form.download.saveAlbumCover" label="保存专辑封面" hint="将专辑封面保存为 cover.jpg 到专辑文件夹" />
+          <ToggleField v-model="form.download.saveArtistImage" label="保存歌手图片" hint="将歌手头像保存为 artist.jpg 到歌手文件夹（首次下载后不覆盖）" />
         </div>
-        <div v-show="!collapsed.download" class="p-5 space-y-4">
-          <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
-            <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
-          </FormField>
-          <div class="space-y-3">
-            <ToggleField v-model="form.download.downloadLyrics" label="下载歌词" hint="下载 .lrc 歌词文件与歌曲放在一起" />
-            <ToggleField v-model="form.download.embedMetadata" label="写入元数据标签" hint="将歌曲名、艺术家、专辑等信息写入 ID3/FLAC 标签" />
-            <ToggleField v-model="form.download.embedCover" label="嵌入封面图" hint="将专辑封面嵌入到音频文件中" />
-            <ToggleField v-model="form.download.saveAlbumCover" label="保存专辑封面" hint="将专辑封面保存为 cover.jpg 到专辑文件夹" />
-            <ToggleField v-model="form.download.saveArtistImage" label="保存歌手图片" hint="将歌手头像保存为 artist.jpg 到歌手文件夹（首次下载后不覆盖）" />
-          </div>
-        </div>
-      </section>
+      </ConfigSection>
+      </template>
+
+      <!-- ═══ Tab: 同步 ═══ -->
+      <template v-if="activeTab === 'sync'">
 
       <!-- Sync strategy -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.sync ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('sync')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="play" :active="true" />
-              <h3 class="text-sm font-semibold">同步策略</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">控制同步的频率和范围</p>
-          </div>
-          <Chevron :open="!collapsed.sync" />
+      <ConfigSection title="同步策略" description="控制同步的频率和范围" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
+        <template #icon><SidebarIcon name="play" :active="true" /></template>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟"><input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" /></FormField>
+          <FormField label="歌曲数量上限" hint="每次同步处理的歌曲数量，0 = 不限"><input v-model.number="form.sync.songLimit" type="number" min="0" max="10000" class="form-input" /></FormField>
+          <FormField label="下载并发数" hint="同时下载几首歌，建议 3-5，过高可能被网易云限速"><input v-model.number="form.sync.downloadConcurrency" type="number" min="1" max="10" class="form-input" /></FormField>
+          <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
+          <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
-        <div v-show="!collapsed.sync" class="p-5 space-y-4">
+        <ToggleField v-model="form.sync.enabled" label="启用自动同步" hint="开启后将在后台按设定间隔自动同步歌单" />
+        <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
+        <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟">
-              <input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" />
-            </FormField>
-            <FormField label="歌曲数量上限" hint="每次同步处理的歌曲数量，0 = 不限">
-              <input v-model.number="form.sync.songLimit" type="number" min="0" max="10000" class="form-input" />
-            </FormField>
-            <FormField label="下载并发数" hint="同时下载几首歌，建议 3-5，过高可能被网易云限速">
-              <input v-model.number="form.sync.downloadConcurrency" type="number" min="1" max="10" class="form-input" />
-            </FormField>
-            <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数，每次间隔见下方">
-              <input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" />
-            </FormField>
-            <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s">
-              <input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" />
-            </FormField>
+            <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
+            <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" /></FormField>
+            <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
           </div>
-          <ToggleField v-model="form.sync.enabled" label="启用自动同步" hint="开启后将在后台按设定间隔自动同步歌单" />
-          <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
-          <template v-if="!form.sync.forceFullCompare">
-            <div class="grid grid-cols-2 gap-4">
-              <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖">
-                <input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" />
-              </FormField>
-              <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖">
-                <input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" />
-              </FormField>
-              <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置">
-                <input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" />
-              </FormField>
-            </div>
-          </template>
-        </div>
-      </section>
+        </template>
+      </ConfigSection>
 
       <!-- Album Sync -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.album ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('album')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><circle cx="8" cy="8" r="3" fill="var(--accent)" opacity="0.3"/></svg>
-              <h3 class="text-sm font-semibold">专辑同步</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">收藏专辑的同步行为与默认策略</p>
-          </div>
-          <Chevron :open="!collapsed.album" />
-        </div>
-        <div v-show="!collapsed.album" class="p-5 space-y-3">
+      <ConfigSection title="专辑同步" description="收藏专辑的同步行为与默认策略" :collapsed="!!collapsed.album" @toggle="toggle('album')">
+        <template #icon><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><circle cx="8" cy="8" r="3" fill="var(--accent)" opacity="0.3"/></svg></template>
+        <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
           <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
         </div>
-      </section>
+      </ConfigSection>
+      </template>
+
+      <!-- ═══ Tab: 高级 ═══ -->
+      <template v-if="activeTab === 'advanced'">
 
       <!-- Data Retention -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.retention ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('retention')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="database" :active="true" />
-              <h3 class="text-sm font-semibold">数据保留</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">控制各类历史数据的自动清理周期</p>
-          </div>
-          <Chevron :open="!collapsed.retention" />
+      <ConfigSection title="数据保留" description="控制各类历史数据的自动清理周期" :collapsed="!!collapsed.retention" @toggle="toggle('retention')">
+        <template #icon><SidebarIcon name="database" :active="true" /></template>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="成功任务保留天数" hint="成功的同步记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="失败任务保留天数" hint="失败或部分失败的记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
         </div>
-        <div v-show="!collapsed.retention" class="p-5">
-          <div class="grid grid-cols-2 gap-4">
-            <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底">
-              <input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" />
-            </FormField>
-            <FormField label="成功任务保留天数" hint="成功的同步记录保留天数，超期自动清理">
-              <input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" />
-            </FormField>
-            <FormField label="失败任务保留天数" hint="失败或部分失败的记录保留更久，方便排查问题">
-              <input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" />
-            </FormField>
-            <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除">
-              <input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" />
-            </FormField>
-          </div>
-        </div>
-      </section>
+      </ConfigSection>
 
       <!-- Other strategies -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.other ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('other')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#818cf8" stroke-width="1.3"/><path d="M5.5 7.5h5M5.5 10h3" stroke="#818cf8" stroke-width="1.3" stroke-linecap="round"/></svg>
-              <h3 class="text-sm font-semibold">其他策略</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">细节行为控制</p>
+      <ConfigSection title="其他策略" description="细节行为控制" :collapsed="!!collapsed.other" @toggle="toggle('other')">
+        <template #icon><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#818cf8" stroke-width="1.3"/><path d="M5.5 7.5h5M5.5 10h3" stroke="#818cf8" stroke-width="1.3" stroke-linecap="round"/></svg></template>
+        <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
+          <div class="flex items-center gap-3">
+            <input v-model.number="form.other.fontScale" type="range" min="0.8" max="1.5" step="0.05" class="flex-1 accent-[#818cf8]" />
+            <span class="text-xs text-muted w-10 text-right">{{ form.other.fontScale?.toFixed(2) }}x</span>
           </div>
-          <Chevron :open="!collapsed.other" />
-        </div>
-        <div v-show="!collapsed.other" class="p-5 space-y-4">
-          <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
-            <div class="flex items-center gap-3">
-              <input
-                v-model.number="form.other.fontScale"
-                type="range" min="0.8" max="1.5" step="0.05"
-                class="flex-1 accent-[#818cf8]"
-              />
-              <span class="text-xs text-muted w-10 text-right">{{ form.other.fontScale?.toFixed(2) }}x</span>
-            </div>
-          </FormField>
-          <FormField label="存储路径格式">
-            <template #hint>
-              <span class="inline-flex items-center gap-1">
-                <span>用 / 分隔目录层级</span>
-                <span class="relative inline-flex group">
-                  <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
-                  <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
-                    <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
-                    <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
-                      <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
-                      <span class="text-muted-deep">{{ v.desc }}</span>
-                    </div>
+        </FormField>
+        <FormField label="存储路径格式">
+          <template #hint>
+            <span class="inline-flex items-center gap-1">
+              <span>用 / 分隔目录层级</span>
+              <span class="relative inline-flex group">
+                <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
+                <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                  <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
+                  <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
+                    <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
+                    <span class="text-muted-deep">{{ v.desc }}</span>
                   </div>
-                </span>
+                </div>
               </span>
-            </template>
-            <select v-model="pathFormatMode" class="form-input">
-              <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
-              <option value="__custom__">自定义...</option>
-            </select>
-            <input
-              v-if="pathFormatMode === '__custom__'"
-              v-model="form.other.pathFormat"
-              type="text"
-              placeholder="{artist}/{album} ({year})/{track:02d} - {title}"
-              class="form-input mt-2"
-            />
-          </FormField>
-          <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
-            <select v-model="form.other.multiArtistFormat" class="form-input">
-              <option value="ampersand">A & B → A, B & C</option>
-              <option value="and">A and B → A, B and C</option>
-              <option value="comma">A, B → A, B, C</option>
-              <option value="slash">A / B → A / B / C</option>
-              <option value="plus">A + B → A + B + C</option>
-              <option value="feat">A feat. B → A feat. B, C & D</option>
-              <option value="ft">A ft. B → A ft. B, C & D</option>
-              <option value="featuring">A featuring B → A featuring B, C & D</option>
-              <option value="with">A with B → A with B, C & D</option>
-            </select>
-          </FormField>
-          <ToggleField
-            v-model="form.other.downloadTranslatedLyric"
-            label="下载翻译歌词"
-            hint="关闭后只下载原文歌词，不合并翻译版本。适合不需要双语歌词的用户"
-          />
-          <FormField v-if="form.other.downloadTranslatedLyric" label="双语歌词存储方式" hint="合并到一个文件或分开保存为两个文件">
-            <select v-model="form.other.lyricOrder" class="form-input">
-              <option value="original_first">合并：原文在上 / 翻译在下（翻译高亮）</option>
-              <option value="translated_first">合并：翻译在上 / 原文在下（原文高亮）</option>
-              <option value="separate">分开存储：歌名 (orgi).lrc + 歌名 (trans).lrc</option>
-            </select>
-          </FormField>
-        </div>
-      </section>
+            </span>
+          </template>
+          <select v-model="pathFormatMode" class="form-input">
+            <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
+            <option value="__custom__">自定义...</option>
+          </select>
+          <input v-if="pathFormatMode === '__custom__'" v-model="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" />
+        </FormField>
+        <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
+          <select v-model="form.other.multiArtistFormat" class="form-input">
+            <option value="ampersand">A & B → A, B & C</option>
+            <option value="and">A and B → A, B and C</option>
+            <option value="comma">A, B → A, B, C</option>
+            <option value="slash">A / B → A / B / C</option>
+            <option value="plus">A + B → A + B + C</option>
+            <option value="feat">A feat. B → A feat. B, C & D</option>
+            <option value="ft">A ft. B → A ft. B, C & D</option>
+            <option value="featuring">A featuring B → A featuring B, C & D</option>
+            <option value="with">A with B → A with B, C & D</option>
+          </select>
+        </FormField>
+        <ToggleField v-model="form.other.downloadTranslatedLyric" label="下载翻译歌词" hint="关闭后只下载原文歌词，不合并翻译版本。适合不需要双语歌词的用户" />
+        <FormField v-if="form.other.downloadTranslatedLyric" label="双语歌词存储方式" hint="合并到一个文件或分开保存为两个文件">
+          <select v-model="form.other.lyricOrder" class="form-input">
+            <option value="original_first">合并：原文在上 / 翻译在下（翻译高亮）</option>
+            <option value="translated_first">合并：翻译在上 / 原文在下（原文高亮）</option>
+            <option value="separate">分开存储：歌名 (orgi).lrc + 歌名 (trans).lrc</option>
+          </select>
+        </FormField>
+      </ConfigSection>
 
       <!-- Import / Export -->
-      <section class="section-card overflow-hidden">
-        <div
-          class="px-5 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
-          :class="collapsed.import ? 'border-b border-transparent' : 'border-b border-[var(--border-primary)]'"
-          @click="toggle('import')"
-        >
-          <div>
-            <div class="flex items-center gap-2">
-              <SidebarIcon name="import-export" :active="true" />
-              <h3 class="text-sm font-semibold">导入 / 导出配置</h3>
-            </div>
-            <p class="text-2xs text-muted mt-0.5">JSON 格式，兼容旧 yunplex 配置</p>
-          </div>
-          <Chevron :open="!collapsed.import" />
+      <ConfigSection title="导入 / 导出配置" description="JSON 格式，兼容旧 yunplex 配置" :collapsed="!!collapsed.import" @toggle="toggle('import')">
+        <template #icon><SidebarIcon name="import-export" :active="true" /></template>
+        <div class="flex gap-4">
+          <label class="flex-1">
+            <input ref="fileInput" type="file" accept=".json" class="hidden" @change="handleFileImport" />
+            <button class="btn btn-secondary w-full" @click="($refs.fileInput as HTMLInputElement)?.click()">从文件导入...</button>
+          </label>
+          <button class="btn btn-secondary w-full" @click="showImportTextarea = !showImportTextarea">粘贴 JSON 导入</button>
+          <button class="btn btn-secondary" @click="handleExport(form)">导出</button>
         </div>
-        <div v-show="!collapsed.import" class="p-5 space-y-4">
-          <div class="flex gap-4">
-            <label class="flex-1">
-              <input
-                ref="fileInput"
-                type="file"
-                accept=".json"
-                class="hidden"
-                @change="handleFileImport"
-              />
-              <button class="btn btn-secondary w-full" @click="($refs.fileInput as HTMLInputElement)?.click()">
-                从文件导入...
-              </button>
-            </label>
-            <button class="btn btn-secondary w-full" @click="showImportTextarea = !showImportTextarea">
-              粘贴 JSON 导入
-            </button>
-            <button class="btn btn-secondary" @click="handleExport">
-              导出
-            </button>
-          </div>
-
-          <div v-if="showImportTextarea" class="space-y-3">
-            <textarea
-              v-model="importJson"
-              class="form-input font-mono h-32"
-              placeholder='粘贴完整配置 JSON 或旧 yunplex 格式...'
-            />
-            <div class="flex items-center gap-4">
-              <button class="btn btn-primary" :disabled="!importJson || importing" @click="handleImportJson">
-                {{ importing ? '导入中...' : '导入' }}
-              </button>
-              <span v-if="importResult" class="text-sm" :class="importResult.ok ? 'text-success' : 'text-danger'">
-                {{ importResult.ok ? '✓' : '✗' }} {{ importResult.msg }}
-              </span>
-            </div>
+        <div v-if="showImportTextarea" class="space-y-3">
+          <textarea v-model="importJson" class="form-input font-mono h-32" placeholder="粘贴完整配置 JSON 或旧 yunplex 格式..." />
+          <div class="flex items-center gap-4">
+            <button class="btn btn-primary" :disabled="!importJson || importing" @click="handleImportJson">{{ importing ? '导入中...' : '导入' }}</button>
+            <span v-if="importResult" class="text-sm" :class="importResult.ok ? 'text-success' : 'text-danger'">{{ importResult.ok ? '✓' : '✗' }} {{ importResult.msg }}</span>
           </div>
         </div>
-      </section>
+      </ConfigSection>
+      </template>
     </template>
 
     <!-- Reset confirm dialog -->
@@ -427,6 +253,7 @@
 import type { AppConfig } from '~~/server/lib/config/types'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { PATH_PRESETS } from '~~/server/lib/config/types'
+import { useConfigImport } from '~~/composables/useConfigImport'
 
 const pathPresets = PATH_PRESETS
 
@@ -461,6 +288,15 @@ const testing = ref<string | null>(null)
 const saveMsg = ref<string | null>(null)
 const saveOk = ref(true)
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
+
+// ── Tab navigation ──
+const activeTab = ref<string>('connection')
+const tabs = [
+  { key: 'connection', label: '连接' },
+  { key: 'sync',       label: '同步' },
+  { key: 'download',   label: '下载' },
+  { key: 'advanced',   label: '高级' },
+]
 
 // ── Collapsible sections ──
 type SectionKey = 'netease' | 'plex' | 'download' | 'sync' | 'album' | 'retention' | 'other' | 'import'
@@ -539,64 +375,7 @@ function showSaveMsg(ok: boolean, msg: string) {
 }
 
 // ── Import / Export ──
-
-const showImportTextarea = ref(false)
-const importJson = ref('')
-const importing = ref(false)
-const importResult = ref<{ ok: boolean; msg: string } | null>(null)
-
-async function handleFileImport(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  try {
-    const text = await file.text()
-    const parsed = JSON.parse(text)
-    await doImport(parsed)
-  } catch (err) {
-    importResult.value = { ok: false, msg: '文件解析失败: ' + (err instanceof Error ? err.message : 'JSON 格式错误') }
-  } finally {
-    input.value = ''
-  }
-}
-
-async function handleImportJson() {
-  if (!importJson.value) return
-  try {
-    const parsed = JSON.parse(importJson.value)
-    await doImport(parsed)
-  } catch (err) {
-    importResult.value = { ok: false, msg: 'JSON 解析失败: ' + (err instanceof Error ? err.message : '格式错误') }
-  }
-}
-
-async function doImport(data: unknown) {
-  importing.value = true
-  importResult.value = null
-  try {
-    await api.post('/config/import', data)
-    importResult.value = { ok: true, msg: '配置导入成功' }
-    importJson.value = ''
-    showImportTextarea.value = false
-    await loadConfig()
-  } catch (err) {
-    importResult.value = { ok: false, msg: '导入失败: ' + (err instanceof Error ? err.message : '未知错误') }
-  } finally {
-    importing.value = false
-  }
-}
-
-function handleExport() {
-  if (!form.value) return
-  const blob = new Blob([JSON.stringify(form.value, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'yunplex2-config.json'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const { showImportTextarea, importJson, importing, importResult, handleFileImport, handleImportJson, handleExport } = useConfigImport(loadConfig)
 
 onMounted(loadConfig)
 </script>

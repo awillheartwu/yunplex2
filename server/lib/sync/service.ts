@@ -1,23 +1,21 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { getDb } from '../db'
-import dayjs from 'dayjs'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, getSongUrl, fetchLyric, fetchAlbumDetail, clearAlbumCache } from '../netease'
-import { downloadSong, buildDownloadPath } from '../tag-writer'
+import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache } from '../netease'
 import { getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
 import type { SongStatus } from '../job/types'
-import { formatTrackArtist } from '../config/types'
 import { getEnabledSources, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { enqueueTask, processAll, listDownloadTasks, cleanupOldDownloadTasks } from '../download/queue'
 import type { DownloadTask } from '../download/queue'
+import { downloadSingleSong } from '../download/single-song'
 import { emitEvent } from './events'
 import { reconcileSource, triggerRescan, findTrackWithRetry, applyFullReorder } from './plex-reconciler'
+import { createSplitArtists, joinArtist } from './artist-utils'
+import { detectChanges } from './change-detection'
 
 export const STAGE_LABELS: Record<string, string> = {
   idle: '空闲',
@@ -81,22 +79,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
         log('info', `清理过期数据: ${parts.join('、')}`)
       }
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
+      const splitArtists = createSplitArtists(multiFormat)
 
-      // Returns [albumArtist, trackArtist]
-      // albumArtist: always first artist only (for Plex library organization)
-      // trackArtist: empty for single artist, formatted for collabs (e.g. "A, B & C")
-      const splitArtists = (artists: { name: string }[]): [string, string] => {
-        if (artists.length === 0) return ['', '']
-        const albumArtist = artists[0]!.name
-        if (artists.length === 1) return [albumArtist, '']
-        const trackArtist = formatTrackArtist(artists.map((a) => a.name), multiFormat)
-        return [albumArtist, trackArtist]
-      }
-
-      const joinArtist = (artists: { name: string }[]) => {
-        // Legacy: still used for display/log messages
-        return splitArtists(artists)[0]
-      }
       // ── Validate ──
       if (!cfg.netease.cookie) throw new Error('未配置网易云 Cookie')
       if (!cfg.plex.server || !cfg.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
@@ -167,60 +151,39 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             } catch { /* non-critical */ }
           }
 
-          const neteaseChanged = !trackUpdateTime || trackUpdateTime !== source.lastTrackUpdateTime
-          const manualForce = options?.forceFull || cfg.sync.forceFullCompare || source.forceFullCompare
-
-          // Auto-force after N skips or N days since last full compare
-          let autoForce = false
-          const skips = source.consecutiveSkips || 0
-          const skipLimit = source.fullCompareAfterSkips ?? cfg.sync.fullCompareAfterSkips
-          const dayLimit = source.fullCompareAfterDays ?? cfg.sync.fullCompareAfterDays
-          if (skipLimit > 0 && skips >= skipLimit) autoForce = true
-          if (dayLimit > 0 && source.lastFullCompareAt) {
-            const daysSince = (Date.now() - new Date(source.lastFullCompareAt).getTime()) / 86400000
-            if (daysSince >= dayLimit) autoForce = true
-          }
-
           const currentIdOrder = trackIds.map(t => t.id)
+          const det = detectChanges({
+            isAlbum,
+            trackUpdateTime,
+            lastTrackUpdateTime: source.lastTrackUpdateTime,
+            manualForce: options?.forceFull || cfg.sync.forceFullCompare || source.forceFullCompare || false,
+            dryRun,
+            consecutiveSkips: source.consecutiveSkips || 0,
+            fullCompareAfterSkips: source.fullCompareAfterSkips ?? cfg.sync.fullCompareAfterSkips,
+            fullCompareAfterDays: source.fullCompareAfterDays ?? cfg.sync.fullCompareAfterDays,
+            lastFullCompareAt: source.lastFullCompareAt,
+            currentIdOrder,
+            trackIdSnapshot: source.trackIdSnapshot,
+          })
 
-          // Incremental diff: compare with last snapshot
-          let oldSnapshot: number[] = []
-          try { if (source.trackIdSnapshot) oldSnapshot = JSON.parse(source.trackIdSnapshot) } catch { /* ignore */ }
+          job.finishStep(s1, 'success', `歌单获取完成，共 ${yunSongs.length} 首（${det.changedMsg}${det.diffMsg ? '，' + det.diffMsg : ''}）`)
 
-          const addedIds = currentIdOrder.filter(id => !oldSnapshot.includes(id))
-          const removedIds = oldSnapshot.filter(id => !currentIdOrder.includes(id))
-          const orderChanged = oldSnapshot.length > 0 && JSON.stringify(currentIdOrder) !== JSON.stringify(oldSnapshot)
-          const isPureAddition = addedIds.length > 0 && removedIds.length === 0 && !orderChanged
-          const isPureDeletion = addedIds.length === 0 && removedIds.length > 0 && !orderChanged
-          const isPureReorder = addedIds.length === 0 && removedIds.length === 0 && orderChanged
-          const canIncremental = isPureAddition || isPureDeletion || isPureReorder
-
-          const changedMsg = neteaseChanged ? '网易云已变' : '未变化'
-          const diffMsg = canIncremental
-            ? (isPureAddition ? `+${addedIds.length}首` : isPureDeletion ? `-${removedIds.length}首` : '重排')
-            : (addedIds.length || removedIds.length ? `+${addedIds.length}/-${removedIds.length}${orderChanged?'/重排':''}` : '')
-          job.finishStep(s1, 'success', `歌单获取完成，共 ${yunSongs.length} 首（${changedMsg}${diffMsg ? '，'+diffMsg : ''}）`)
-
-          // Skip entirely if Netease unchanged (Plex updatedAt is unreliable, snapshot diff covers Plex changes)
-          // Albums never skip — always full
-          if (!isAlbum && !neteaseChanged && !manualForce && !autoForce && !dryRun) {
-            log('info', `歌单「${playlistName}」未变化，跳过对比（连续跳过 ${skips + 1} 次）`)
+          // Skip entirely if Netease unchanged
+          if (det.skipEntirely) {
+            log('info', `歌单「${playlistName}」未变化，跳过对比（连续跳过 ${(source.consecutiveSkips || 0) + 1} 次）`)
             updateSource(source.id, {
               lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null,
               lastJobId: job.getId(), trackCount: yunSongs.length,
               lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt,
-              consecutiveSkips: skips + 1,
+              consecutiveSkips: (source.consecutiveSkips || 0) + 1,
             })
             continue
           }
 
-          if (autoForce) log('info', `歌单「${playlistName}」触发自动全量对比（超过${cfg.sync.fullCompareAfterSkips > 0 ? '跳过次数' : '时间间隔'}）`)
-
-          // Decision: full vs incremental shortcut (albums always full)
-          const needFullCompare = isAlbum || manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0
+          if (det.autoForce) log('info', `歌单「${playlistName}」触发自动全量对比（超过${cfg.sync.fullCompareAfterSkips > 0 ? '跳过次数' : '时间间隔'}）`)
 
           // Pure reorder: skip download, just reorder Plex playlist
-          if (isPureReorder && !needFullCompare) {
+          if (det.isPureReorder && !det.needFullCompare) {
             log('info', `歌单「${playlistName}」仅顺序变化，跳过下载直接重排`)
             const allSongs = yunSongs.map(s => ({ songName: s.name, artist: joinArtist(s.artists), album: s.album.name, status: 'skipped_existing' as SongStatus }))
             job.addSongs(source.id, allSongs)
@@ -265,6 +228,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             artist: joinArtist(s.artists),
             album: s.album.name,
             status: 'pending' as SongStatus,
+            neteaseSongId: s.id,
           }))
           job.addSongs(source.id, allSongs)
 
@@ -339,8 +303,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             setStage('downloading')
             log('info', `开始下载 ${songsToDownload.length} 首歌曲`)
 
-            const songDataMap = new Map(songsToDownload.map((r) => [r.song.id, r.song]))
-
             for (const r of songsToDownload) {
               const [, trackArtist] = splitArtists(r.song.artists)
               enqueueTask({
@@ -355,62 +317,20 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             }
 
             const processor = async (task: DownloadTask, onProgress: (pct: number) => void) => {
-              const song = songDataMap.get(task.songId)
-              if (!song) throw new Error('歌曲数据未找到')
-
-              const [albumArtist, trackArtist] = splitArtists(song.artists)
-              const { url, type: fileType } = await getSongUrl(song.id, cfg.netease.quality, cfg.netease.cookie)
-
-              const lyricData = cfg.download.downloadLyrics
-                ? await fetchLyric(song.id, cfg.netease.cookie, (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first', cfg.other?.downloadTranslatedLyric ?? true)
-                : undefined
-
-              const albumDetail = await fetchAlbumDetail(song.album.id, cfg.netease.cookie)
-
-              const pathVars = {
-                artist: albumArtist,
-                album: song.album.name,
-                title: song.name,
-                year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
-                track: String(song.no),
-                'track:02d': String(song.no).padStart(2, '0'),
-              }
-              const relativePath = buildDownloadPath(cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}', pathVars, fileType)
-              const targetPath = join(cfg.download.dir, relativePath)
-
-              if (existsSync(targetPath)) {
-                return { filePath: targetPath, fileType }
-              }
-
-              const songMeta = {
-                title: song.name, albumArtist, trackArtist,
-                album: song.album.name, trackNumber: song.no,
-                publishTime: song.album.publishTime || albumDetail?.publishTime || 0,
-                picUrl: song.album.picUrl, duration: song.dt,
-                discNumber: song.disc || '1',
-                totalDiscs: albumDetail?.totalDiscs ?? 1,
-                totalTracks: albumDetail?.size ?? 0,
-                genre: albumDetail?.genre ?? '',
-                releaseDate: (song.album.publishTime || albumDetail?.publishTime || 0) > 0
-                  ? dayjs(song.album.publishTime || albumDetail?.publishTime).format('YYYY-MM-DD') : '',
-                albumDescription: albumDetail?.description ?? '',
-                recordLabel: albumDetail?.company ?? '',
-                releaseType: albumDetail?.type ?? '',
-                artistImgUrl: albumDetail?.artistImgUrl ?? '',
-              }
-
-              const result = await downloadSong(url, songMeta, fileType, cfg.download.dir, {
-                writeLyrics: cfg.download.downloadLyrics,
+              return downloadSingleSong(task.songId, {
+                quality: cfg.netease.quality,
+                cookie: cfg.netease.cookie,
+                downloadDir: cfg.download.dir,
+                pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+                multiArtistFormat: multiFormat,
+                downloadLyrics: cfg.download.downloadLyrics,
                 embedMetadata: cfg.download.embedMetadata,
                 embedCover: cfg.download.embedCover,
                 saveAlbumCover: cfg.download.saveAlbumCover ?? false,
                 saveArtistImage: cfg.download.saveArtistImage ?? false,
-                lyrics: lyricData?.merged,
-                translatedLyric: lyricData?.translated,
-                separateLyricFiles: lyricData?.separateFiles,
-              }, relativePath, onProgress)
-
-              return { filePath: result.filePath, fileType }
+                lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
+                downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
+              }, onProgress)
             }
 
             await processAll(processor, job.getId(), cfg.sync.downloadConcurrency || 3)

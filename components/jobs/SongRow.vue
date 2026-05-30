@@ -34,6 +34,16 @@
     <!-- Expanded detail -->
     <div v-if="expanded" class="px-5 pb-4 pl-12">
       <div class="bg-[var(--bg-app)] rounded-lg p-3 space-y-2">
+        <!-- Download progress -->
+        <div v-if="retrying && retryProgress !== undefined && retryProgress > 0" class="space-y-1">
+          <div class="flex justify-between text-2xs">
+            <span class="text-muted-deep">下载进度</span>
+            <span class="text-accent font-mono">{{ retryProgress }}%</span>
+          </div>
+          <div class="w-full h-1 rounded-full bg-[var(--border-primary)] overflow-hidden">
+            <div class="h-full rounded-full bg-accent transition-all duration-300" :style="{ width: retryProgress + '%' }" />
+          </div>
+        </div>
         <!-- Skipped existing -->
         <template v-if="song.status === 'skipped_existing'">
           <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
@@ -42,11 +52,23 @@
         <!-- Ignored failure -->
         <template v-else-if="song.status === 'ignored_failure'">
           <p class="text-2xs text-muted-deep">此歌曲多次下载或匹配失败，已被忽略。可按"清除忽略"重试</p>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mt-2"
+            :disabled="retrying"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重试下载' }}</button>
         </template>
 
         <!-- Copyright restricted -->
         <template v-else-if="song.status === 'copyright_restricted'">
           <p class="text-2xs text-muted-deep">此歌曲受版权保护，网易云不提供下载链接</p>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mt-2"
+            :disabled="retrying"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重试下载' }}</button>
         </template>
 
         <!-- Removed -->
@@ -56,6 +78,12 @@
 
         <!-- Success / Failed — show ops + details -->
         <template v-else>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mb-2"
+            :disabled="retrying"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重试下载' }}</button>
           <div v-if="song.ops" class="flex items-center gap-4 mb-2">
             <span class="text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
               {{ song.ops.download === 'ok' ? '✓' : '✗' }} 下载
@@ -103,10 +131,18 @@
 </template>
 
 <script setup lang="ts">
-import type { SongTask } from '~~/server/lib/job/types'
+import type { SongTask, SongStatus } from '~~/server/lib/job/types'
 
-const props = defineProps<{ song: SongTask; expanded: boolean }>()
-defineEmits<{ toggle: [] }>()
+const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean; retryProgress?: number }>()
+defineEmits<{ toggle: []; retry: [] }>()
+
+const showRetry = computed(() => {
+  const actionable: SongStatus[] = [
+    'failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert',
+    'copyright_restricted', 'ignored_failure',
+  ]
+  return actionable.includes(props.song.status) && !!props.song.neteaseSongId
+})
 
 const statusConfig = computed(() => {
   switch (props.song.status) {

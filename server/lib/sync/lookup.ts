@@ -128,23 +128,23 @@ function normalizeTitle(title: string): string {
 }
 
 function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
 }
 
-function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
+export function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
   const y = normalizeTitle(yunTitle)
   const p = normalizeTitle(plexTitle)
   return !!(y && p && (y === p || stripPunct(y) === stripPunct(p)))
 }
 
-function fuzzyArtist(plexArtist: string, yunArtist: string): boolean {
+export function fuzzyArtist(plexArtist: string, yunArtist: string): boolean {
   if (!yunArtist || !plexArtist) return true
   const py = yunArtist.toLowerCase()
   const pp = plexArtist.toLowerCase()
   return py === pp || py.includes(pp) || pp.includes(py)
 }
 
-function fuzzyAlbum(plexAlbum: string, yunAlbum: string): boolean {
+export function fuzzyAlbum(plexAlbum: string, yunAlbum: string): boolean {
   if (!yunAlbum || !plexAlbum) return true
   const y = normalizeTitle(yunAlbum)
   const p = normalizeTitle(plexAlbum || '')

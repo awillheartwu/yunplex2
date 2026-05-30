@@ -42,12 +42,13 @@ export class JobBuilder {
     Object.assign(this.job.config, c)
   }
 
-  addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus }[]): void {
+  addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus; neteaseSongId?: number }[]): void {
     this.job.totalSongs += songs.length
     for (const s of songs) {
       const st: SongTask = {
         id: uid(),
         sourceId,
+        neteaseSongId: s.neteaseSongId,
         songName: s.songName,
         artist: s.artist,
         album: s.album,

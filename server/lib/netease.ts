@@ -125,7 +125,7 @@ interface RawSong {
   }
 }
 
-function mapRawSong(raw: RawSong): NeteaseSong {
+export function mapRawSong(raw: RawSong): NeteaseSong {
   // v3 API may put publishTime at song level or album level, or omit it
   const pubTime = raw.publishTime ?? raw.al?.publishTime ?? 0
   return {
@@ -143,6 +143,14 @@ function mapRawSong(raw: RawSong): NeteaseSong {
       artist: raw.al?.artist,
     },
   }
+}
+
+/** Fetch a single song's detail by ID */
+export async function fetchSongDetail(songId: number, cookie: string): Promise<NeteaseSong> {
+  const res = await song_detail({ ids: String(songId), cookie })
+  const data = (res as any).body as { songs?: RawSong[] } | undefined
+  if (!data?.songs?.[0]) throw new Error(`无法获取歌曲 ${songId} 的详情`)
+  return mapRawSong(data.songs[0])
 }
 
 /** Cache album detail calls — they repeat across songs in the same album */

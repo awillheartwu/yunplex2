@@ -13,6 +13,7 @@ test/
 .DS_Store
 .claude/
 .agents/
+CLAUDE.md
 
 # Scripts & tests
 scripts/

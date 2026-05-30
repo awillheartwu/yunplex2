@@ -1,7 +1,7 @@
 // Module-level SSE singleton — one EventSource for the entire app.
 // Composables subscribe to typed events; the singleton handles connection lifecycle.
 
-export type SseEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update'
+export type SseEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'song-retry-progress'
 
 type SseHandler = (data: Record<string, unknown>) => void
 
@@ -43,6 +43,9 @@ function ensureConnection() {
   })
   instance.addEventListener('queue-update', (e: MessageEvent) => {
     try { dispatch('queue-update', JSON.parse(e.data)) } catch { /* ignore */ }
+  })
+  instance.addEventListener('song-retry-progress', (e: MessageEvent) => {
+    try { dispatch('song-retry-progress', JSON.parse(e.data)) } catch { /* ignore */ }
   })
 
   instance.onopen = () => { sseConnected.value = true }

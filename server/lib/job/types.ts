@@ -22,6 +22,7 @@ export type SongStatus =
 export interface SongTask {
   id: string
   sourceId?: string
+  neteaseSongId?: number
   songName: string
   artist: string
   album: string
