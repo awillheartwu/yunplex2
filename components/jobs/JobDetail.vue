@@ -87,7 +87,10 @@
             :key="song.id"
             :song="song"
             :expanded="expandedSong === song.id"
+            :retrying="retryingSongs.has(song.id)"
+            :retry-progress="retryProgress[song.id] || 0"
             @toggle="expandedSong = expandedSong === song.id ? null : song.id"
+            @retry="handleRetry(song)"
           />
         </div>
       </template>
@@ -105,6 +108,13 @@
             <SourceBadge :type="(sourceTypeMap[group.sourceId] as 'playlist' | 'album') || 'playlist'" :subscribed="sourceSubscribedMap[group.sourceId]" />
             <span class="text-xs font-medium flex-1">{{ group.sourceName }}</span>
             <span class="text-2xs text-muted">{{ group.stats }}</span>
+            <button
+              v-if="hasFailedSongs(group)"
+              class="text-2xs px-2 py-0.5 rounded transition-colors cursor-pointer shrink-0"
+              :class="retryingSources.has(group.sourceId) ? 'text-muted-deep cursor-not-allowed' : 'text-accent hover:bg-[var(--accent-muted)]'"
+              :disabled="retryingSources.has(group.sourceId)"
+              @click.stop="handleRetryAll(group.sourceId)"
+            >{{ retryingSources.has(group.sourceId) ? '同步中...' : '重试全部失败' }}</button>
           </button>
           <div v-if="!collapsedGroups.has(group.sourceId)" class="divide-y divide-[var(--border-primary)]">
             <SongRow
@@ -112,7 +122,9 @@
               :key="song.id"
               :song="song"
               :expanded="expandedSong === song.id"
+              :retrying="retryingSongs.has(song.id)"
               @toggle="expandedSong = expandedSong === song.id ? null : song.id"
+              @retry="handleRetry(song)"
             />
           </div>
         </div>
@@ -123,12 +135,23 @@
 
 <script setup lang="ts">
 import type { SyncJob, SongStatus, SongTask } from '~~/server/lib/job/types'
+import { sseSubscribe } from '~~/composables/sse'
 
 const props = defineProps<{ job: SyncJob }>()
 defineEmits<{ back: [] }>()
 
 const api = useApi()
 const expandedSong = ref<string | null>(null)
+const retryingSongs = ref<Set<string>>(new Set())
+const retryingSources = ref<Set<string>>(new Set())
+const retryProgress = ref<Record<string, number>>({})
+
+function hasFailedSongs(group: SongGroup): boolean {
+  return group.songs.some((s) =>
+    ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert',
+     'copyright_restricted', 'ignored_failure'].includes(s.status),
+  )
+}
 const songFilter = ref<SongStatus | ''>('')
 const sourceNameMap = ref<Record<string, string>>({})
 const sourceTypeMap = ref<Record<string, string>>({})
@@ -247,5 +270,83 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(fetchSourceNames)
+async function handleRetry(song: SongTask) {
+  if (retryingSongs.value.has(song.id)) return
+  retryingSongs.value.add(song.id)
+  retryingSongs.value = new Set(retryingSongs.value) // trigger reactivity
+  try {
+    await api.post(`/jobs/${props.job.id}/retry-song`, { songId: song.id })
+  } catch {
+    retryingSongs.value.delete(song.id)
+    retryingSongs.value = new Set(retryingSongs.value)
+  }
+}
+
+async function handleRetryAll(sourceId: string) {
+  if (retryingSources.value.has(sourceId)) return
+  retryingSources.value.add(sourceId)
+  retryingSources.value = new Set(retryingSources.value)
+  try {
+    await api.post(`/playlist-sources/${sourceId}/retry-failed`)
+  } catch {
+    retryingSources.value.delete(sourceId)
+    retryingSources.value = new Set(retryingSources.value)
+  }
+}
+
+const unsubs: Array<() => void> = []
+
+onMounted(() => {
+  fetchSourceNames()
+  unsubs.push(sseSubscribe('song-retry-progress', (data) => {
+    const { songId, status, filePath, fileType, ops, error: errData, progress } = data as Record<string, unknown>
+    if (!songId) return
+
+    // Track download progress
+    if (typeof progress === 'number') {
+      retryProgress.value = { ...retryProgress.value, [songId as string]: progress }
+    }
+
+    const song = props.job.songs.find((s) => s.id === songId)
+    if (!song) return
+
+    if (status === 'success') {
+      song.status = 'success'
+      song.phase = 'done'
+      if (filePath) song.filePath = filePath as string
+      if (fileType) song.fileType = fileType as string
+      if (ops) song.ops = ops as SongTask['ops']
+      delete song.error
+      delete retryProgress.value[songId as string]
+    } else if (status === 'downloading') {
+      song.status = 'downloading'
+      song.phase = 'download'
+    } else if (status === 'failed') {
+      song.status = 'failed_download'
+      song.phase = 'download'
+      if (errData) song.error = {
+        title: '重试失败',
+        message: (errData as Record<string, unknown>).message as string || '下载失败',
+        stage: 'download',
+        songName: song.songName,
+        artist: song.artist,
+      }
+      delete retryProgress.value[songId as string]
+    }
+
+    retryingSongs.value.delete(songId as string)
+    retryingSongs.value = new Set(retryingSongs.value)
+  }))
+  // Clear batch-retry state when any sync finishes
+  unsubs.push(sseSubscribe('stage-change', (data) => {
+    const { stage } = data as Record<string, unknown>
+    if (stage === 'idle') {
+      retryingSources.value = new Set()
+    }
+  }))
+})
+
+onUnmounted(() => {
+  for (const u of unsubs) u()
+})
 </script>

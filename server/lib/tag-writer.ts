@@ -192,7 +192,7 @@ async function downloadImage(picUrl: string): Promise<Buffer | null> {
   }
 }
 
-function buildFlacTagMap(meta: SongMeta): Record<string, string> {
+export function buildFlacTagMap(meta: SongMeta): Record<string, string> {
   const hasDate = meta.publishTime > 0
   const tags: Record<string, string> = {
     TITLE: meta.title,

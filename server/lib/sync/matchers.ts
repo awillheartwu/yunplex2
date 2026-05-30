@@ -8,7 +8,7 @@ export function normalizeTitle(title: string): string {
 }
 
 export function stripPunct(s: string): string {
-  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s'""''""]+/g, '')
+  return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
 }
 
 /**
@@ -20,7 +20,7 @@ export function normalizeForSearch(text: string): string {
   return text
     .replace(/[（(][^）)]*[）)]/g, ' ')
     .replace(/[【〔《「『〈][^】〕》」』〉]*[】〕》」』〉]/g, ' ')
-    .replace(/[/\\:*?"'<>|&'""''!@#$%^&*+=~.,;:-]+/g, ' ')
+    .replace(/[/\\:*?"'<>|&‘’“”!@#$%^&*+=~.,;:-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }

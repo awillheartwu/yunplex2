@@ -113,7 +113,7 @@ export async function applyFullReorder(
 }
 
 /** Compute LCS of two arrays, returning the set of items in the common subsequence */
-function computeLCS(a: number[], b: number[]): Set<number> {
+export function computeLCS(a: number[], b: number[]): Set<number> {
   const m = a.length
   const n = b.length
 

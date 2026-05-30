@@ -96,14 +96,14 @@
     <!-- ═══ Sync stage bar ═══ -->
     <NuxtLink to="/downloads" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
       <div class="flex items-center gap-2 flex-1 min-w-0">
-        <template v-for="(stage, idx) in activeStages" :key="stage.key">
+        <template v-for="(stage, idx) in ACTIVE_STAGES" :key="stage.key">
           <span class="w-2 h-2 rounded-full shrink-0" :class="stageDotClass(stage.key)" />
           <span
 class="text-2xs shrink-0"
-            :style="{ color: stageTextColor(stage.key) }"
+            :style="{ color: stageColor(stage.key) }"
             :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
-          <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
-            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(activeStages[idx+1]!.key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+          <svg v-if="idx < ACTIVE_STAGES.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
+            <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(ACTIVE_STAGES[idx+1]!.key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </template>
       </div>
@@ -176,9 +176,12 @@ class="text-2xs shrink-0"
 <script setup lang="ts">
 import type { AppConfig } from '~~/server/lib/config/types'
 import type { LogEntry } from '~~/server/lib/log/types'
+import { ACTIVE_STAGES, useSyncStages } from '~~/composables/useSyncStages'
 
 const api = useApi()
 const { state: syncState, loading: syncLoading, triggerSync, cancelSync, startPolling, stopPolling } = useSync()
+const currentStage = computed(() => syncState.value?.currentStage ?? null)
+const { stageDotClass, stageColor, isStageDone } = useSyncStages(currentStage)
 const config = ref<AppConfig | null>(null)
 const autoSync = ref(false)
 const autoSyncLoading = ref(false)
@@ -207,51 +210,6 @@ const dashboardLoading = ref(true)
 interface JobSummary { id: string; startedAt: string; status: string; durationMs: number; summary: string; successSongs: number; failedSongs: number; skippedSongs: number; warnings: number }
 const qualityLabels: Record<string, string> = { standard: '标准', higher: '较高', exhigh: '极高', lossless: '无损', hires: 'Hi-Res', jyeffect: '高清环绕声', jymaster: '超清母带' }
 const qualityLabel = computed(() => config.value ? (qualityLabels[config.value.netease.quality] || config.value.netease.quality) : '—')
-
-const activeStages = [
-  { key: 'fetching_playlist', label: '获取歌单' },
-  { key: 'comparing', label: '对比 Plex' },
-  { key: 'downloading', label: '下载' },
-  { key: 'processing_tags', label: '写入标签' },
-  { key: 'refreshing_plex', label: '刷新 Plex' },
-  { key: 'updating_plex_playlist', label: '更新歌单' },
-]
-
-const stageOrder = ['idle', 'fetching_playlist', 'comparing', 'downloading', 'processing_tags', 'refreshing_plex', 'updating_plex_playlist']
-function isStageDone(key: string): boolean {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return false
-  return stageOrder.indexOf(key) < stageOrder.indexOf(current)
-}
-
-function stageDotClass(key: string): string {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return 'bg-[var(--border-secondary)]'
-  if (current === 'error') {
-    const ki = stageOrder.indexOf(key)
-    const doneIdx = stageOrder.indexOf('updating_plex_playlist')
-    if (ki <= doneIdx) return ki < doneIdx ? 'bg-success' : 'bg-danger'
-  }
-  const ci = stageOrder.indexOf(current)
-  const ki = stageOrder.indexOf(key)
-  if (ki < ci) return 'bg-success'
-  if (ki === ci) return 'bg-accent animate-pulse'
-  return 'bg-[var(--border-secondary)]'
-}
-
-function stageTextColor(key: string): string {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return 'var(--text-tertiary)'
-  if (current === 'error') {
-    const ki = stageOrder.indexOf(key)
-    return ki < stageOrder.indexOf('updating_plex_playlist') ? 'var(--text-secondary)' : 'var(--text-primary)'
-  }
-  const ci = stageOrder.indexOf(current)
-  const ki = stageOrder.indexOf(key)
-  if (ki < ci) return 'var(--text-secondary)'
-  if (ki === ci) return 'var(--accent)'
-  return 'var(--text-tertiary)'
-}
 
 async function fetchData() {
   dashboardLoading.value = true

@@ -51,11 +51,11 @@ v-for="t in tabs" :key="t.key"
 
           <!-- Stage steps -->
           <div class="flex items-center gap-1 mb-3">
-            <template v-for="(stage, idx) in activeStages" :key="stage.key">
-              <span class="w-2 h-2 rounded-full shrink-0" :class="syncStageDot(stage.key)" />
-              <span class="text-2xs shrink-0" :style="{ color: syncStageColor(stage.key) }" :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
-              <svg v-if="idx < activeStages.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
-                <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(idx + 1) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <template v-for="(stage, idx) in ACTIVE_STAGES" :key="stage.key">
+              <span class="w-2 h-2 rounded-full shrink-0" :class="stageDotClass(stage.key)" />
+              <span class="text-2xs shrink-0" :style="{ color: stageColor(stage.key) }" :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
+              <svg v-if="idx < ACTIVE_STAGES.length - 1" width="10" height="10" viewBox="0 0 10 10" fill="none" class="shrink-0">
+                <path d="M3.5 2l3 3-3 3" :stroke="isStageDone(ACTIVE_STAGES[idx+1]!.key) ? 'var(--accent)' : 'var(--border-secondary)'" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </template>
           </div>
@@ -219,9 +219,12 @@ v-for="d in historyItems" :key="d.id"
 
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
+import { ACTIVE_STAGES, useSyncStages } from '~~/composables/useSyncStages'
 
 const api = useApi()
 const { state: syncState } = useSyncStatus()
+const currentStage = computed(() => syncState.value?.currentStage ?? null)
+const { stageLabel, stageDotClass, stageColor, isStageDone } = useSyncStages(currentStage)
 const {
   historyItems, historyEarliestDate, historyTotal, historyHasMore, historyLoadingMore, loadMoreHistory,
   dateFilter, historySearch, clearAll, fetchAll: refreshAll,
@@ -259,40 +262,6 @@ const lastSyncSummary = computed(() => {
   if (!s?.lastSyncedAt) return ''
   return `${s.lastStatus === 'success' ? '成功' : s.lastStatus === 'partial' ? '部分失败' : '失败'} · ${formatTimeFull(s.lastSyncedAt)}`
 })
-
-const stageOrder = ['idle', 'fetching_playlist', 'comparing', 'downloading', 'processing_tags', 'refreshing_plex', 'updating_plex_playlist']
-const activeStages = [
-  { key: 'fetching_playlist', label: '获取歌单' },
-  { key: 'comparing', label: '对比 Plex' },
-  { key: 'downloading', label: '下载' },
-  { key: 'processing_tags', label: '写入标签' },
-  { key: 'refreshing_plex', label: '刷新 Plex' },
-  { key: 'updating_plex_playlist', label: '更新歌单' },
-]
-
-function syncStageDot(key: string): string {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return 'bg-[var(--border-secondary)]'
-  const ci = stageOrder.indexOf(current)
-  const ki = stageOrder.indexOf(key)
-  if (ki < ci) return 'bg-success'
-  if (ki === ci) return 'bg-accent animate-pulse'
-  return 'bg-[var(--border-secondary)]'
-}
-function syncStageColor(key: string): string {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return 'var(--text-tertiary)'
-  const ci = stageOrder.indexOf(current)
-  const ki = stageOrder.indexOf(key)
-  if (ki < ci) return 'var(--text-secondary)'
-  if (ki === ci) return 'var(--accent)'
-  return 'var(--text-tertiary)'
-}
-function isStageDone(idx: number): boolean {
-  const current = syncState.value?.currentStage
-  if (!current || current === 'idle') return false
-  return idx <= stageOrder.indexOf(current)
-}
 
 const totalCount = computed(() => syncTasks.value.length || 1)
 const overallPct = computed(() => {
@@ -417,13 +386,6 @@ async function handleClear() { showClear.value = false; await clearAll() }
 
 const qualityLabels: Record<string, string> = { standard:'标准', higher:'较高', exhigh:'极高', lossless:'无损', hires:'Hi-Res', jyeffect:'高清环绕声', jymaster:'超清母带' }
 function qualityLabel(l: string): string { return qualityLabels[l] || l }
-
-const stageLabels: Record<string, string> = {
-  idle:'空闲', fetching_playlist:'获取歌单', comparing:'对比歌曲', downloading:'下载歌曲',
-  processing_tags:'写入元数据', refreshing_plex:'刷新 Plex 库', updating_plex_playlist:'更新 Plex 歌单',
-  reorder:'重排歌单', cancelled:'已取消', error:'同步错误',
-}
-function stageLabel(s: string): string { return stageLabels[s] || s }
 
 function songStatusLabel(s: string): string {
   switch (s) { case 'pending': return '排队'; case 'downloading': return '下载中'; case 'tagging': return '写标签'; case 'done': return '完成'; case 'failed': return '失败'; default: return s }

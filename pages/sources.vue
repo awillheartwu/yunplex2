@@ -217,90 +217,7 @@
     />
 
     <!-- Edit dialog -->
-    <Teleport to="body">
-      <div v-if="editTarget" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)" @click.self="editTarget = null">
-        <div class="w-[460px] max-w-[92vw] rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
-          <!-- Header -->
-          <div class="flex items-center gap-2 px-5 py-4" style="border-bottom:1px solid var(--border-primary)">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <h3 class="text-sm font-semibold" style="color:var(--text-primary)">{{ editTarget.type === 'album' ? '编辑专辑源' : '编辑歌单源' }}</h3>
-          </div>
-
-          <div class="px-5 py-4 space-y-4">
-            <!-- Netease source name (read-only) -->
-            <div>
-              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">{{ editTarget.type === 'album' ? '网易云专辑' : '网易云歌单' }}</label>
-              <div class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg" style="background:var(--bg-input);color:var(--text-secondary)">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
-                {{ editTarget.neteasePlaylistName }}
-              </div>
-            </div>
-
-            <!-- Task name -->
-            <div>
-              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">任务名称</label>
-              <input v-model="editForm.name" type="text" class="form-input w-full text-sm" />
-            </div>
-
-            <!-- Album-only: skip Plex playlist -->
-            <template v-if="editTarget.type === 'album'">
-              <ToggleField v-model="editForm.skipPlexPlaylist" label="仅下载不入歌单" hint="只下载到本地并导入 Plex 库，不创建 Plex 歌单也不重排" />
-            </template>
-
-            <!-- Playlist-only settings -->
-            <template v-if="editTarget.type === 'playlist'">
-            <!-- Plex playlist -->
-            <div>
-              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">Plex 目标歌单</label>
-              <select v-if="plexPlaylists.length > 0" v-model="editForm.plexPlaylistName" class="form-input w-full text-sm">
-                <option value="">自动匹配（网易云同名）</option>
-                <option v-for="pp in plexPlaylists" :key="pp.ratingKey" :value="pp.title">{{ pp.title }}</option>
-              </select>
-              <input v-else v-model="editForm.plexPlaylistName" type="text" placeholder="留空则自动匹配网易云同名" class="form-input w-full text-sm" />
-              <p v-if="plexError" class="text-2xs text-warning mt-1">{{ plexError }}</p>
-            </div>
-
-            <!-- Sync limit -->
-            <div>
-              <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">同步数量上限</label>
-              <input v-model.number="editForm.syncLimit" type="number" placeholder="留空则使用全局设置" class="form-input w-full text-sm" />
-            </div>
-
-            <!-- Divider before toggles -->
-            <div style="height:1px;background:var(--border-primary)" />
-
-            <!-- Toggles -->
-            <ToggleField v-model="editForm.enabled" label="启用" hint="关闭后该歌单将不会参与同步" />
-            <ToggleField v-model="editForm.autoCreatePlexPlaylist" label="自动创建 Plex 歌单" hint="Plex 中不存在同名歌单时自动创建" />
-            <ToggleField v-model="editForm.forceFullCompare" label="始终全量对比" hint="覆盖全局设置，每次都进行完整对比" />
-
-            <!-- Per-source skip limits (hidden when always full) -->
-            <template v-if="!editForm.forceFullCompare">
-              <div style="height:1px;background:var(--border-primary)" />
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="text-2xs font-medium block mb-1" style="color:var(--text-tertiary)">连续跳过上限</label>
-                  <input v-model.number="editForm.fullCompareAfterSkips" type="number" placeholder="全局" class="form-input w-full text-sm" min="0" />
-                </div>
-                <div>
-                  <label class="text-2xs font-medium block mb-1" style="color:var(--text-tertiary)">距上次全量(天)</label>
-                  <input v-model.number="editForm.fullCompareAfterDays" type="number" placeholder="全局" class="form-input w-full text-sm" min="0" />
-                </div>
-              </div>
-            </template>
-            </template>
-          </div>
-
-          <!-- Footer -->
-          <div class="flex justify-end gap-2 px-5 py-3" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
-            <button class="btn btn-secondary" @click="editTarget = null">取消</button>
-            <button class="btn btn-primary" :disabled="editLoading" @click="handleEdit">
-              {{ editLoading ? '保存中...' : '保存' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <EditSourceDialog :source="editTarget" @close="editTarget = null" @saved="fetchSources" />
 
     <!-- Delete confirm -->
     <ConfirmDialog
@@ -319,8 +236,8 @@
 import type { PlaylistSource, SourceType } from '~~/server/lib/playlist/types'
 import AddPlaylistDialog from '~/components/sources/AddPlaylistDialog.vue'
 import AddAlbumDialog from '~/components/sources/AddAlbumDialog.vue'
-
-interface PlexPlaylistItem { title: string; ratingKey: string }
+import EditSourceDialog from '~/components/sources/EditSourceDialog.vue'
+import { useDragReorder } from '~~/composables/useDragReorder'
 
 const api = useApi()
 const { syncingSourceId, syncSource: triggerSourceSync } = useSourceSync()
@@ -343,10 +260,13 @@ const showAddAlbum = ref(false)
 
 // Edit
 const editTarget = ref<PlaylistSource | null>(null)
-const editLoading = ref(false)
-const editForm = reactive({ name: '', plexPlaylistName: '', syncLimit: null as number | null, enabled: true, autoCreatePlexPlaylist: true, forceFullCompare: false, fullCompareAfterSkips: null as number | null, fullCompareAfterDays: null as number | null, skipPlexPlaylist: false, subscribed: false })
-const plexPlaylists = ref<PlexPlaylistItem[]>([])
-const plexError = ref('')
+
+// Drag & drop
+const { dragIdx, dragOverIdx, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd } = useDragReorder(
+  sources,
+  async (orderedIds) => { await api.put('/playlist-sources/reorder', { orderedIds }) },
+  (s) => s.id,
+)
 
 const confirmDelete = ref<PlaylistSource | null>(null)
 
@@ -413,69 +333,8 @@ async function toggleEnabled(s: PlaylistSource) {
   }
 }
 
-// Drag & drop
-const dragIdx = ref<number | null>(null)
-const dragOverIdx = ref<number | null>(null)
-
-function onDragStart(idx: number, e: DragEvent) {
-  dragIdx.value = idx
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-}
-function onDragOver(idx: number) {
-  if (dragIdx.value === null || dragIdx.value === idx) return
-  dragOverIdx.value = idx
-}
-function onDragLeave() { dragOverIdx.value = null }
-async function onDrop(idx: number) {
-  if (dragIdx.value === null || dragIdx.value === idx) return
-  const items = [...sources.value]
-  const [moved] = items.splice(dragIdx.value, 1)
-  if (!moved) return
-  items.splice(idx, 0, moved)
-  sources.value = items
-  dragIdx.value = null; dragOverIdx.value = null
-  try { await api.put('/playlist-sources/reorder', { orderedIds: items.map(s => s.id) }) } catch { /* ignore */ }
-}
-function onDragEnd() { dragIdx.value = null; dragOverIdx.value = null }
-
 function openAddPlaylist() { showAdd.value = true }
-
-async function fetchPlexPlaylists() {
-  plexError.value = ''
-  try { plexPlaylists.value = await api.get<PlexPlaylistItem[]>('/plex/playlists') }
-  catch (err) { plexError.value = err instanceof Error ? err.message : '获取 Plex 歌单失败'; plexPlaylists.value = [] }
-}
-
-function openEdit(s: PlaylistSource) {
-  editTarget.value = s
-  editForm.name = s.name
-  editForm.plexPlaylistName = s.plexPlaylistName || s.neteasePlaylistName
-  editForm.syncLimit = s.syncLimit
-  editForm.enabled = s.enabled
-  editForm.autoCreatePlexPlaylist = s.autoCreatePlexPlaylist ?? true
-  editForm.forceFullCompare = s.forceFullCompare ?? false
-  editForm.fullCompareAfterSkips = s.fullCompareAfterSkips
-  editForm.fullCompareAfterDays = s.fullCompareAfterDays
-  editForm.skipPlexPlaylist = s.skipPlexPlaylist ?? false
-  editForm.subscribed = s.subscribed ?? false
-  plexPlaylists.value = []; plexError.value = ''
-  fetchPlexPlaylists()
-}
-
-async function handleEdit() {
-  if (!editTarget.value) return
-  editLoading.value = true
-  try {
-    await api.put(`/playlist-sources/${editTarget.value.id}`, {
-      name: editForm.name, plexPlaylistName: editForm.plexPlaylistName || '',
-      syncLimit: editForm.syncLimit, enabled: editForm.enabled, autoCreatePlexPlaylist: editForm.autoCreatePlexPlaylist, forceFullCompare: editForm.forceFullCompare,
-      fullCompareAfterSkips: editForm.fullCompareAfterSkips, fullCompareAfterDays: editForm.fullCompareAfterDays,
-      skipPlexPlaylist: editForm.skipPlexPlaylist,
-      subscribed: editForm.subscribed,
-    })
-    editTarget.value = null; await fetchSources()
-  } catch { /* ignore */ } finally { editLoading.value = false }
-}
+function openEdit(s: PlaylistSource) { editTarget.value = s }
 
 async function handleDelete() {
   if (!confirmDelete.value) return
