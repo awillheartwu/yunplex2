@@ -93,6 +93,7 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.fullCompareAfterSkips !== undefined) { sets.push('full_compare_after_skips = ?'); vals.push(partial.fullCompareAfterSkips) }
   if (partial.fullCompareAfterDays !== undefined) { sets.push('full_compare_after_days = ?'); vals.push(partial.fullCompareAfterDays) }
   if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(partial.skipPlexPlaylist ? 1 : 0) }
+  if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(partial.skipRemoveExtraTracks ? 1 : 0) }
   if (partial.copyrightRestrictedIds !== undefined) { sets.push('copyright_restricted_ids = ?'); vals.push(partial.copyrightRestrictedIds) }
   if (partial.ignoredFailureIds !== undefined) { sets.push('ignored_failure_ids = ?'); vals.push(partial.ignoredFailureIds) }
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
