@@ -42,7 +42,7 @@ export interface SongTask {
     releaseDate?: string
   }
   ops?: {
-    download: 'ok' | 'failed'
+    download: 'ok' | 'failed' | 'skipped'
     lyric: 'ok' | 'failed' | 'skipped'
     tags: 'ok' | 'failed' | 'skipped'
     cover: 'ok' | 'failed' | 'skipped'
@@ -73,8 +73,11 @@ export interface JobStep {
   children: JobStep[]
 }
 
+export type JobType = 'sync' | 'repair'
+
 export interface SyncJob {
   id: string
+  type: JobType
   startedAt: string
   finishedAt: string | null
   status: JobStatus
@@ -102,6 +105,7 @@ export interface SyncJob {
 // ── Query / filter types ──
 
 export interface JobFilter {
+  type?: JobType
   status?: JobStatus
   search?: string
   limit?: number
@@ -112,6 +116,7 @@ export interface JobFilter {
 
 export interface JobSummary {
   id: string
+  type: JobType
   startedAt: string
   finishedAt: string | null
   status: JobStatus

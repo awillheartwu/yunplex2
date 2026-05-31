@@ -38,6 +38,7 @@
             {{ statusLabel }}
           </span>
           <span v-if="job.dryRun" class="px-1.5 py-0.5 text-2xs rounded bg-[#f1c40f18] text-warning font-medium">预览</span>
+          <span v-if="job.type === 'repair'" class="px-1.5 py-0.5 text-2xs rounded bg-[var(--accent-muted)] text-accent font-medium">补全</span>
         </div>
         <p class="text-sm text-muted mb-2">{{ job.summary }}</p>
         <div class="flex items-center gap-x-3 gap-y-0.5 text-2xs flex-wrap" style="color:var(--text-tertiary)">

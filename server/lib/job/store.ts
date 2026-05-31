@@ -4,10 +4,10 @@ import { getDb } from '../db'
 export function saveJob(job: SyncJob): void {
   const db = getDb()
   db.prepare(`
-    INSERT OR REPLACE INTO jobs (id, started_at, finished_at, status, summary, total_songs, success_songs, failed_songs, skipped_songs, warnings, dry_run, source, target, duration_ms, data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO jobs (id, type, started_at, finished_at, status, summary, total_songs, success_songs, failed_songs, skipped_songs, warnings, dry_run, source, target, duration_ms, data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    job.id, job.startedAt, job.finishedAt, job.status, job.summary,
+    job.id, job.type, job.startedAt, job.finishedAt, job.status, job.summary,
     job.totalSongs, job.successSongs, job.failedSongs, job.skippedSongs,
     job.warnings, job.dryRun ? 1 : 0, job.source, job.target,
     job.durationMs, JSON.stringify(job),
@@ -26,6 +26,10 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
   const conditions: string[] = []
   const params: unknown[] = []
 
+  if (filter.type) {
+    conditions.push('type = ?')
+    params.push(filter.type)
+  }
   if (filter.status) {
     conditions.push('status = ?')
     params.push(filter.status)
@@ -50,10 +54,10 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
 
   const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM jobs ${where}`).get(...params) as { cnt: number }
   const rows = db.prepare(
-    `SELECT id, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, removed_songs, warnings, dry_run
+    `SELECT id, type, started_at, finished_at, status, duration_ms, summary, total_songs, success_songs, failed_songs, skipped_songs, removed_songs, warnings, dry_run
      FROM jobs ${where} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
   ).all(...params, limit, offset) as Array<{
-    id: string; started_at: string; finished_at: string | null; status: string;
+    id: string; type: string; started_at: string; finished_at: string | null; status: string;
     duration_ms: number; summary: string; total_songs: number; success_songs: number;
     failed_songs: number; skipped_songs: number; removed_songs: number; warnings: number; dry_run: number;
   }>
@@ -62,6 +66,7 @@ export function listJobs(filter: JobFilter = {}): { items: JobSummary[]; total: 
   return {
     items: rows.map((r) => ({
       id: r.id,
+      type: r.type as JobSummary['type'],
       startedAt: r.started_at,
       finishedAt: r.finished_at,
       status: r.status as JobSummary['status'],

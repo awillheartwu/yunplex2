@@ -123,12 +123,23 @@
               :song="song"
               :expanded="expandedSong === song.id"
               :retrying="retryingSongs.has(song.id)"
+              :retry-progress="retryProgress[song.id] || 0"
               @toggle="expandedSong = expandedSong === song.id ? null : song.id"
               @retry="handleRetry(song)"
             />
           </div>
         </div>
       </template>
+    </section>
+
+    <!-- Repair task: no per-song details -->
+    <section v-else-if="job.type === 'repair'" class="section-card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[var(--border-primary)]">
+        <h3 class="text-sm font-semibold">歌曲清单</h3>
+      </div>
+      <div class="p-5">
+        <p class="text-xs text-muted">补全任务不记录单首歌曲详情，请查看上方统计数字或日志页。</p>
+      </div>
     </section>
   </div>
 </template>

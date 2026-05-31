@@ -248,6 +248,7 @@ export async function getSongUrl(
 export interface LyricData {
   original: string
   translated: string
+  romaji: string
   merged: string
   separateFiles: boolean
 }
@@ -259,15 +260,16 @@ export async function fetchLyric(
   includeTranslation = true,
 ): Promise<LyricData> {
   const res = await lyric_new({ id: songId, cookie })
-  const body = (res as { body?: { lrc?: { lyric?: string }; tlyric?: { lyric?: string } } }).body
+  const body = (res as { body?: { lrc?: { lyric?: string }; tlyric?: { lyric?: string }; romalrc?: { lyric?: string } } }).body
 
   const original = body?.lrc?.lyric ?? ''
   const translated = includeTranslation ? (body?.tlyric?.lyric ?? '') : ''
+  const romaji = body?.romalrc?.lyric ?? ''
   const separateFiles = (order as string) === 'separate'
 
   const merged = separateFiles ? original : mergeLyrics(original, translated, order)
 
-  return { original, translated, merged, separateFiles }
+  return { original, translated, romaji, merged, separateFiles }
 }
 
 export function mergeLyrics(

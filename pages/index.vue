@@ -9,7 +9,8 @@
         <span class="w-2 h-2 rounded-full" :class="neteaseOk ? 'bg-success' : 'bg-danger'" /> 网易云 {{ neteaseOk ? '已登录' : '未配置' }}
       </div>
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium" style="background:var(--bg-surface);border-color:var(--border-primary);color:var(--text-secondary)">
-        <span class="w-2 h-2 rounded-full" :class="syncState?.isRunning ? 'bg-warning animate-pulse' : 'bg-muted-deep'" /> {{ syncState?.isRunning ? '同步中' : '空闲' }}
+        <span class="w-2 h-2 rounded-full" :class="syncState?.isRunning || (syncState?.currentStage && syncState.currentStage !== 'idle') ? 'bg-warning animate-pulse' : 'bg-muted-deep'" />
+        {{ syncState?.currentStage === 'repair' ? '补全中' : syncState?.isRunning || (syncState?.currentStage && syncState.currentStage !== 'idle') ? '同步中' : '空闲' }}
       </div>
       <span v-if="syncState?.lastSyncAt" class="text-xs text-muted-deep">上次 {{ formatRelative(syncState.lastSyncAt) }}</span>
       <button
@@ -31,7 +32,7 @@
         <label class="flex items-center gap-1 text-xs cursor-pointer select-none" style="color:var(--text-secondary)">
           <input v-model="dryRun" type="checkbox" class="cursor-pointer" /> 预览
         </label>
-        <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">{{ syncState?.isRunning ? '同步中' : '手动同步' }}</button>
+        <button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading || (syncState?.currentStage && syncState.currentStage !== 'idle')" @click="handleSync">{{ syncState?.currentStage === 'repair' ? '补全中' : syncState?.isRunning ? '同步中' : '手动同步' }}</button>
         <button v-if="syncState?.isRunning" class="btn btn-danger btn-sm" @click="handleCancel">停止</button>
       </div>
     </div>
@@ -94,7 +95,7 @@
     </div>
 
     <!-- ═══ Sync stage bar ═══ -->
-    <NuxtLink to="/downloads" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
+    <NuxtLink v-if="!syncState?.currentStage || syncState.currentStage === 'idle' || ACTIVE_STAGES.some(s => s.key === syncState?.currentStage)" to="/downloads" class="section-card p-4 flex items-center gap-2 hover:border-[var(--border-secondary)] transition-colors duration-150 cursor-pointer block">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <template v-for="(stage, idx) in ACTIVE_STAGES" :key="stage.key">
           <span class="w-2 h-2 rounded-full shrink-0" :class="stageDotClass(stage.key)" />
@@ -112,6 +113,14 @@ class="text-2xs shrink-0"
       </div>
       <span class="text-2xs shrink-0" style="color:var(--text-tertiary)">下载中心 →</span>
     </NuxtLink>
+
+    <!-- Repair in-progress bar -->
+    <div v-else class="section-card p-4 flex items-center gap-3">
+      <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
+      <span class="text-sm text-accent font-medium">补全辅助数据运行中</span>
+      <span class="text-2xs text-muted flex-1">在歌单源页查看进度，或前往任务页查看详情</span>
+      <NuxtLink to="/jobs?type=repair" class="text-2xs text-accent hover:underline shrink-0">任务页 →</NuxtLink>
+    </div>
 
     <!-- ═══ Row 2: Recently Added + Timeline ═══ -->
     <div class="grid grid-cols-3 gap-4">

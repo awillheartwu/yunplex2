@@ -9,8 +9,8 @@
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-sm font-semibold">同步历史</h2>
-        <p class="text-2xs text-muted mt-0.5">查看历次同步任务的执行结果和详情</p>
+        <h2 class="text-sm font-semibold">任务历史</h2>
+        <p class="text-2xs text-muted mt-0.5">{{ activeType === 'repair' ? '补全辅助文件的执行记录' : '查看历次同步任务的执行结果和详情' }}</p>
       </div>
       <div class="flex items-center gap-4">
         <input
@@ -26,7 +26,20 @@
       </div>
     </div>
 
-    <!-- Filter tabs -->
+    <!-- Type tabs -->
+    <div class="flex items-center gap-1">
+      <button
+        v-for="t in typeTabs"
+        :key="t.key"
+        class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
+        :class="activeType === t.key
+          ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
+          : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
+        @click="setType(t.key)"
+      >{{ t.label }}</button>
+    </div>
+
+    <!-- Status filter tabs -->
     <div class="flex items-center gap-1">
       <button
         v-for="f in filters"
@@ -95,11 +108,16 @@
 import type { SyncJob, JobStatus } from '~~/server/lib/job/types'
 
 const api = useApi()
-const { jobs, total, loading, loadingMore, hasMore, activeFilter, searchQuery, dateFilter, earliestDate, fetchJobs, loadMore, setFilter } = useJobs()
+const { jobs, total, loading, loadingMore, hasMore, activeFilter, activeType, searchQuery, dateFilter, earliestDate, fetchJobs, loadMore, setFilter, setType } = useJobs()
 const selectedJob = ref<SyncJob | null>(null)
 const showClear = ref(false)
 const router = useRouter()
 const route = useRoute()
+
+const typeTabs = [
+  { key: 'sync' as const, label: '同步任务' },
+  { key: 'repair' as const, label: '补全任务' },
+]
 
 const hasActiveFilter = computed(() => !!activeFilter.value || !!searchQuery.value || !!dateFilter.value.from || !!dateFilter.value.to)
 

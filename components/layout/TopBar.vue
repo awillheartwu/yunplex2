@@ -4,7 +4,7 @@
       <h1 class="text-base font-semibold tracking-tight" style="color:var(--text-primary)">{{ pageTitle }}</h1>
       <StatusBadge
         v-if="syncState"
-        :status="syncState.isRunning ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
+        :status="syncState.isRunning || (syncState.currentStage && syncState.currentStage !== 'idle') ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
       />
     </div>
     <div class="flex items-center gap-3">
@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 const route = useRoute()
-const { state: syncState, startPolling, stopPolling } = useSync()
+const { state: syncState } = useSync()
 const { theme, toggle: toggleTheme } = useTheme()
 
 const version = ref('0.1.0')
@@ -44,7 +44,6 @@ onMounted(async () => {
     const info = await api.get<{ version: string }>('/system/info')
     version.value = info.version
   } catch { /* use default */ }
-  startPolling(15000)
 })
 
 const titles: Record<string, string> = {
@@ -70,6 +69,4 @@ function formatTime(iso: string): string {
   if (hours < 24) return `${hours} 小时前`
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
-
-onUnmounted(() => stopPolling())
 </script>

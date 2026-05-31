@@ -57,8 +57,62 @@ export function buildDownloadPath(
   return join(...segments, `${fileName}.${ext}`)
 }
 
+export interface AncillaryFileStatus {
+  lyricExists: boolean
+  translatedLyricExists: boolean
+  romajiLyricExists: boolean
+  coverExists: boolean
+  artistImageExists: boolean
+}
+
+/** Check which ancillary files exist on disk for a given audio file path. */
+export function checkAncillaryFiles(
+  filePath: string,
+  opts: {
+    writeLyrics: boolean
+    saveAlbumCover: boolean
+    saveArtistImage: boolean
+    separateLyricFiles?: boolean
+    hasTranslatedLyric?: boolean
+    hasRomajiLyric?: boolean
+  },
+): AncillaryFileStatus {
+  const lyricBase = filePath.replace(/\.\w+$/, '')
+  const status: AncillaryFileStatus = {
+    lyricExists: false,
+    translatedLyricExists: false,
+    romajiLyricExists: false,
+    coverExists: false,
+    artistImageExists: false,
+  }
+  if (!opts.writeLyrics) return status
+
+  const separate = opts.separateLyricFiles && opts.hasTranslatedLyric
+  if (separate) {
+    status.lyricExists = existsSync(lyricBase + ' (orgi).lrc')
+    status.translatedLyricExists = existsSync(lyricBase + ' (trans).lrc')
+  } else {
+    status.lyricExists = existsSync(lyricBase + '.lrc')
+    // In merged mode, translations are in the same .lrc file
+    status.translatedLyricExists = opts.hasTranslatedLyric ? status.lyricExists : true
+  }
+  if (opts.hasRomajiLyric) {
+    status.romajiLyricExists = existsSync(lyricBase + ' (romaji).lrc')
+  } else {
+    status.romajiLyricExists = true // nothing to write — "exists"
+  }
+  const albumPath = dirname(filePath)
+  if (opts.saveAlbumCover) {
+    status.coverExists = existsSync(join(albumPath, 'cover.jpg'))
+  }
+  if (opts.saveArtistImage) {
+    status.artistImageExists = existsSync(join(dirname(albumPath), 'artist.jpg'))
+  }
+  return status
+}
+
 export async function downloadSong(
-  url: string,
+  url: string | undefined,
   meta: SongMeta,
   fileType: string,
   downloadDir: string,
@@ -70,13 +124,14 @@ export async function downloadSong(
     saveArtistImage: boolean
     lyrics?: string
     translatedLyric?: string
+    romajiLyric?: string
     separateLyricFiles?: boolean
   },
   relativePath: string,
   onProgress?: (pct: number) => void,
 ): Promise<DownloadResult> {
   const ops: SongOps = {
-    download: 'ok',
+    download: url ? 'ok' : 'skipped',
     lyric: 'skipped',
     tags: 'skipped',
     cover: 'skipped',
@@ -89,30 +144,32 @@ export async function downloadSong(
 
   const filePath = join(downloadDir, relativePath)
 
-  // Download audio file with streaming progress
-  try {
-    const songRes = await fetch(url)
-    const contentLength = parseInt(songRes.headers.get('content-length') || '0', 10)
-    const reader = songRes.body?.getReader()
-    if (!reader) throw new Error('No response body')
+  // Download audio file with streaming progress (skipped if url is undefined)
+  if (url) {
+    try {
+      const songRes = await fetch(url)
+      const contentLength = parseInt(songRes.headers.get('content-length') || '0', 10)
+      const reader = songRes.body?.getReader()
+      if (!reader) throw new Error('No response body')
 
-    const chunks: Uint8Array[] = []
-    let received = 0
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-      received += value.length
-      if (contentLength > 0 && onProgress) {
-        onProgress(Math.round(received / contentLength * 100))
+      const chunks: Uint8Array[] = []
+      let received = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        received += value.length
+        if (contentLength > 0 && onProgress) {
+          onProgress(Math.round(received / contentLength * 100))
+        }
       }
+      const buffer = Buffer.concat(chunks)
+      await writeFile(filePath, buffer)
+      ops.download = 'ok'
+    } catch {
+      ops.download = 'failed'
+      return { filePath, ops }
     }
-    const buffer = Buffer.concat(chunks)
-    await writeFile(filePath, buffer)
-    ops.download = 'ok'
-  } catch {
-    ops.download = 'failed'
-    return { filePath, ops }
   }
 
   // Download lyrics — derive path from audio file path
@@ -125,6 +182,9 @@ export async function downloadSong(
           await writeFile(lyricBase + ' (trans).lrc', options.translatedLyric, 'utf-8')
         } else {
           await writeFile(lyricBase + '.lrc', options.lyrics, 'utf-8')
+        }
+        if (options.romajiLyric) {
+          await writeFile(lyricBase + ' (romaji).lrc', options.romajiLyric, 'utf-8')
         }
         ops.lyric = 'ok'
       } else {

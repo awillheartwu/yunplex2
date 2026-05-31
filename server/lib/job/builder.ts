@@ -16,6 +16,7 @@ export class JobBuilder {
     const id = uid()
     this.job = {
       id,
+      type: 'sync',
       startedAt: new Date().toISOString(),
       finishedAt: null,
       status: 'running',

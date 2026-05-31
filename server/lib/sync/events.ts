@@ -1,4 +1,4 @@
-export type SyncEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'song-retry-progress'
+export type SyncEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'song-retry-progress' | 'repair-progress'
 
 export interface SyncEvent {
   type: SyncEventType
