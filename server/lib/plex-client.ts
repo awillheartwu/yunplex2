@@ -1,6 +1,7 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
 import { stripPunct, s2t, normalizeForSearch } from './sync/matchers'
+import { getArtistAliases } from './netease'
 
 interface PlexTrack {
   ratingKey: string
@@ -168,6 +169,28 @@ export async function searchTrack(
     const tracks = extractMetadata(res)
     const match = findMatch(tracks, songName, coreTitle, cleanTitle, artist, album)
     if (match) return match
+  }
+
+  // ── Fallback: search with original artist name (before alias) ──
+  const { aliases } = getArtistAliases()
+  if (Object.keys(aliases).length > 0) {
+    const reverseMap = new Map<string, string[]>()
+    for (const [orig, alias] of Object.entries(aliases)) {
+      const list = reverseMap.get(alias) || []
+      list.push(orig)
+      reverseMap.set(alias, list)
+    }
+    const originalArtists = reverseMap.get(artist)
+    if (originalArtists) {
+      for (const origArtist of originalArtists) {
+        const origRes = await client.query(
+          `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(origArtist)}`,
+        )
+        const origTracks = extractMetadata(origRes)
+        const match = findMatch(origTracks, songName, coreTitle, cleanTitle, origArtist, album)
+        if (match) return match
+      }
+    }
   }
 
   return null

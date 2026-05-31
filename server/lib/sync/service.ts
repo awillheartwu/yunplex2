@@ -2,7 +2,7 @@ import { getDb } from '../db'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache } from '../netease'
+import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache, setArtistAliases } from '../netease'
 import { getPlaylistTracks } from '../plex-client'
 import { JobBuilder } from '../job/builder'
 import { saveJob, cleanupOldJobs } from '../job/store'
@@ -79,6 +79,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
         log('info', `清理过期数据: ${parts.join('、')}`)
       }
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
+      setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
       const splitArtists = createSplitArtists(multiFormat)
 
       // ── Validate ──

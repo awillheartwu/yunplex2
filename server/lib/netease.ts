@@ -125,6 +125,23 @@ interface RawSong {
   }
 }
 
+// ── Artist alias state ──
+let artistAliases: Record<string, string> = {}
+let applyAliasToAlbum = false
+
+export function setArtistAliases(aliases: Record<string, string>, applyToAlbum: boolean) {
+  artistAliases = aliases || {}
+  applyAliasToAlbum = applyToAlbum
+}
+
+export function getArtistAliases() {
+  return { aliases: artistAliases, applyToAlbum: applyAliasToAlbum }
+}
+
+function applyAlias(name: string): string {
+  return artistAliases[name] || name
+}
+
 export function mapRawSong(raw: RawSong): NeteaseSong {
   // v3 API may put publishTime at song level or album level, or omit it
   const pubTime = raw.publishTime ?? raw.al?.publishTime ?? 0
@@ -134,13 +151,13 @@ export function mapRawSong(raw: RawSong): NeteaseSong {
     no: raw.no ?? 0,
     dt: raw.dt ?? 0,
     disc: raw.cd || '1',
-    artists: raw.ar ?? [],
+    artists: (raw.ar ?? []).map(a => ({ ...a, name: applyAlias(a.name) })),
     album: {
       id: raw.al?.id ?? 0,
       name: raw.al?.name ?? '未知专辑',
       picUrl: raw.al?.picUrl ?? '',
       publishTime: pubTime,
-      artist: raw.al?.artist,
+      artist: raw.al?.artist ? { ...raw.al.artist, name: applyAliasToAlbum ? applyAlias(raw.al.artist.name) : raw.al.artist.name } : undefined,
     },
   }
 }
