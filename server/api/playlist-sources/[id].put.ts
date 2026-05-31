@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterSkips?: number | null
     fullCompareAfterDays?: number | null
     skipPlexPlaylist?: boolean
+    skipRemoveExtraTracks?: boolean
     neteasePlaylistName?: string
     copyrightRestrictedIds?: string | null
     ignoredFailureIds?: string | null
@@ -34,6 +35,7 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterSkips: body.fullCompareAfterSkips,
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,
+    skipRemoveExtraTracks: body.skipRemoveExtraTracks,
     neteasePlaylistName: body.neteasePlaylistName,
     copyrightRestrictedIds: body.copyrightRestrictedIds,
     ignoredFailureIds: body.ignoredFailureIds,

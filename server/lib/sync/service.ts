@@ -104,6 +104,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
         const playlistName = currentSourceName
         const isAlbum = source.type === 'album'
         const skipPlexPL = isAlbum && (source.skipPlexPlaylist || cfg.sync.skipPlexPlaylist)
+        const skipRemoveExtra = source.skipRemoveExtraTracks || cfg.sync.skipRemoveExtraTracks
 
         job.setConfig({
           playlistId,
@@ -206,7 +207,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                 }
                 if (targetOrder.length > 0) {
                   const currentItems = (await getPlaylistTracks(pp.ratingKey, 99999)).filter(t => t.playlistItemID).map(t => ({ ratingKey: t.ratingKey, playlistItemId: t.playlistItemID! }))
-                  await applyFullReorder(pp.ratingKey, targetOrder, currentItems, sk, () => cancelRequested, (lvl, msg) => log(lvl as 'info'|'warn'|'error', msg))
+                      await applyFullReorder(pp.ratingKey, targetOrder, currentItems, sk, () => cancelRequested, (lvl, msg) => log(lvl as 'info'|'warn'|'error', msg), skipRemoveExtra)
                 }
               }
             }
@@ -290,17 +291,19 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           }
 
           // Register removed tracks (in Plex playlist but not Netease)
-          for (const xt of extraTracks) {
-            job.addSongs(source.id, [{
-              songName: xt.title,
-              artist: xt.artist,
-              album: xt.album,
-              status: 'removed' as SongStatus,
-            }])
-            const songId = job.getJob().songs.find(
-              (s) => s.songName === xt.title && s.status === 'removed' && s.sourceId === source.id,
-            )?.id
-            if (songId) job.updateSong(songId, { phase: 'done' })
+          if (!skipRemoveExtra) {
+            for (const xt of extraTracks) {
+              job.addSongs(source.id, [{
+                songName: xt.title,
+                artist: xt.artist,
+                album: xt.album,
+                status: 'removed' as SongStatus,
+              }])
+              const songId = job.getJob().songs.find(
+                (s) => s.songName === xt.title && s.status === 'removed' && s.sourceId === source.id,
+              )?.id
+              if (songId) job.updateSong(songId, { phase: 'done' })
+            }
           }
 
           // ── Step 3: Collect songs needing download (caches already applied in Step 2a) ──

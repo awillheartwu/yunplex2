@@ -53,7 +53,7 @@
           <ToggleField v-model="form.enabled" label="启用" hint="关闭后该歌单将不会参与同步" />
           <ToggleField v-model="form.autoCreatePlexPlaylist" label="自动创建 Plex 歌单" hint="Plex 中不存在同名歌单时自动创建" />
           <ToggleField v-model="form.forceFullCompare" label="始终全量对比" hint="覆盖全局设置，每次都进行完整对比" />
-
+	      <ToggleField v-model="form.skipRemoveExtraTracks" label="不删除多余歌曲" hint="覆盖全局设置，保留 Plex 中网易云已移除的歌曲" />
           <!-- Per-source skip limits (hidden when always full) -->
           <template v-if="!form.forceFullCompare">
             <div style="height:1px;background:var(--border-primary)" />
@@ -103,6 +103,7 @@ const form = reactive({
   enabled: true,
   autoCreatePlexPlaylist: true,
   forceFullCompare: false,
+  skipRemoveExtraTracks: false,
   fullCompareAfterSkips: null as number | null,
   fullCompareAfterDays: null as number | null,
   skipPlexPlaylist: false,
@@ -117,6 +118,7 @@ watch(() => props.source, (s) => {
   form.enabled = s.enabled
   form.autoCreatePlexPlaylist = s.autoCreatePlexPlaylist ?? true
   form.forceFullCompare = s.forceFullCompare ?? false
+  form.skipRemoveExtraTracks = s.skipRemoveExtraTracks ?? false
   form.fullCompareAfterSkips = s.fullCompareAfterSkips
   form.fullCompareAfterDays = s.fullCompareAfterDays
   form.skipPlexPlaylist = s.skipPlexPlaylist ?? false
@@ -145,6 +147,7 @@ async function handleSave() {
       enabled: form.enabled,
       autoCreatePlexPlaylist: form.autoCreatePlexPlaylist,
       forceFullCompare: form.forceFullCompare,
+      skipRemoveExtraTracks: form.skipRemoveExtraTracks,
       fullCompareAfterSkips: form.fullCompareAfterSkips,
       fullCompareAfterDays: form.fullCompareAfterDays,
       skipPlexPlaylist: form.skipPlexPlaylist,

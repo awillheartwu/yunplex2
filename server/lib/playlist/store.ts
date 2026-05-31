@@ -64,6 +64,7 @@ export function updateSource(id: string, partial: Partial<{
   fullCompareAfterSkips: number | null
   fullCompareAfterDays: number | null
   skipPlexPlaylist: boolean
+  skipRemoveExtraTracks: boolean
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
   lastFullCompareAt: string | null
