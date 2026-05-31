@@ -115,16 +115,24 @@
       <template v-if="activeTab === 'sync'">
 
       <!-- Sync strategy -->
-      <ConfigSection title="同步策略" description="控制同步的频率和范围" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
+      <!-- Sync schedule -->
+      <ConfigSection title="同步调度" description="控制同步的触发和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
         <template #icon><SidebarIcon name="play" :active="true" /></template>
         <div class="grid grid-cols-2 gap-4">
           <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟"><input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" /></FormField>
           <FormField label="歌曲数量上限" hint="每次同步处理的歌曲数量，0 = 不限"><input v-model.number="form.sync.songLimit" type="number" min="0" max="10000" class="form-input" /></FormField>
           <FormField label="下载并发数" hint="同时下载几首歌，建议 3-5，过高可能被网易云限速"><input v-model.number="form.sync.downloadConcurrency" type="number" min="1" max="10" class="form-input" /></FormField>
+        </div>
+        <ToggleField v-model="form.sync.enabled" label="启用自动同步" hint="开启后将在后台按设定间隔自动同步歌单" />
+      </ConfigSection>
+
+      <!-- Sync strategy -->
+      <ConfigSection title="同步策略" description="对比、重试、清理等细节行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
+        <template #icon><SidebarIcon name="sync" :active="true" /></template>
+        <div class="grid grid-cols-2 gap-4">
           <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
           <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
-        <ToggleField v-model="form.sync.enabled" label="启用自动同步" hint="开启后将在后台按设定间隔自动同步歌单" />
         <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
         <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-2 gap-4">
@@ -133,6 +141,7 @@
             <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
           </div>
         </template>
+        <ToggleField v-model="form.sync.skipRemoveExtraTracks" label="不删除 Plex 多余歌曲" hint="同步时只添加和重排，不删除 Plex 中网易云已移除的歌曲。单个歌单源可覆盖此设置" />
       </ConfigSection>
 
       <!-- Album Sync -->
@@ -141,7 +150,6 @@
         <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
           <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
-          <ToggleField v-model="form.sync.skipRemoveExtraTracks" label="不删除 Plex 多余歌曲" hint="同步时只添加和重排，不删除 Plex 中网易云已移除的歌曲。单个歌单源可覆盖此设置" />
         </div>
       </ConfigSection>
       </template>
@@ -361,11 +369,11 @@ const tabs = [
 ]
 
 // ── Collapsible sections ──
-type SectionKey = 'netease' | 'plex' | 'download' | 'sync' | 'album' | 'retention' | 'other' | 'import'
+type SectionKey = 'netease' | 'plex' | 'download' | 'schedule' | 'sync' | 'album' | 'retention' | 'other' | 'import'
 const collapsed = ref<Partial<Record<SectionKey, boolean>>>({})
 
 const allExpanded = computed(() => {
-  const keys: SectionKey[] = ['netease', 'plex', 'download', 'sync', 'album', 'retention', 'other', 'import']
+  const keys: SectionKey[] = ['netease', 'plex', 'download', 'schedule', 'sync', 'album', 'retention', 'other', 'import']
   return keys.every((k) => !collapsed.value[k])
 })
 
@@ -375,7 +383,7 @@ function toggle(key: SectionKey) {
 
 function toggleAll() {
   if (allExpanded.value) {
-    collapsed.value = { netease: true, plex: true, download: true, sync: true, album: true, retention: true, other: true, import: true }
+    collapsed.value = { netease: true, plex: true, download: true, schedule: true, sync: true, album: true, retention: true, other: true, import: true }
   } else {
     collapsed.value = {}
   }

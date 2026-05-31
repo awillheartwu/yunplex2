@@ -459,6 +459,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               plexPlaylist.ratingKey, targetOrder, currentItems, sectionKey,
               () => cancelRequested,
               (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
+              skipRemoveExtra,
             )
 
             job.finishStep(s4, 'success', 'Plex 歌单重排完成')
