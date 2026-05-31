@@ -98,6 +98,8 @@ export interface OtherConfig {
   lyricOrder: LyricOrder
   downloadTranslatedLyric: boolean
   downloadRomajiLyric: boolean
+  artistAliases: Record<string, string>
+  applyAliasToAlbum: boolean
   pathFormat: string
   fontScale: number
 }

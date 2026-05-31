@@ -5,6 +5,7 @@ import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { emitEvent } from '../../../lib/sync/events'
 import { appendLog } from '../../../lib/log/store'
+import { setArtistAliases } from '../../../lib/netease'
 
 export default defineEventHandler(async (event) => {
   const jobId = getRouterParam(event, 'id')
@@ -56,6 +57,7 @@ export default defineEventHandler(async (event) => {
 
   // Fire-and-forget download
   const cfg = readConfig()
+  setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
   const dataDir = (useRuntimeConfig() as any).dataDir as string
   const retentionDays = cfg.sync.logRetentionDays ?? 30
   appendLog(dataDir, { level: 'info', message: `[重试] 开始下载: ${song.songName} - ${song.artist}`, stage: 'download' }, retentionDays)

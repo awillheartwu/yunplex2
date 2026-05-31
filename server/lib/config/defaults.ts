@@ -43,6 +43,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     lyricOrder: 'original_first',
     downloadTranslatedLyric: true,
     downloadRomajiLyric: false,
+    artistAliases: {},
+    applyAliasToAlbum: false,
     pathFormat: '{artist}/{album}/{title}',
     fontScale: 1.0,
   },

@@ -6,7 +6,7 @@ import { getSyncServiceInstance } from '../../../lib/sync/instance'
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
-import { fetchPlaylistSongs, fetchAlbumSongs } from '../../../lib/netease'
+import { fetchPlaylistSongs, fetchAlbumSongs, setArtistAliases } from '../../../lib/netease'
 import { getDb } from '../../../lib/db'
 import { saveJob } from '../../../lib/job/store'
 import { appendLog } from '../../../lib/log/store'
@@ -28,6 +28,7 @@ export default defineEventHandler(async (event) => {
 
   // Fetch all song IDs
   const cfg = readConfig()
+  setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
   let songs: Array<{ id: number; name: string }>
   try {
     if (source.type === 'album') {
