@@ -232,12 +232,43 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           }))
           job.addSongs(source.id, allSongs)
 
-          // ── Step 2: Reconcile (tiered lookup: DB → Plex → disk → download) ──
+          // ── Step 2a: Filter known ignored/copyright-restricted songs before Plex lookup ──
+          const knownRestricted: number[] = source.copyrightRestrictedIds
+            ? JSON.parse(source.copyrightRestrictedIds)
+            : []
+          const failureMap: Record<number, number> = source.ignoredFailureIds
+            ? JSON.parse(source.ignoredFailureIds)
+            : {}
+          const maxFailures = cfg.sync.maxFailureAttempts
+
+          const songsToReconcile = yunSongs.filter((s) => {
+            if (knownRestricted.includes(s.id)) {
+              const songId = job.getJob().songs.find(
+                (js) => js.songName === s.name && js.status === 'pending' && js.sourceId === source.id,
+              )?.id
+              if (songId) job.updateSong(songId, { status: 'copyright_restricted', phase: 'download' })
+              return false
+            }
+            if ((failureMap[s.id] || 0) >= maxFailures) {
+              const songId = job.getJob().songs.find(
+                (js) => js.songName === s.name && js.status === 'pending' && js.sourceId === source.id,
+              )?.id
+              if (songId) job.updateSong(songId, { status: 'ignored_failure', phase: 'download' })
+              return false
+            }
+            return true
+          })
+          const ignoredBeforeReconcile = yunSongs.length - songsToReconcile.length
+          if (ignoredBeforeReconcile > 0) {
+            log('info', `跳过 ${ignoredBeforeReconcile} 首已缓存忽略/版权的歌曲，不进行 Plex 查找`)
+          }
+
+          // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
           setStage('comparing')
           log('info', '连接 Plex...')
 
           const { resolutions, plexPlaylist: plexPlaylistResult, sectionKey, extraTracks } = await reconcileSource(
-            source, yunSongs, cfg, job, splitArtists,
+            source, songsToReconcile, cfg, job, splitArtists,
             () => cancelRequested,
             (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
             skipPlexPL,
@@ -272,28 +303,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             if (songId) job.updateSong(songId, { phase: 'done' })
           }
 
-          // ── Step 3: Filter known copyright-restricted and ignored-failure songs ──
-          const knownRestricted: number[] = source.copyrightRestrictedIds
-            ? JSON.parse(source.copyrightRestrictedIds)
-            : []
-          const failureMap: Record<number, number> = source.ignoredFailureIds
-            ? JSON.parse(source.ignoredFailureIds)
-            : {}
-          const maxFailures = cfg.sync.maxFailureAttempts
-
-          const allNeedsDownload = resolutions.filter((r) => r.resolution === 'needs_download')
-          for (const r of allNeedsDownload) {
-            if (knownRestricted.includes(r.song.id)) {
-              r.resolution = 'copyright_restricted'
-              const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
-              if (sid) job.updateSong(sid, { status: 'copyright_restricted', phase: 'download' })
-            } else if ((failureMap[r.song.id] || 0) >= maxFailures) {
-              r.resolution = 'ignored_failure'
-              const sid = job.getJob().songs.find((s) => s.songName === r.song.name && s.sourceId === source.id)?.id
-              if (sid) job.updateSong(sid, { status: 'ignored_failure', phase: 'download' })
-            }
-          }
-          const songsToDownload = allNeedsDownload.filter((r) => r.resolution === 'needs_download')
+          // ── Step 3: Collect songs needing download (caches already applied in Step 2a) ──
+          const songsToDownload = resolutions.filter((r) => r.resolution === 'needs_download')
 
           const songsOnDisk = resolutions.filter((r) => r.resolution === 'found_on_disk')
           const needsRefresh = songsToDownload.length > 0 || songsOnDisk.length > 0
@@ -330,6 +341,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                 saveArtistImage: cfg.download.saveArtistImage ?? false,
                 lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
                 downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
+                downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
+                downloadMode: 'full',
               }, onProgress)
             }
 

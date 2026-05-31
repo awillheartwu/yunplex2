@@ -41,6 +41,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     multiArtistFormat: 'ampersand',
     lyricOrder: 'original_first',
     downloadTranslatedLyric: true,
+    downloadRomajiLyric: false,
     pathFormat: '{artist}/{album}/{title}',
     fontScale: 1.0,
   },

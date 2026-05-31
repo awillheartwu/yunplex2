@@ -17,8 +17,10 @@ export type SyncStage =
   | 'processing_tags'
   | 'refreshing_plex'
   | 'updating_plex_playlist'
+  | 'reorder'
   | 'cancelled'
   | 'error'
+  | 'repair'
 
 export interface SyncState {
   isRunning: boolean

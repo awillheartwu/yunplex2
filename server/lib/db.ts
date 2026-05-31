@@ -118,6 +118,10 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   (d) => {
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN ignored_failure_ids TEXT').run()
   },
+  /* v18: add type column to jobs for sync/repair distinction */
+  (d) => {
+    d.prepare("ALTER TABLE jobs ADD COLUMN type TEXT NOT NULL DEFAULT 'sync'").run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {

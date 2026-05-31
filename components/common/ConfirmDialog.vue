@@ -8,7 +8,9 @@
     >
       <div class="section-card p-6 w-[420px] max-w-[90vw] shadow-lg" style="border-color:var(--border-secondary)">
         <h3 class="text-sm font-semibold mb-2">{{ title }}</h3>
-        <p class="text-xs text-muted mb-6">{{ message }}</p>
+        <slot>
+          <p class="text-xs text-muted mb-6">{{ message }}</p>
+        </slot>
         <div class="flex justify-end gap-3">
           <button v-if="showCancel" class="btn btn-secondary btn-sm" @click="onCancel">取消</button>
           <button
@@ -28,11 +30,12 @@
 withDefaults(defineProps<{
   visible: boolean
   title: string
-  message: string
+  message?: string
   confirmLabel?: string
   variant?: 'danger' | 'primary'
   showCancel?: boolean
 }>(), {
+  message: '',
   confirmLabel: '确认',
   variant: 'primary',
   showCancel: true,

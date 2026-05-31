@@ -1,4 +1,4 @@
-import type { JobSummary, JobStatus } from '~~/server/lib/job/types'
+import type { JobSummary, JobStatus, JobType } from '~~/server/lib/job/types'
 
 interface JobListResponse {
   items: JobSummary[]
@@ -19,6 +19,7 @@ export function useJobs() {
   const offset = ref(0)
   const dateFilter = ref<{ from: string | null; to: string | null }>({ from: null, to: null })
   const earliestDate = ref<string | null>(null)
+  const activeType = ref<JobType>('sync')
 
   function dateParams(): Record<string, string> {
     const p: Record<string, string> = {}
@@ -33,7 +34,7 @@ export function useJobs() {
     loading.value = true
     offset.value = 0
     try {
-      const params: Record<string, string> = { limit: String(PAGE_SIZE), ...dateParams() }
+      const params: Record<string, string> = { limit: String(PAGE_SIZE), type: activeType.value, ...dateParams() }
       if (activeFilter.value) params.status = activeFilter.value
       if (searchQuery.value) params.search = searchQuery.value
       const res = await api.get<JobListResponse>('/jobs', params)
@@ -52,7 +53,7 @@ export function useJobs() {
     loadingMore.value = true
     try {
       const newOffset = offset.value + PAGE_SIZE
-      const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(newOffset), ...dateParams() }
+      const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(newOffset), type: activeType.value, ...dateParams() }
       if (activeFilter.value) params.status = activeFilter.value
       if (searchQuery.value) params.search = searchQuery.value
       const res = await api.get<JobListResponse>('/jobs', params)
@@ -69,6 +70,12 @@ export function useJobs() {
     fetchJobs()
   }
 
+  function setType(type: JobType) {
+    activeType.value = type
+    activeFilter.value = ''
+    fetchJobs()
+  }
+
   return {
     jobs,
     total,
@@ -76,11 +83,13 @@ export function useJobs() {
     loadingMore,
     hasMore,
     activeFilter,
+    activeType,
     searchQuery,
     dateFilter,
     earliestDate,
     fetchJobs,
     loadMore,
     setFilter,
+    setType,
   }
 }

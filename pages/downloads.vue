@@ -36,7 +36,7 @@ v-for="t in tabs" :key="t.key"
         <div v-else-if="isSyncing" class="p-5">
           <div class="flex items-center gap-2 mb-3">
             <span class="w-2.5 h-2.5 rounded-full bg-accent animate-pulse shrink-0" />
-            <span class="text-sm font-semibold" style="color:var(--text-primary)">同步进行中</span>
+            <span class="text-sm font-semibold" style="color:var(--text-primary)">{{ syncState?.currentStage === 'repair' ? '补全运行中' : '同步进行中' }}</span>
             <span class="text-2xs px-2 py-0.5 rounded" style="background:var(--accent-glow);color:var(--accent)">
               {{ stageLabel(syncState?.currentStage || 'idle') }}
             </span>
@@ -49,8 +49,8 @@ v-for="t in tabs" :key="t.key"
             <span class="truncate">{{ syncState?.currentSong }}</span>
           </div>
 
-          <!-- Stage steps -->
-          <div class="flex items-center gap-1 mb-3">
+          <!-- Stage steps (hide during repair) -->
+          <div v-if="!syncState?.currentStage || syncState.currentStage === 'idle' || ACTIVE_STAGES.some(s => s.key === syncState?.currentStage)" class="flex items-center gap-1 mb-3">
             <template v-for="(stage, idx) in ACTIVE_STAGES" :key="stage.key">
               <span class="w-2 h-2 rounded-full shrink-0" :class="stageDotClass(stage.key)" />
               <span class="text-2xs shrink-0" :style="{ color: stageColor(stage.key) }" :class="syncState?.currentStage === stage.key ? 'font-medium' : ''">{{ stage.label }}</span>
@@ -60,15 +60,20 @@ v-for="t in tabs" :key="t.key"
             </template>
           </div>
 
-          <!-- Progress bar -->
-          <div class="w-full h-2 rounded-full overflow-hidden" style="background:var(--bg-input)">
+          <!-- Progress bar (sync only, not repair) -->
+          <div v-if="syncState?.currentStage !== 'repair'" class="w-full h-2 rounded-full overflow-hidden" style="background:var(--bg-input)">
             <div
 class="h-full rounded-full transition-all duration-500 bg-accent"
               :style="{ width: overallPct + '%' }" />
           </div>
-          <div class="flex justify-between mt-1.5">
+          <div v-if="syncState?.currentStage !== 'repair'" class="flex justify-between mt-1.5">
             <span class="text-2xs text-muted-deep">{{ completedCount }} / {{ totalCount }} 首</span>
             <span class="text-2xs text-muted-deep">{{ overallPct }}%</span>
+          </div>
+
+          <!-- Repair notice -->
+          <div v-if="syncState?.currentStage === 'repair'" class="mt-3 p-3 rounded-lg" style="background:var(--bg-app);border:1px solid var(--border-primary)">
+            <p class="text-xs text-muted">补全任务进行中，请在歌单源页查看进度，或前往任务页查看详情。</p>
           </div>
         </div>
 
@@ -82,8 +87,8 @@ class="h-full rounded-full transition-all duration-500 bg-accent"
         </div>
       </div>
 
-      <!-- Source groups -->
-      <div v-if="sourceGroups.length > 0" class="space-y-4">
+      <!-- Source groups (sync only, not repair) -->
+      <div v-if="sourceGroups.length > 0 && syncState?.currentStage !== 'repair'" class="space-y-4">
         <!-- Toggle detail -->
         <div class="flex items-center justify-end">
           <button

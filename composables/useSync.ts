@@ -19,7 +19,16 @@ export function useSyncStatus() {
 
   async function fetchStatus() {
     try {
-      sharedState.value = await api.get<SyncState>('/sync/status')
+      const serverState = await api.get<SyncState>('/sync/status')
+      if (sharedState.value) {
+        // Merge: keep SSE-set fields, update server-only fields (counts, timestamps)
+        sharedState.value = {
+          ...serverState,
+          currentStage: sharedState.value.currentStage === 'repair' ? 'repair' : serverState.currentStage,
+        }
+      } else {
+        sharedState.value = serverState
+      }
       error.value = null
     } catch (err) {
       error.value = err instanceof Error ? err.message : '获取同步状态失败'

@@ -96,6 +96,7 @@ export interface OtherConfig {
   multiArtistFormat: MultiArtistFormat
   lyricOrder: LyricOrder
   downloadTranslatedLyric: boolean
+  downloadRomajiLyric: boolean
   pathFormat: string
   fontScale: number
 }

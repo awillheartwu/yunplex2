@@ -17,11 +17,12 @@
             <input v-model="search" type="text" placeholder="搜索歌单..." class="form-input w-full text-xs" />
             <!-- Created playlists -->
             <template v-if="created.length > 0">
-              <div class="flex items-center gap-2 px-1 py-1 border-l-2" style="border-color:var(--accent)">
+              <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--accent)" @click="createdCollapsed = !createdCollapsed">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" class="transition-transform shrink-0" :class="createdCollapsed ? '' : 'rotate-90'"><path d="M6 3l5 5-5 5" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="text-xs font-semibold" style="color:var(--text-primary)">我创建的</span>
                 <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:var(--accent-glow);color:var(--accent)">{{ created.length }}</span>
               </div>
-              <div class="space-y-0.5">
+              <div v-show="!createdCollapsed" class="space-y-0.5">
                 <label
                   v-for="p in created" :key="p.id"
                   class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border"
@@ -44,11 +45,12 @@
 
             <!-- Subscribed playlists -->
             <template v-if="subscribed.length > 0">
-              <div class="flex items-center gap-2 px-1 py-1 border-l-2" style="border-color:var(--success,#22c55e)">
+              <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--success,#22c55e)" @click="subscribedCollapsed = !subscribedCollapsed">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" class="transition-transform shrink-0" :class="subscribedCollapsed ? '' : 'rotate-90'"><path d="M6 3l5 5-5 5" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="text-xs font-semibold" style="color:var(--text-primary)">收藏的歌单</span>
                 <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e)">{{ subscribed.length }}</span>
               </div>
-              <div class="space-y-0.5">
+              <div v-show="!subscribedCollapsed" class="space-y-0.5">
                 <label
                   v-for="p in subscribed" :key="p.id"
                   class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border"
@@ -125,6 +127,8 @@ const error = ref('')
 const selectedIds = ref<number[]>([])
 const manualId = ref('')
 
+const createdCollapsed = ref(false)
+const subscribedCollapsed = ref(false)
 function isAdded(pid: number): boolean { return props.sourceIds.includes(pid) }
 const search = ref('')
 const filtered = computed(() => {

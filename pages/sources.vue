@@ -97,8 +97,10 @@
             <button class="text-right shrink-0 min-w-[90px] cursor-pointer group flex items-center gap-1.5 justify-end" @click="toggleExpand(s.id)">
               <div>
                 <div class="flex items-center gap-1.5 justify-end">
-                  <span v-if="s.lastSyncedAt" class="w-1.5 h-1.5 rounded-full shrink-0" :class="s.lastStatus === 'success' ? 'bg-success' : s.lastStatus === 'partial' ? 'bg-warning' : 'bg-danger'" />
-                  <p class="text-xs" :class="lastStatusColor(s.lastStatus)">{{ lastStatusLabel(s) }}</p>
+                  <span v-if="s.lastSyncedAt || repairingSourceId === s.id" class="w-1.5 h-1.5 rounded-full shrink-0" :class="repairingSourceId === s.id ? 'bg-accent animate-pulse' : s.lastStatus === 'success' ? 'bg-success' : s.lastStatus === 'partial' ? 'bg-warning' : 'bg-danger'" />
+                  <p class="text-xs" :class="repairingSourceId === s.id ? 'text-accent' : lastStatusColor(s.lastStatus)">
+                    {{ repairingSourceId === s.id ? '补全中' : lastStatusLabel(s) }}
+                  </p>
                 </div>
                 <p v-if="s.lastSyncedAt" class="text-2xs mt-0.5" style="color:var(--text-tertiary)">{{ formatRelative(s.lastSyncedAt) }}</p>
               </div>
@@ -159,6 +161,20 @@
                 <span class="tooltip-label">{{ s.lastSyncedAt ? '重新下载' : '开始下载' }}</span>
               </span>
               </template>
+              <span class="tooltip-wrap">
+                <button
+                  class="h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn text-xs font-semibold w-auto px-1.5 min-w-7"
+                  :class="repairingSourceId === s.id ? 'icon-active' : ''"
+                  :disabled="isAnySyncing"
+                  @click="repairSource(s)"
+                >
+                  <template v-if="repairingSourceId === s.id && repairProgress[s.id]">
+                    {{ repairProgress[s.id].processed }}/{{ repairProgress[s.id].total }}
+                  </template>
+                  <template v-else>词</template>
+                </button>
+                <span class="tooltip-label">补充辅助数据</span>
+              </span>
               <span class="tooltip-wrap">
                 <button
                   class="w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer icon-btn"
@@ -245,6 +261,8 @@ const sources = ref<PlaylistSource[]>([])
 const loading = ref(false)
 const togglingId = ref<string | null>(null)
 const forceFullId = ref<string | null>(null)
+const repairingSourceId = ref<string | null>(null)
+const repairProgress = ref<Record<string, { processed: number; total: number }>>({})
 
 // Tabs
 const sourceTab = ref<SourceType>('playlist')
@@ -342,7 +360,7 @@ async function handleDelete() {
   try { await api.del(`/playlist-sources/${id}`); await fetchSources() } catch { /* ignore */ }
 }
 
-const isAnySyncing = computed(() => syncingSourceId.value !== null || forceFullId.value !== null)
+const isAnySyncing = computed(() => syncingSourceId.value !== null || forceFullId.value !== null || repairingSourceId.value !== null)
 
 async function syncSource(s: PlaylistSource, forceFull = false) {
   try {
@@ -360,11 +378,31 @@ async function syncSource(s: PlaylistSource, forceFull = false) {
   }
 }
 
+async function repairSource(s: PlaylistSource) {
+  if (repairingSourceId.value) return
+  repairingSourceId.value = s.id
+  try {
+    await api.post(`/playlist-sources/${s.id}/repair`)
+  } catch {
+    repairingSourceId.value = null
+  }
+}
+
 // SSE: clear spinners when sync finishes
 onMounted(() => {
   sseSubscribe('stage-change', (data) => {
-    if (data.stage === 'idle') {
+    const stage = data.stage as string
+    if (stage === 'idle') {
       forceFullId.value = null
+      repairingSourceId.value = null
+      repairProgress.value = {}
+      fetchSources()
+    }
+  })
+  sseSubscribe('repair-progress', (data) => {
+    const { sourceId, processed, totalSongs } = data as Record<string, unknown>
+    if (sourceId && typeof processed === 'number') {
+      repairProgress.value = { ...repairProgress.value, [sourceId as string]: { processed, total: totalSongs as number } }
     }
   })
 })
@@ -372,6 +410,7 @@ onMounted(() => {
 function lastStatusLabel(s: PlaylistSource): string {
   if (!s.lastSyncedAt) return '未同步'
   switch (s.lastStatus) {
+    case 'running': return '补全中'
     case 'success': return '同步成功'
     case 'partial': return '部分失败'
     case 'failed': return '同步失败'

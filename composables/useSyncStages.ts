@@ -35,6 +35,7 @@ const STAGE_LABELS: Record<string, string> = {
   reorder: '重排歌单',
   cancelled: '已取消',
   error: '同步错误',
+  repair: '补全辅助数据',
 }
 
 export function useSyncStages(currentStageRef: Ref<string | null | undefined>) {

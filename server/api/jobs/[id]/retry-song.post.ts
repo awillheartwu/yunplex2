@@ -73,6 +73,8 @@ export default defineEventHandler(async (event) => {
     saveArtistImage: cfg.download.saveArtistImage ?? false,
     lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
     downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
+    downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
+    downloadMode: 'full',
   }, (pct) => {
     emitEvent({
       type: 'song-retry-progress',

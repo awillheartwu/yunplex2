@@ -111,7 +111,7 @@ async function quickVerify(plexRatingKey: string, _sectionKey: string, _db: Retu
   return track !== null
 }
 
-function upsertLookup(db: ReturnType<typeof getDb>, neteaseSongId: number, plexRatingKey: string | null, filePath: string | null) {
+export function upsertLookup(db: ReturnType<typeof getDb>, neteaseSongId: number, plexRatingKey: string | null, filePath: string | null) {
   const now = new Date().toISOString()
   db.prepare(`
     INSERT INTO song_lookup (netease_song_id, plex_rating_key, file_path, last_verified_at)

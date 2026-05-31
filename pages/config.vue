@@ -184,11 +184,11 @@
               </span>
             </span>
           </template>
-          <select v-model="pathFormatMode" class="form-input">
+          <select :value="pathFormatMode" class="form-input" @change="interceptPathFormatChange(($event.target as HTMLSelectElement).value)">
             <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
             <option value="__custom__">自定义...</option>
           </select>
-          <input v-if="pathFormatMode === '__custom__'" v-model="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" />
+          <input v-if="pathFormatMode === '__custom__'" :value="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" @input="interceptPathFormatChange(($event.target as HTMLInputElement).value)" />
         </FormField>
         <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
           <select v-model="form.other.multiArtistFormat" class="form-input">
@@ -203,7 +203,8 @@
             <option value="with">A with B → A with B, C & D</option>
           </select>
         </FormField>
-        <ToggleField v-model="form.other.downloadTranslatedLyric" label="下载翻译歌词" hint="关闭后只下载原文歌词，不合并翻译版本。适合不需要双语歌词的用户" />
+        <ToggleField v-model="form.other.downloadTranslatedLyric" label="下载翻译歌词" hint="关闭后只下载原文歌词，不合并翻译版本。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
+        <ToggleField v-model="form.other.downloadRomajiLyric" label="下载罗马音歌词" hint="日/韩语等歌曲的罗马音注音单独保存为 (romaji).lrc 文件，不与原文合并。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
         <FormField v-if="form.other.downloadTranslatedLyric" label="双语歌词存储方式" hint="合并到一个文件或分开保存为两个文件">
           <select v-model="form.other.lyricOrder" class="form-input">
             <option value="original_first">合并：原文在上 / 翻译在下（翻译高亮）</option>
@@ -246,6 +247,41 @@
       @cancel="showResetConfirm = false"
     />
 
+    <!-- Path format change warning -->
+    <ConfirmDialog
+      :visible="showPathFormatConfirm"
+      title="更改存储路径格式"
+      confirm-label="我已知晓，确认更改"
+      variant="danger"
+      @confirm="confirmPathFormatChange"
+      @cancel="cancelPathFormatChange"
+    >
+      <div class="space-y-4 mb-6">
+        <!-- Warning banner -->
+        <div class="flex items-start gap-3 p-3 rounded-lg border" style="border-color:var(--warning,#f59e0b);background:rgba(245,158,11,0.08)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="shrink-0 mt-0.5"><path d="M8 2l7 12H1L8 2z" stroke="var(--warning,#f59e0b)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7v2M8 11v1" stroke="var(--warning,#f59e0b)" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <div class="text-xs" style="color:var(--warning,#f59e0b)">
+            <p class="font-semibold mb-1">此操作不可逆，系统不会自动迁移已有文件</p>
+          </div>
+        </div>
+
+        <!-- Consequences list -->
+        <div class="text-xs space-y-3" style="color:var(--text-secondary)">
+          <p>更改后会发生以下情况：</p>
+          <ol class="space-y-2 list-decimal pl-4">
+            <li><span class="text-[var(--text-primary)] font-medium">已有歌曲文件保留在原路径</span>，不会被移动或删除，但系统无法再定位它们。</li>
+            <li><span class="font-medium" style="color:var(--danger,#e74c3c)">尚未同步到 Plex 的歌曲将被重新下载</span>到新路径，造成磁盘空间浪费。</li>
+            <li>歌词文件（<code class="px-1 py-0.5 rounded text-2xs" style="background:var(--bg-input)">.lrc</code>）和封面图（<code class="px-1 py-0.5 rounded text-2xs" style="background:var(--bg-input)">cover.jpg</code>）与音频文件同目录存放，路径变更后同样无法定位。</li>
+          </ol>
+
+          <div class="p-3 rounded-lg border" style="border-color:var(--accent);background:var(--accent-muted)">
+            <p class="font-medium mb-1" style="color:var(--accent)">建议</p>
+            <p class="text-muted-deep">更改前，确保所有歌曲已经同步到 Plex（可在首页手动触发一次全量同步），这样后续同步时 Plex 库中的记录可作为索引，避免重复下载。</p>
+          </div>
+        </div>
+      </div>
+    </ConfirmDialog>
+
   </div>
 </template>
 
@@ -277,6 +313,31 @@ const pathFormatMode = computed({
     form.value.other.pathFormat = val === '__custom__' ? '' : val
   },
 })
+
+// ── Path format change warning ──
+const showPathFormatConfirm = ref(false)
+const pendingPathFormat = ref('')
+
+function interceptPathFormatChange(newValue: string) {
+  const oldValue = form.value?.other?.pathFormat
+  if (!oldValue) {
+    // First time setting — no warning needed
+    pathFormatMode.value = newValue
+    return
+  }
+  if (newValue === oldValue || (newValue === '__custom__' && oldValue === '')) return
+  pendingPathFormat.value = newValue
+  showPathFormatConfirm.value = true
+}
+
+function confirmPathFormatChange() {
+  pathFormatMode.value = pendingPathFormat.value
+  showPathFormatConfirm.value = false
+}
+
+function cancelPathFormatChange() {
+  showPathFormatConfirm.value = false
+}
 
 const api = useApi()
 
