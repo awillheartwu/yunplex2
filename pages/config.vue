@@ -141,6 +141,7 @@
         <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
           <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
+          <ToggleField v-model="form.sync.skipRemoveExtraTracks" label="不删除 Plex 多余歌曲" hint="同步时只添加和重排，不删除 Plex 中网易云已移除的歌曲。单个歌单源可覆盖此设置" />
         </div>
       </ConfigSection>
       </template>

@@ -26,6 +26,7 @@ export interface PlaylistSource {
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
   skipPlexPlaylist: boolean
+  skipRemoveExtraTracks: boolean
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
   sortOrder: number
@@ -59,6 +60,7 @@ export interface PlaylistSourceRow {
   plex_updated_at: number | null
   track_id_snapshot: string | null
   skip_plex_playlist: number
+  skip_remove_extra_tracks: number
   copyright_restricted_ids: string | null
   ignored_failure_ids: string | null
   sort_order: number
@@ -93,6 +95,7 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     plexUpdatedAt: row.plex_updated_at,
     trackIdSnapshot: row.track_id_snapshot,
     skipPlexPlaylist: row.skip_plex_playlist === 1,
+    skipRemoveExtraTracks: row.skip_remove_extra_tracks === 1,
     copyrightRestrictedIds: row.copyright_restricted_ids,
     ignoredFailureIds: row.ignored_failure_ids,
     sortOrder: row.sort_order,

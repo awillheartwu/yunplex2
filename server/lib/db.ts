@@ -122,6 +122,10 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   (d) => {
     d.prepare("ALTER TABLE jobs ADD COLUMN type TEXT NOT NULL DEFAULT 'sync'").run()
   },
+  /* v19: add skip_remove_extra_tracks to playlist_sources */
+  (d) => {
+    d.prepare('ALTER TABLE playlist_sources ADD COLUMN skip_remove_extra_tracks INTEGER NOT NULL DEFAULT 0').run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {

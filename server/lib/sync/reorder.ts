@@ -31,20 +31,23 @@ export async function applyFullReorder(
   sectionKey: string,
   cancelRequested: () => boolean,
   log: (level: 'info' | 'warn' | 'error', msg: string) => void,
+  skipRemove = false,
 ): Promise<void> {
   const targetSet = new Set(targetOrder)
 
   // ── Step 1: Remove extra tracks ──
-  for (const item of currentItems) {
-    if (cancelRequested()) return
-    if (!targetSet.has(item.ratingKey)) {
-      try {
-        const { removeTrackFromPlaylist } = await import('../plex-client')
-        await removeTrackFromPlaylist(playlistRatingKey, item.playlistItemId)
-        log('info', `从歌单移除: ${item.ratingKey}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        log('error', `移除失败: ${msg}`)
+  if (!skipRemove) {
+    for (const item of currentItems) {
+      if (cancelRequested()) return
+      if (!targetSet.has(item.ratingKey)) {
+        try {
+          const { removeTrackFromPlaylist } = await import('../plex-client')
+          await removeTrackFromPlaylist(playlistRatingKey, item.playlistItemId)
+          log('info', `从歌单移除: ${item.ratingKey}`)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          log('error', `移除失败: ${msg}`)
+        }
       }
     }
   }

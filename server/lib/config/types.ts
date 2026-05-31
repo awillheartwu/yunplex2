@@ -44,6 +44,7 @@ export interface SyncStrategyConfig {
   fullCompareAfterDays: number
   autoDownloadAlbum: boolean
   skipPlexPlaylist: boolean
+  skipRemoveExtraTracks: boolean
   maxFailureAttempts: number
 }
 
