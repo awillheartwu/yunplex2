@@ -1,16 +1,9 @@
 import { existsSync } from 'node:fs'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { exec as execCb } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execAsync = promisify(execCb)
-import NodeID3 from 'node-id3'
-import flacMetadata from 'metaflac-js'
+import { Worker } from 'node:worker_threads'
 import dayjs from 'dayjs'
 import type { SongTask } from './job/types'
-
-const NodeID3tag = NodeID3.Promise
 
 export interface SongMeta {
   title: string
@@ -39,6 +32,8 @@ export interface DownloadResult {
   filePath: string
   ops: SongOps
 }
+
+const FLAC_TAG_TIMEOUT_MS = 120000
 
 export function buildDownloadPath(
   pathFormat: string,
@@ -128,7 +123,7 @@ export async function downloadSong(
     separateLyricFiles?: boolean
   },
   relativePath: string,
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
 ): Promise<DownloadResult> {
   const ops: SongOps = {
     download: url ? 'ok' : 'skipped',
@@ -160,7 +155,7 @@ export async function downloadSong(
         chunks.push(value)
         received += value.length
         if (contentLength > 0 && onProgress) {
-          onProgress(Math.round(received / contentLength * 100))
+          onProgress(Math.round(received / contentLength * 100), 'downloading')
         }
       }
       const buffer = Buffer.concat(chunks)
@@ -203,6 +198,8 @@ export async function downloadSong(
 
   if (options.embedMetadata) {
     try {
+      // Report tagging phase start so UI shows "写标签" immediately
+      onProgress?.(0, 'tagging')
 
       if (fileType === 'flac') {
         await writeFlacTags(filePath, meta, imageBuffer)
@@ -216,9 +213,13 @@ export async function downloadSong(
       } else if (options.embedCover && !imageBuffer) {
         ops.cover = 'failed'
       }
-    } catch {
+
+      onProgress?.(100, 'tagging')
+    } catch (err) {
+      console.error(`[YunPlex2] 标签写入失败: ${filePath}`, err)
       ops.tags = 'failed'
       ops.cover = 'failed'
+      onProgress?.(100, 'tagging')
     }
   }
 
@@ -287,40 +288,16 @@ export function buildFlacTagMap(meta: SongMeta): Record<string, string> {
   return tags
 }
 
-async function writeFlacTags(
+export async function writeFlacTags(
   filePath: string,
   meta: SongMeta,
   imageBuffer: Buffer | null,
 ): Promise<void> {
   const tagMap = buildFlacTagMap(meta)
-
-  try {
-    const flac = new flacMetadata(filePath)
-    for (const [key, value] of Object.entries(tagMap)) {
-      flac.setTag(`${key}=${value}`)
-    }
-
-    const MAX_SIZE = 16777215
-    if (imageBuffer && imageBuffer.byteLength <= MAX_SIZE) {
-      flac.importPictureFromBuffer(imageBuffer)
-    }
-    await flac.save()
-  } catch {
-    // metaflac-js failed — fall back to CLI metaflac
-    for (const [key, value] of Object.entries(tagMap)) {
-      const escaped = value.replace(/"/g, '\\"')
-      await execAsync(`metaflac --remove-tag=${key} "${filePath}" 2>/dev/null; metaflac --set-tag="${key}=${escaped}" "${filePath}"`)
-    }
-    if (imageBuffer) {
-      const tempCover = join(dirname(filePath), 'cover.jpg')
-      await writeFile(tempCover, imageBuffer)
-      await execAsync(`metaflac --remove --block-type=PICTURE "${filePath}"`)
-      await execAsync(`metaflac --import-picture-from="${tempCover}" "${filePath}"`)
-    }
-  }
+  await runFlacTagWorkerInline({ filePath, tagMap, imageBuffer })
 }
 
-async function writeMp3Tags(
+export async function writeMp3Tags(
   filePath: string,
   meta: SongMeta,
   imageBuffer: Buffer | null,
@@ -373,7 +350,123 @@ async function writeMp3Tags(
     }
   }
 
-  await NodeID3tag.write(tags, filePath)
+  // Offload MP3 tag writing to a worker thread — node-id3 uses
+  // readFileSync / writeFileSync internally which blocks the event loop.
+  await runMp3TagWorkerInline({
+    filePath,
+    tags: tags as unknown as Record<string, unknown>,
+    imageBuffer,
+  })
+}
+
+function runWorkerWithTimeout(
+  workerCode: string,
+  payload: Record<string, unknown>,
+  label: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerCode, {
+      eval: true,
+      workerData: payload,
+    })
+
+    let settled = false
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      void worker.terminate()
+      reject(new Error(`${label} 超时（>${Math.floor(FLAC_TAG_TIMEOUT_MS / 1000)}s）`))
+    }, FLAC_TAG_TIMEOUT_MS)
+
+    const finish = (handler: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      handler()
+    }
+
+    worker.once('message', (msg: { ok?: boolean; error?: string }) => {
+      finish(() => {
+        if (msg?.ok) resolve()
+        else reject(new Error(msg?.error || `${label} 失败`))
+      })
+    })
+
+    worker.once('error', (err) => {
+      finish(() => reject(err))
+    })
+
+    worker.once('exit', (code) => {
+      if (settled) return
+      finish(() => {
+        if (code === 0) resolve()
+        else reject(new Error(`${label} worker 异常退出（code=${code}）`))
+      })
+    })
+  })
+}
+
+function runFlacTagWorkerInline(payload: {
+  filePath: string
+  tagMap: Record<string, string>
+  imageBuffer: Buffer | null
+}): Promise<void> {
+  const workerCode = `
+    const { parentPort, workerData } = require('node:worker_threads');
+    const Metaflac = require('metaflac-js');
+    const MAX_PICTURE_SIZE = 16777215;
+
+    try {
+      const { filePath, tagMap, imageBuffer } = workerData;
+      const flac = new Metaflac(filePath);
+
+      for (const [key, value] of Object.entries(tagMap)) {
+        flac.setTag(key + '=' + value);
+      }
+
+      if (imageBuffer && imageBuffer.byteLength <= MAX_PICTURE_SIZE) {
+        flac.importPictureFromBuffer(Buffer.from(imageBuffer));
+      }
+
+      flac.save();
+      parentPort.postMessage({ ok: true });
+    } catch (error) {
+      parentPort.postMessage({
+        ok: false,
+        error: error instanceof Error ? error.message : 'FLAC tag write failed',
+      });
+    }
+  `
+
+  return runWorkerWithTimeout(workerCode, payload as Record<string, unknown>, 'FLAC 标签写入')
+}
+
+function runMp3TagWorkerInline(payload: {
+  filePath: string
+  tags: Record<string, unknown>
+  imageBuffer: Buffer | null
+}): Promise<void> {
+  const workerCode = `
+    const { parentPort, workerData } = require('node:worker_threads');
+    const NodeID3 = require('node-id3');
+
+    try {
+      const { filePath, tags, imageBuffer } = workerData;
+      // Restore image buffer (structured clone turns Buffer into Uint8Array)
+      if (tags.image && imageBuffer) {
+        tags.image.imageBuffer = Buffer.from(imageBuffer);
+      }
+      await NodeID3.Promise.write(tags, filePath);
+      parentPort.postMessage({ ok: true });
+    } catch (error) {
+      parentPort.postMessage({
+        ok: false,
+        error: error instanceof Error ? error.message : 'MP3 tag write failed',
+      });
+    }
+  `
+
+  return runWorkerWithTimeout(workerCode, payload as Record<string, unknown>, 'MP3 标签写入')
 }
 
 const FILENAME_REPLACE: [RegExp, string][] = [

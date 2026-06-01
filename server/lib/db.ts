@@ -6,15 +6,28 @@ import { DEFAULT_CONFIG } from './config/defaults'
 
 let db: Database.Database | null = null
 
+function isFlatRecord(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  return Object.values(v as Record<string, unknown>).every(
+    (val) => typeof val !== 'object' || val === null || Array.isArray(val),
+  )
+}
+
 function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>): T {
   const result = { ...base }
   for (const key of Object.keys(partial) as (keyof T)[]) {
     const v = partial[key]
     if (v !== undefined && v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      ;(result as Record<string, unknown>)[key as string] = deepMerge(
-        (base[key] as Record<string, unknown>) || {},
-        v as Record<string, unknown>,
-      )
+      if (isFlatRecord(v)) {
+        // Flat maps (all values primitives/arrays/null): replace entirely
+        // so that deleting a key from the partial removes it from the result.
+        ;(result as Record<string, unknown>)[key as string] = v
+      } else {
+        ;(result as Record<string, unknown>)[key as string] = deepMerge(
+          (base[key] as Record<string, unknown>) || {},
+          v as Record<string, unknown>,
+        )
+      }
     } else if (v !== undefined) {
       ;(result as Record<string, unknown>)[key as string] = v
     }

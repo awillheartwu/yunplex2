@@ -127,11 +127,21 @@ interface RawSong {
 
 // ── Artist alias state ──
 let artistAliases: Record<string, string> = {}
+let normalizedAliases: Record<string, string> = {}
 let applyAliasToAlbum = false
+
+function normalizeAliasKey(name: string): string {
+  return name.trim().replace(/\s+/g, '')
+}
 
 export function setArtistAliases(aliases: Record<string, string>, applyToAlbum: boolean) {
   artistAliases = aliases || {}
   applyAliasToAlbum = applyToAlbum
+  // Pre-build a normalized lookup so "艾热 AIR" matches "艾热AIR"
+  normalizedAliases = {}
+  for (const [key, val] of Object.entries(artistAliases)) {
+    normalizedAliases[normalizeAliasKey(key)] = val
+  }
 }
 
 export function getArtistAliases() {
@@ -139,7 +149,12 @@ export function getArtistAliases() {
 }
 
 function applyAlias(name: string): string {
-  return artistAliases[name] || name
+  // Exact match first
+  if (Object.hasOwn(artistAliases, name)) return artistAliases[name]!
+  // Fallback: normalize whitespace (handles "艾热 AIR" vs "艾热AIR")
+  const normalized = normalizeAliasKey(name)
+  if (Object.hasOwn(normalizedAliases, normalized)) return normalizedAliases[normalized]!
+  return name
 }
 
 export function mapRawSong(raw: RawSong): NeteaseSong {
