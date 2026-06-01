@@ -39,7 +39,7 @@ export interface SingleSongConfig {
 export async function downloadSingleSong(
   songId: number,
   config: SingleSongConfig,
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
 ): Promise<{ filePath: string; fileType: string; ops: SongOps }> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
 

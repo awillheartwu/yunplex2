@@ -150,7 +150,7 @@ export function enqueueTask(task: {
 }
 
 export async function processAll(
-  processor: (task: DownloadTask, onProgress: (pct: number) => void) => Promise<{ filePath: string; fileType: string }>,
+  processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string; ops?: { download?: string; lyric?: string; tags?: string; cover?: string } }>,
   jobId?: string,
   concurrency = 3,
 ): Promise<number> {
@@ -180,21 +180,20 @@ export async function processAll(
           timestamp: new Date().toISOString(),
         })
 
-        const result = await processor(task, (pct) => {
-          updateTaskState(task.id, { progress: pct })
+        const result = await processor(task, (pct, phase) => {
+          const status = phase || 'downloading'
+          updateTaskState(task.id, { progress: pct, status })
           emitEvent({
             type: 'queue-update',
-            data: { taskId: task.id, songName: task.songName, status: 'downloading', progress: pct, sourceId: task.sourceId },
+            data: { taskId: task.id, songName: task.songName, status, progress: pct, sourceId: task.sourceId },
             timestamp: new Date().toISOString(),
           })
         })
 
-        updateTaskState(task.id, { status: 'tagging', progress: 60 })
-        emitEvent({
-          type: 'queue-update',
-          data: { taskId: task.id, songName: task.songName, status: 'tagging', progress: 60, sourceId: task.sourceId },
-          timestamp: new Date().toISOString(),
-        })
+        // Tag-writing failures must not silently pass as "done"
+        if (result.ops?.tags === 'failed') {
+          throw new Error(`标签写入失败: ${task.songName}`)
+        }
 
         updateTaskState(task.id, {
           status: 'done', progress: 100,
@@ -235,7 +234,7 @@ export async function processAll(
 
 export async function retryTask(
   id: string,
-  processor: (task: DownloadTask) => Promise<{ filePath: string; fileType: string }>,
+  processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
 ): Promise<DownloadTask | null> {
   const task = getDownloadTask(id)
   if (!task || task.status !== 'failed') return null
@@ -249,7 +248,7 @@ export async function retryTask(
 }
 
 export async function retryAllFailed(
-  processor: (task: DownloadTask) => Promise<{ filePath: string; fileType: string }>,
+  processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
 ): Promise<number> {
   const db = getDb()
   db.prepare("UPDATE download_tasks SET status = 'pending', error = NULL, progress = 0 WHERE status = 'failed'").run()

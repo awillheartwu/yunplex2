@@ -89,6 +89,32 @@ export default defineEventHandler(async (event) => {
     if (currentJob) {
       const s = currentJob.songs.find((x) => x.id === songId)
       if (s) {
+        // Tag-writing failure: treat as partial success, don't silently pass
+        if (result.ops?.tags === 'failed') {
+          s.status = 'failed_tags'
+          s.phase = 'tags'
+          s.filePath = result.filePath
+          s.fileType = result.fileType
+          s.ops = result.ops
+          s.error = { title: '标签写入失败', message: `标签写入失败: ${song.songName}`, stage: 'tags', songName: song.songName, artist: song.artist }
+          currentJob.failedSongs = currentJob.songs.filter((x) =>
+            ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(x.status),
+          ).length
+          currentJob.successSongs = currentJob.songs.filter((x) => x.status === 'success').length
+          currentJob.skippedSongs = currentJob.songs.filter((x) => x.status === 'skipped_existing').length
+          currentJob.warnings = currentJob.songs.filter((x) =>
+            ['copyright_restricted', 'ignored_failure'].includes(x.status),
+          ).length
+          saveJob(currentJob)
+          appendLog(dataDir, { level: 'error', message: `[重试] 标签写入失败: ${song.songName} - ${song.artist}`, stage: 'tags' }, retentionDays)
+          emitEvent({
+            type: 'song-retry-progress',
+            data: { jobId, songId, status: 'failed', filePath: result.filePath, fileType: result.fileType, ops: result.ops, error: { message: '标签写入失败' } },
+            timestamp: new Date().toISOString(),
+          })
+          return
+        }
+
         s.status = 'success'
         s.phase = 'done'
         s.filePath = result.filePath

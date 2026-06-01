@@ -223,13 +223,8 @@
         </FormField>
 
         <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
-        <FormField label="艺人名替换映射" hint='每行一条 JSON 映射，格式: { "旧名": "新名" }。替换影响 Plex 搜索、文件路径、ID3 标签等'>
-          <textarea
-            v-model="aliasJson"
-            class="form-input font-mono text-xs h-24"
-            placeholder='{ "马思唯aka大炮": "马思唯", "PSY.P": "PSY P" }'
-            @blur="syncAliasesToForm"
-          />
+        <FormField label="艺人名替换映射" hint="替换影响 Plex 搜索、文件路径、ID3 标签等。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
+          <AliasEditor v-model="form.other.artistAliases" />
         </FormField>
       </ConfigSection>
 
@@ -405,9 +400,6 @@ async function loadConfig() {
   loading.value = true
   try {
     form.value = await api.get<AppConfig>('/config')
-    aliasJson.value = Object.keys(form.value.other.artistAliases || {}).length > 0
-      ? JSON.stringify(form.value.other.artistAliases, null, 2)
-      : ''
   } catch {
     form.value = { ...DEFAULT_CONFIG }
   } finally {
@@ -455,21 +447,6 @@ function showSaveMsg(ok: boolean, msg: string) {
   saveOk.value = ok
   saveMsg.value = msg
   setTimeout(() => { saveMsg.value = null }, 4000)
-}
-
-// ── Artist alias ──
-const aliasJson = ref('')
-function syncAliasesToForm() {
-  try {
-    if (aliasJson.value.trim()) {
-      const parsed = JSON.parse(aliasJson.value)
-      if (typeof parsed === 'object' && !Array.isArray(parsed)) {
-        if (form.value) form.value.other.artistAliases = parsed as Record<string, string>
-      }
-    } else {
-      if (form.value) form.value.other.artistAliases = {}
-    }
-  } catch { /* invalid JSON — ignore */ }
 }
 
 // ── Import / Export ──
