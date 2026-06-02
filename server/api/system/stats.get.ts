@@ -3,7 +3,7 @@ import { getDb } from '../../lib/db'
 import { readConfig, getDataDir } from '../../lib/config/store'
 import { checkCookie } from '../../lib/netease'
 import os from 'node:os'
-import { statSync, existsSync } from 'node:fs'
+import { statSync, existsSync, accessSync, constants } from 'node:fs'
 import { resolve } from 'node:path'
 
 // Track CPU usage across requests
@@ -86,13 +86,23 @@ async function checkPlex() {
   }
 }
 
+function checkDirWritable() {
+  try {
+    const cfg = readConfig()
+    if (!cfg.download.dir) return false
+    accessSync(cfg.download.dir, constants.W_OK)
+    return true
+  } catch { return false }
+}
+
 export default defineEventHandler(async () => {
-  const [mem, dbStats, dbSize, plexOk, neteaseOk] = await Promise.all([
+  const [mem, dbStats, dbSize, plexOk, neteaseOk, dirWritable] = await Promise.all([
     Promise.resolve(getMemUsage()),
     Promise.resolve(getDbStats()),
     Promise.resolve(getDbFileSize()),
     checkPlex(),
     checkNetease(),
+    checkDirWritable(),
   ])
 
   return success({
@@ -104,6 +114,7 @@ export default defineEventHandler(async () => {
     dbStats,
     plexOk,
     neteaseOk,
+    dirWritable,
     timestamp: Date.now(),
   })
 })

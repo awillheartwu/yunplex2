@@ -54,5 +54,15 @@ export function useApi() {
   const del = <T>(path: string) =>
     request<T>(path, { method: 'DELETE' })
 
-  return { get, post, put, del }
+  const rawPost = async <T>(path: string, body?: unknown): Promise<ApiResponse<T>> => {
+    const fetchOptions: RequestInit = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+    const res = await fetch(`/api${path}`, fetchOptions)
+    return (await res.json()) as ApiResponse<T>
+  }
+
+  return { get, post, put, del, rawPost }
 }

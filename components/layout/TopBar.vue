@@ -8,8 +8,8 @@
       />
     </div>
     <div class="flex items-center gap-3">
-      <span class="text-2xs text-muted">
-        {{ syncState?.lastSyncAt ? `上次同步 ${formatTime(syncState.lastSyncAt)}` : '尚未同步' }}
+      <span v-if="syncState?.lastSyncAt" class="text-2xs text-muted">
+        上次同步 {{ formatTime(syncState.lastSyncAt) }}
       </span>
       <a
         :href="githubUrl"
@@ -48,12 +48,11 @@ onMounted(async () => {
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
-  '/sources': '歌单源',
-  '/downloads': '下载中心',
+  '/sync-sources': '同步源',
+  '/manual-download': '手动下载',
+  '/task-center': '任务中心',
   '/config': '设置',
-  '/logs': '日志',
   '/system': '系统',
-  '/jobs': '同步历史',
 }
 
 const pageTitle = computed(() => titles[route.path] || 'YunPlex2')

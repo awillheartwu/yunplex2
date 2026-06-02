@@ -4,7 +4,7 @@ import { emitEvent } from '../sync/events'
 
 export interface DownloadTask {
   id: string
-  sourceId: string
+  sourceId: string | null
   songId: number
   songName: string
   artist: string
@@ -31,7 +31,7 @@ export interface QueueStatus {
 }
 
 interface TaskRow {
-  id: string; source_id: string; song_id: number; song_name: string
+  id: string; source_id: string | null; song_id: number; song_name: string
   artist: string; album: string; status: string; progress: number
   file_path: string | null; file_type: string | null; quality: string | null
   error: string | null; retry_count: number; job_id: string | null
@@ -40,7 +40,7 @@ interface TaskRow {
 
 function rowToTask(r: TaskRow): DownloadTask {
   return {
-    id: r.id, sourceId: r.source_id, songId: r.song_id,
+    id: r.id, sourceId: r.source_id ?? null, songId: r.song_id,
     songName: r.song_name, artist: r.artist, album: r.album,
     status: r.status as DownloadTask['status'], progress: r.progress,
     filePath: r.file_path ?? undefined, fileType: r.file_type ?? undefined,
@@ -132,7 +132,7 @@ export function updateTaskState(id: string, updates: Partial<{
 }
 
 export function enqueueTask(task: {
-  sourceId: string; songId: number; songName: string; artist: string
+  sourceId?: string | null; songId: number; songName: string; artist: string
   album: string; quality?: string; jobId?: string
 }): DownloadTask {
   const db = getDb()
@@ -142,7 +142,7 @@ export function enqueueTask(task: {
   db.prepare(`
     INSERT INTO download_tasks (id, source_id, song_id, song_name, artist, album, status, progress, quality, job_id, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
-  `).run(id, task.sourceId, task.songId, task.songName, task.artist, task.album,
+  `).run(id, task.sourceId ?? null, task.songId, task.songName, task.artist, task.album,
     task.quality ?? null, task.jobId ?? null, now, now)
 
   const row = db.prepare('SELECT * FROM download_tasks WHERE id = ?').get(id) as TaskRow

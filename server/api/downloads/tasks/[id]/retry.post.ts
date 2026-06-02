@@ -1,6 +1,9 @@
 import { success, fail } from '../../../../lib/response'
-import { getDownloadTask, updateTaskState } from '../../../../lib/download/queue'
+import { getDownloadTask, updateTaskState, processAll } from '../../../../lib/download/queue'
 import { getSyncServiceInstance } from '../../../../lib/sync/instance'
+import { readConfig } from '../../../../lib/config/store'
+import { downloadSingleSong } from '../../../../lib/download/single-song'
+import { appendLog } from '../../../../lib/log/store'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -13,8 +16,61 @@ export default defineEventHandler(async (event) => {
   const syncService = getSyncServiceInstance()
   if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
 
-  // Reset to pending — will be picked up by next sync
+  const dataDir = useRuntimeConfig(event).dataDir
+  const cfg = readConfig()
+  const retentionDays = cfg.sync.logRetentionDays ?? 30
+
+  // Log retry start
+  appendLog(dataDir, {
+    level: 'info',
+    message: `[重试] 开始下载: ${task.songName} - ${task.artist}`,
+    stage: 'download',
+  }, retentionDays)
+
+  // Reset to pending
   updateTaskState(id, { status: 'pending', progress: 0, error: undefined })
 
-  return success({ retried: true }, '任务已重新加入队列，将在下次同步时处理')
+  // Build processor with logging
+  const processor = async (t: typeof task, onProgress: (pct: number) => void) => {
+    return downloadSingleSong(t.songId, {
+      quality: t.quality || cfg.netease.quality,
+      cookie: cfg.netease.cookie,
+      downloadDir: cfg.download.dir,
+      pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+      multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
+      downloadLyrics: cfg.download.downloadLyrics,
+      embedMetadata: cfg.download.embedMetadata,
+      embedCover: cfg.download.embedCover,
+      saveAlbumCover: cfg.download.saveAlbumCover ?? false,
+      saveArtistImage: cfg.download.saveArtistImage ?? false,
+      lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
+      downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
+      downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
+      downloadMode: 'full',
+    }, onProgress)
+  }
+
+  // Fire-and-forget with logging
+  processAll(async (t, onProgress) => {
+    try {
+      const result = await processor(t, onProgress)
+      appendLog(dataDir, {
+        level: 'info',
+        message: `[重试] 下载成功: ${t.songName} - ${t.artist} → ${result.filePath}`,
+        stage: 'download',
+      }, retentionDays)
+      return result
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '下载失败'
+      appendLog(dataDir, {
+        level: 'error',
+        message: `[重试] 下载失败: ${t.songName} - ${t.artist}`,
+        detail: msg,
+        stage: 'download',
+      }, retentionDays)
+      throw err
+    }
+  }).catch(() => { /* errors reported via SSE */ })
+
+  return success({ retried: true }, '重试已启动')
 })

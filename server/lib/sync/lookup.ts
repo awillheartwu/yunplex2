@@ -134,7 +134,22 @@ function stripPunct(s: string): string {
 export function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
   const y = normalizeTitle(yunTitle)
   const p = normalizeTitle(plexTitle)
-  return !!(y && p && (y === p || stripPunct(y) === stripPunct(p)))
+  if (!y || !p) return false
+
+  // If normalized titles match, guard against ambiguous short bases
+  // e.g. "III" vs "III (Find Yourself)" — roman numeral base too ambiguous to collapse
+  if (y === p || stripPunct(y) === stripPunct(p)) {
+    const yHasExtra = /[([].+[\])]/.test(yunTitle)
+    const pHasExtra = /[([].+[\])]/.test(plexTitle)
+    // One side has bracket/paren extra content, the other doesn't
+    if (yHasExtra !== pHasExtra) {
+      const base = yHasExtra ? plexTitle : yunTitle
+      // Short base title (≤ 3 chars, likely roman numeral or single char) → don't collapse
+      if (base && base.trim().length <= 3) return false
+    }
+    return true
+  }
+  return false
 }
 
 export function fuzzyArtist(plexArtist: string, yunArtist: string): boolean {

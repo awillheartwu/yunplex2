@@ -139,6 +139,35 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   (d) => {
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN skip_remove_extra_tracks INTEGER NOT NULL DEFAULT 0').run()
   },
+  /* v20: allow NULL source_id in download_tasks for download-only batches */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE download_tasks_new (
+        id              TEXT PRIMARY KEY,
+        source_id       TEXT,
+        song_id         INTEGER NOT NULL,
+        song_name       TEXT NOT NULL,
+        artist          TEXT NOT NULL DEFAULT '',
+        album           TEXT NOT NULL DEFAULT '',
+        status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','downloading','tagging','done','failed')),
+        progress        INTEGER NOT NULL DEFAULT 0,
+        file_path       TEXT,
+        file_type       TEXT,
+        quality         TEXT,
+        error           TEXT,
+        retry_count     INTEGER NOT NULL DEFAULT 0,
+        job_id          TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      )
+    `).run()
+    d.prepare('INSERT INTO download_tasks_new SELECT * FROM download_tasks').run()
+    d.prepare('DROP TABLE download_tasks').run()
+    d.prepare('ALTER TABLE download_tasks_new RENAME TO download_tasks').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_time ON download_tasks(updated_at DESC)').run()
+  },
 ]
 
 function runMigrations(d: Database.Database): void {
