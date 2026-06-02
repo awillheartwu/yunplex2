@@ -17,24 +17,16 @@
       >YunPlex2</span>
     </div>
 
-    <!-- Nav groups -->
-    <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-3">
-      <SidebarGroup
-        v-for="group in navGroups"
-        :key="group.key"
-        :label="group.label"
-        :default-open="group.defaultOpen"
+    <!-- Nav items — flat, no group labels -->
+    <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-px">
+      <SidebarItem
+        v-for="item in navItems"
+        :key="item.path"
+        :icon="item.icon"
+        :label="item.label"
+        :path="item.path"
         :collapsed="collapsed"
-      >
-        <SidebarItem
-          v-for="item in group.items"
-          :key="item.path"
-          :icon="item.icon"
-          :label="item.label"
-          :path="item.path"
-          :collapsed="collapsed"
-        />
-      </SidebarGroup>
+      />
     </nav>
 
     <!-- Toggle + Footer -->
@@ -72,28 +64,12 @@ onMounted(() => {
   } catch { /* ignore */ }
 })
 
-const navGroups = [
-  {
-    key: 'overview', label: '总览', defaultOpen: true,
-    items: [
-      { icon: 'dashboard', label: '仪表盘', path: '/' },
-      { icon: 'logs', label: '日志', path: '/logs' },
-    ],
-  },
-  {
-    key: 'tasks', label: '任务中心', defaultOpen: true,
-    items: [
-      { icon: 'source', label: '歌单源', path: '/sources' },
-      { icon: 'download', label: '下载中心', path: '/downloads' },
-      { icon: 'list', label: '同步历史', path: '/jobs' },
-    ],
-  },
-  {
-    key: 'settings', label: '设置', defaultOpen: true,
-    items: [
-      { icon: 'info', label: '系统', path: '/system' },
-      { icon: 'settings', label: '设置', path: '/config' },
-    ],
-  },
+const navItems = [
+  { icon: 'dashboard', label: '仪表盘', path: '/' },
+  { icon: 'source', label: '同步源', path: '/sync-sources' },
+  { icon: 'download', label: '手动下载', path: '/manual-download' },
+  { icon: 'activity', label: '任务中心', path: '/task-center' },
+  { icon: 'settings', label: '设置', path: '/config' },
+  { icon: 'info', label: '系统', path: '/system' },
 ]
 </script>

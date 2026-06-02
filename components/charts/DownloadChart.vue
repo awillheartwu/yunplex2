@@ -112,5 +112,6 @@ const option = computed(() => ({
 </script>
 
 <style scoped>
-.chart-root { min-height: 200px; }
+.chart-root { min-height: clamp(240px, 30vh, 520px); }
+.chart { min-height: clamp(200px, 25vh, 460px); }
 </style>

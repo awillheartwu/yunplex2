@@ -50,7 +50,7 @@
             <input v-model="form.netease.cookie" type="password" placeholder="MUSIC_U=xxx; __csrf=xxx; ..." class="form-input font-mono" @focus="($event.target as HTMLInputElement).type='text'" @blur="($event.target as HTMLInputElement).type='password'" />
           </FormField>
           <div class="p-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)]">
-            <p class="text-xs text-muted">歌单管理请前往「<NuxtLink to="/sources" class="text-accent hover:underline">歌单源</NuxtLink>」页面。</p>
+            <p class="text-xs text-muted">来源管理请前往「<NuxtLink to="/sync-sources" class="text-accent hover:underline">同步源</NuxtLink>」页面。</p>
           </div>
           <FormField label="音质偏好">
             <select v-model="form.netease.quality" class="form-input">
