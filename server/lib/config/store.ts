@@ -51,9 +51,20 @@ export function readConfig(): AppConfig {
   return readConfigFromDb()
 }
 
+function normalizeConfig(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    download: {
+      ...config.download,
+      dir: config.download.dir.trim(),
+      plexLibraryPathPrefix: config.download.plexLibraryPathPrefix.trim().replace(/[\\/]+$/, ''),
+    },
+  }
+}
+
 export function writeConfig(partial: Partial<AppConfig>): AppConfig {
   const current = readConfig()
-  const merged = deepMerge(current, partial)
+  const merged = normalizeConfig(deepMerge(current, partial))
   writeConfigToDb(merged)
   return merged
 }

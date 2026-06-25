@@ -1,108 +1,185 @@
 import type { SyncState } from '~~/server/lib/log/types'
 import { sseSubscribe, sseConnected } from './sse'
+import { createIntervalFunction, createThrottledFunction } from './useTiming'
 
-// Shared state across all useSyncStatus() callers
 const sharedState = ref<SyncState | null>(null)
+const sharedLoading = ref(false)
+const sharedError = ref<string | null>(null)
+const isSseConnected = computed(() => sseConnected.value)
 
-/**
- * Sync status — SSE-first with polling fallback.
- * Use for dashboard, TopBar, or anywhere you need isRunning / currentStage.
- */
-export function useSyncStatus() {
-  const api = useApi()
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  const isSseConnected = computed(() => sseConnected.value)
+let sharedApi: ReturnType<typeof useApi> | null = null
+let activeConsumers = 0
+let subscriptionsReady = false
+let sseConnectionWatcherStop: (() => void) | null = null
+let fetchInFlight: Promise<void> | null = null
+let queuedRefresh = false
 
-  let pollTimer: ReturnType<typeof setInterval> | null = null
-  const unsubs: Array<() => void> = []
+const sharedUnsubs: Array<() => void> = []
 
-  async function fetchStatus() {
-    try {
-      const serverState = await api.get<SyncState>('/sync/status')
-      if (sharedState.value) {
-        // Merge: keep SSE-set fields, update server-only fields (counts, timestamps)
-        sharedState.value = {
-          ...serverState,
-          currentStage: sharedState.value.currentStage === 'repair' ? 'repair' : serverState.currentStage,
-        }
-      } else {
-        sharedState.value = serverState
-      }
-      error.value = null
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '获取同步状态失败'
+const sharedPolling = createIntervalFunction(() => {
+  void fetchStatusShared()
+}, 3000)
+
+const sharedLogRefresh = createThrottledFunction(() => {
+  void fetchStatusShared()
+}, 800)
+
+function ensureApi() {
+  if (!sharedApi) {
+    throw new Error('同步状态尚未初始化')
+  }
+  return sharedApi
+}
+
+async function refreshStatusFromServer() {
+  const api = ensureApi()
+  const serverState = await api.get<SyncState>('/sync/status')
+
+  if (sharedState.value) {
+    sharedState.value = {
+      ...serverState,
+      currentStage: sharedState.value.currentStage === 'repair' ? 'repair' : serverState.currentStage,
     }
+    return
   }
 
+  sharedState.value = serverState
+}
+
+async function fetchStatusShared() {
+  if (fetchInFlight) {
+    queuedRefresh = true
+    return fetchInFlight
+  }
+
+  fetchInFlight = (async () => {
+    try {
+      await refreshStatusFromServer()
+      sharedError.value = null
+    } catch (err) {
+      sharedError.value = err instanceof Error ? err.message : '获取同步状态失败'
+    } finally {
+      fetchInFlight = null
+      if (queuedRefresh) {
+        queuedRefresh = false
+        void fetchStatusShared()
+      }
+    }
+  })()
+
+  return fetchInFlight
+}
+
+function startPollingShared(intervalMs = 3000) {
+  void fetchStatusShared()
+  sharedPolling.restart(intervalMs)
+}
+
+function stopPollingShared() {
+  sharedPolling.stop()
+}
+
+function ensureSharedRealtime() {
+  if (import.meta.server || subscriptionsReady) return
+
+  subscriptionsReady = true
+  sharedUnsubs.push(sseSubscribe('stage-change', (data) => {
+    if (!sharedState.value || !data.stage) return
+    sharedState.value.currentStage = data.stage as SyncState['currentStage']
+    if (typeof data.sourceName === 'string') {
+      sharedState.value.currentSourceName = data.sourceName
+    }
+  }))
+  sharedUnsubs.push(sseSubscribe('song-progress', (data) => {
+    if (!sharedState.value || !data.songName) return
+    sharedState.value.currentSong = data.songName as string
+  }))
+  sharedUnsubs.push(sseSubscribe('log', () => {
+    sharedLogRefresh.run()
+  }))
+
+  sseConnectionWatcherStop = watch(sseConnected, (connected) => {
+    if (connected) {
+      stopPollingShared()
+      return
+    }
+
+    if (activeConsumers > 0) {
+      startPollingShared(5000)
+    }
+  }, { immediate: true })
+}
+
+function teardownSharedRealtime() {
+  stopPollingShared()
+  sharedLogRefresh.cancel()
+  sseConnectionWatcherStop?.()
+  sseConnectionWatcherStop = null
+
+  while (sharedUnsubs.length > 0) {
+    const unsub = sharedUnsubs.pop()
+    unsub?.()
+  }
+
+  subscriptionsReady = false
+}
+
+/**
+ * Sync status — shared singleton source with SSE-first updates and polling fallback.
+ * Safe to use from multiple pages/components without duplicating subscriptions or requests.
+ */
+export function useSyncStatus() {
+  sharedApi ??= useApi()
+
   async function triggerSync(dryRun = false) {
-    loading.value = true
-    error.value = null
+    const api = ensureApi()
+    sharedLoading.value = true
+    sharedError.value = null
+
     try {
       await api.post('/sync/trigger', { dryRun })
-      if (!sseConnected.value) startPolling(2000)
+      if (!sseConnected.value) startPollingShared(2000)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '触发同步失败'
+      sharedError.value = err instanceof Error ? err.message : '触发同步失败'
       throw err
     } finally {
-      loading.value = false
+      sharedLoading.value = false
     }
   }
 
   async function cancelSync() {
+    const api = ensureApi()
     try {
       await api.post('/sync/cancel')
-      await fetchStatus()
+      await fetchStatusShared()
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '取消同步失败'
-    }
-  }
-
-  function startPolling(intervalMs = 3000) {
-    stopPolling()
-    fetchStatus()
-    pollTimer = setInterval(fetchStatus, intervalMs)
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
+      sharedError.value = err instanceof Error ? err.message : '取消同步失败'
     }
   }
 
   onMounted(() => {
-    // Subscribe to SSE for real-time stage/song updates
-    unsubs.push(sseSubscribe('stage-change', (data) => {
-      if (sharedState.value && data.stage) {
-        sharedState.value.currentStage = data.stage as SyncState['currentStage']
-      }
-    }))
-    unsubs.push(sseSubscribe('song-progress', (data) => {
-      if (sharedState.value && data.songName) {
-        sharedState.value.currentSong = data.songName as string
-      }
-    }))
-    unsubs.push(sseSubscribe('log', () => {
-      // Log events trigger a full status refresh to keep stats in sync
-      fetchStatus()
-    }))
-
-    // Fallback polling if SSE is down
-    if (!sseConnected.value) startPolling(5000)
+    activeConsumers += 1
+    ensureSharedRealtime()
   })
 
   onUnmounted(() => {
-    stopPolling()
-    for (const unsub of unsubs) unsub()
+    activeConsumers = Math.max(0, activeConsumers - 1)
+    if (activeConsumers === 0) {
+      teardownSharedRealtime()
+    }
   })
 
   return {
-    state: sharedState, loading, error, isSseConnected,
-    fetchStatus, triggerSync, cancelSync,
-    startPolling, stopPolling,
+    state: sharedState,
+    loading: sharedLoading,
+    error: sharedError,
+    isSseConnected,
+    fetchStatus: fetchStatusShared,
+    triggerSync,
+    cancelSync,
+    startPolling: startPollingShared,
+    stopPolling: stopPollingShared,
   }
 }
 
-// Backward-compat alias — existing code imports useSync
 export { useSyncStatus as useSync }

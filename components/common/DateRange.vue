@@ -3,32 +3,47 @@
     <!-- Trigger -->
     <button
       ref="triggerEl"
-      class="flex items-center gap-1.5 text-xs px-3 rounded-lg border transition-colors cursor-pointer shrink-0 h-8 overflow-hidden"
+      class="flex h-10 items-center gap-1.5 overflow-hidden rounded-lg border px-3 text-xs transition-colors cursor-pointer shrink-0 md:h-8"
       :style="{
         background: open ? 'var(--bg-surface)' : 'var(--bg-app)',
         borderColor: hasFilter ? 'var(--accent)' : 'var(--border-primary)',
         color: hasFilter ? 'var(--accent)' : 'var(--text-secondary)',
       }"
+      type="button"
+      :aria-expanded="open"
       @click="open ? closePanel() : openPanel()"
     >
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-        <rect x="2.5" y="3" width="11" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.2" />
-        <path d="M2.5 6h11" stroke="currentColor" stroke-width="1.2" />
-        <path d="M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-      </svg>
+      <AppIcon name="calendar" :size="13" />
       <span class="max-w-[160px] truncate">{{ triggerLabel }}</span>
       <span v-if="hasFilter" class="text-2xs px-1 py-0 rounded-full shrink-0" style="background:var(--accent-glow);color:var(--accent)">●</span>
     </button>
 
     <!-- Popover (Teleport to body to avoid stacking-context traps) -->
     <Teleport to="body">
-      <div v-if="open" class="fixed inset-0 z-50" @click.self="closePanel()" />
       <div
-v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
-        :style="{ top: panelTop + 'px', left: panelLeft + 'px', background: 'var(--bg-surface)', borderColor: 'var(--border-primary)', minWidth: '420px' }"
+        v-if="open"
+        class="date-range-backdrop fixed inset-0"
+        :style="{ zIndex: OVERLAY_LAYERS.nestedBackdrop }"
+        @click.self="closePanel()"
+      />
+      <div
+        v-if="open"
+        ref="panelEl"
+        class="date-range-popover fixed overflow-hidden rounded-xl border shadow-xl"
+        role="dialog"
+        aria-label="日期范围"
+        :style="{
+          top: panelTop + 'px',
+          left: panelLeft + 'px',
+          width: panelWidth + 'px',
+          maxHeight: panelMaxHeight + 'px',
+          zIndex: OVERLAY_LAYERS.nestedPopover,
+          background: 'var(--bg-surface)',
+          borderColor: 'var(--border-primary)',
+        }"
       >
         <!-- Calendar grids -->
-        <div class="flex">
+        <div class="date-range-calendars flex">
           <div v-for="(cal, ci) in [leftMonth, rightMonth]" :key="ci" class="flex-1 p-3" :class="ci === 0 ? '' : ''" :style="ci === 0 ? { borderRight: '1px solid var(--border-primary)' } : {}">
           <!-- Month header -->
           <div class="flex items-center justify-between mb-2">
@@ -36,18 +51,22 @@ v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
               v-if="ci === 0"
               class="w-5 h-5 flex items-center justify-center rounded cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
               style="color:var(--text-tertiary)"
+              type="button"
+              aria-label="上一个月"
               @click="shiftMonth(-1)"
             >
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <AppIcon name="chevronLeft" :size="10" />
             </button>
             <span class="text-xs font-medium" style="color:var(--text-primary)">{{ monthLabel(cal.year, cal.month) }}</span>
             <button
               v-if="ci === 1"
               class="w-5 h-5 flex items-center justify-center rounded cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
               style="color:var(--text-tertiary)"
+              type="button"
+              aria-label="下一个月"
               @click="shiftMonth(1)"
             >
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <AppIcon name="chevronRight" :size="10" />
             </button>
           </div>
 
@@ -63,6 +82,7 @@ v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
               class="aspect-square rounded text-xs flex items-center justify-center transition-colors"
               :class="isDayDisabled(day) ? 'pointer-events-none opacity-20' : 'cursor-pointer'"
               :style="dayCellStyle(day)"
+              type="button"
               @click="onDayClick(day)"
             >{{ day.label }}</button>
           </div>
@@ -90,6 +110,9 @@ v-if="open" class="fixed z-[51] rounded-xl shadow-xl border overflow-hidden"
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
+import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
+
 export interface DateRangeValue {
   from: string | null
   to: string | null
@@ -100,23 +123,42 @@ const emit = defineEmits<{ 'update:modelValue': [value: DateRangeValue] }>()
 
 const open = ref(false)
 const triggerEl = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
 const panelTop = ref(0)
 const panelLeft = ref(0)
+const panelWidth = ref(420)
+const panelMaxHeight = ref(560)
 const baseDate = ref(new Date())
 
 function openPanel() {
+  updatePanelPosition()
+  open.value = true
+  nextTick(() => updatePanelPosition())
+}
+
+function updatePanelPosition() {
   if (triggerEl.value) {
     const rect = triggerEl.value.getBoundingClientRect()
-    const panelW = 420
-    panelTop.value = rect.bottom + 6
+    const panelW = Math.min(420, window.innerWidth - 16)
+    const viewportGutter = 8
+    const panelH = panelEl.value?.offsetHeight || 390
+    const availableHeight = Math.max(280, window.innerHeight - viewportGutter * 2)
+    panelWidth.value = panelW
+    panelMaxHeight.value = availableHeight
+
+    const belowTop = rect.bottom + 6
+    const aboveTop = rect.top - panelH - 6
+    panelTop.value = belowTop + panelH <= window.innerHeight - viewportGutter
+      ? belowTop
+      : Math.max(viewportGutter, aboveTop)
+
     // Align right edge of panel with right edge of button
     let left = rect.right - panelW
     // Clamp: don't go beyond viewport edges
-    if (left < 8) left = 8
-    if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8
+    if (left < viewportGutter) left = viewportGutter
+    if (left + panelW > window.innerWidth - viewportGutter) left = window.innerWidth - panelW - viewportGutter
     panelLeft.value = left
   }
-  open.value = true
 }
 
 function closePanel() {
@@ -288,11 +330,19 @@ const presets: Preset[] = [
 ]
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localDateString(new Date())
 }
 function daysAgo(n: number): string {
-  const d = new Date(Date.now() - n * 86400000)
-  return d.toISOString().slice(0, 10)
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return localDateString(d)
+}
+function localDateString(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
 }
 
 function isPresetActive(p: Preset): boolean {
@@ -308,4 +358,18 @@ function clearFilter() {
 }
 
 const dowLabels = ['日', '一', '二', '三', '四', '五', '六']
+
+function handleViewportChange() {
+  if (open.value) updatePanelPosition()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>

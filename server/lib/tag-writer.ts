@@ -34,6 +34,36 @@ export interface DownloadResult {
 }
 
 const FLAC_TAG_TIMEOUT_MS = 120000
+const FILE_WRITE_RETRY_CODES = new Set(['EAGAIN', 'EBUSY', 'EMFILE'])
+const FILE_WRITE_RETRY_DELAYS_MS = [80, 200, 500]
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function writeFileWithRetry(
+  filePath: string,
+  data: Parameters<typeof writeFile>[1],
+  options?: Parameters<typeof writeFile>[2],
+): Promise<void> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= FILE_WRITE_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      await writeFile(filePath, data as never, options as never)
+      return
+    } catch (error) {
+      lastError = error
+      const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code ?? '') : ''
+      if (!FILE_WRITE_RETRY_CODES.has(code) || attempt === FILE_WRITE_RETRY_DELAYS_MS.length) {
+        throw error
+      }
+      await sleep(FILE_WRITE_RETRY_DELAYS_MS[attempt]!)
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('文件写入失败')
+}
 
 export function buildDownloadPath(
   pathFormat: string,
@@ -159,7 +189,7 @@ export async function downloadSong(
         }
       }
       const buffer = Buffer.concat(chunks)
-      await writeFile(filePath, buffer)
+      await writeFileWithRetry(filePath, buffer)
       ops.download = 'ok'
     } catch {
       ops.download = 'failed'
@@ -173,13 +203,13 @@ export async function downloadSong(
       if (options.lyrics) {
         const lyricBase = filePath.replace(/\.\w+$/, '')
         if (options.separateLyricFiles && options.translatedLyric) {
-          await writeFile(lyricBase + ' (orgi).lrc', options.lyrics, 'utf-8')
-          await writeFile(lyricBase + ' (trans).lrc', options.translatedLyric, 'utf-8')
+          await writeFileWithRetry(lyricBase + ' (orgi).lrc', options.lyrics, 'utf-8')
+          await writeFileWithRetry(lyricBase + ' (trans).lrc', options.translatedLyric, 'utf-8')
         } else {
-          await writeFile(lyricBase + '.lrc', options.lyrics, 'utf-8')
+          await writeFileWithRetry(lyricBase + '.lrc', options.lyrics, 'utf-8')
         }
         if (options.romajiLyric) {
-          await writeFile(lyricBase + ' (romaji).lrc', options.romajiLyric, 'utf-8')
+          await writeFileWithRetry(lyricBase + ' (romaji).lrc', options.romajiLyric, 'utf-8')
         }
         ops.lyric = 'ok'
       } else {
@@ -216,10 +246,13 @@ export async function downloadSong(
 
       onProgress?.(100, 'tagging')
     } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
       console.error(`[YunPlex2] 标签写入失败: ${filePath}`, err)
       ops.tags = 'failed'
       ops.cover = 'failed'
       onProgress?.(100, 'tagging')
+      // Surface the real error so the queue can store it
+      throw new Error(detail, { cause: err })
     }
   }
 
@@ -228,7 +261,7 @@ export async function downloadSong(
   if (options.saveAlbumCover) {
     try {
       const coverBuf = imageBuffer ?? await downloadImage(meta.picUrl)
-      if (coverBuf) await writeFile(join(albumPath, 'cover.jpg'), coverBuf)
+      if (coverBuf) await writeFileWithRetry(join(albumPath, 'cover.jpg'), coverBuf)
     } catch { /* non-critical */ }
   }
   if (options.saveArtistImage && meta.artistImgUrl) {
@@ -236,7 +269,7 @@ export async function downloadSong(
     if (!existsSync(artistImgPath)) {
       try {
         const artistImg = await downloadImage(meta.artistImgUrl)
-        if (artistImg) await writeFile(artistImgPath, artistImg)
+        if (artistImg) await writeFileWithRetry(artistImgPath, artistImg)
       } catch { /* non-critical */ }
     }
   }
@@ -411,9 +444,10 @@ function runFlacTagWorkerInline(payload: {
   tagMap: Record<string, string>
   imageBuffer: Buffer | null
 }): Promise<void> {
+  const r = 'requir' + 'e' // evade bundler static analysis
   const workerCode = `
-    const { parentPort, workerData } = require('node:worker_threads');
-    const Metaflac = require('metaflac-js');
+    const { parentPort, workerData } = ${r}('node:worker_threads');
+    const Metaflac = ${r}('metaflac-js');
     const MAX_PICTURE_SIZE = 16777215;
 
     try {
@@ -446,24 +480,26 @@ function runMp3TagWorkerInline(payload: {
   tags: Record<string, unknown>
   imageBuffer: Buffer | null
 }): Promise<void> {
+  const r = 'requir' + 'e' // evade bundler static analysis
   const workerCode = `
-    const { parentPort, workerData } = require('node:worker_threads');
-    const NodeID3 = require('node-id3');
+    const { parentPort, workerData } = ${r}('node:worker_threads');
+    const NodeID3 = ${r}('node-id3');
 
-    try {
-      const { filePath, tags, imageBuffer } = workerData;
-      // Restore image buffer (structured clone turns Buffer into Uint8Array)
-      if (tags.image && imageBuffer) {
-        tags.image.imageBuffer = Buffer.from(imageBuffer);
+    (async () => {
+      try {
+        const { filePath, tags, imageBuffer } = workerData;
+        if (tags.image && imageBuffer) {
+          tags.image.imageBuffer = Buffer.from(imageBuffer);
+        }
+        await NodeID3.Promise.write(tags, filePath);
+        parentPort.postMessage({ ok: true });
+      } catch (error) {
+        parentPort.postMessage({
+          ok: false,
+          error: error instanceof Error ? error.message : 'MP3 tag write failed',
+        });
       }
-      await NodeID3.Promise.write(tags, filePath);
-      parentPort.postMessage({ ok: true });
-    } catch (error) {
-      parentPort.postMessage({
-        ok: false,
-        error: error instanceof Error ? error.message : 'MP3 tag write failed',
-      });
-    }
+    })();
   `
 
   return runWorkerWithTimeout(workerCode, payload as Record<string, unknown>, 'MP3 标签写入')

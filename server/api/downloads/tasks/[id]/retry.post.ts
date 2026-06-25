@@ -1,5 +1,6 @@
 import { success, fail } from '../../../../lib/response'
-import { getDownloadTask, updateTaskState, processAll } from '../../../../lib/download/queue'
+import { getDownloadTask, updateTaskState } from '../../../../lib/download/queue'
+import { emitEvent } from '../../../../lib/sync/events'
 import { getSyncServiceInstance } from '../../../../lib/sync/instance'
 import { readConfig } from '../../../../lib/config/store'
 import { downloadSingleSong } from '../../../../lib/download/single-song'
@@ -50,27 +51,58 @@ export default defineEventHandler(async (event) => {
     }, onProgress)
   }
 
-  // Fire-and-forget with logging
-  processAll(async (t, onProgress) => {
+  // Process just this one task — don't use processAll to avoid picking up other pending tasks
+  updateTaskState(id, { status: 'downloading', progress: 0 })
+  emitEvent({
+    type: 'queue-update',
+    data: { taskId: id, songName: task.songName, status: 'downloading', progress: 0, sourceId: task.sourceId },
+    timestamp: new Date().toISOString(),
+  })
+
+  // Fire-and-forget
+  ;(async () => {
     try {
-      const result = await processor(t, onProgress)
+      const result = await processor(task, (pct, phase) => {
+        updateTaskState(id, { progress: pct, status: phase || 'downloading' })
+        emitEvent({
+          type: 'queue-update',
+          data: { taskId: id, songName: task.songName, status: phase || 'downloading', progress: pct, sourceId: task.sourceId },
+          timestamp: new Date().toISOString(),
+        })
+      })
+
+      // Tag-writing failures must not silently pass as "done"
+      if (result.ops?.tags === 'failed') {
+        throw new Error(`标签写入失败: ${task.songName}`)
+      }
+
+      updateTaskState(id, { status: 'done', progress: 100, filePath: result.filePath, fileType: result.fileType, error: undefined })
+      emitEvent({
+        type: 'queue-update',
+        data: { taskId: id, songName: task.songName, status: 'done', progress: 100, sourceId: task.sourceId },
+        timestamp: new Date().toISOString(),
+      })
       appendLog(dataDir, {
         level: 'info',
-        message: `[重试] 下载成功: ${t.songName} - ${t.artist} → ${result.filePath}`,
+        message: `[重试] 下载成功: ${task.songName} - ${task.artist} → ${result.filePath}`,
         stage: 'download',
       }, retentionDays)
-      return result
     } catch (err) {
       const msg = err instanceof Error ? err.message : '下载失败'
+      updateTaskState(id, { status: 'failed', error: msg, progress: 0 })
+      emitEvent({
+        type: 'queue-update',
+        data: { taskId: id, songName: task.songName, status: 'failed', error: msg, sourceId: task.sourceId },
+        timestamp: new Date().toISOString(),
+      })
       appendLog(dataDir, {
         level: 'error',
-        message: `[重试] 下载失败: ${t.songName} - ${t.artist}`,
+        message: `[重试] 下载失败: ${task.songName} - ${task.artist}`,
         detail: msg,
         stage: 'download',
       }, retentionDays)
-      throw err
     }
-  }).catch(() => { /* errors reported via SSE */ })
+  })()
 
   return success({ retried: true }, '重试已启动')
 })

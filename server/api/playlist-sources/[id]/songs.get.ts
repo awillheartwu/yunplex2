@@ -1,6 +1,6 @@
 import { success, fail } from '../../../lib/response'
 import { getSource } from '../../../lib/playlist/store'
-import { getDb } from '../../../lib/db'
+import { getRun } from '../../../lib/run/store'
 
 interface JobSong {
   id: string
@@ -19,15 +19,10 @@ export default defineEventHandler((event) => {
   if (!source) return fail('歌单源不存在')
   if (!source.lastJobId) return success([])
 
-  const jobRow = getDb().prepare('SELECT data FROM jobs WHERE id = ?').get(source.lastJobId) as { data: string } | undefined
-  if (!jobRow) return success([])
+  const run = getRun(source.lastJobId)
+  if (!run) return success([])
 
-  try {
-    const data = JSON.parse(jobRow.data)
-    const songs: JobSong[] = data.songs || []
-    const filtered = songs.filter((s) => !s.sourceId || s.sourceId === id)
-    return success(filtered)
-  } catch {
-    return success([])
-  }
+  const songs: JobSong[] = run.songs || []
+  const filtered = songs.filter((s) => !s.sourceId || s.sourceId === id)
+  return success(filtered)
 })

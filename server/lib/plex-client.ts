@@ -1,14 +1,21 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
-import { stripPunct, s2t, normalizeForSearch } from './sync/matchers'
-import { getArtistAliases } from './netease'
+import { stripPunct, s2t, t2s, normalizeForSearch, titleIdentityDescriptorsCompatible } from './sync/matchers'
+import { isArtistNameMatch } from './sync/artist-match'
 
-interface PlexTrack {
+export interface PlexTrack {
   ratingKey: string
   title: string
   grandparentTitle: string
   parentTitle: string
+  thumb?: string
+  addedAt?: number | string
   playlistItemID?: number
+  Media?: Array<{
+    Part?: Array<{
+      file?: string
+    }>
+  }>
 }
 
 /** Strip punctuation, spaces, and special chars for fuzzy title comparison */
@@ -66,6 +73,22 @@ export async function getPlaylistByRatingKey(ratingKey: string): Promise<{ title
     if (!raw) return null
     const item = Array.isArray(raw) ? raw[0] : raw
     return item ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function getPlaylistUpdatedAt(ratingKey: string): Promise<number | null> {
+  if (!client) throw new Error('Plex client not initialized')
+  try {
+    const res = (await client.query(`/playlists/${ratingKey}`)) as {
+      MediaContainer?: { Metadata?: Array<{ updatedAt?: number | string }> | { updatedAt?: number | string } }
+    }
+    const raw = res.MediaContainer?.Metadata
+    const item = Array.isArray(raw) ? raw[0] : raw
+    if (!item?.updatedAt) return null
+    const value = typeof item.updatedAt === 'string' ? parseInt(item.updatedAt, 10) : item.updatedAt
+    return Number.isFinite(value) ? value : null
   } catch {
     return null
   }
@@ -134,10 +157,21 @@ export async function getSectionTrackCount(sectionKey: string): Promise<number> 
   return (res as { MediaContainer?: { totalSize?: number } }).MediaContainer?.totalSize ?? 0
 }
 
+export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Promise<PlexTrack[]> {
+  if (!client) throw new Error('Plex client not initialized')
+  const size = Math.min(Math.max(limit, 1), 100)
+  const res = (await client.query(
+    `/library/sections/${sectionKey}/recentlyAdded?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=${size}`,
+  )) as {
+    MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
+  }
+  return extractMetadata(res).slice(0, size)
+}
+
 export async function searchTrack(
   sectionKey: string,
   songName: string,
-  artist: string,
+  artistCandidates: string[],
   album: string,
 ): Promise<PlexTrack | null> {
   if (!client) throw new Error('Plex client not initialized')
@@ -150,50 +184,80 @@ export async function searchTrack(
   const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, " ").replace(/\\s+/g, " ").trim()
   const searchTitle = normalizeForSearch(songName)
 
-  // ── Strategy A: search by artist (most reliable — title search often misses) ──
-  const artistRes = await client.query(
-    `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(artist)}`,
-  )
-  const artistTracks = extractMetadata(artistRes)
-  if (artistTracks.length) {
-    const match = findMatch(artistTracks, songName, coreTitle, cleanTitle, artist, album)
-    if (match) return match
+  // ── Strategy A: search by every artist candidate (most reliable) ──
+  for (const candidate of artistCandidates) {
+    const artistRes = await client.query(
+      `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(candidate)}`,
+    )
+    const artistTracks = extractMetadata(artistRes)
+    if (artistTracks.length) {
+      const match = findMatch(artistTracks, songName, coreTitle, cleanTitle, artistCandidates, album)
+      if (match) return match
+    }
   }
 
-  // ── Strategy B: title-based search as fallback ──
+  // ── Strategy B: title-based search with candidate artist matching ──
   const titles = [...new Set([songName, coreTitle, cleanTitle, searchTitle].filter(Boolean))]
-  for (const searchTitle of titles) {
+  for (const t of titles) {
     const res = await client.query(
-      `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(searchTitle)}`,
+      `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(t)}`,
     )
     const tracks = extractMetadata(res)
-    const match = findMatch(tracks, songName, coreTitle, cleanTitle, artist, album)
+    const match = findMatch(tracks, songName, coreTitle, cleanTitle, artistCandidates, album)
     if (match) return match
-  }
-
-  // ── Fallback: search with original artist name (before alias) ──
-  const { aliases } = getArtistAliases()
-  if (Object.keys(aliases).length > 0) {
-    const reverseMap = new Map<string, string[]>()
-    for (const [orig, alias] of Object.entries(aliases)) {
-      const list = reverseMap.get(alias) || []
-      list.push(orig)
-      reverseMap.set(alias, list)
-    }
-    const originalArtists = reverseMap.get(artist)
-    if (originalArtists) {
-      for (const origArtist of originalArtists) {
-        const origRes = await client.query(
-          `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(origArtist)}`,
-        )
-        const origTracks = extractMetadata(origRes)
-        const match = findMatch(origTracks, songName, coreTitle, cleanTitle, origArtist, album)
-        if (match) return match
-      }
-    }
   }
 
   return null
+}
+
+export async function searchTracksByTitle(sectionKey: string, songName: string): Promise<PlexTrack[]> {
+  if (!client) throw new Error('Plex client not initialized')
+
+  const coreTitle = songName
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s*\[[^\]]*\]\s*/g, ' ')
+    .trim()
+  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, ' ').replace(/\\s+/g, ' ').trim()
+  const searchTitle = normalizeForSearch(songName)
+  const traditionalTitle = s2t(songName)
+  const simplifiedTitle = t2s(songName)
+
+  const titles = [...new Set([songName, coreTitle, cleanTitle, searchTitle, traditionalTitle, simplifiedTitle].filter(Boolean))]
+  const seen = new Set<string>()
+  const matches: PlexTrack[] = []
+
+  for (const title of titles) {
+    const res = await client.query(
+      `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(title)}`,
+    )
+    for (const track of extractMetadata(res)) {
+      if (seen.has(track.ratingKey)) continue
+      seen.add(track.ratingKey)
+      matches.push(track)
+    }
+  }
+
+  return matches
+}
+
+export async function searchTracksByArtists(sectionKey: string, artistCandidates: string[]): Promise<PlexTrack[]> {
+  if (!client) throw new Error('Plex client not initialized')
+
+  const seen = new Set<string>()
+  const matches: PlexTrack[] = []
+
+  for (const artist of [...new Set(artistCandidates.map((value) => value.trim()).filter(Boolean))]) {
+    const res = await client.query(
+      `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(artist)}`,
+    )
+    for (const track of extractMetadata(res)) {
+      if (seen.has(track.ratingKey)) continue
+      seen.add(track.ratingKey)
+      matches.push(track)
+    }
+  }
+
+  return matches
 }
 
 function extractMetadata(res: Record<string, unknown>): PlexTrack[] {
@@ -207,57 +271,62 @@ function findMatch(
   songName: string,
   coreTitle: string,
   cleanTitle: string,
-  artist: string,
+  artistCandidates: string[],
   album: string,
 ): PlexTrack | null {
   if (!results.length) return null
 
-  // 1) Exact triple match
+  // 1) Exact triple match — title + any candidate artist + album
   const exact = results.find(
     (item) =>
-      item.title.toLowerCase() === songName.toLowerCase() &&
-      item.grandparentTitle.toLowerCase() === artist.toLowerCase() &&
-      item.parentTitle.toLowerCase() === album.toLowerCase(),
+      titleVariantsMatch(item.title, songName) &&
+      artistCandidates.some((c) => item.grandparentTitle.toLowerCase() === c.toLowerCase()) &&
+      titleVariantsMatch(item.parentTitle, album),
   )
   if (exact) return exact
 
-  // 2) Relaxed: stripped title + artist (album optional — Netease/Plex often disagree)
-  const songStripped = stripTitle(coreTitle)
+  // 2) Relaxed: stripped title + candidate artist match
+  const songStripped = buildTitleMatchVariants(coreTitle)
   const relaxed = results.find((item) => {
-    const pt = stripTitle(item.title)
-    const titleMatch = pt === songStripped || pt.includes(songStripped) || songStripped.includes(pt)
-    const artistMatch =
-      item.grandparentTitle.toLowerCase() === artist.toLowerCase() ||
-      item.grandparentTitle.toLowerCase().includes(artist.toLowerCase()) ||
-      artist.toLowerCase().includes(item.grandparentTitle.toLowerCase())
+    const pt = buildTitleMatchVariants(item.title)
+    const titleMatch = pt.some((variant) => songStripped.some((candidate) => variant === candidate || variant.includes(candidate) || candidate.includes(variant)))
+    const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, c))
     return titleMatch && artistMatch
   })
   if (relaxed) return relaxed
 
-  // 3) Relaxed with s2t conversion — handles simplified vs traditional Chinese
-  // (e.g. Netease "苦难精算师" vs Plex "苦難精算師", "草东" vs "草東")
+  // 3) s2t conversion: try simplified→traditional for each candidate
   const tCoreTitle = s2t(coreTitle)
-  const tArtist = s2t(artist)
-  const needS2t = tCoreTitle !== coreTitle || tArtist !== artist
+  const needS2t = artistCandidates.some((c) => {
+    const tc = s2t(c)
+    return tc !== c || tCoreTitle !== coreTitle
+  })
   if (needS2t) {
-    const tStripped = stripTitle(tCoreTitle)
-    const tArtistLower = tArtist.toLowerCase()
+    const tStripped = buildTitleMatchVariants(tCoreTitle)
     const s2tMatch = results.find((item) => {
-      const pt = stripTitle(item.title)
-      const titleMatch = pt === tStripped || pt.includes(tStripped) || tStripped.includes(pt)
-      const artistMatch =
-        item.grandparentTitle.toLowerCase() === tArtistLower ||
-        item.grandparentTitle.toLowerCase().includes(tArtistLower) ||
-        tArtistLower.includes(item.grandparentTitle.toLowerCase())
+      const pt = buildTitleMatchVariants(item.title)
+      const titleMatch = pt.some((variant) => tStripped.some((candidate) => variant === candidate || variant.includes(candidate) || candidate.includes(variant)))
+      const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, s2t(c)))
       return titleMatch && artistMatch
     })
     if (s2tMatch) return s2tMatch
   }
 
-  // NOTE: no pure-title fallback — the relaxed + s2t artist check above covers
-  // artist name variations and Chinese character variants. Matching by title
-  // alone causes false positives (e.g. "The Weeknd - Secrets" vs "OneRepublic - Secrets").
   return null
+}
+
+export function buildTitleMatchVariants(input: string): string[] {
+  const variants = [input, s2t(input), t2s(input)]
+    .map((value) => stripTitle(normalizeForSearch(value)))
+    .filter(Boolean)
+  return [...new Set(variants)]
+}
+
+export function titleVariantsMatch(left: string, right: string): boolean {
+  if (!titleIdentityDescriptorsCompatible(left, right)) return false
+  const leftVariants = buildTitleMatchVariants(left)
+  const rightVariants = buildTitleMatchVariants(right)
+  return leftVariants.some((leftVariant) => rightVariants.some((rightVariant) => leftVariant === rightVariant))
 }
 
 export async function insertTrackIntoPlaylist(
@@ -316,6 +385,11 @@ export async function getTrackByRatingKey(ratingKey: string): Promise<PlexTrack 
   } catch {
     return null
   }
+}
+
+export async function getTrackFilePathByRatingKey(ratingKey: string): Promise<string | null> {
+  const track = await getTrackByRatingKey(ratingKey)
+  return track?.Media?.[0]?.Part?.[0]?.file ?? null
 }
 
 export async function removeTrackFromPlaylist(

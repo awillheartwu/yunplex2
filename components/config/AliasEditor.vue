@@ -35,11 +35,10 @@
         <button
           class="w-7 h-7 flex items-center justify-center rounded text-muted-deep hover:text-danger hover:bg-[var(--danger-bg)] transition-colors"
           title="删除映射"
+          type="button"
           @click="removeRow(i)"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" />
-          </svg>
+          <AppIcon name="trash" :size="14" />
         </button>
       </div>
 
@@ -52,15 +51,16 @@
       <!-- Add button -->
       <div class="px-3 py-2 border-t border-[var(--border-primary)] bg-[var(--bg-surface)]">
         <button class="text-xs text-accent hover:underline flex items-center gap-1" @click="addRow">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10" /></svg>
+          <AppIcon name="plus" :size="12" />
           添加映射
         </button>
       </div>
     </div>
 
     <!-- Duplicate key warning -->
-    <p v-if="duplicateKeys.size > 0 && !jsonExpanded" class="text-2xs text-warning mt-1">
-      ⚠ 以下名称重复出现，保存时将使用最后一行的值：{{ [...duplicateKeys].join('、') }}
+    <p v-if="duplicateKeys.size > 0 && !jsonExpanded" class="mt-1 inline-flex items-center gap-1 text-2xs text-warning">
+      <AppIcon name="warn" :size="12" />
+      以下名称重复出现，保存时将使用最后一行的值：{{ [...duplicateKeys].join('、') }}
     </p>
 
     <!-- ═══ JSON editor toggle ═══ -->
@@ -68,13 +68,7 @@
       class="text-2xs text-muted hover:text-[var(--text-primary)] mt-2 flex items-center gap-1 transition-colors"
       @click="toggleJson"
     >
-      <svg
-        width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
-        class="transition-transform"
-        :class="{ 'rotate-90': jsonExpanded }"
-      >
-        <path d="M3 1l4 4-4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <AppIcon name="chevronRight" :size="10" class="transition-transform" :class="{ 'rotate-90': jsonExpanded }" />
       高级 JSON 编辑器
     </button>
 

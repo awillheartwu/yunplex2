@@ -3,12 +3,64 @@ import type { PlaylistSource, PlaylistSourceRow } from './types'
 import { rowToSource } from './types'
 import { randomUUID } from 'node:crypto'
 
-export function listSources(enabledOnly = false): PlaylistSource[] {
+export interface PlaylistSourceFilter {
+  search?: string
+  type?: 'playlist' | 'album'
+  enabled?: boolean
+  subscribed?: boolean
+  lastStatus?: PlaylistSource['lastStatus']
+  hasIgnored?: boolean
+  hasCopyright?: boolean
+}
+
+function sourceHasDataCondition(column: string, hasData: boolean): string {
+  const nonEmpty = `${column} IS NOT NULL AND TRIM(${column}) != '' AND TRIM(${column}) != '[]'`
+  return hasData ? `(${nonEmpty})` : `NOT (${nonEmpty})`
+}
+
+export function listSources(filter: boolean | PlaylistSourceFilter = false): PlaylistSource[] {
   const db = getDb()
-  const sql = enabledOnly
-    ? 'SELECT * FROM playlist_sources WHERE enabled = 1 ORDER BY sort_order ASC, created_at ASC'
-    : 'SELECT * FROM playlist_sources ORDER BY sort_order ASC, created_at ASC'
-  const rows = db.prepare(sql).all() as PlaylistSourceRow[]
+  const normalized: PlaylistSourceFilter = typeof filter === 'boolean' ? { enabled: filter || undefined } : filter
+  const conditions: string[] = []
+  const params: unknown[] = []
+
+  const search = normalized.search?.trim()
+  if (search) {
+    const q = `%${search.toLowerCase()}%`
+    conditions.push(`(
+      LOWER(name) LIKE ?
+      OR LOWER(netease_playlist_name) LIKE ?
+      OR LOWER(plex_playlist_name) LIKE ?
+      OR CAST(netease_playlist_id AS TEXT) LIKE ?
+      OR LOWER(id) LIKE ?
+    )`)
+    params.push(q, q, q, `%${search}%`, q)
+  }
+  if (normalized.type) {
+    conditions.push('type = ?')
+    params.push(normalized.type)
+  }
+  if (normalized.enabled !== undefined) {
+    conditions.push('enabled = ?')
+    params.push(normalized.enabled ? 1 : 0)
+  }
+  if (normalized.subscribed !== undefined) {
+    conditions.push('subscribed = ?')
+    params.push(normalized.subscribed ? 1 : 0)
+  }
+  if (normalized.lastStatus) {
+    conditions.push('last_status = ?')
+    params.push(normalized.lastStatus)
+  }
+  if (normalized.hasIgnored !== undefined) {
+    conditions.push(sourceHasDataCondition('ignored_failure_ids', normalized.hasIgnored))
+  }
+  if (normalized.hasCopyright !== undefined) {
+    conditions.push(sourceHasDataCondition('copyright_restricted_ids', normalized.hasCopyright))
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = db.prepare(`SELECT * FROM playlist_sources ${where} ORDER BY sort_order ASC, created_at ASC`).all(...params) as PlaylistSourceRow[]
   return rows.map(rowToSource)
 }
 
@@ -25,7 +77,7 @@ export function getEnabledSources(): PlaylistSource[] {
 export async function createSource(
   neteasePlaylistId: number,
   _cookie: string,
-  opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; trackCount?: number; name?: string; artist?: string },
+  opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; trackCount?: number; name?: string; artist?: string; coverUrl?: string },
 ): Promise<PlaylistSource> {
   const isAlbum = opts?.type === 'album'
   const neName = isAlbum
@@ -38,9 +90,9 @@ export async function createSource(
   const maxOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM playlist_sources').get() as { mx: number }).mx
 
   db.prepare(`
-    INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
-  `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, isAlbum ? 0 : 1, neName || '', opts?.trackCount || 0, maxOrder + 1, now, now)
+    INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, cover_url, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
+  `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, isAlbum ? 0 : 1, opts?.coverUrl || '', neName || '', opts?.trackCount || 0, maxOrder + 1, now, now)
 
   return getSource(id)!
 }
@@ -49,6 +101,7 @@ export function updateSource(id: string, partial: Partial<{
   name: string
   neteasePlaylistName: string
   enabled: boolean
+  coverUrl: string
   plexPlaylistName: string
   plexPlaylistRatingKey: string
   syncLimit: number | null
@@ -79,6 +132,7 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.name !== undefined) { sets.push('name = ?'); vals.push(partial.name) }
   if (partial.neteasePlaylistName !== undefined) { sets.push('netease_playlist_name = ?'); vals.push(partial.neteasePlaylistName) }
   if (partial.enabled !== undefined) { sets.push('enabled = ?'); vals.push(partial.enabled ? 1 : 0) }
+  if (partial.coverUrl !== undefined) { sets.push('cover_url = ?'); vals.push(partial.coverUrl) }
   if (partial.plexPlaylistName !== undefined) { sets.push('plex_playlist_name = ?'); vals.push(partial.plexPlaylistName) }
   if (partial.plexPlaylistRatingKey !== undefined) { sets.push('plex_playlist_rating_key = ?'); vals.push(partial.plexPlaylistRatingKey) }
   if (partial.syncLimit !== undefined) { sets.push('sync_limit = ?'); vals.push(partial.syncLimit) }

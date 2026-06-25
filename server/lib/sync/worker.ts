@@ -11,7 +11,7 @@ let worker: WorkerHandle | null = null
 
 interface SyncServiceHandle {
   getState: () => SyncState
-  runSync: (options?: { dryRun?: boolean }) => Promise<SyncState>
+  runSync: (options?: { dryRun?: boolean; trigger?: 'schedule' }) => Promise<SyncState>
   cancelSync: () => boolean
 }
 
@@ -40,7 +40,7 @@ export function startWorker(
       const state = syncService.getState()
       if (state.isRunning) return
       try {
-        await syncService.runSync()
+        await syncService.runSync({ trigger: 'schedule' })
       } catch {
         // Errors are logged inside runSync
       }

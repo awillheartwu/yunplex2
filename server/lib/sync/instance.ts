@@ -4,6 +4,11 @@ import type { startWorker } from './worker'
 let syncService: ReturnType<typeof getSyncService> | null = null
 let syncWorker: ReturnType<typeof startWorker> | null = null
 
+// Global repair mutex — prevents sync/repair from running concurrently
+let repairRunning = false
+export function isRepairRunning() { return repairRunning }
+export function setRepairRunning(v: boolean) { repairRunning = v }
+
 export function setSyncService(s: ReturnType<typeof getSyncService>) {
   syncService = s
 }

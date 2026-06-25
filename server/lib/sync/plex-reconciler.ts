@@ -1,6 +1,6 @@
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
-import type { JobBuilder } from '../job/builder'
+import type { RunBuilder } from '../run/builder'
 import type { PlaylistSource } from '../playlist/types'
 import type { TrackResolution } from './types'
 import {
@@ -9,11 +9,11 @@ import {
   getPlaylistByRatingKey,
   createPlaylist,
   refreshLibrary,
-  searchTrack,
   getSectionKey,
 } from '../plex-client'
 import { resolveTracks } from './lookup'
 import { applyFullReorder } from './reorder'
+import { matchTrackInPlexWithRetry, type PlexMatchResult } from './plex-match'
 
 interface PlexPlaylist {
   ratingKey: string
@@ -40,7 +40,7 @@ export async function reconcileSource(
   source: PlaylistSource,
   yunSongs: NeteaseSong[],
   cfg: AppConfig,
-  job: JobBuilder,
+  job: RunBuilder,
   splitArtists: (artists: { name: string }[]) => [string, string],
   _cancelRequested: () => boolean,
   _log: (level: string, msg: string) => void,
@@ -74,8 +74,7 @@ export async function reconcileSource(
     yunSongs,
     skipPlexPlaylist ? '' : plexPlaylist!.ratingKey,
     sectionKey,
-    cfg.download.dir,
-    splitArtists,
+    cfg,
   )
 
   const newCount = resolutions.filter((r) =>
@@ -85,11 +84,25 @@ export async function reconcileSource(
   const unavailableCount = resolutions.filter((r) => r.resolution === 'unavailable').length
 
   const isAlbum = source.type === 'album'
+  const stepContext = {
+    sourceId: source.id,
+    sourceName: source.neteasePlaylistName || source.name,
+    sourceType: source.type,
+    playlistName: source.neteasePlaylistName || source.name,
+    plexPlaylistName: plexPlaylist?.title || source.plexPlaylistName || source.neteasePlaylistName || source.name,
+    plexPlaylistRatingKey: plexPlaylist?.ratingKey || source.plexPlaylistRatingKey || undefined,
+    neteasePlaylistId: source.neteasePlaylistId,
+    sectionKey,
+  }
   const parts = [`待下载 ${newCount} 首${existingCount > 0 ? `，已存在 ${existingCount} 首` : ''}`]
   if (extraTracks.length > 0) parts.push(`${extraTracks.length} 首待清理`)
   if (unavailableCount > 0) parts.push(`${unavailableCount} 首不可用`)
   job.finishStep(
-    job.startStep('compare', isAlbum ? (skipPlexPlaylist ? '分析专辑曲目' : '对比 Plex 歌单') : '对比 Plex 歌单'),
+    job.startStep(
+      'compare',
+      isAlbum ? (skipPlexPlaylist ? '分析专辑曲目' : '对比 Plex 歌单') : '对比 Plex 歌单',
+      { context: stepContext },
+    ),
     'success',
     parts.join('，'),
   )
@@ -118,18 +131,38 @@ export async function triggerRescan(sectionKey: string): Promise<void> {
 export async function findTrackWithRetry(
   sectionKey: string,
   song: NeteaseSong,
-  albumArtist: string,
+  cfg: AppConfig,
+  expectedLocalPath: string | null | undefined,
   maxRetries = 5,
   delayMs = 15000,
 ): Promise<string | null> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, delayMs))
-    }
-    const found = await searchTrack(sectionKey, song.name, albumArtist, song.album.name)
-    if (found) return found.ratingKey
-  }
-  return null
+  const result = await findTrackWithRetryDetailed(
+    sectionKey,
+    song,
+    cfg,
+    expectedLocalPath,
+    maxRetries,
+    delayMs,
+  )
+  return result.ratingKey
+}
+
+export async function findTrackWithRetryDetailed(
+  sectionKey: string,
+  song: NeteaseSong,
+  cfg: AppConfig,
+  expectedLocalPath: string | null | undefined,
+  maxRetries = 5,
+  delayMs = 15000,
+): Promise<PlexMatchResult> {
+  return matchTrackInPlexWithRetry(
+    sectionKey,
+    song,
+    cfg,
+    expectedLocalPath,
+    maxRetries,
+    delayMs,
+  )
 }
 
 export { applyFullReorder }

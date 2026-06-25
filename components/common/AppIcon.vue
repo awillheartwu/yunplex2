@@ -1,0 +1,100 @@
+<template>
+  <component
+    :is="iconComponent"
+    :aria-hidden="decorative ? 'true' : undefined"
+    :aria-label="decorative ? undefined : label"
+    :size="size"
+    :stroke-width="strokeWidth"
+    class="app-icon"
+  />
+</template>
+
+<script setup lang="ts">
+import * as Lucide from '@lucide/vue'
+import { computed } from 'vue'
+
+const props = withDefaults(defineProps<{
+  name: string
+  label?: string
+  size?: number | string
+  strokeWidth?: number | string
+  decorative?: boolean
+}>(), {
+  label: '',
+  size: 18,
+  strokeWidth: 1.8,
+  decorative: true,
+})
+
+const iconMap: Record<string, keyof typeof Lucide> = {
+  activity: 'Activity',
+  album: 'Album',
+  alert: 'AlertTriangle',
+  archive: 'Archive',
+  arrowLeft: 'ArrowLeft',
+  arrowRight: 'ArrowRight',
+  calendar: 'CalendarDays',
+  check: 'Check',
+  checkCircle: 'CircleCheck',
+  chevronDown: 'ChevronDown',
+  chevronLeft: 'ChevronLeft',
+  chevronRight: 'ChevronRight',
+  chevronsDown: 'ChevronsDown',
+  chevronsUp: 'ChevronsUp',
+  clock: 'Clock3',
+  close: 'X',
+  database: 'Database',
+  dashboard: 'LayoutDashboard',
+  download: 'Download',
+  edit: 'Pencil',
+  existing: 'CircleMinus',
+  external: 'ExternalLink',
+  failure: 'CircleX',
+  filter: 'SlidersHorizontal',
+  folder: 'Folder',
+  github: 'GitBranch',
+  grip: 'GripVertical',
+  importExport: 'ArrowDownUp',
+  info: 'Info',
+  ignored: 'CircleOff',
+  keyboard: 'Keyboard',
+  list: 'List',
+  listCollapse: 'ListCollapse',
+  logs: 'ScrollText',
+  loader: 'LoaderCircle',
+  menu: 'Menu',
+  minus: 'Minus',
+  minusCircle: 'CircleMinus',
+  more: 'MoreHorizontal',
+  moon: 'Moon',
+  music: 'Music',
+  pause: 'Pause',
+  play: 'Play',
+  plus: 'Plus',
+  refresh: 'RefreshCw',
+  repair: 'Wrench',
+  rotateCcw: 'RotateCcw',
+  save: 'Save',
+  search: 'Search',
+  settings: 'Settings',
+  shield: 'Shield',
+  source: 'ListMusic',
+  stop: 'Square',
+  sun: 'Sun',
+  sync: 'RefreshCw',
+  trash: 'Trash2',
+  upload: 'Upload',
+  user: 'User',
+  warn: 'TriangleAlert',
+  x: 'X',
+}
+
+const normalizedName = computed(() => props.name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()))
+
+const iconComponent = computed(() => {
+  const mapped = iconMap[normalizedName.value] ?? iconMap[props.name]
+  return mapped ? Lucide[mapped] : Lucide.CircleHelp
+})
+
+const label = computed(() => props.label || props.name)
+</script>

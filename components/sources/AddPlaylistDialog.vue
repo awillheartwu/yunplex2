@@ -1,20 +1,18 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)" @click.self="$emit('update:visible', false)">
-      <div class="w-[520px] max-h-[80vh] max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
+    <div v-if="visible" class="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="$emit('update:visible', false)">
+      <div class="flex max-h-[90vh] w-full max-w-[34rem] flex-col overflow-hidden rounded-xl border shadow-xl" style="background:var(--bg-surface);border-color:var(--border-primary)">
         <!-- Header with type tabs -->
         <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-bottom:1px solid var(--border-primary)">
-          <div class="flex items-center gap-1">
-            <button
+          <div class="flex items-center gap-1.5">
+            <FilterChip
               v-for="t in typeTabs" :key="t.key"
-              class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
-              :class="dialogType === t.key
-                ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
-                : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
+              :active="dialogType === t.key"
               @click="switchType(t.key)"
-            >{{ t.label }}</button>
+            >{{ t.label }}</FilterChip>
           </div>
           <button class="btn btn-ghost text-xs" :disabled="loading" @click="() => dialogType === 'playlist' ? fetchList(true) : fetchAlbums()">
+            <AppIcon :name="loading ? 'loader' : 'refresh'" :size="14" :class="loading ? 'animate-spin' : ''" />
             {{ dialogType === 'playlist' ? '刷新歌单' : '刷新专辑' }}
           </button>
         </div>
@@ -25,10 +23,24 @@
           <!-- Playlist tab -->
           <template v-else-if="dialogType === 'playlist'">
             <div class="overflow-y-auto flex-1 px-4 py-2 space-y-3">
-              <input v-model="search" type="text" placeholder="搜索歌单..." class="form-input w-full text-xs" />
+              <FilterBar
+                :search="search"
+                placeholder="搜索歌单名、创建者或 ID"
+                :active-count="playlistDialogActiveCount"
+                :can-clear="playlistDialogCanClear"
+                @update:search="search = $event"
+                @clear="clearPlaylistDialogFilters"
+              >
+                <template #filters>
+                  <FilterChip :active="playlistScope === 'all'" @click="playlistScope = 'all'">全部歌单</FilterChip>
+                  <FilterChip :active="playlistScope === 'created'" @click="playlistScope = 'created'">我创建的</FilterChip>
+                  <FilterChip :active="playlistScope === 'subscribed'" @click="playlistScope = 'subscribed'">收藏的</FilterChip>
+                  <FilterChip :active="hideAdded" @click="hideAdded = !hideAdded">仅未添加</FilterChip>
+                </template>
+              </FilterBar>
               <template v-if="created.length > 0">
                 <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--accent)" @click="createdCollapsed = !createdCollapsed">
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" class="transition-transform shrink-0" :class="createdCollapsed ? '' : 'rotate-90'"><path d="M6 3l5 5-5 5" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <AppIcon name="chevronRight" :size="10" class="transition-transform shrink-0" :class="createdCollapsed ? '' : 'rotate-90'" />
                   <span class="text-xs font-semibold" style="color:var(--text-primary)">我创建的</span>
                   <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:var(--accent-glow);color:var(--accent)">{{ created.length }}</span>
                 </div>
@@ -36,7 +48,7 @@
                   <label v-for="p in created" :key="p.id" class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border" :style="{ borderColor: isAdded(p.id) ? 'var(--border-primary)' : 'transparent', background: selectedIds.includes(p.id) ? 'var(--accent-glow)' : 'transparent' }" :class="isAdded(p.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'">
                     <input v-model="selectedIds" type="checkbox" :value="p.id" :disabled="isAdded(p.id)" class="shrink-0 rounded" />
                     <img v-if="p.coverImgUrl" :src="`${p.coverImgUrl}?param=60y60`" class="w-10 h-10 rounded-lg object-cover shrink-0" />
-                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><AppIcon name="music" :size="16" class="text-muted-deep" /></div>
                     <div class="flex-1 min-w-0"><p class="text-sm truncate" style="color:var(--text-primary)">{{ p.name }}</p><p class="text-2xs text-muted-deep mt-0.5">{{ p.trackCount }} 首{{ p.creator?.nickname ? ' · ' + p.creator.nickname : '' }}</p></div>
                     <span v-if="isAdded(p.id)" class="text-2xs px-2 py-0.5 rounded text-muted-deep shrink-0" style="background:var(--bg-input)">已添加</span>
                   </label>
@@ -44,7 +56,7 @@
               </template>
               <template v-if="subscribed.length > 0">
                 <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--success,#22c55e)" @click="subscribedCollapsed = !subscribedCollapsed">
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" class="transition-transform shrink-0" :class="subscribedCollapsed ? '' : 'rotate-90'"><path d="M6 3l5 5-5 5" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <AppIcon name="chevronRight" :size="10" class="transition-transform shrink-0" :class="subscribedCollapsed ? '' : 'rotate-90'" />
                   <span class="text-xs font-semibold" style="color:var(--text-primary)">收藏的歌单</span>
                   <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e)">{{ subscribed.length }}</span>
                 </div>
@@ -52,7 +64,7 @@
                   <label v-for="p in subscribed" :key="p.id" class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border" :style="{ borderColor: isAdded(p.id) ? 'var(--border-primary)' : 'transparent', background: selectedIds.includes(p.id) ? 'var(--accent-glow)' : 'transparent' }" :class="isAdded(p.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'">
                     <input v-model="selectedIds" type="checkbox" :value="p.id" :disabled="isAdded(p.id)" class="shrink-0 rounded" />
                     <img v-if="p.coverImgUrl" :src="`${p.coverImgUrl}?param=60y60`" class="w-10 h-10 rounded-lg object-cover shrink-0" />
-                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><AppIcon name="music" :size="16" class="text-muted-deep" /></div>
                     <div class="flex-1 min-w-0"><p class="text-sm truncate" style="color:var(--text-primary)">{{ p.name }}</p><p class="text-2xs text-muted-deep mt-0.5">{{ p.trackCount }} 首{{ p.creator?.nickname ? ' · ' + p.creator.nickname : '' }}</p></div>
                     <span v-if="isAdded(p.id)" class="text-2xs px-2 py-0.5 rounded text-muted-deep shrink-0" style="background:var(--bg-input)">已添加</span>
                   </label>
@@ -67,13 +79,24 @@
           <!-- Album tab -->
           <template v-else>
             <div class="overflow-y-auto flex-1 px-4 py-2 space-y-3">
-              <input v-model="albumSearch" type="text" placeholder="搜索专辑..." class="form-input w-full text-xs" />
+              <FilterBar
+                :search="albumSearch"
+                placeholder="搜索专辑、艺人、ID 或年份"
+                :active-count="albumDialogActiveCount"
+                :can-clear="albumDialogCanClear"
+                @update:search="albumSearch = $event"
+                @clear="clearAlbumDialogFilters"
+              >
+                <template #filters>
+                  <FilterChip :active="albumHideAdded" @click="albumHideAdded = !albumHideAdded">仅未添加</FilterChip>
+                </template>
+              </FilterBar>
               <template v-if="filteredAlbums.length > 0">
                 <div class="space-y-0.5">
                   <label v-for="a in filteredAlbums" :key="a.id" class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border" :style="{ borderColor: isAdded(a.id) ? 'var(--border-primary)' : 'transparent', background: selectedIds.includes(a.id) ? 'var(--accent-glow)' : 'transparent' }" :class="isAdded(a.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'">
                     <input v-model="selectedIds" type="checkbox" :value="a.id" :disabled="isAdded(a.id)" class="shrink-0 rounded" />
                     <img v-if="a.picUrl" :src="`${a.picUrl}?param=60y60`" class="w-10 h-10 rounded-lg object-cover shrink-0" />
-                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/></svg></div>
+                    <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)"><AppIcon name="album" :size="16" class="text-muted-deep" /></div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm truncate" style="color:var(--text-primary)">{{ a.name }}</p>
                       <p class="text-2xs text-muted-deep mt-0.5">{{ a.size }} 首 · {{ a.artist?.name }} · {{ publishYear(a.publishTime) }}</p>
@@ -118,6 +141,8 @@
 </template>
 
 <script setup lang="ts">
+import { countActiveFilters } from '~~/composables/useFilterQuery'
+
 interface NeteasePlaylist {
   id: number; name: string; trackCount: number; playCount: number
   coverImgUrl: string; creator: { nickname: string; userId: number }; subscribed: boolean
@@ -145,6 +170,9 @@ function switchType(key: 'playlist' | 'album') {
   selectedIds.value = []
   search.value = ''
   manualId.value = ''
+  playlistScope.value = 'all'
+  hideAdded.value = false
+  albumHideAdded.value = false
   if (key === 'album') { fetchAlbums(); albumSearch.value = '' }
 }
 
@@ -163,16 +191,37 @@ const list = ref<NeteasePlaylist[]>([])
 const offset = ref(0)
 const hasMore = ref(true)
 const search = ref('')
+const playlistScope = ref<'all' | 'created' | 'subscribed'>('all')
+const hideAdded = ref(false)
 const createdCollapsed = ref(false)
 const subscribedCollapsed = ref(false)
 
 const filtered = computed(() => {
-  if (!search.value) return list.value
-  const q = search.value.toLowerCase()
-  return list.value.filter(p => p.name.toLowerCase().includes(q) || p.creator?.nickname?.toLowerCase().includes(q))
+  const q = search.value.trim().toLowerCase()
+  return list.value.filter((p) => {
+    if (playlistScope.value === 'created' && p.subscribed) return false
+    if (playlistScope.value === 'subscribed' && !p.subscribed) return false
+    if (hideAdded.value && isAdded(p.id)) return false
+    if (!q) return true
+    return p.name.toLowerCase().includes(q)
+      || p.creator?.nickname?.toLowerCase().includes(q)
+      || String(p.id).includes(q)
+  })
 })
 const created = computed(() => filtered.value.filter(p => !p.subscribed))
 const subscribed = computed(() => filtered.value.filter(p => p.subscribed))
+const playlistDialogActiveCount = computed(() => countActiveFilters({
+  search: search.value,
+  scope: playlistScope.value === 'all' ? '' : playlistScope.value,
+  hideAdded: hideAdded.value,
+}))
+const playlistDialogCanClear = computed(() => playlistDialogActiveCount.value > 0)
+
+function clearPlaylistDialogFilters() {
+  search.value = ''
+  playlistScope.value = 'all'
+  hideAdded.value = false
+}
 
 async function fetchList(reset = true) {
   if (reset) { loading.value = true; error.value = ''; offset.value = 0; hasMore.value = true }
@@ -198,11 +247,29 @@ async function loadMore() {
 // ── Album tab ──
 const albums = ref<AlbumItem[]>([])
 const albumSearch = ref('')
+const albumHideAdded = ref(false)
 const filteredAlbums = computed(() => {
-  if (!albumSearch.value) return albums.value
-  const q = albumSearch.value.toLowerCase()
-  return albums.value.filter(a => a.name.toLowerCase().includes(q) || a.artist?.name?.toLowerCase().includes(q))
+  const q = albumSearch.value.trim().toLowerCase()
+  return albums.value.filter((a) => {
+    if (albumHideAdded.value && isAdded(a.id)) return false
+    if (!q) return true
+    const year = publishYear(a.publishTime)
+    return a.name.toLowerCase().includes(q)
+      || a.artist?.name?.toLowerCase().includes(q)
+      || String(a.id).includes(q)
+      || year.includes(q)
+  })
 })
+const albumDialogActiveCount = computed(() => countActiveFilters({
+  search: albumSearch.value,
+  hideAdded: albumHideAdded.value,
+}))
+const albumDialogCanClear = computed(() => albumDialogActiveCount.value > 0)
+
+function clearAlbumDialogFilters() {
+  albumSearch.value = ''
+  albumHideAdded.value = false
+}
 
 async function fetchAlbums() {
   loading.value = true; error.value = ''
@@ -232,6 +299,7 @@ async function handleAddSelected() {
         neteasePlaylistId: pid,
         type: isAlbum ? 'album' : 'playlist',
         subscribed: playlist?.subscribed ?? false,
+        coverUrl: album?.picUrl || playlist?.coverImgUrl || undefined,
         ...(album ? { name: album.name, artist: album.artist?.name } : {}),
       })
     }
@@ -252,6 +320,7 @@ async function handleAddSingle() {
       neteasePlaylistId: id,
       type: isAlbum ? 'album' : 'playlist',
       subscribed: playlist?.subscribed ?? false,
+      coverUrl: playlist?.coverImgUrl || undefined,
     })
     emit('update:visible', false)
     if (isAlbum) emit('created-album')
@@ -260,6 +329,12 @@ async function handleAddSingle() {
 }
 
 watch(() => props.visible, (v) => {
-  if (v) { manualId.value = ''; selectedIds.value = []; fetchList(true) }
+  if (v) {
+    manualId.value = ''
+    selectedIds.value = []
+    clearPlaylistDialogFilters()
+    clearAlbumDialogFilters()
+    fetchList(true)
+  }
 })
 </script>

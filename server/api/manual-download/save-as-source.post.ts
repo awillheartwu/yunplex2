@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
     type: 'playlist' | 'album'
     name?: string
     trackCount?: number
+    coverUrl?: string
   }>(event)
 
   if (!body || !body.neteaseId) {
@@ -29,6 +30,7 @@ export default defineEventHandler(async (event) => {
       subscribed: false,
       trackCount: body.trackCount,
       name: body.name,
+      coverUrl: body.coverUrl,
     })
 
     return success(source, '已保存为同步源')

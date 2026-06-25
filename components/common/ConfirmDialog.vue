@@ -2,16 +2,31 @@
   <Teleport to="body">
     <div
       v-if="visible"
-      class="fixed inset-0 z-50 flex items-center justify-center"
-      style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)"
+      class="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      style="background:var(--bg-overlay);backdrop-filter:blur(8px)"
       @click.self="onCancel"
     >
-      <div class="section-card p-6 w-[420px] max-w-[90vw] shadow-lg" style="border-color:var(--border-secondary)">
-        <h3 class="text-sm font-semibold mb-2">{{ title }}</h3>
+      <div
+        class="section-card w-full max-w-[28rem] p-5 shadow-lg sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="title"
+        style="border-color:var(--border-secondary)"
+        @keydown.esc="onCancel"
+      >
+        <div class="mb-3 flex items-center gap-3">
+          <div
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            :style="variant === 'danger' ? 'background:var(--danger-soft);color:var(--danger)' : 'background:var(--accent-muted);color:var(--accent)'"
+          >
+            <AppIcon :name="variant === 'danger' ? 'warn' : 'info'" :size="20" />
+          </div>
+          <h3 class="text-sm font-semibold">{{ title }}</h3>
+        </div>
         <slot>
-          <p class="text-xs text-muted mb-6">{{ message }}</p>
+          <p class="mb-6 text-sm leading-6 text-muted">{{ message }}</p>
         </slot>
-        <div class="flex justify-end gap-3">
+        <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button v-if="showCancel" class="btn btn-secondary btn-sm" @click="onCancel">取消</button>
           <button
             class="btn"

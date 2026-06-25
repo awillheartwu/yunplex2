@@ -1,5 +1,5 @@
 import { success, fail } from '../../../lib/response'
-import { getSyncServiceInstance } from '../../../lib/sync/instance'
+import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { appendLog } from '../../../lib/log/store'
@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
 
   const syncService = getSyncServiceInstance()
   if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
+  if (isRepairRunning()) return fail('补全任务运行中，请等待完成')
 
   // Count how many cached failures before clearing
   const restrictedCount = source.copyrightRestrictedIds
@@ -41,7 +42,7 @@ export default defineEventHandler(async (event) => {
   }, cfg.sync.logRetentionDays ?? 30)
 
   // Trigger incremental sync (fire-and-forget)
-  syncService.runSyncForSource(source.id).catch((err: unknown) => {
+  syncService.runSyncForSource(source.id, { trigger: 'retry' }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[YunPlex2] retry-failed sync failed:', msg)
     appendLog(dataDir, { level: 'error', message: `[批量重试] 同步触发失败: ${source.name}`, detail: msg, stage: 'download' }, cfg.sync.logRetentionDays ?? 30)

@@ -11,6 +11,8 @@ import {
 import { createSplitArtists } from '../sync/artist-utils'
 import { getQueueStatus } from './queue'
 import type { DownloadTask } from './queue'
+import { createManualDownloadRun, syncManualDownloadRun } from '../run/store'
+import type { MultiArtistFormat } from '../config/types'
 
 export interface DownloadBatchInput {
   type: 'playlist' | 'album' | 'songs'
@@ -74,7 +76,28 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
 
   if (songs.length === 0) throw new Error('未找到可下载的歌曲')
 
-  const splitArtists = createSplitArtists(config.multiArtistFormat)
+  const splitArtists = createSplitArtists(config.multiArtistFormat as MultiArtistFormat)
+
+  const sourceLabel = input.type === 'playlist'
+    ? `网易云歌单 ${input.neteaseId || ''}`.trim()
+    : input.type === 'album'
+      ? `网易云专辑 ${input.neteaseId || ''}`.trim()
+      : `${songs.length} 首单曲`
+  createManualDownloadRun({
+    id: batchId,
+    total: songs.length,
+    sourceLabel,
+    config: { quality: config.quality },
+    songs: songs.map(song => ({
+      id: `${batchId}:${song.id}`,
+      neteaseSongId: song.id,
+      songName: song.name,
+      artist: song.artists?.map(artist => artist.name).join(' / ') || '',
+      album: song.album?.name || '',
+      status: 'pending',
+      phase: 'download',
+    })),
+  })
 
   // ── 2. Enqueue ──
   for (const song of songs) {
@@ -91,7 +114,7 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   }
 
   // ── 3. Processor ──
-  const processor = async (task: DownloadTask, onProgress: (pct: number, phase?: string) => void) => {
+  const processor = async (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => {
     return downloadSingleSong(task.songId, config, onProgress)
   }
 
@@ -99,15 +122,16 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   const concurrency = (config as unknown as Record<string, unknown>).downloadConcurrency as number ?? 3
   processAll(processor, batchId, concurrency)
     .then((failed) => {
+      syncManualDownloadRun(batchId)
       const status = getQueueStatus()
       emitEvent({
         type: 'queue-update',
         data: {
           type: 'batch-complete',
           batchId,
-          total: songs.length,
-          failed,
-          done: songs.length - failed,
+          batchTotal: songs.length,
+          batchFailed: failed,
+          batchDone: songs.length - failed,
           ...status,
         },
         timestamp: new Date().toISOString(),
@@ -115,6 +139,7 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
     })
     .catch(() => {
       // processAll already emits failure events per task
+      syncManualDownloadRun(batchId)
     })
 
   // ── 5. Return immediately ──

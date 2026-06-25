@@ -1,148 +1,147 @@
-# 同步业务流程
+# 同步流程与缓存重建
 
-## 触发方式
+本文档描述当前实际实现的同步主链路、对比决策、`song_lookup` 生命周期，以及 Docker 场景下的 Plex 路径替换规则。
 
-| 触发 | 入口 | 参数 |
-|------|------|------|
-| 全局手动 | 首页「手动同步」| `dryRun`(可选预览), `sourceIds`(可选) |
-| 单源手动 | 歌单源页「同步」icon | `sourceId`, `forceFull`(可选) |
-| 单源强制全量 | 歌单源页「全量」icon | `sourceId`, `forceFull=true` |
-| 自动定时 | 后台 worker 定时触发 | 无参数 |
+## 核心原则
 
----
+- 同步是否触发，只看网易云 `trackUpdateTime`
+- Plex 只作为对齐目标，不参与“是否跳过同步”的判断
+- 只有纯重排允许快捷路径
+- 纯重排必须依赖完整可信的 `song_lookup.plex_rating_key`
+- `song_lookup.file_path` 只保存 YunPlex 当前可访问的本地路径
+- “重建匹配并同步”只清当前 source 本次同步范围内的 `song_lookup`
 
-## 整体流程
+## 整体流程图
 
-```
-runSync()
-  │
-  ├─ 互斥锁：isRunning → 拒绝并发
-  ├─ 读取配置 + 清理过期数据（job/日志/download_tasks/downloads）
-  │
-  ├─ for each 启用的歌单源:
-  │   │
-  │   ├─ Step 1: 抓取网易云歌单
-  │   │   ├─ 验证 Cookie
-  │   │   ├─ GET playlist/detail → trackIds + trackUpdateTime
-  │   │   ├─ 比较 trackUpdateTime 与上次同步
-  │   │   │   ├─ 相同 && 非 forceFull → 跳过（不消耗 song_detail API）
-  │   │   │   └─ 不同或 forceFull → 继续
-  │   │   └─ 分批发 song_detail（400首/批，含并发老API补publishTime）
-  │   │
-  │   ├─ Step 2: 对比（reconcileSource → TrackResolution[]）
-  │   │   ├─ Plex 歌单查找：ratingKey 直查 → 名字搜 → 自动创建
-  │   │   └─ 逐首决议（resolveTracks）：
-  │   │       ├─ Plex 歌单已存在 → matched_plex_playlist
-  │   │       ├─ DB song_lookup 缓存命中 → 验证 plex_rating_key
-  │   │       │   ├─ 有效 → found_in_plex_library
-  │   │       │   └─ 失效/过期 → 走搜索
-  │   │       ├─ searchTrack (Plex 全库，4级降级)
-  │   │       │   ├─ 精确(title+artist+album)
-  │   │       │   ├─ 宽松(stripped title+artist)
-  │   │       │   ├─ 纯标题兜底
-  │   │       │   └─ 未找到 → 查磁盘 existsSync
-  │   │       │       ├─ 文件存在 → found_on_disk
-  │   │       │       └─ 不存在 → needs_download
-  │   │       └─ 写入 DB song_lookup 缓存
-  │   │
-  │   ├─ 回写 job 歌曲状态:
-  │   │   matched/found → skipped_existing
-  │   │   unavailable → failed_download
-  │   │   needs_download/found_on_disk → pending
-  │   │
-  │   ├─ Step 3: 下载（仅 needs_download）
-  │   │   ├─ 入队 download_tasks
-  │   │   ├─ 并发下载（可配置 downloadConcurrency，默认3）
-  │   │   ├─ 每首流程：
-  │   │   │   ├─ getSongUrl → 获取直链
-  │   │   │   ├─ existsSync 检查 → 跳过已有文件
-  │   │   │   ├─ 流式下载（ReadableStream）→ SSE 推送实时进度
-  │   │   │   ├─ fetchLyric（可选）
-  │   │   │   ├─ 写入 FLAC/MP3 标签（metaflac/node-id3）
-  │   │   │   └─ saveDownload → 写入 downloads 永久表
-  │   │   └─ 成功后写入 job.songs + DB song_lookup
-  │   │
-  │   ├─ Step 4: 重排 Plex 歌单
-  │   │   ├─ triggerRescan（全库刷新）
-  │   │   ├─ 下载的歌曲 findTrackWithRetry（最多 N 次，间隔 M 秒）
-  │   │   ├─ 构建 targetOrder（所有有 plexRatingKey 的曲目）
-  │   │   └─ applyFullReorder（LCS 最小移动）：
-  │   │       ├─ 移除 target 中不存在的 extra tracks
-  │   │       ├─ 插入 target 中有但歌单中缺失的 tracks
-  │   │       └─ 按 LCS 重排：在 LCS 中的保持不动，不在的逐个 moveAfter
-  │   │
-  │   └─ 更新 playlist_sources 状态（lastStatus/Error/trackCount/ratingKey/trackUpdateTime）
-  │
-  └─ 全局汇总 → saveJob → finishState → isRunning=false
+```mermaid
+flowchart TD
+  A["触发同步<br/>全局 / 单源 / 定时"] --> B["runSync()"]
+  B --> C{"已有同步运行中?"}
+  C -- 是 --> X["拒绝并发"]
+  C -- 否 --> D["读取配置<br/>清理旧 task_runs / download_tasks<br/>配置 artist resolver"]
+
+  D --> E["遍历 sources<br/>enabled 或指定 sourceId"]
+  E --> F["Step 1 拉网易云歌曲<br/>playlist/detail 或 album songs"]
+  F --> G["detectChanges()"]
+
+  G --> H{"skipEntirely?"}
+  H -- 是 --> H1["更新 source<br/>lastSyncedAt<br/>lastTrackUpdateTime<br/>consecutiveSkips+1"]
+  H1 --> E
+
+  H -- 否 --> I{"rebuildMatch?"}
+  I -- 是 --> I1["删除当前 source 本次 songIds 对应的 song_lookup"]
+  I1 --> K["进入 full compare"]
+  I -- 否 --> J{"纯重排且非 forceFull?"}
+
+  J -- 否 --> K
+  J -- 是 --> J1["从 song_lookup 取 plex_rating_key"]
+  J1 --> J2{"缓存完整?"}
+  J2 -- 否 --> K
+  J2 -- 是 --> J3["applyFullReorder()"]
+  J3 --> J4["更新 source<br/>trackIdSnapshot<br/>lastFullCompareAt<br/>consecutiveSkips=0"]
+  J4 --> E
+
+  K["Step 2 full compare"] --> L["过滤已知版权受限 / ignored_failure"]
+  L --> M["reconcileSource()"]
+  M --> N["resolveTracks()<br/>DB cache -> Plex search -> local file -> needs_download"]
+  N --> O["按 sourceId + neteaseSongId 回写 run songs"]
+
+  O --> P{"needs_download > 0 ?"}
+  P -- 是 --> Q["Step 3 下载<br/>enqueue + processAll + downloadSingleSong"]
+  P -- 否 --> R["跳过下载"]
+  Q --> S["更新下载结果 / file_path / 任务状态"]
+  R --> T["整理 resolutions"]
+  S --> T
+
+  T --> U{"需要 Plex 重排?"}
+  U -- 否 --> Z
+  U -- 是 --> V["triggerRescan()<br/>findTrackWithRetry()"]
+  V --> W["applyFullReorder()<br/>插入 / 删除 / LCS 重排"]
+  W --> Z["更新 source<br/>trackIdSnapshot<br/>lastFullCompareAt<br/>plexPlaylistRatingKey<br/>failure caches"]
+  Z --> E
+
+  E --> AA["saveSyncRun()<br/>finishState()<br/>isRunning=false"]
 ```
 
----
+## 对比决策图
 
-## 增量 vs 全量
-
-| 模式 | 触发条件 | API 调用（3400首歌单） |
-|------|---------|----------------------|
-| 增量 | trackUpdateTime 未变 | 1 次（仅 playlist/detail） |
-| 全量 | trackUpdateTime 变化 / forceFull / dryRun | 1 + 9 次（detail + song_detail×9） |
-
-`trackUpdateTime` 是网易云 API 返回的歌单变更时间戳，每次同步后存入 `playlist_sources.last_track_update_time`。
-
----
-
-## 关键数据结构
-
-### TrackResolution（对比产出）
-```
-resolution:
-  matched_plex_playlist   — Plex 歌单中已有
-  found_in_plex_library   — Plex 库中有但不在该歌单
-  found_on_disk           — 磁盘文件存在，Plex 未索引
-  needs_download          — 三处都没有，需下载
-  unavailable             — 网易云无下载链接且无本地副本
+```mermaid
+flowchart TD
+  A["拿到 trackUpdateTime + trackIds"] --> B{"trackUpdateTime 变化了吗?"}
+  B -- 否 --> C["直接 skip<br/>不做 compare"]
+  B -- 是 --> D{"rebuildMatch / forceFull / source.forceFull / global.forceFull ?"}
+  D -- 是 --> E["强制 full compare"]
+  D -- 否 --> F["比较 currentIdOrder 与 trackIdSnapshot"]
+  F --> G{"纯重排?"}
+  G -- 否 --> E
+  G -- 是 --> H["校验 song_lookup 缓存完整性"]
+  H --> I{"当前每首歌都有 plex_rating_key ?"}
+  I -- 否 --> E
+  I -- 是 --> J["走纯重排快捷路径"]
 ```
 
-### Plex 搜索 4 级降级（searchTrack）
-```
-Strategy A: 按艺人搜 Plex → findMatch
-Strategy B: 按标题搜 Plex（3种变体）→ findMatch
+## `song_lookup` 与路径替换
 
-findMatch:
-  1) 精确: title + artist + album 全等
-  2) 宽松: stripped title + artist
-  3) 兜底: 纯 stripped title
-```
+### 字段语义
 
-### LCS 重排（applyFullReorder）
-```
-输入: 当前 Plex 歌单顺序 + 目标网易云顺序
-输出: 最小移动操作集
+- `plex_rating_key`: Plex 库命中缓存
+- `file_path`: YunPlex 当前可访问的本地路径缓存
 
-1. 移除 extra tracks（Plex有网易云无）
-2. 插入 missing tracks（网易云有Plex歌单无）
-3. 计算 LCS（最长公共子序列）
-4. LCS 中的项目保持不动
-5. 非 LCS 项目按目标顺序逐个 moveAfter
-```
+### 路径映射规则
 
----
+配置项：
 
-## 数据表关系
+- `download.dir`
+- `download.plexLibraryPathPrefix`
 
-```
-playlist_sources     — 歌单源规则（1源 = 1规则）
-  ├─ song_lookup    — Plex track 路由缓存（netease_song_id → plex_rating_key）
-  ├─ jobs           — 同步任务历史（1次同步 = 1条job，可能包含多个源）
-  ├─ downloads      — 永久下载记录（成功后才写入）
-  └─ download_tasks — 临时队列状态（pending→downloading→tagging→done/failed，定期清理）
-```
+当 Plex 返回媒体路径时：
 
----
+1. 如果路径以 `plexLibraryPathPrefix` 开头
+2. 则把这一段替换为 `download.dir`
+3. 映射结果存在时，再写入 `song_lookup.file_path`
 
-## SSE 事件流
+例子：
 
-| 事件 | 触发时机 | 数据 |
-|------|---------|------|
-| `stage-change` | 阶段切换 | `{ stage, label, sourceName }` |
-| `queue-update` | 下载状态/进度变化 | `{ taskId, songName, status, progress, sourceId }` |
-| `song-progress` | 单曲完成/失败 | `{ taskId, songName, status, completed, total, sourceId }` |
-| `log` | 日志写入 | `{ id, level, message, stage }` |
+- `download.dir = /app/downloads/music`
+- `plexLibraryPathPrefix = /music`
+- Plex 返回 `/music/Jay/Album/01.mp3`
+- 映射后保存 `/app/downloads/music/Jay/Album/01.mp3`
+
+### 自愈规则
+
+- `plex_rating_key` 无效：整条 `song_lookup` 删除
+- `file_path` 映射后不存在：只清空 `file_path`
+- `plex_rating_key` 仍有效时，不因为坏路径而丢掉 Plex 命中缓存
+
+## 重建匹配并同步
+
+“重建匹配并同步”是 source 级高级操作，不是新的任务类型。
+
+行为：
+
+1. 先拉当前 source 本次实际参与同步的网易云歌曲列表
+2. 遵守 `syncLimit`
+3. 删除这些 `songId` 对应的 `song_lookup`
+4. 标记 rebuild 模式
+5. 强制 full compare
+6. 不清 `ignoredFailureIds`
+7. 不清 `copyrightRestrictedIds`
+8. 不清 `artist_resolution_cache`
+9. 收尾时与正常 full compare 一样更新 `trackIdSnapshot`、`lastFullCompareAt`、`lastTrackUpdateTime`
+
+## MusicBrainz 的定位
+
+当前 MusicBrainz 只参与 artist alias 增强，不参与 title alias 生成。
+
+候选优先级：
+
+1. 原名
+2. 手工 alias
+3. MusicBrainz alias
+4. 简繁转换
+
+因此：
+
+- `刘柏辛 -> Lexie Liu` 这类 artist 变体可由 MB 或手工 alias 处理
+- 简繁 artist 变体可由脚本转换处理
+- “标题被 Plex 刮成罗马音”不依赖 MusicBrainz，仍由标题规范化和保守匹配策略兜底

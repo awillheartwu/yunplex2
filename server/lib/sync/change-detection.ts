@@ -79,10 +79,9 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
     : (addedIds.length || removedIds.length ? `+${addedIds.length}/-${removedIds.length}${orderChanged ? '/重排' : ''}` : '')
 
   // Decision: full vs incremental shortcut (albums always full)
-  const needFullCompare = isAlbum || manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0
-
   // Skip entirely if Netease unchanged (albums never skip)
   const skipEntirely = !isAlbum && !neteaseChanged && !manualForce && !autoForce && !dryRun
+  const needFullCompare = !skipEntirely && (isAlbum || manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0)
 
   return {
     neteaseChanged, autoForce,

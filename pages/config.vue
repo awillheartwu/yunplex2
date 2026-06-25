@@ -1,26 +1,31 @@
 <template>
-  <div class="space-y-8">
-    <!-- Page header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h2 class="text-sm font-semibold">配置</h2>
-        <p class="text-2xs text-muted mt-0.5">管理网易云音乐和 Plex 的连接与同步设置</p>
-      </div>
-      <div class="flex items-center gap-4">
-        <button class="btn btn-ghost btn-sm" @click="toggleAll">
+  <div class="space-y-6">
+    <PageHeader
+      description="管理网易云音乐和 Plex 的连接、下载与同步策略"
+    >
+      <template #actions>
+        <button type="button" class="btn btn-ghost btn-sm" @click="toggleAll">
           {{ allExpanded ? '收起全部' : '展开全部' }}
         </button>
-        <button class="btn btn-danger btn-sm" @click="showResetConfirm = true">
+        <button type="button" class="btn btn-danger btn-sm" @click="showResetConfirm = true">
           恢复默认
         </button>
-        <button class="btn btn-primary" :disabled="saving" @click="handleSave">
+        <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
           {{ saving ? '保存中...' : '保存配置' }}
         </button>
-        <span v-if="saveMsg" class="text-sm transition-opacity duration-300" :class="saveOk ? 'text-success' : 'text-danger'">
-          {{ saveOk ? '✓' : '✗' }} {{ saveMsg }}
+        <span v-if="saveMsg" class="inline-flex items-center gap-1 text-sm transition-opacity duration-300" :class="saveOk ? 'text-success' : 'text-danger'">
+          <AppIcon :name="saveOk ? 'check' : 'x'" :size="14" />
+          {{ saveMsg }}
         </span>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
+
+    <PageTabs
+      :model-value="activeTab"
+      :tabs="tabs"
+      aria-label="设置分类"
+      @update:model-value="activeTab = $event"
+    />
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-16">
@@ -29,18 +34,6 @@
 
     <!-- Form -->
     <template v-else-if="form">
-      <!-- Tab bar -->
-      <div class="flex items-center gap-1">
-        <button
-          v-for="t in tabs" :key="t.key"
-          class="px-3 py-1.5 text-sm rounded-lg transition-colors cursor-pointer"
-          :class="activeTab === t.key
-            ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] font-medium'
-            : 'text-muted hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]'"
-          @click="activeTab = t.key"
-        >{{ t.label }}</button>
-      </div>
-
       <!-- ═══ Tab: 连接 ═══ -->
       <template v-if="activeTab === 'connection'">
         <!-- Netease -->
@@ -67,8 +60,9 @@
             <button class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
               {{ testing === 'netease' ? '测试中...' : '测试网易云连接' }}
             </button>
-            <span v-if="testResult['netease']" class="text-sm" :class="testResult['netease'].ok ? 'text-success' : 'text-danger'">
-              {{ testResult['netease'].ok ? '✓' : '✗' }} {{ testResult['netease'].msg }}
+            <span v-if="testResult['netease']" class="inline-flex items-center gap-1 text-sm" :class="testResult['netease'].ok ? 'text-success' : 'text-danger'">
+              <AppIcon :name="testResult['netease'].ok ? 'check' : 'x'" :size="14" />
+              {{ testResult['netease'].msg }}
             </span>
           </div>
         </ConfigSection>
@@ -76,7 +70,7 @@
         <!-- Plex -->
         <ConfigSection title="Plex Media Server" description="连接 Plex 媒体服务器以同步歌单" :collapsed="!!collapsed.plex" @toggle="toggle('plex')">
           <template #icon><SidebarIcon name="sync" :active="true" /></template>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="服务器地址" required><input v-model="form.plex.server" type="text" placeholder="192.168.1.100" class="form-input" /></FormField>
             <FormField label="端口" required><input v-model.number="form.plex.port" type="number" placeholder="32400" class="form-input" /></FormField>
           </div>
@@ -88,7 +82,10 @@
           </FormField>
           <div class="pt-1 flex items-center gap-4">
             <button class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button>
-            <span v-if="testResult['plex']" class="text-sm" :class="testResult['plex'].ok ? 'text-success' : 'text-danger'">{{ testResult['plex'].ok ? '✓' : '✗' }} {{ testResult['plex'].msg }}</span>
+            <span v-if="testResult['plex']" class="inline-flex items-center gap-1 text-sm" :class="testResult['plex'].ok ? 'text-success' : 'text-danger'">
+              <AppIcon :name="testResult['plex'].ok ? 'check' : 'x'" :size="14" />
+              {{ testResult['plex'].msg }}
+            </span>
           </div>
         </ConfigSection>
       </template>
@@ -100,6 +97,9 @@
         <template #icon><SidebarIcon name="download" :active="true" /></template>
         <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
           <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
+        </FormField>
+        <FormField label="Plex 音乐库路径前缀" hint="如果 Plex 运行在容器中，这里填写 Plex 容器内部看到的音乐目录前缀。命中后会替换为上方下载目录进行本地文件定位。">
+          <input v-model="form.download.plexLibraryPathPrefix" type="text" placeholder="/music" class="form-input" />
         </FormField>
         <div class="space-y-3">
           <ToggleField v-model="form.download.downloadLyrics" label="下载歌词" hint="下载 .lrc 歌词文件与歌曲放在一起" />
@@ -118,7 +118,7 @@
       <!-- Sync schedule -->
       <ConfigSection title="同步调度" description="控制同步的触发和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
         <template #icon><SidebarIcon name="play" :active="true" /></template>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟"><input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" /></FormField>
           <FormField label="歌曲数量上限" hint="每次同步处理的歌曲数量，0 = 不限"><input v-model.number="form.sync.songLimit" type="number" min="0" max="10000" class="form-input" /></FormField>
           <FormField label="下载并发数" hint="同时下载几首歌，建议 3-5，过高可能被网易云限速"><input v-model.number="form.sync.downloadConcurrency" type="number" min="1" max="10" class="form-input" /></FormField>
@@ -129,13 +129,13 @@
       <!-- Sync strategy -->
       <ConfigSection title="同步策略" description="对比、重试、清理等细节行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
         <template #icon><SidebarIcon name="sync" :active="true" /></template>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
           <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
         <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
         <template v-if="!form.sync.forceFullCompare">
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
             <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" /></FormField>
             <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
@@ -146,7 +146,7 @@
 
       <!-- Album Sync -->
       <ConfigSection title="专辑同步" description="收藏专辑的同步行为与默认策略" :collapsed="!!collapsed.album" @toggle="toggle('album')">
-        <template #icon><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><circle cx="8" cy="8" r="3" fill="var(--accent)" opacity="0.3"/></svg></template>
+        <template #icon><SidebarIcon name="album" :active="true" /></template>
         <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
           <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
@@ -160,17 +160,18 @@
       <!-- Data Retention -->
       <ConfigSection title="数据保留" description="控制各类历史数据的自动清理周期" :collapsed="!!collapsed.retention" @toggle="toggle('retention')">
         <template #icon><SidebarIcon name="database" :active="true" /></template>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" /></FormField>
-          <FormField label="成功任务保留天数" hint="成功的同步记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
-          <FormField label="失败任务保留天数" hint="失败或部分失败的记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="成功运行保留天数" hint="成功或取消的运行记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="失败运行保留天数" hint="失败或部分成功的运行记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
           <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
+          <FormField label="内部事件保留天数" hint="仪表盘摘要和内部诊断事件的保留天数，0 = 永不清除"><input v-model.number="form.sync.activityRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
         </div>
       </ConfigSection>
 
       <!-- Other strategies -->
       <ConfigSection title="其他策略" description="细节行为控制" :collapsed="!!collapsed.other" @toggle="toggle('other')">
-        <template #icon><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#818cf8" stroke-width="1.3"/><path d="M5.5 7.5h5M5.5 10h3" stroke="#818cf8" stroke-width="1.3" stroke-linecap="round"/></svg></template>
+        <template #icon><SidebarIcon name="settings" :active="true" /></template>
         <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
           <div class="flex items-center gap-3">
             <input v-model.number="form.other.fontScale" type="range" min="0.8" max="1.5" step="0.05" class="flex-1 accent-[#818cf8]" />
@@ -243,7 +244,10 @@
           <textarea v-model="importJson" class="form-input font-mono h-32" placeholder="粘贴完整配置 JSON 或旧 yunplex 格式..." />
           <div class="flex items-center gap-4">
             <button class="btn btn-primary" :disabled="!importJson || importing" @click="handleImportJson">{{ importing ? '导入中...' : '导入' }}</button>
-            <span v-if="importResult" class="text-sm" :class="importResult.ok ? 'text-success' : 'text-danger'">{{ importResult.ok ? '✓' : '✗' }} {{ importResult.msg }}</span>
+            <span v-if="importResult" class="inline-flex items-center gap-1 text-sm" :class="importResult.ok ? 'text-success' : 'text-danger'">
+              <AppIcon :name="importResult.ok ? 'check' : 'x'" :size="14" />
+              {{ importResult.msg }}
+            </span>
           </div>
         </div>
       </ConfigSection>
@@ -273,7 +277,7 @@
       <div class="space-y-4 mb-6">
         <!-- Warning banner -->
         <div class="flex items-start gap-3 p-3 rounded-lg border" style="border-color:var(--warning,#f59e0b);background:rgba(245,158,11,0.08)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="shrink-0 mt-0.5"><path d="M8 2l7 12H1L8 2z" stroke="var(--warning,#f59e0b)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7v2M8 11v1" stroke="var(--warning,#f59e0b)" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <AppIcon name="warn" :size="16" class="shrink-0 mt-0.5" />
           <div class="text-xs" style="color:var(--warning,#f59e0b)">
             <p class="font-semibold mb-1">此操作不可逆，系统不会自动迁移已有文件</p>
           </div>
@@ -304,6 +308,7 @@ import type { AppConfig } from '~~/server/lib/config/types'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { PATH_PRESETS } from '~~/server/lib/config/types'
 import { useConfigImport } from '~~/composables/useConfigImport'
+import { useFeedback } from '~~/composables/useFeedback'
 
 const pathPresets = PATH_PRESETS
 
@@ -354,11 +359,13 @@ function cancelPathFormatChange() {
 }
 
 const api = useApi()
+const feedback = useFeedback()
 
 const loading = ref(true)
 const saving = ref(false)
 const showResetConfirm = ref(false)
 const form = ref<AppConfig | null>(null)
+const savedConfig = ref<AppConfig | null>(null)
 const testing = ref<string | null>(null)
 const saveMsg = ref<string | null>(null)
 const saveOk = ref(true)
@@ -399,9 +406,12 @@ function toggleAll() {
 async function loadConfig() {
   loading.value = true
   try {
-    form.value = await api.get<AppConfig>('/config')
+    const loaded = await api.get<AppConfig>('/config')
+    form.value = loaded
+    savedConfig.value = structuredClone(loaded)
   } catch {
     form.value = { ...DEFAULT_CONFIG }
+    savedConfig.value = { ...DEFAULT_CONFIG }
   } finally {
     loading.value = false
   }
@@ -412,8 +422,21 @@ async function handleSave() {
   saving.value = true
   saveMsg.value = null
   try {
-    await api.put<AppConfig>('/config', form.value)
-    showSaveMsg(true, '配置已保存')
+    const previous = savedConfig.value
+    const updated = await api.put<AppConfig>('/config', form.value)
+    form.value = updated
+    savedConfig.value = structuredClone(updated)
+
+    const pathChanged = !!previous && (
+      previous.download.dir !== updated.download.dir ||
+      previous.download.plexLibraryPathPrefix !== updated.download.plexLibraryPathPrefix
+    )
+    showSaveMsg(
+      true,
+      pathChanged
+        ? '配置已保存。路径配置已变更，建议对受影响的同步源执行“重建匹配并同步”。'
+        : '配置已保存',
+    )
   } catch (err) {
     showSaveMsg(false, err instanceof Error ? err.message : '保存失败')
   } finally {
@@ -426,6 +449,7 @@ async function handleReset() {
   try {
     await api.put<AppConfig>('/config', DEFAULT_CONFIG)
     form.value = { ...DEFAULT_CONFIG }
+    savedConfig.value = { ...DEFAULT_CONFIG }
     showSaveMsg(true, '已恢复默认配置')
   } catch { /* ignore */ }
 }
@@ -446,7 +470,8 @@ async function testConnection(section: 'netease' | 'plex') {
 function showSaveMsg(ok: boolean, msg: string) {
   saveOk.value = ok
   saveMsg.value = msg
-  setTimeout(() => { saveMsg.value = null }, 4000)
+  if (ok) feedback.success('配置已保存', msg)
+  else feedback.error('配置保存失败', msg)
 }
 
 // ── Import / Export ──
