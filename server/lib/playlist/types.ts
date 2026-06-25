@@ -8,6 +8,7 @@ export interface PlaylistSource {
   type: SourceType
   subscribed: boolean
   enabled: boolean
+  coverUrl: string
   plexPlaylistName: string
   plexPlaylistRatingKey: string
   syncLimit: number | null
@@ -42,6 +43,7 @@ export interface PlaylistSourceRow {
   type: string
   subscribed: number
   enabled: number
+  cover_url: string
   plex_playlist_name: string
   plex_playlist_rating_key: string
   sync_limit: number | null
@@ -77,6 +79,7 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     type: row.type as SourceType,
     subscribed: row.subscribed === 1,
     enabled: row.enabled === 1,
+    coverUrl: row.cover_url ?? '',
     plexPlaylistName: row.plex_playlist_name,
     plexPlaylistRatingKey: row.plex_playlist_rating_key,
     syncLimit: row.sync_limit,

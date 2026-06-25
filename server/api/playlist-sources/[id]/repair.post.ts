@@ -1,20 +1,21 @@
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import dayjs from 'dayjs'
 import { success, fail } from '../../../lib/response'
-import { getSyncServiceInstance } from '../../../lib/sync/instance'
+import { getSyncServiceInstance, isRepairRunning, setRepairRunning } from '../../../lib/sync/instance'
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { fetchPlaylistSongs, fetchAlbumSongs, setArtistAliases } from '../../../lib/netease'
 import { getDb } from '../../../lib/db'
-import { saveJob } from '../../../lib/job/store'
+import { saveSyncRun } from '../../../lib/run/store'
 import { appendLog } from '../../../lib/log/store'
 import { emitEvent } from '../../../lib/sync/events'
+import { recordActivityEvent } from '../../../lib/activity/store'
 import type { SyncJob } from '../../../lib/job/types'
 import { randomUUID } from 'node:crypto'
 import { buildDownloadPath } from '../../../lib/tag-writer'
 import { createSplitArtists } from '../../../lib/sync/artist-utils'
+import { resolveAccessibleLocalPath } from '../../../lib/sync/path-map'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -25,6 +26,7 @@ export default defineEventHandler(async (event) => {
 
   const syncService = getSyncServiceInstance()
   if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
+  if (isRepairRunning()) return fail('已有补全任务在运行中，请等待完成')
 
   // Fetch all song IDs
   const cfg = readConfig()
@@ -43,42 +45,63 @@ export default defineEventHandler(async (event) => {
     return fail(err instanceof Error ? err.message : '获取歌曲列表失败')
   }
 
+  // Acquire mutex only after all pre-flight checks pass
+  setRepairRunning(true)
+
   const totalSongs = songs.length
   const jobId = randomUUID().slice(0, 12)
   const now = new Date().toISOString()
   const dataDir = (useRuntimeConfig() as any).dataDir as string
   const retentionDays = cfg.sync.logRetentionDays ?? 30
 
-  // Create repair job
-  const job: SyncJob = {
-    id: jobId,
-    type: 'repair',
-    startedAt: now,
-    finishedAt: null,
-    status: 'running',
-    durationMs: 0,
-    summary: `补全辅助文件: ${source.name}`,
-    source: '网易云音乐',
-    target: '本地磁盘',
-    totalSongs,
-    successSongs: 0,
-    failedSongs: 0,
-    skippedSongs: 0,
-    removedSongs: 0,
-    warnings: 0,
-    dryRun: false,
-    steps: [{
-      id: 'repair-1', type: 'repair', title: `补全辅助文件: ${source.name}`,
-      status: 'running', startedAt: now, finishedAt: null, durationMs: 0,
-      message: `共 ${totalSongs} 首`, children: [],
-    }],
-    songs: [],
-    config: {},
-  }
-  saveJob(job)
+  // Create repair job (wrapped in try — release lock if this fails)
+  let job: SyncJob
+  try {
+    job = {
+      id: jobId,
+      type: 'repair',
+      startedAt: now,
+      finishedAt: null,
+      status: 'running',
+      durationMs: 0,
+      summary: `补全辅助文件: ${source.name}`,
+      source: '网易云音乐',
+      sourceIds: [source.id],
+      target: '本地磁盘',
+      totalSongs,
+      successSongs: 0,
+      failedSongs: 0,
+      skippedSongs: 0,
+      removedSongs: 0,
+      warnings: 0,
+      dryRun: false,
+      steps: [{
+        id: 'repair-1', type: 'repair', title: `补全辅助文件: ${source.name}`,
+        status: 'running', startedAt: now, finishedAt: null, durationMs: 0,
+        message: `共 ${totalSongs} 首`, children: [],
+      }],
+      songs: [],
+      config: {},
+    }
+    saveSyncRun(job, 'user')
 
-  appendLog(dataDir, { level: 'info', message: `[补全] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
-  emitEvent({ type: 'stage-change', data: { stage: 'repair', sourceId: id, jobId }, timestamp: now })
+    appendLog(dataDir, { level: 'info', message: `[补全] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
+    emitEvent({ type: 'stage-change', data: { stage: 'repair', sourceId: id, jobId }, timestamp: now })
+    recordActivityEvent({
+      domain: 'user',
+      type: 'repair_triggered',
+      severity: 'info',
+      actor: 'user',
+      title: `触发“${source.neteasePlaylistName || source.name}”补全`,
+      summary: `将为 ${totalSongs} 首歌曲补齐歌词、封面或其他辅助文件。`,
+      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, totalSongs },
+      link: `/task-center/runs/${jobId}`,
+      groupKey: `job:${jobId}`,
+    })
+  } catch (err) {
+    setRepairRunning(false)
+    return fail(err instanceof Error ? err.message : '创建补全任务失败')
+  }
 
   // Fire-and-forget
   ;(async () => {
@@ -109,14 +132,16 @@ export default defineEventHandler(async (event) => {
             pathVars, 'mp3',
           ))
 
-          if (existsSync(computedPath)) {
-            audioPath = computedPath
+          const resolvedComputedPath = resolveAccessibleLocalPath(computedPath, cfg)
+          if (resolvedComputedPath) {
+            audioPath = resolvedComputedPath
           } else {
             // Fallback: song_lookup cache
             const db = getDb()
             const cached = db.prepare('SELECT file_path FROM song_lookup WHERE netease_song_id = ?').get(song.id) as { file_path: string | null } | undefined
-            if (cached?.file_path && existsSync(cached.file_path)) {
-              audioPath = cached.file_path
+            const resolvedCachedPath = resolveAccessibleLocalPath(cached?.file_path, cfg)
+            if (resolvedCachedPath) {
+              audioPath = resolvedCachedPath
             }
           }
         } catch { /* can't resolve — skip */ }
@@ -157,7 +182,7 @@ export default defineEventHandler(async (event) => {
       if (processed % 50 === 0) {
         job.successSongs = succeeded
         job.skippedSongs = skipped + alreadyExisted
-        saveJob(job)
+        saveSyncRun(job)
         appendLog(dataDir, { level: 'info', message: `[补全] ${source.name}: 已处理 ${processed}/${totalSongs} 首，写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
         emitEvent({
           type: 'repair-progress',
@@ -182,15 +207,26 @@ export default defineEventHandler(async (event) => {
       job.steps[0].durationMs = job.durationMs
       job.steps[0].message = `写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`
     }
-    saveJob(job)
+    saveSyncRun(job)
     updateSource(source.id, { lastStatus: job.status, lastSyncedAt: endTime })
 
     appendLog(dataDir, { level: 'info', message: `[补全] 完成: ${source.name}，写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
+    recordActivityEvent({
+      domain: 'sync',
+      type: 'repair_completed',
+      severity: job.status === 'success' ? 'success' : 'warning',
+      title: `补全“${source.neteasePlaylistName || source.name}”已完成`,
+      summary: `写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`,
+      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, succeeded, alreadyExisted, skipped },
+      link: `/task-center/runs/${jobId}`,
+      groupKey: `job:${jobId}`,
+    })
     emitEvent({
       type: 'repair-progress',
       data: { jobId, sourceId: id, processed: totalSongs, totalSongs, succeeded, skipped, finished: true },
       timestamp: endTime,
     })
+    setRepairRunning(false)
     emitEvent({ type: 'stage-change', data: { stage: 'idle', sourceId: id }, timestamp: endTime })
   })().catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
@@ -199,9 +235,20 @@ export default defineEventHandler(async (event) => {
     job.finishedAt = new Date().toISOString()
     job.durationMs = Date.now() - new Date(now).getTime()
     job.summary = `补全异常中断: ${source.name}`
-    saveJob(job)
+    saveSyncRun(job)
     updateSource(source.id, { lastStatus: 'failed', lastError: msg })
+    setRepairRunning(false)
     appendLog(dataDir, { level: 'error', message: `[补全] 异常中断: ${source.name}`, detail: msg, stage: 'download' }, retentionDays)
+    recordActivityEvent({
+      domain: 'sync',
+      type: 'repair_failed',
+      severity: 'error',
+      title: `补全“${source.neteasePlaylistName || source.name}”异常中断`,
+      summary: msg,
+      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId },
+      link: `/task-center/runs/${jobId}`,
+      groupKey: `job:${jobId}`,
+    })
     emitEvent({ type: 'stage-change', data: { stage: 'idle', sourceId: id }, timestamp: new Date().toISOString() })
   })
 

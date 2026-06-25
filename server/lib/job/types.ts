@@ -60,6 +60,18 @@ export interface StepError {
   raw?: string
 }
 
+export interface JobStepContext {
+  sourceId?: string
+  sourceName?: string
+  sourceType?: 'playlist' | 'album' | string
+  playlistName?: string
+  plexPlaylistName?: string
+  plexPlaylistRatingKey?: string
+  neteasePlaylistId?: number
+  sectionKey?: string
+  [key: string]: unknown
+}
+
 export interface JobStep {
   id: string
   type: string
@@ -69,21 +81,25 @@ export interface JobStep {
   finishedAt: string | null
   durationMs: number
   message: string
+  context?: JobStepContext
   error?: StepError
   children: JobStep[]
 }
 
-export type JobType = 'sync' | 'repair'
+export type SyncRunType = 'sync' | 'repair'
+export type TaskRunType = SyncRunType | 'manual_download'
+export type TaskRunTrigger = 'user' | 'schedule' | 'system' | 'retry'
 
 export interface SyncJob {
   id: string
-  type: JobType
+  type: SyncRunType
   startedAt: string
   finishedAt: string | null
   status: JobStatus
   durationMs: number
   summary: string
   source: string
+  sourceIds?: string[]
   target: string
   totalSongs: number
   successSongs: number
@@ -102,26 +118,23 @@ export interface SyncJob {
   }
 }
 
-// ── Query / filter types ──
-
-export interface JobFilter {
-  type?: JobType
-  status?: JobStatus
-  search?: string
-  limit?: number
-  offset?: number
-  from?: string
-  to?: string
+export interface TaskRun extends Omit<SyncJob, 'type'> {
+  type: TaskRunType
+  trigger: TaskRunTrigger
 }
 
-export interface JobSummary {
+// ── Query / filter types ──
+
+export interface TaskRunSummary {
   id: string
-  type: JobType
+  type: TaskRunType
+  trigger: TaskRunTrigger
   startedAt: string
   finishedAt: string | null
   status: JobStatus
   durationMs: number
   summary: string
+  source: string
   totalSongs: number
   successSongs: number
   failedSongs: number
@@ -129,4 +142,16 @@ export interface JobSummary {
   removedSongs: number
   warnings: number
   dryRun: boolean
+}
+
+export interface TaskRunFilter {
+  type?: TaskRunType
+  status?: JobStatus
+  search?: string
+  sourceId?: string
+  limit?: number
+  offset?: number
+  from?: string
+  to?: string
+  timeZone?: string
 }

@@ -1,10 +1,10 @@
 <template>
   <div class="flex flex-col chart-root">
-    <div class="flex items-center justify-between mb-3 shrink-0">
+    <div class="flex items-center justify-between mb-2 shrink-0">
       <div class="flex items-center gap-0.5 p-0.5 rounded-lg" style="background:var(--bg-input)">
         <button
           v-for="mode in modes" :key="mode.key"
-          class="text-xs px-3 py-1 rounded-md transition-all duration-150 cursor-pointer"
+          class="text-2xs px-2.5 py-0.75 rounded-md transition-all duration-150 cursor-pointer"
           :style="chartMode === mode.key
             ? { background: 'var(--bg-surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-xs)' }
             : { color: 'var(--text-tertiary)' }"
@@ -49,7 +49,7 @@ const modes = [
 const totalCount = computed(() => props.data.reduce((s, d) => s + d.count, 0))
 
 const option = computed(() => ({
-  grid: { top: 8, right: 0, bottom: 0, left: 0 },
+  grid: { top: 8, right: 0, bottom: 0, left: 0, containLabel: true },
   tooltip: {
     backgroundColor: 'rgba(24,24,27,0.96)',
     borderColor: 'rgba(255,255,255,0.06)',
@@ -68,19 +68,19 @@ const option = computed(() => ({
     }),
     axisLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
     axisTick: { show: false },
-    axisLabel: { color: '#71717a', fontSize: 11 },
+    axisLabel: { color: '#71717a', fontSize: 10, margin: 10 },
   },
   yAxis: {
     type: 'value',
     minInterval: 1,
-    axisLabel: { color: '#71717a', fontSize: 11 },
+    axisLabel: { color: '#71717a', fontSize: 10 },
     splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } },
   },
   series: [{
     type: chartMode.value,
     data: props.data.map(d => d.count),
     ...(chartMode.value === 'bar' ? {
-      barWidth: '60%',
+      barWidth: '54%',
       barCategoryGap: '30%',
       itemStyle: {
         borderRadius: [5, 5, 0, 0],
@@ -112,6 +112,6 @@ const option = computed(() => ({
 </script>
 
 <style scoped>
-.chart-root { min-height: clamp(240px, 30vh, 520px); }
-.chart { min-height: clamp(200px, 25vh, 460px); }
+.chart-root { min-height: clamp(180px, 22vh, 260px); }
+.chart { min-height: clamp(140px, 18vh, 220px); }
 </style>

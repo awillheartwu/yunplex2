@@ -1,37 +1,51 @@
-import type { AggregatedFailure } from '~~/server/lib/tasks/failure-store'
+import type {
+  FailureRecord,
+  FailureRecordStatus,
+} from '~~/server/lib/tasks/failure-records'
+import type { TaskRunType } from '~~/server/lib/job/types'
 
 export interface FailureFilter {
-  type?: 'sync' | 'manual' | 'repair'
+  status?: FailureRecordStatus
+  type?: TaskRunType | ''
   failureKind?: string
   sourceId?: string
   search?: string
+  from?: string
+  to?: string
 }
 
 export function useFailures() {
   const api = useApi()
-  const items = ref<AggregatedFailure[]>([])
+  const items = ref<FailureRecord[]>([])
   const total = ref(0)
   const loading = ref(false)
-  const page = ref(1)
+  const loadingMore = ref(false)
   const limit = 50
-
+  const filter = ref<FailureFilter>({ status: 'open' })
   const hasMore = computed(() => items.value.length < total.value)
 
-  const filter = ref<FailureFilter>({})
+  function toParams(offset = 0): Record<string, string> {
+    const params: Record<string, string> = {
+      limit: String(limit),
+      offset: String(offset),
+      status: filter.value.status || 'open',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    }
+    if (filter.value.type) params.type = filter.value.type
+    if (filter.value.failureKind) params.failureKind = filter.value.failureKind
+    if (filter.value.sourceId) params.sourceId = filter.value.sourceId
+    if (filter.value.search) params.search = filter.value.search
+    if (filter.value.from) params.from = filter.value.from
+    if (filter.value.to) params.to = filter.value.to
+    return params
+  }
 
   async function fetch() {
     loading.value = true
-    page.value = 1
     try {
-      const params: Record<string, string> = { limit: String(limit), page: '1' }
-      if (filter.value.type) params.type = filter.value.type
-      if (filter.value.failureKind) params.failureKind = filter.value.failureKind
-      if (filter.value.sourceId) params.sourceId = filter.value.sourceId
-      if (filter.value.search) params.search = filter.value.search
-
-      const res = await api.get<{ items: AggregatedFailure[]; total: number }>('/tasks/failures', params)
-      items.value = res.items
-      total.value = res.total
+      const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams())
+      items.value = response.items
+      total.value = response.total
     } catch {
       items.value = []
       total.value = 0
@@ -41,56 +55,39 @@ export function useFailures() {
   }
 
   async function loadMore() {
-    if (!hasMore.value || loading.value) return
-    loading.value = true
+    if (!hasMore.value || loadingMore.value) return
+    loadingMore.value = true
     try {
-      const nextPage = page.value + 1
-      const params: Record<string, string> = { limit: String(limit), page: String(nextPage) }
-      if (filter.value.type) params.type = filter.value.type
-      if (filter.value.failureKind) params.failureKind = filter.value.failureKind
-      if (filter.value.sourceId) params.sourceId = filter.value.sourceId
-      if (filter.value.search) params.search = filter.value.search
-
-      const res = await api.get<{ items: AggregatedFailure[]; total: number }>('/tasks/failures', params)
-      items.value = [...items.value, ...res.items]
-      total.value = res.total
-      page.value = nextPage
-    } catch { /* ignore */ } finally {
-      loading.value = false
+      const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams(items.value.length))
+      items.value = [...items.value, ...response.items]
+      total.value = response.total
+    } finally {
+      loadingMore.value = false
     }
   }
 
-  async function batchRetry(ids: string[]): Promise<{ count: number; msg: string }> {
+  async function mutate(endpoint: string, ids: string[]): Promise<{ count: number; msg: string }> {
+    if (ids.length === 0) return { count: 0, msg: '没有选择问题' }
     try {
-      const res = await api.rawPost<{ count: number }>('/tasks/failures/batch-retry', { ids })
+      const response = await api.rawPost<{ count: number }>(endpoint, { ids })
       await fetch()
-      return { count: res.data?.count ?? 0, msg: res.msg || '' }
-    } catch { return { count: 0, msg: '重试请求失败' } }
-  }
-
-  async function batchIgnore(ids: string[]): Promise<{ count: number; msg: string }> {
-    try {
-      const res = await api.rawPost<{ count: number }>('/tasks/failures/batch-ignore', { ids })
-      await fetch()
-      return { count: res.data?.count ?? 0, msg: res.msg || '' }
-    } catch { return { count: 0, msg: '忽略请求失败' } }
-  }
-
-  function setFilter(f: FailureFilter) {
-    filter.value = { ...filter.value, ...f }
-    fetch()
+      return { count: response.data?.count ?? 0, msg: response.msg || '' }
+    } catch {
+      return { count: 0, msg: '操作失败，请稍后重试' }
+    }
   }
 
   return {
     items,
     total,
     loading,
+    loadingMore,
     hasMore,
     filter,
     fetch,
     loadMore,
-    batchRetry,
-    batchIgnore,
-    setFilter,
+    batchRetry: (ids: string[]) => mutate('/tasks/failures/batch-retry', ids),
+    batchIgnore: (ids: string[]) => mutate('/tasks/failures/batch-ignore', ids),
+    batchReopen: (ids: string[]) => mutate('/tasks/failures/batch-reopen', ids),
   }
 }

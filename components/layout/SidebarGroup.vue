@@ -6,13 +6,7 @@
       :style="{ color: groupCollapsed ? 'var(--text-tertiary)' : 'var(--text-secondary)' }"
       @click="groupCollapsed = !groupCollapsed"
     >
-      <svg
-        width="10" height="10" viewBox="0 0 10 10" fill="none"
-        class="transition-transform duration-150 shrink-0"
-        :class="groupCollapsed ? '' : 'rotate-90'"
-      >
-        <path d="M3.5 2l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <AppIcon name="chevronRight" :size="10" class="transition-transform duration-150 shrink-0" :class="groupCollapsed ? '' : 'rotate-90'" />
       {{ label }}
     </button>
     <div v-show="collapsed || !groupCollapsed" class="mt-0.5 space-y-px">

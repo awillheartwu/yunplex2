@@ -25,6 +25,14 @@ interface PlaylistSongsResponse {
   trackUpdateTime: number | null
   trackIds: { id: number }[]
   playlistName: string | null
+  playlist: {
+    name: string
+    coverUrl: string
+    creatorName: string
+    description: string
+    trackCount: number
+    updateTime: number | null
+  } | null
 }
 
 interface AlbumSongsResponse {
@@ -52,6 +60,35 @@ export const URL_PATTERNS: { pattern: RegExp; type: ResourceType }[] = [
   { pattern: /music\.163\.com\/#\/song\?id=(\d+)/i, type: 'songs' },
 ]
 
+export function matchManualDownloadUrl(text: string): { type: ResourceType; id: number } | null {
+  const trimmed = text.trim()
+  for (const { pattern, type } of URL_PATTERNS) {
+    const m = trimmed.match(pattern)
+    if (m && m[1]) {
+      return { type, id: parseInt(m[1]!, 10) }
+    }
+  }
+  return null
+}
+
+export function parseManualSongIds(text: string): number[] {
+  return text
+    .trim()
+    .split(/[\n,;]+/)
+    .map((l) => l.trim())
+    .filter((l) => /^\d+$/.test(l))
+    .map(Number)
+}
+
+export function isManualMultiSongInput(text: string): boolean {
+  const lines = text
+    .trim()
+    .split(/[\n,;]+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return lines.length > 1 && lines.every((l) => /^\d+$/.test(l))
+}
+
 export function useManualDownload() {
   const api = useApi()
 
@@ -69,6 +106,8 @@ export function useManualDownload() {
   const neteaseId = ref<number | null>(null)
   const trackCount = ref(0)
   const albumInfo = ref<AlbumSongsResponse['album'] | null>(null)
+  const resourceDescription = ref('')
+  const resourceUpdatedAt = ref<number | null>(null)
 
   // ── Download options ──
   const quality = ref('jymaster')
@@ -94,35 +133,18 @@ export function useManualDownload() {
    * Try to match input against URL patterns.
    */
   function matchUrl(text: string): { type: ResourceType; id: number } | null {
-    const trimmed = text.trim()
-    for (const { pattern, type } of URL_PATTERNS) {
-      const m = trimmed.match(pattern)
-      if (m && m[1]) {
-        return { type, id: parseInt(m[1]!, 10) }
-      }
-    }
-    return null
+    return matchManualDownloadUrl(text)
   }
 
   /**
    * True if the input contains multiple lines with numeric content.
    */
   function isMultiLine(text: string): boolean {
-    const lines = text
-      .trim()
-      .split(/[\n,;]+/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-    return lines.length > 1 && lines.every((l) => /^\d+$/.test(l))
+    return isManualMultiSongInput(text)
   }
 
   function parseMultiLineIds(text: string): number[] {
-    return text
-      .trim()
-      .split(/[\n,;]+/)
-      .map((l) => l.trim())
-      .filter((l) => /^\d+$/.test(l))
-      .map(Number)
+    return parseManualSongIds(text)
   }
 
   // ═══ Fetch helpers ═══
@@ -132,13 +154,13 @@ export function useManualDownload() {
     resourceType.value = 'playlist'
     detectHint.value = '已识别为歌单'
     neteaseId.value = id
-    title.value = data.playlistName || `歌单 ${id}`
-    coverUrl.value = data.songs[0]?.album.picUrl || ''
+    title.value = data.playlist?.name || data.playlistName || `歌单 ${id}`
+    coverUrl.value = data.playlist?.coverUrl || data.songs[0]?.album.picUrl || ''
     trackCount.value = data.songs.length
+    resourceDescription.value = data.playlist?.description || ''
+    resourceUpdatedAt.value = data.playlist?.updateTime ?? data.trackUpdateTime
     tracks.value = data.songs.map((s) => ({ ...s, selected: true }))
-    // Use first song's artist as overall artist display
-    const firstArtist = data.songs[0]?.artists?.[0]?.name
-    artist.value = firstArtist || ''
+    artist.value = data.playlist?.creatorName || ''
   }
 
   async function fetchAlbum(id: number) {
@@ -151,6 +173,8 @@ export function useManualDownload() {
     coverUrl.value = data.album?.picUrl || data.songs[0]?.album.picUrl || ''
     trackCount.value = data.songs.length
     albumInfo.value = data.album
+    resourceDescription.value = data.album?.description || ''
+    resourceUpdatedAt.value = data.album?.publishTime ?? null
     tracks.value = data.songs.map((s) => ({ ...s, selected: true }))
   }
 
@@ -163,6 +187,8 @@ export function useManualDownload() {
     artist.value = data.artists.map((a) => a.name).join(' / ')
     coverUrl.value = data.album.picUrl || ''
     trackCount.value = 1
+    resourceDescription.value = ''
+    resourceUpdatedAt.value = null
     tracks.value = [{ ...data, selected: true }]
   }
 
@@ -175,6 +201,8 @@ export function useManualDownload() {
     artist.value = ''
     coverUrl.value = ''
     trackCount.value = ids.length
+    resourceDescription.value = ''
+    resourceUpdatedAt.value = null
 
     const results: ParsedTrack[] = []
     for (const id of ids) {
@@ -307,7 +335,16 @@ export function useManualDownload() {
         embedMetadata: embedMetadata.value,
       }
 
+      const partialSelection = selectedIds.length < tracks.value.length
+
       if (resourceType.value === 'songs') {
+        payload = {
+          type: 'songs',
+          songIds: selectedIds,
+          ...base,
+        }
+      } else if (partialSelection) {
+        // User deselected some tracks — pass filtered songIds
         payload = {
           type: 'songs',
           songIds: selectedIds,
@@ -345,6 +382,7 @@ export function useManualDownload() {
           trackCount: trackCount.value,
           name: title.value || undefined,
           artist: artist.value || undefined,
+          coverUrl: coverUrl.value || undefined,
         })
         return { ...result, savedAsSource: true }
       } catch (err) {
@@ -383,6 +421,8 @@ export function useManualDownload() {
     neteaseId.value = null
     trackCount.value = 0
     albumInfo.value = null
+    resourceDescription.value = ''
+    resourceUpdatedAt.value = null
     error.value = ''
     saveError.value = ''
     downloadResult.value = null
@@ -403,6 +443,8 @@ export function useManualDownload() {
     neteaseId,
     trackCount,
     albumInfo,
+    resourceDescription,
+    resourceUpdatedAt,
     // Options
     quality,
     downloadLyrics,

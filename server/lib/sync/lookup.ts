@@ -1,42 +1,46 @@
-import { existsSync } from 'node:fs'
 import { getDb } from '../db'
-import { searchTrack, getPlaylistTracks, getTrackByRatingKey } from '../plex-client'
+import type { AppConfig } from '../config/types'
+import { searchTrack, getPlaylistTracks, getTrackByRatingKey, getTrackFilePathByRatingKey } from '../plex-client'
 import type { NeteaseSong } from '../netease'
 import type { TrackResolution, SongLookupRow } from './types'
+import { isArtistNameMatch, anyCandidateMatches, normalizeArtistName } from './artist-match'
+import type { ArtistCandidate } from './artist-resolver'
+import { clearSongLookupFilePath, deleteSongLookup, getSongLookup } from './song-lookup-store'
+import { resolveAccessibleLocalPath } from './path-map'
+import { resolveSongArtistCandidateNames } from './song-artist-candidates'
+import { titleIdentityDescriptorsCompatible } from './matchers'
+import { findExistingLocalSongPath } from './local-file-discovery'
 
 /**
  * Build a TrackResolution for each song in the Netease playlist.
  *
  * Lookup chain:
- *   DB cache → verify in Plex → searchTrack → disk exists → download/unavailable
+ *   DB cache → verify in Plex → searchTrack (with MB aliases) → disk exists → download/unavailable
  */
 export async function resolveTracks(
   yunSongs: NeteaseSong[],
   plexPlaylistRatingKey: string,
   sectionKey: string,
-  downloadDir: string,
-  splitArtists: (artists: { name: string }[]) => [string, string],
+  cfg: AppConfig,
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }> }> {
   const db = getDb()
   const plexPlaylistTracks = plexPlaylistRatingKey
     ? await getPlaylistTracks(plexPlaylistRatingKey, 99999)
     : []
 
-  // Build lookup: plexRatingKey → playlistItemID
-  const playlistItemMap = new Map<string, number>()
-  for (const pt of plexPlaylistTracks) {
-    if (pt.playlistItemID) playlistItemMap.set(pt.ratingKey, pt.playlistItemID)
-  }
-
   const resolutions: TrackResolution[] = []
   const usedPlexKeys = new Set<string>()
+  const claimedBindings = new Map<string, TrackResolution>()
 
   for (let i = 0; i < yunSongs.length; i++) {
     const song = yunSongs[i]!
-    const [albumArtist] = splitArtists(song.artists)
-    const resolution = await resolveOne(song, i, plexPlaylistTracks, playlistItemMap, sectionKey, downloadDir, albumArtist, db)
-    resolutions.push(resolution)
-    if (resolution.plexRatingKey) usedPlexKeys.add(resolution.plexRatingKey)
+    const resolution = await resolveOne(song, i, plexPlaylistTracks, sectionKey, cfg, db)
+    const dedupedResolution = dedupeResolutionBinding(resolution, claimedBindings)
+    if (dedupedResolution !== resolution) {
+      deleteSongLookup(song.id)
+    }
+    resolutions.push(dedupedResolution)
+    if (dedupedResolution.plexRatingKey) usedPlexKeys.add(dedupedResolution.plexRatingKey)
   }
 
   // Extra tracks: in Plex playlist but not matched to any Netease song
@@ -54,61 +58,99 @@ async function resolveOne(
   song: NeteaseSong,
   index: number,
   plexTracks: Array<{ ratingKey: string; title: string; grandparentTitle: string; parentTitle: string; playlistItemID?: number }>,
-  playlistItemMap: Map<string, number>,
   sectionKey: string,
-  downloadDir: string,
-  albumArtist: string,
+  cfg: AppConfig,
   db: ReturnType<typeof getDb>,
 ): Promise<TrackResolution> {
   const base: Omit<TrackResolution, 'resolution'> = { neteaseIndex: index, song }
 
+  // ── Resolve all artist candidates once for this song ──
+  const artistCandidateNames = await resolveSongArtistCandidateNames(song.artists)
+  const artistCandidates = artistCandidateNames.map((name) => ({
+    name,
+    normalizedName: normalizeArtistName(name),
+  }))
+
   // ── Step 1: Check if already in Plex playlist ──
   const inPlaylist = plexTracks.find((pt) =>
-    fuzzyMatch(pt.title, song.name) &&
-    fuzzyArtist(pt.grandparentTitle, albumArtist) &&
-    fuzzyAlbum(pt.parentTitle, song.album.name),
+    fuzzyMatchTitle(pt.title, song.name) &&
+    anyCandidateMatches(pt.grandparentTitle, artistCandidates) &&
+    fuzzyMatchAlbum(pt.parentTitle, song.album.name),
   )
   if (inPlaylist && inPlaylist.playlistItemID) {
-    upsertLookup(db, song.id, inPlaylist.ratingKey, null)
-    return { ...base, resolution: 'matched_plex_playlist', plexRatingKey: inPlaylist.ratingKey, playlistItemId: inPlaylist.playlistItemID }
+    const filePath = await cacheTrackFilePath(db, song.id, inPlaylist.ratingKey, cfg)
+    return {
+      ...base,
+      resolution: 'matched_plex_playlist',
+      plexRatingKey: inPlaylist.ratingKey,
+      playlistItemId: inPlaylist.playlistItemID,
+      filePath: filePath ?? undefined,
+    }
   }
 
   // ── Step 2: Check DB cache ──
-  const cached = db.prepare('SELECT * FROM song_lookup WHERE netease_song_id = ?').get(song.id) as SongLookupRow | undefined
+  const cached = getSongLookup(song.id) as SongLookupRow | undefined
   if (cached?.plex_rating_key) {
-    // Quick verification: is the cached track still in Plex?
-    const stillValid = await quickVerify(cached.plex_rating_key, sectionKey, db, song)
-    if (stillValid) {
-      return { ...base, resolution: 'found_in_plex_library', plexRatingKey: cached.plex_rating_key }
+    const verifiedTrack = await quickVerify(cached.plex_rating_key)
+    if (verifiedTrack && trackMatchesSong(verifiedTrack, song, artistCandidates)) {
+      const filePath = await cacheTrackFilePath(db, song.id, cached.plex_rating_key, cfg)
+      return {
+        ...base,
+        resolution: 'found_in_plex_library',
+        plexRatingKey: cached.plex_rating_key,
+        filePath: filePath ?? undefined,
+      }
     }
-    // Cache invalid — remove it
-    db.prepare('DELETE FROM song_lookup WHERE netease_song_id = ?').run(song.id)
+    deleteSongLookup(song.id)
   }
 
-  // ── Step 3: Search Plex library ──
-  const found = await searchTrack(sectionKey, song.name, albumArtist, song.album.name)
+  // ── Step 3: Search Plex library (now with resolved artist candidates) ──
+  const found = await searchTrack(sectionKey, song.name, artistCandidateNames, song.album.name)
   if (found) {
-    upsertLookup(db, song.id, found.ratingKey, null)
-    return { ...base, resolution: 'found_in_plex_library', plexRatingKey: found.ratingKey }
+    const filePath = await cacheTrackFilePath(db, song.id, found.ratingKey, cfg)
+    return {
+      ...base,
+      resolution: 'found_in_plex_library',
+      plexRatingKey: found.ratingKey,
+      filePath: filePath ?? undefined,
+    }
   }
 
-  // ── Step 4: Check disk — build expected path and check existence ──
-  const expectedPath = cached?.file_path
-  if (expectedPath && existsSync(expectedPath)) {
-    upsertLookup(db, song.id, null, expectedPath)
-    return { ...base, resolution: 'found_on_disk', filePath: expectedPath }
+  // ── Step 4: Check disk ──
+  const expectedPath = cached?.file_path ?? findExistingLocalSongPath(song, cfg)
+  const accessiblePath = resolveAccessibleLocalPath(expectedPath, cfg)
+  if (accessiblePath) {
+    upsertLookup(db, song.id, null, accessiblePath)
+    return { ...base, resolution: 'found_on_disk', filePath: accessiblePath }
+  }
+  if (expectedPath) {
+    clearSongLookupFilePath(song.id)
   }
 
   // ── Step 5: Downloadable or unavailable ──
-  // A song is downloadable if we can get a URL (the caller will handle actual download)
-  // For now, mark as needs_download — the caller verifies URL availability
   return { ...base, resolution: 'needs_download' }
 }
 
 /** Quick Plex metadata lookup — one cheap API call to verify track still exists */
-async function quickVerify(plexRatingKey: string, _sectionKey: string, _db: ReturnType<typeof getDb>, _song: NeteaseSong): Promise<boolean> {
-  const track = await getTrackByRatingKey(plexRatingKey)
-  return track !== null
+async function quickVerify(plexRatingKey: string) {
+  return getTrackByRatingKey(plexRatingKey)
+}
+
+async function cacheTrackFilePath(
+  db: ReturnType<typeof getDb>,
+  neteaseSongId: number,
+  plexRatingKey: string,
+  cfg: AppConfig,
+): Promise<string | null> {
+  const plexPath = await getTrackFilePathByRatingKey(plexRatingKey)
+  const localPath = resolveAccessibleLocalPath(plexPath, cfg)
+  if (localPath) {
+    upsertLookup(db, neteaseSongId, plexRatingKey, localPath)
+    return localPath
+  }
+
+  upsertLookup(db, neteaseSongId, plexRatingKey, null)
+  return null
 }
 
 export function upsertLookup(db: ReturnType<typeof getDb>, neteaseSongId: number, plexRatingKey: string | null, filePath: string | null) {
@@ -123,6 +165,8 @@ export function upsertLookup(db: ReturnType<typeof getDb>, neteaseSongId: number
   `).run(neteaseSongId, plexRatingKey, filePath, now)
 }
 
+// ── Title matching (unchanged from original) ──
+
 function normalizeTitle(title: string): string {
   return title.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s*\[[^\]]*\]\s*/g, ' ').trim()
 }
@@ -131,20 +175,17 @@ function stripPunct(s: string): string {
   return s.toLowerCase().replace(/[/\\:*?"'<>|&\s‘’“”]+/g, '')
 }
 
-export function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
+function fuzzyMatchTitle(plexTitle: string, yunTitle: string): boolean {
+  if (!titleIdentityDescriptorsCompatible(plexTitle, yunTitle)) return false
   const y = normalizeTitle(yunTitle)
   const p = normalizeTitle(plexTitle)
   if (!y || !p) return false
 
-  // If normalized titles match, guard against ambiguous short bases
-  // e.g. "III" vs "III (Find Yourself)" — roman numeral base too ambiguous to collapse
   if (y === p || stripPunct(y) === stripPunct(p)) {
     const yHasExtra = /[([].+[\])]/.test(yunTitle)
     const pHasExtra = /[([].+[\])]/.test(plexTitle)
-    // One side has bracket/paren extra content, the other doesn't
     if (yHasExtra !== pHasExtra) {
       const base = yHasExtra ? plexTitle : yunTitle
-      // Short base title (≤ 3 chars, likely roman numeral or single char) → don't collapse
       if (base && base.trim().length <= 3) return false
     }
     return true
@@ -152,16 +193,58 @@ export function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
   return false
 }
 
-export function fuzzyArtist(plexArtist: string, yunArtist: string): boolean {
-  if (!yunArtist || !plexArtist) return true
-  const py = yunArtist.toLowerCase()
-  const pp = plexArtist.toLowerCase()
-  return py === pp || py.includes(pp) || pp.includes(py)
-}
-
-export function fuzzyAlbum(plexAlbum: string, yunAlbum: string): boolean {
+function fuzzyMatchAlbum(plexAlbum: string, yunAlbum: string): boolean {
   if (!yunAlbum || !plexAlbum) return true
   const y = normalizeTitle(yunAlbum)
   const p = normalizeTitle(plexAlbum || '')
   return y === p || stripPunct(y) === stripPunct(p) || stripPunct(y).includes(stripPunct(p)) || stripPunct(p).includes(stripPunct(y))
+}
+
+// ── Backward-compat exports ──
+
+export { isArtistNameMatch as fuzzyArtist, anyCandidateMatches, normalizeArtistName }
+export type { ArtistCandidate }
+
+/** @deprecated — use fuzzyMatchTitle (local) or isArtistNameMatch for artists */
+export function fuzzyMatch(plexTitle: string, yunTitle: string): boolean {
+  return fuzzyMatchTitle(plexTitle, yunTitle)
+}
+
+/** @deprecated — use fuzzyMatchAlbum (local) */
+export function fuzzyAlbum(plexAlbum: string, yunAlbum: string): boolean {
+  return fuzzyMatchAlbum(plexAlbum, yunAlbum)
+}
+
+function trackMatchesSong(
+  track: { title: string; grandparentTitle: string; parentTitle: string },
+  song: NeteaseSong,
+  artistCandidates: ArtistCandidate[],
+): boolean {
+  return (
+    fuzzyMatchTitle(track.title, song.name) &&
+    anyCandidateMatches(track.grandparentTitle, artistCandidates) &&
+    fuzzyMatchAlbum(track.parentTitle, song.album.name)
+  )
+}
+
+function dedupeResolutionBinding(
+  resolution: TrackResolution,
+  claimedBindings: Map<string, TrackResolution>,
+): TrackResolution {
+  const bindingKeys = [resolution.plexRatingKey, resolution.filePath].filter(Boolean) as string[]
+  for (const bindingKey of bindingKeys) {
+    const claimed = claimedBindings.get(bindingKey)
+    if (!claimed) continue
+    if (claimed.song.id === resolution.song.id) continue
+    return {
+      neteaseIndex: resolution.neteaseIndex,
+      song: resolution.song,
+      resolution: 'needs_download',
+    }
+  }
+
+  for (const bindingKey of bindingKeys) {
+    claimedBindings.set(bindingKey, resolution)
+  }
+  return resolution
 }

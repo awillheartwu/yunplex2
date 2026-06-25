@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   download: {
     dir: '/mnt/nas',
+    plexLibraryPathPrefix: '',
     downloadLyrics: true,
     embedMetadata: true,
     embedCover: true,
@@ -37,6 +38,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     jobRetentionSuccessDays: 7,
     jobRetentionFailedDays: 90,
     downloadTaskRetentionDays: 30,
+    activityRetentionDays: 30,
   },
   other: {
     multiArtistFormat: 'ampersand',
@@ -47,5 +49,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     applyAliasToAlbum: false,
     pathFormat: '{artist}/{album}/{title}',
     fontScale: 1.0,
+    enableMusicBrainzResolver: true,
+    musicBrainzMinScore: 90,
   },
 }

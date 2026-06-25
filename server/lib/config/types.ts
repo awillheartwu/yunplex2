@@ -21,6 +21,7 @@ export interface PlexConfig {
 
 export interface DownloadConfig {
   dir: string
+  plexLibraryPathPrefix: string
   downloadLyrics: boolean
   embedMetadata: boolean
   embedCover: boolean
@@ -39,6 +40,7 @@ export interface SyncStrategyConfig {
   jobRetentionSuccessDays: number
   jobRetentionFailedDays: number
   downloadTaskRetentionDays: number
+  activityRetentionDays: number
   forceFullCompare: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
@@ -102,6 +104,8 @@ export interface OtherConfig {
   applyAliasToAlbum: boolean
   pathFormat: string
   fontScale: number
+  enableMusicBrainzResolver: boolean
+  musicBrainzMinScore: number
 }
 
 export interface AppConfig {

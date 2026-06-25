@@ -1,47 +1,54 @@
 <template>
   <aside
+    data-testid="app-sidebar"
     class="flex flex-col select-none shrink-0 transition-all duration-200 overflow-hidden"
-    :style="{ background: 'var(--bg-sidebar)', width: collapsed ? '56px' : '250px' }"
+    :style="{ background: 'var(--bg-sidebar)', width: sidebarWidth }"
   >
-    <!-- Logo -->
-    <div class="h-16 flex items-center gap-3 px-4 shrink-0 overflow-hidden" style="border-bottom:1px solid var(--border-primary)">
-      <div class="w-7 h-7 rounded-md bg-accent flex items-center justify-center shadow-sm shrink-0">
-        <svg width="14" height="14" viewBox="0 0 32 32" fill="none">
-          <path d="M8 10h6l4 6-4 6H8l4-6-4-6z" fill="#fff" opacity="0.9" />
-          <path d="M18 10h6l-4 6 4 6h-6l-4-6 4-6z" fill="#fff" opacity="0.6" />
-        </svg>
+    <div
+      data-testid="sidebar-brand"
+      class="sidebar-brand h-20 shrink-0 overflow-hidden"
+      :class="{ 'sidebar-brand--collapsed': desktopCollapsed }"
+      style="border-bottom:1px solid var(--border-primary)"
+    >
+      <div
+        data-testid="sidebar-logo"
+        class="sidebar-logo bg-accent"
+        style="box-shadow:0 16px 34px var(--accent-glow)"
+      >
+        <AppIcon name="music" :size="17" class="text-white" />
       </div>
       <span
-        class="text-sm font-semibold tracking-tight whitespace-nowrap transition-opacity duration-200"
-        :style="{ color: 'var(--text-primary)', opacity: collapsed ? 0 : 1 }"
+        v-show="!desktopCollapsed"
+        class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold tracking-tight"
+        :style="{ color: 'var(--text-primary)' }"
       >YunPlex2</span>
     </div>
 
-    <!-- Nav items — flat, no group labels -->
-    <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-px">
+    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
       <SidebarItem
         v-for="item in navItems"
         :key="item.path"
         :icon="item.icon"
         :label="item.label"
         :path="item.path"
-        :collapsed="collapsed"
+        :collapsed="desktopCollapsed"
+        @navigate="emit('navigate')"
       />
     </nav>
 
-    <!-- Toggle + Footer -->
-    <div class="shrink-0" style="border-top:1px solid var(--border-primary)">
+    <div v-if="!mobile" class="shrink-0" style="border-top:1px solid var(--border-primary)">
       <button
-        class="w-full flex items-center gap-3 px-4 py-2.5 text-xs cursor-pointer transition-colors hover:bg-[var(--bg-hover)]"
+        class="sidebar-collapse-button w-full flex items-center py-2.5 text-xs cursor-pointer transition-colors hover:bg-[var(--bg-hover)]"
+        :class="desktopCollapsed ? 'justify-center' : 'gap-3'"
         :style="{ color: 'var(--text-tertiary)' }"
+        :aria-label="desktopCollapsed ? '展开菜单' : '收起菜单'"
+        :title="desktopCollapsed ? '展开菜单' : undefined"
         @click="collapsed = !collapsed; saveState()"
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="shrink-0 transition-transform duration-200" :class="collapsed ? 'rotate-180' : ''">
-          <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <AppIcon name="chevronLeft" :size="14" class="transition-transform duration-200" :class="desktopCollapsed ? 'rotate-180' : ''" />
         <span
-          class="whitespace-nowrap transition-opacity duration-200"
-          :style="{ opacity: collapsed ? 0 : 1 }"
+          v-show="!desktopCollapsed"
+          class="whitespace-nowrap"
         >收起菜单</span>
       </button>
     </div>
@@ -49,9 +56,17 @@
 </template>
 
 <script setup lang="ts">
+const props = withDefaults(defineProps<{ mobile?: boolean }>(), { mobile: false })
+const emit = defineEmits<{ navigate: [] }>()
+
 const STORAGE_KEY = 'yunplex-sidebar-collapsed'
 
 const collapsed = ref(false)
+const desktopCollapsed = computed(() => collapsed.value && !props.mobile)
+const sidebarWidth = computed(() => {
+  if (props.mobile) return 'min(18rem, 82vw)'
+  return desktopCollapsed.value ? '64px' : '220px'
+})
 
 function saveState() {
   try { localStorage.setItem(STORAGE_KEY, String(collapsed.value)) } catch { /* ignore */ }
@@ -66,6 +81,7 @@ onMounted(() => {
 
 const navItems = [
   { icon: 'dashboard', label: '仪表盘', path: '/' },
+  { icon: 'logs', label: '动态', path: '/activity' },
   { icon: 'source', label: '同步源', path: '/sync-sources' },
   { icon: 'download', label: '手动下载', path: '/manual-download' },
   { icon: 'activity', label: '任务中心', path: '/task-center' },
@@ -73,3 +89,37 @@ const navItems = [
   { icon: 'info', label: '系统', path: '/system' },
 ]
 </script>
+
+<style scoped>
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-inline: 20px;
+}
+
+.sidebar-brand--collapsed {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.sidebar-logo {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.sidebar-collapse-button {
+  min-height: 44px;
+  padding-inline: 16px;
+}
+
+.sidebar-collapse-button.justify-center {
+  padding-inline: 0;
+}
+</style>

@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)" @click.self="$emit('update:visible', false)">
+    <div v-if="visible" class="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="$emit('update:visible', false)">
       <div class="w-[520px] max-h-[80vh] max-w-[92vw] flex flex-col rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
         <div class="flex items-center justify-between px-5 py-4 shrink-0" style="border-bottom:1px solid var(--border-primary)">
           <div class="flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--accent)" stroke-width="1.3"/><circle cx="8" cy="8" r="2.5" fill="var(--accent)" opacity="0.3"/></svg>
+            <AppIcon name="album" :size="16" class="text-accent" />
             <h3 class="text-sm font-semibold" style="color:var(--text-primary)">添加专辑</h3>
           </div>
           <button class="btn btn-ghost text-xs" :disabled="loading" @click="fetchList">刷新</button>
@@ -24,7 +24,7 @@
               <input v-model="selectedIds" type="checkbox" :value="a.id" :disabled="isAdded(a.id)" class="shrink-0 rounded" />
               <img v-if="a.picUrl" :src="`${a.picUrl}?param=60y60`" class="w-10 h-10 rounded-lg object-cover shrink-0" />
               <div v-else class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style="background:var(--bg-input)">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><circle cx="8" cy="8" r="2.5" stroke="var(--text-tertiary)" stroke-width="1.3"/></svg>
+                <AppIcon name="album" :size="16" class="text-muted-deep" />
               </div>
               <div class="flex-1 min-w-0">
                 <p class="text-sm truncate" style="color:var(--text-primary)">{{ a.name }}</p>
@@ -95,6 +95,7 @@ async function handleAdd() {
       const a = list.value.find(x => x.id === aid)
       await api.post('/playlist-sources', {
         neteasePlaylistId: aid, type: 'album',
+        coverUrl: a?.picUrl || '',
         trackCount: a?.size || 0, name: a?.name || '', artist: a?.artist?.name || '',
       })
     }

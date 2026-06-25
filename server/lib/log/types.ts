@@ -26,6 +26,7 @@ export interface SyncState {
   isRunning: boolean
   currentStage: SyncStage
   startedAt: string | null
+  currentSourceName: string | null
   lastSyncAt: string | null
   lastSyncResult: 'success' | 'failure' | null
   syncCount: number

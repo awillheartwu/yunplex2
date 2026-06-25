@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest'
+import { RunBuilder } from './builder'
+
+describe('RunBuilder source/song indexing', () => {
+  it('persists the full source scope before any song results exist', () => {
+    const run = new RunBuilder(false)
+    run.setSourceIds(['source-1', 'source-2', 'source-1'])
+
+    expect(run.getRun().sourceIds).toEqual(['source-1', 'source-2'])
+    expect(run.getRun().songs).toHaveLength(0)
+  })
+
+  it('keeps structured context on run steps', () => {
+    const run = new RunBuilder(false)
+    const stepId = run.startStep('compare', '对比 Plex 歌单', {
+      context: {
+        sourceId: 'source-1',
+        sourceName: '华语摇滚精选',
+        plexPlaylistName: 'Plex 华语摇滚精选',
+      },
+    })
+
+    run.finishStep(stepId, 'success', '待下载 1 首')
+
+    expect(run.getRun().steps[0]).toMatchObject({
+      type: 'compare',
+      title: '对比 Plex 歌单',
+      context: {
+        sourceId: 'source-1',
+        sourceName: '华语摇滚精选',
+        plexPlaylistName: 'Plex 华语摇滚精选',
+      },
+    })
+  })
+
+  it('keeps songs with the same name distinct by neteaseSongId', () => {
+    const run = new RunBuilder(false)
+    run.addSongs('source-1', [
+      { songName: 'Same Name', artist: 'Artist A', album: 'Album A', status: 'pending', neteaseSongId: 101 },
+      { songName: 'Same Name', artist: 'Artist B', album: 'Album B', status: 'pending', neteaseSongId: 202 },
+    ])
+
+    const firstId = run.findSongId('source-1', 101)
+    const secondId = run.findSongId('source-1', 202)
+
+    expect(firstId).toBeTruthy()
+    expect(secondId).toBeTruthy()
+    expect(firstId).not.toBe(secondId)
+
+    if (!firstId || !secondId) throw new Error('Expected song IDs to exist')
+
+    run.updateSong(firstId, { status: 'success', phase: 'done' })
+    run.updateSong(secondId, { status: 'failed_download', phase: 'download' })
+
+    expect(run.getSong('source-1', 101)?.status).toBe('success')
+    expect(run.getSong('source-1', 202)?.status).toBe('failed_download')
+  })
+})

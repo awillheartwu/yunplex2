@@ -1,4 +1,5 @@
 import { sseSubscribe, sseConnected } from './sse'
+import { useTimeoutFn } from './useTiming'
 
 /**
  * Per-source sync — fire-and-forget trigger with SSE-driven state tracking.
@@ -10,21 +11,21 @@ export function useSourceSync() {
   const error = ref<string | null>(null)
 
   const unsubs: Array<() => void> = []
-  let timeout: ReturnType<typeof setTimeout> | null = null
 
   function clearSyncing() {
     syncingSourceId.value = null
-    if (timeout) { clearTimeout(timeout); timeout = null }
+    fallbackClear.cancel()
   }
 
-  async function syncSource(sourceId: string) {
+  const fallbackClear = useTimeoutFn(clearSyncing, 30000)
+
+  async function syncSource(sourceId: string, body?: { forceFull?: boolean; rebuildMatch?: boolean }) {
     error.value = null
     syncingSourceId.value = sourceId
-    if (timeout) clearTimeout(timeout)
     // Fallback: clear after 30s if SSE doesn't fire
-    timeout = setTimeout(clearSyncing, 30000)
+    fallbackClear.schedule()
     try {
-      await api.post(`/playlist-sources/${sourceId}/sync`)
+      await api.post(`/playlist-sources/${sourceId}/sync`, body)
     } catch (err) {
       clearSyncing()
       error.value = err instanceof Error ? err.message : '触发同步失败'

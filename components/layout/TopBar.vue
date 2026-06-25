@@ -1,36 +1,43 @@
 <template>
-  <header class="h-16 flex items-center justify-between px-8 shrink-0" style="background:var(--bg-app);border-bottom:1px solid var(--border-primary)">
-    <div class="flex items-center gap-4">
-      <h1 class="text-base font-semibold tracking-tight" style="color:var(--text-primary)">{{ pageTitle }}</h1>
+  <header class="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8" style="background:color-mix(in srgb, var(--bg-app) 84%, transparent);border-bottom:1px solid var(--border-primary);backdrop-filter:blur(16px)">
+    <div class="flex min-w-0 items-center gap-3 sm:gap-4">
+      <button class="icon-button md:hidden" type="button" aria-label="打开导航" @click="$emit('toggle-menu')">
+        <AppIcon name="menu" :size="18" />
+      </button>
+      <h1 class="truncate text-[1.75rem] font-semibold tracking-[-0.03em] sm:text-[1.9rem]" style="color:var(--text-primary)">{{ pageTitle }}</h1>
       <StatusBadge
         v-if="syncState"
+        class="hidden sm:inline-flex"
         :status="syncState.isRunning || (syncState.currentStage && syncState.currentStage !== 'idle') ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
       />
     </div>
-    <div class="flex items-center gap-3">
-      <span v-if="syncState?.lastSyncAt" class="text-2xs text-muted">
+    <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+      <span v-if="syncState?.lastSyncAt" class="hidden text-2xs text-muted lg:inline">
         上次同步 {{ formatTime(syncState.lastSyncAt) }}
       </span>
       <a
         :href="githubUrl"
         target="_blank"
-        class="text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
+        class="hidden sm:inline-flex text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
         style="color:var(--text-tertiary)"
         title="GitHub"
       >v{{ version }}</a>
       <button
-        class="text-xs cursor-pointer px-1.5 py-0.5 rounded transition-colors duration-150"
+        class="icon-button"
         :class="theme === 'dark' ? 'text-warning hover:bg-[var(--bg-hover)]' : 'text-muted hover:bg-[var(--bg-hover)]'"
+        :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
         :title="theme === 'dark' ? '浅色主题' : '深色主题'"
         @click="toggleTheme"
       >
-        {{ theme === 'dark' ? '☀' : '☾' }}
+        <AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" />
       </button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+defineEmits<{ 'toggle-menu': [] }>()
+
 const route = useRoute()
 const { state: syncState } = useSync()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -48,6 +55,7 @@ onMounted(async () => {
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
+  '/activity': '动态',
   '/sync-sources': '同步源',
   '/manual-download': '手动下载',
   '/task-center': '任务中心',
@@ -55,7 +63,10 @@ const titles: Record<string, string> = {
   '/system': '系统',
 }
 
-const pageTitle = computed(() => titles[route.path] || 'YunPlex2')
+const pageTitle = computed(() => {
+  if (route.path.startsWith('/task-center/runs/')) return '运行详情'
+  return titles[route.path] || 'YunPlex2'
+})
 
 function formatTime(iso: string): string {
   const d = new Date(iso)

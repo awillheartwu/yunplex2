@@ -35,6 +35,11 @@ function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>):
   return result
 }
 
+function tableExists(d: Database.Database, tableName: string): boolean {
+  const row = d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName) as { name: string } | undefined
+  return Boolean(row)
+}
+
 export function getDb(): Database.Database {
   if (!db) throw new Error('Database not initialized. Call initDb() first.')
   return db
@@ -50,12 +55,73 @@ export function initDb(dataDir: string): Database.Database {
 
   createSchema(db)
   runMigrations(db)
+  migrateLegacyJobsToTaskRunsAndDrop(db)
   seedConfig(db, dataDir)
 
   return db
 }
 
 // ── Schema migrations ──
+
+function ensureTaskRunSources(d: Database.Database): void {
+  d.prepare(`
+    CREATE TABLE IF NOT EXISTS task_run_sources (
+      run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      PRIMARY KEY (run_id, source_id)
+    )
+  `).run()
+  d.prepare('CREATE INDEX IF NOT EXISTS idx_task_run_sources_source ON task_run_sources(source_id, run_id)').run()
+
+  const rows = d.prepare('SELECT id, data FROM task_runs').all() as Array<{ id: string; data: string }>
+  const insert = d.prepare('INSERT OR IGNORE INTO task_run_sources (run_id, source_id) VALUES (?, ?)')
+  const backfill = d.transaction(() => {
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(row.data) as {
+          sourceIds?: unknown
+          songs?: Array<{ sourceId?: unknown }>
+        }
+        const sourceIds = new Set<string>()
+        if (Array.isArray(payload.sourceIds)) {
+          for (const sourceId of payload.sourceIds) {
+            if (typeof sourceId === 'string' && sourceId) sourceIds.add(sourceId)
+          }
+        }
+        for (const song of payload.songs || []) {
+          if (typeof song.sourceId === 'string' && song.sourceId) sourceIds.add(song.sourceId)
+        }
+        for (const sourceId of sourceIds) insert.run(row.id, sourceId)
+      } catch {
+        // Malformed legacy payloads stay available; their source membership is unknown.
+      }
+    }
+  })
+  backfill()
+}
+
+function migrateLegacyJobsToTaskRunsAndDrop(d: Database.Database): void {
+  if (!tableExists(d, 'jobs')) return
+
+  const columns = d.prepare("PRAGMA table_info('jobs')").all() as Array<{ name: string }>
+  const hasColumn = (name: string) => columns.some(column => column.name === name)
+  const typeExpr = hasColumn('type') ? "COALESCE(type, 'sync')" : "'sync'"
+  const removedSongsExpr = hasColumn('removed_songs') ? 'COALESCE(removed_songs, 0)' : '0'
+
+  d.prepare(`
+    INSERT OR IGNORE INTO task_runs (
+      id, type, trigger, started_at, finished_at, status, summary,
+      total_items, success_items, failed_items, skipped_items, removed_items,
+      warnings, source, target, duration_ms, data
+    )
+    SELECT id, ${typeExpr}, 'system', started_at, finished_at, status, summary,
+      total_songs, success_songs, failed_songs, skipped_songs, ${removedSongsExpr},
+      warnings, source, target, duration_ms, data
+    FROM jobs
+  `).run()
+  ensureTaskRunSources(d)
+  d.prepare('DROP TABLE IF EXISTS jobs').run()
+}
 
 const MIGRATIONS: Array<(d: Database.Database) => void> = [
   /* v1: initial schema — covered by createSchema */
@@ -141,6 +207,10 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   },
   /* v20: allow NULL source_id in download_tasks for download-only batches */
   (d) => {
+    const existingColumns = d.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string; notnull: number }>
+    const sourceId = existingColumns.find(column => column.name === 'source_id')
+    if (sourceId && sourceId.notnull === 0) return
+    d.prepare('DROP TABLE IF EXISTS download_tasks_new').run()
     d.prepare(`
       CREATE TABLE download_tasks_new (
         id              TEXT PRIMARY KEY,
@@ -161,13 +231,265 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
         updated_at      TEXT NOT NULL
       )
     `).run()
-    d.prepare('INSERT INTO download_tasks_new SELECT * FROM download_tasks').run()
+    d.prepare(`
+      INSERT INTO download_tasks_new (
+        id, source_id, song_id, song_name, artist, album, status, progress,
+        file_path, file_type, quality, error, retry_count, job_id, created_at, updated_at
+      )
+      SELECT id, source_id, song_id, song_name, artist, album, status, progress,
+        file_path, file_type, quality, error, retry_count, job_id, created_at, updated_at
+      FROM download_tasks
+    `).run()
     d.prepare('DROP TABLE download_tasks').run()
     d.prepare('ALTER TABLE download_tasks_new RENAME TO download_tasks').run()
     d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status)').run()
     d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id)').run()
     d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_time ON download_tasks(updated_at DESC)').run()
   },
+  /* v21: artist_resolution_cache for MusicBrainz alias persistence */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS artist_resolution_cache (
+        normalized_name TEXT PRIMARY KEY,
+        original_name   TEXT NOT NULL,
+        resolved_json   TEXT NOT NULL,
+        source          TEXT NOT NULL DEFAULT 'original',
+        confidence      INTEGER NOT NULL DEFAULT 0,
+        mb_score        INTEGER,
+        last_status     TEXT NOT NULL DEFAULT 'empty' CHECK(last_status IN ('success','empty','failed','disabled')),
+        failure_count   INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        updated_at      TEXT NOT NULL
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_artist_resolution_cache_updated ON artist_resolution_cache(updated_at)').run()
+  },
+  /* v22: ensure artist_resolution_cache uses normalized_name PK (rebuild if v21 was run with old schema) */
+  (d) => {
+    // Detect old schema: artist_name column existed in the first draft of v21
+    const cols = d.prepare("PRAGMA table_info('artist_resolution_cache')").all() as Array<{ name: string }>
+    const hasArtistName = cols.some((c) => c.name === 'artist_name')
+    const hasNormalizedName = cols.some((c) => c.name === 'normalized_name')
+
+    if (hasArtistName && !hasNormalizedName) {
+      // Old schema with artist_name PK — migrate to normalized_name PK
+      d.prepare(`
+        CREATE TABLE artist_resolution_cache_new (
+          normalized_name TEXT PRIMARY KEY,
+          original_name   TEXT NOT NULL,
+          resolved_json   TEXT NOT NULL,
+          source          TEXT NOT NULL DEFAULT 'original',
+          confidence      INTEGER NOT NULL DEFAULT 0,
+          mb_score        INTEGER,
+          last_status     TEXT NOT NULL DEFAULT 'empty' CHECK(last_status IN ('success','empty','failed','disabled')),
+          failure_count   INTEGER NOT NULL DEFAULT 0,
+          last_attempt_at TEXT,
+          updated_at      TEXT NOT NULL
+        )
+      `).run()
+      d.prepare(`
+        INSERT OR IGNORE INTO artist_resolution_cache_new (normalized_name, original_name, resolved_json, source, confidence, mb_score, last_status, failure_count, last_attempt_at, updated_at)
+        SELECT
+          LOWER(REPLACE(artist_name, ' ', '')),
+          artist_name,
+          resolved_json,
+          source,
+          confidence,
+          mb_score,
+          last_status,
+          failure_count,
+          last_attempt_at,
+          updated_at
+        FROM artist_resolution_cache
+      `).run()
+      d.prepare('DROP TABLE artist_resolution_cache').run()
+      d.prepare('ALTER TABLE artist_resolution_cache_new RENAME TO artist_resolution_cache').run()
+      d.prepare('CREATE INDEX IF NOT EXISTS idx_artist_resolution_cache_updated ON artist_resolution_cache(updated_at)').run()
+    }
+  },
+  /* v23: structured activity events */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS activity_events (
+        id           TEXT PRIMARY KEY,
+        domain       TEXT NOT NULL CHECK(domain IN ('sync','download','plex','user')),
+        type         TEXT NOT NULL,
+        severity     TEXT NOT NULL CHECK(severity IN ('info','success','warning','error')),
+        occurred_at  TEXT NOT NULL,
+        actor        TEXT NOT NULL CHECK(actor IN ('system','user')),
+        title        TEXT NOT NULL,
+        summary      TEXT NOT NULL,
+        context      TEXT NOT NULL DEFAULT '{}',
+        link         TEXT,
+        group_key    TEXT
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_activity_events_occurred_at ON activity_events(occurred_at DESC)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_activity_events_domain ON activity_events(domain)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_activity_events_severity ON activity_events(severity)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_activity_events_group_key ON activity_events(group_key)').run()
+  },
+  /* v24: persist cover URLs for sync sources */
+  (d) => {
+    d.prepare("ALTER TABLE playlist_sources ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''").run()
+  },
+  /* v25: unified task runs + compatible download run link */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS task_runs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        trigger TEXT NOT NULL DEFAULT 'system',
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('running','success','partial','failed','cancelled')),
+        summary TEXT NOT NULL DEFAULT '',
+        total_items INTEGER NOT NULL DEFAULT 0,
+        success_items INTEGER NOT NULL DEFAULT 0,
+        failed_items INTEGER NOT NULL DEFAULT 0,
+        skipped_items INTEGER NOT NULL DEFAULT 0,
+        removed_items INTEGER NOT NULL DEFAULT 0,
+        warnings INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT '',
+        target TEXT NOT NULL DEFAULT '',
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL DEFAULT '{}'
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at DESC)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_task_runs_type ON task_runs(type)').run()
+    if (tableExists(d, 'jobs')) {
+      d.prepare(`
+        INSERT OR IGNORE INTO task_runs (
+          id, type, trigger, started_at, finished_at, status, summary,
+          total_items, success_items, failed_items, skipped_items, removed_items,
+          warnings, source, target, duration_ms, data
+        )
+        SELECT id, COALESCE(type, 'sync'), 'system', started_at, finished_at, status, summary,
+          total_songs, success_songs, failed_songs, skipped_songs, COALESCE(removed_songs, 0),
+          warnings, source, target, duration_ms, data
+        FROM jobs
+      `).run()
+    }
+
+    const columns = d.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
+    if (!columns.some(column => column.name === 'run_id')) {
+      d.prepare('ALTER TABLE download_tasks ADD COLUMN run_id TEXT').run()
+    }
+    d.prepare('UPDATE download_tasks SET run_id = job_id WHERE run_id IS NULL AND job_id IS NOT NULL').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_download_tasks_run ON download_tasks(run_id)').run()
+
+    const batches = d.prepare(`
+      SELECT COALESCE(run_id, job_id) AS run_id,
+        MIN(created_at) AS started_at,
+        MAX(updated_at) AS finished_at,
+        COUNT(*) AS total_items,
+        SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS success_items,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_items,
+        SUM(CASE WHEN status IN ('pending','downloading','tagging') THEN 1 ELSE 0 END) AS active_items
+      FROM download_tasks
+      WHERE source_id IS NULL AND COALESCE(run_id, job_id) IS NOT NULL
+      GROUP BY COALESCE(run_id, job_id)
+    `).all() as Array<{
+      run_id: string
+      started_at: string
+      finished_at: string
+      total_items: number
+      success_items: number
+      failed_items: number
+      active_items: number
+    }>
+    const insertRun = d.prepare(`
+      INSERT OR IGNORE INTO task_runs (
+        id, type, trigger, started_at, finished_at, status, summary,
+        total_items, success_items, failed_items, skipped_items, removed_items,
+        warnings, source, target, duration_ms, data
+      ) VALUES (?, 'manual_download', 'user', ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '手动下载', '本地磁盘', ?, ?)
+    `)
+    for (const batch of batches) {
+      const status = batch.active_items > 0
+        ? 'running'
+        : batch.failed_items === 0
+          ? 'success'
+          : batch.success_items > 0
+            ? 'partial'
+            : 'failed'
+      const finishedAt = status === 'running' ? null : batch.finished_at
+      const durationMs = Math.max(0, new Date(batch.finished_at).getTime() - new Date(batch.started_at).getTime())
+      const summary = `手动下载 ${batch.total_items} 首歌曲`
+      insertRun.run(
+        batch.run_id, batch.started_at, finishedAt, status, summary,
+        batch.total_items, batch.success_items, batch.failed_items, durationMs,
+        JSON.stringify({
+          id: batch.run_id, type: 'manual_download', trigger: 'user',
+          startedAt: batch.started_at, finishedAt, status, durationMs, summary,
+          source: '手动下载', target: '本地磁盘',
+          totalSongs: batch.total_items, successSongs: batch.success_items,
+          failedSongs: batch.failed_items, skippedSongs: 0, removedSongs: 0,
+          warnings: 0, dryRun: false, steps: [], songs: [], config: {},
+        }),
+      )
+    }
+  },
+  /* v26: lightweight failure record lifecycle */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS failure_records (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL UNIQUE,
+        subject_key TEXT NOT NULL,
+        song_id INTEGER,
+        song_name TEXT NOT NULL,
+        artist TEXT NOT NULL DEFAULT '',
+        source_id TEXT,
+        source_name TEXT NOT NULL DEFAULT '',
+        run_id TEXT,
+        run_type TEXT NOT NULL,
+        failure_kind TEXT NOT NULL,
+        failure_reason TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','ignored','resolved')),
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        ignored_at TEXT,
+        resolved_at TEXT,
+        occurrence_count INTEGER NOT NULL DEFAULT 1,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        download_task_ids TEXT
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_failure_records_status ON failure_records(status, last_seen_at DESC)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_failure_records_run ON failure_records(run_id)').run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_failure_records_subject ON failure_records(subject_key)').run()
+  },
+  /* v27: normalize failure record time bounds created by out-of-order history replay */
+  (d) => {
+    d.prepare(`
+      UPDATE failure_records
+      SET first_seen_at = last_seen_at,
+          last_seen_at = first_seen_at
+      WHERE first_seen_at > last_seen_at
+    `).run()
+  },
+  /* v28: make failure history replay idempotent and repair inflated counters */
+  (d) => {
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS failure_occurrences (
+        fingerprint TEXT NOT NULL,
+        occurrence_key TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        PRIMARY KEY (fingerprint, occurrence_key)
+      )
+    `).run()
+    d.prepare('CREATE INDEX IF NOT EXISTS idx_failure_occurrences_fingerprint ON failure_occurrences(fingerprint)').run()
+    d.prepare('UPDATE failure_records SET occurrence_count = 0').run()
+  },
+  /* v29: explicit many-to-many membership between task runs and sync sources */
+  ensureTaskRunSources,
+  /* v30: compatibility slot for databases whose historical migration numbering was offset by one */
+  ensureTaskRunSources,
+  /* v31: remove legacy jobs table after its records have been migrated into task_runs */
+  migrateLegacyJobsToTaskRunsAndDrop,
 ]
 
 function runMigrations(d: Database.Database): void {
@@ -211,6 +533,7 @@ function seedConfig(d: Database.Database, dataDir: string): void {
     YUNPLEX2_PLEX_TOKEN: ['plex', 'token'],
     YUNPLEX2_PLEX_SECTION: ['plex', 'section'],
     YUNPLEX2_DOWNLOAD_DIR: ['download', 'dir'],
+    YUNPLEX2_PLEX_LIBRARY_PATH_PREFIX: ['download', 'plexLibraryPathPrefix'],
     YUNPLEX2_SYNC_INTERVAL: ['sync', 'intervalMinutes'],
     YUNPLEX2_SYNC_LIMIT: ['sync', 'songLimit'],
     YUNPLEX2_SYNC_ENABLED: ['sync', 'enabled'],
@@ -311,31 +634,41 @@ function createSchema(db: Database.Database): void {
 
     INSERT OR IGNORE INTO sync_state (id) VALUES (1);
 
-    CREATE TABLE IF NOT EXISTS jobs (
+    CREATE TABLE IF NOT EXISTS task_runs (
       id             TEXT PRIMARY KEY,
+      type           TEXT NOT NULL,
+      trigger        TEXT NOT NULL DEFAULT 'system',
       started_at     TEXT NOT NULL,
       finished_at    TEXT,
       status         TEXT NOT NULL CHECK(status IN ('running','success','partial','failed','cancelled')),
       summary        TEXT NOT NULL DEFAULT '',
-      total_songs    INTEGER NOT NULL DEFAULT 0,
-      success_songs  INTEGER NOT NULL DEFAULT 0,
-      failed_songs   INTEGER NOT NULL DEFAULT 0,
-      skipped_songs  INTEGER NOT NULL DEFAULT 0,
-      removed_songs  INTEGER NOT NULL DEFAULT 0,
+      total_items    INTEGER NOT NULL DEFAULT 0,
+      success_items  INTEGER NOT NULL DEFAULT 0,
+      failed_items   INTEGER NOT NULL DEFAULT 0,
+      skipped_items  INTEGER NOT NULL DEFAULT 0,
+      removed_items  INTEGER NOT NULL DEFAULT 0,
       warnings       INTEGER NOT NULL DEFAULT 0,
-      dry_run        INTEGER NOT NULL DEFAULT 0,
-      source         TEXT NOT NULL DEFAULT '网易云音乐',
-      target         TEXT NOT NULL DEFAULT 'Plex',
+      source         TEXT NOT NULL DEFAULT '',
+      target         TEXT NOT NULL DEFAULT '',
       duration_ms    INTEGER NOT NULL DEFAULT 0,
       data           TEXT NOT NULL DEFAULT '{}'
     );
 
-    CREATE INDEX IF NOT EXISTS idx_jobs_started ON jobs(started_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_task_runs_status ON task_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_task_runs_type ON task_runs(type);
+
+    CREATE TABLE IF NOT EXISTS task_run_sources (
+      run_id    TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      PRIMARY KEY (run_id, source_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_run_sources_source ON task_run_sources(source_id, run_id);
 
     CREATE TABLE IF NOT EXISTS download_tasks (
       id              TEXT PRIMARY KEY,
-      source_id       TEXT NOT NULL,
+      source_id       TEXT,
       song_id         INTEGER NOT NULL,
       song_name       TEXT NOT NULL,
       artist          TEXT NOT NULL DEFAULT '',
@@ -348,12 +681,14 @@ function createSchema(db: Database.Database): void {
       error           TEXT,
       retry_count     INTEGER NOT NULL DEFAULT 0,
       job_id          TEXT,
+      run_id          TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id);
+    CREATE INDEX IF NOT EXISTS idx_download_tasks_run ON download_tasks(run_id);
 
     CREATE TABLE IF NOT EXISTS playlist_sources (
       id                      TEXT PRIMARY KEY,
@@ -381,6 +716,7 @@ function createSchema(db: Database.Database): void {
       sort_order              INTEGER NOT NULL DEFAULT 0,
       type                    TEXT NOT NULL DEFAULT 'playlist',
       subscribed              INTEGER NOT NULL DEFAULT 0,
+      cover_url               TEXT NOT NULL DEFAULT '',
       skip_plex_playlist      INTEGER NOT NULL DEFAULT 0,
       copyright_restricted_ids TEXT,
       ignored_failure_ids     TEXT,
@@ -398,6 +734,61 @@ function createSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_song_lookup_rating_key ON song_lookup(plex_rating_key);
+
+    CREATE TABLE IF NOT EXISTS activity_events (
+      id           TEXT PRIMARY KEY,
+      domain       TEXT NOT NULL CHECK(domain IN ('sync','download','plex','user')),
+      type         TEXT NOT NULL,
+      severity     TEXT NOT NULL CHECK(severity IN ('info','success','warning','error')),
+      occurred_at  TEXT NOT NULL,
+      actor        TEXT NOT NULL CHECK(actor IN ('system','user')),
+      title        TEXT NOT NULL,
+      summary      TEXT NOT NULL,
+      context      TEXT NOT NULL DEFAULT '{}',
+      link         TEXT,
+      group_key    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_activity_events_occurred_at ON activity_events(occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activity_events_domain ON activity_events(domain);
+    CREATE INDEX IF NOT EXISTS idx_activity_events_severity ON activity_events(severity);
+    CREATE INDEX IF NOT EXISTS idx_activity_events_group_key ON activity_events(group_key);
+
+    CREATE TABLE IF NOT EXISTS failure_records (
+      id                TEXT PRIMARY KEY,
+      fingerprint       TEXT NOT NULL UNIQUE,
+      subject_key       TEXT NOT NULL,
+      song_id           INTEGER,
+      song_name         TEXT NOT NULL,
+      artist            TEXT NOT NULL DEFAULT '',
+      source_id         TEXT,
+      source_name       TEXT NOT NULL DEFAULT '',
+      run_id            TEXT,
+      run_type          TEXT NOT NULL,
+      failure_kind      TEXT NOT NULL,
+      failure_reason    TEXT NOT NULL DEFAULT '',
+      status            TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','ignored','resolved')),
+      first_seen_at     TEXT NOT NULL,
+      last_seen_at      TEXT NOT NULL,
+      ignored_at        TEXT,
+      resolved_at       TEXT,
+      occurrence_count  INTEGER NOT NULL DEFAULT 1,
+      retry_count       INTEGER NOT NULL DEFAULT 0,
+      download_task_ids TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failure_records_status ON failure_records(status, last_seen_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_failure_records_run ON failure_records(run_id);
+    CREATE INDEX IF NOT EXISTS idx_failure_records_subject ON failure_records(subject_key);
+
+    CREATE TABLE IF NOT EXISTS failure_occurrences (
+      fingerprint    TEXT NOT NULL,
+      occurrence_key TEXT NOT NULL,
+      occurred_at    TEXT NOT NULL,
+      PRIMARY KEY (fingerprint, occurrence_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failure_occurrences_fingerprint ON failure_occurrences(fingerprint);
 
   `)
 }

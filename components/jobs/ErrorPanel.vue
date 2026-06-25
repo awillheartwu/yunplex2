@@ -1,9 +1,7 @@
 <template>
   <div class="mt-2 bg-[#e74c3c08] border border-[#e74c3c20] rounded-lg p-3">
     <div class="flex items-start gap-2">
-      <svg class="shrink-0 mt-0.5" width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <path d="M8 6v3M8 11v0M1.5 13.5h13L8 2.5 1.5 13.5z" stroke="#e74c3c" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <AppIcon name="warn" :size="14" class="shrink-0 mt-0.5 text-danger" />
       <div class="flex-1 min-w-0">
         <p class="text-sm text-danger font-medium">{{ error.title }}</p>
         <p class="text-sm text-[var(--text-primary)] mt-1">{{ error.message }}</p>

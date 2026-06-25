@@ -65,16 +65,52 @@ export async function fetchPlaylistSongs(
   playlistId: number,
   limit: number | undefined,
   cookie: string,
-): Promise<{ songs: NeteaseSong[]; trackUpdateTime: number | null; trackIds: { id: number }[]; playlistName: string | null }> {
+): Promise<{
+  songs: NeteaseSong[]
+  trackUpdateTime: number | null
+  trackIds: { id: number }[]
+  playlistName: string | null
+  playlist: {
+    name: string
+    coverUrl: string
+    creatorName: string
+    description: string
+    trackCount: number
+    updateTime: number | null
+  } | null
+}> {
   const url = `https://music.163.com/api/v1/playlist/detail?id=${playlistId}`
   const res = await fetch(url)
-  const body = (await res.json()) as { playlist?: { name?: string; trackIds: { id: number }[]; trackUpdateTime?: number } }
+  const body = (await res.json()) as {
+    playlist?: {
+      name?: string
+      coverImgUrl?: string
+      creator?: { nickname?: string }
+      description?: string
+      trackCount?: number
+      trackIds: { id: number }[]
+      trackUpdateTime?: number
+      updateTime?: number
+    }
+  }
   const allIds = body.playlist?.trackIds ?? []
   const trackUpdateTime = body.playlist?.trackUpdateTime ?? null
   const playlistName = body.playlist?.name ?? null
+  const playlist = body.playlist
+    ? {
+        name: body.playlist.name ?? `歌单 ${playlistId}`,
+        coverUrl: body.playlist.coverImgUrl ?? '',
+        creatorName: body.playlist.creator?.nickname ?? '',
+        description: body.playlist.description ?? '',
+        trackCount: body.playlist.trackCount ?? allIds.length,
+        updateTime: body.playlist.updateTime ?? trackUpdateTime,
+      }
+    : null
   const slicedIds = limit && limit > 0 ? allIds.slice(0, limit) : allIds
 
-  if (slicedIds.length === 0) return { songs: [], trackUpdateTime, trackIds: slicedIds, playlistName }
+  if (slicedIds.length === 0) {
+    return { songs: [], trackUpdateTime, trackIds: slicedIds, playlistName, playlist }
+  }
 
   // Batch song_detail — API rejects too many IDs at once (safe limit: ~500)
   const BATCH_SIZE = 400
@@ -105,7 +141,7 @@ export async function fetchPlaylistSongs(
     }
   }
 
-  return { songs: allSongs, trackUpdateTime, trackIds: slicedIds, playlistName }
+  return { songs: allSongs, trackUpdateTime, trackIds: slicedIds, playlistName, playlist }
 }
 
 interface RawSong {

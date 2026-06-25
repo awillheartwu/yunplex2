@@ -21,6 +21,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@lucide/vue": "^1.17.0",
     "NeteaseCloudMusicApi": "^4.32.0",
     "better-sqlite3": "^12.10.0",
     "chinese-conv": "^4.0.0",

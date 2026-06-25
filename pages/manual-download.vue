@@ -1,472 +1,521 @@
 <template>
-  <div>
-    <h2 class="text-sm font-semibold" style="color: var(--text-primary)">手动下载</h2>
-    <p class="text-2xs text-muted mt-0.5 mb-6">粘贴网易云链接或 ID，解析预览后下载资源到本地</p>
+  <div class="manual-page">
+    <PageHeader
+      description="解析网易云链接或资源 ID，选择歌曲并跟踪下载批次"
+    />
 
-    <!-- ═══ Top workspace = fixed height ═══ -->
-    <div class="shrink-0 pb-4">
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5" style="min-height: 340px">
-        <!-- ── Left: Input + Config ── -->
-        <section class="section-card p-4 flex flex-col">
-          <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">
-            资源解析
-          </h3>
+    <PageTabs
+      :model-value="manualView"
+      :tabs="manualPageTabs"
+      aria-label="手动下载视图"
+      @change="switchManualView"
+    />
 
-          <!-- Input area -->
-          <textarea
-            v-model="inputValue"
-            class="form-input flex-1 resize-none"
-            style="min-height: 100px"
-            :placeholder="placeholderText"
-            :disabled="parseState === 'parsing'"
-            @keydown.enter.ctrl="handleParse"
-            @paste="onPaste"
-          />
-
-          <!-- Detection hint / error -->
-          <div v-if="detectHint && parseState === 'preview'" class="flex items-center gap-2 mt-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
-            <span class="text-2xs text-success">{{ detectHint }}</span>
-            <span class="text-2xs text-muted-deep">· ID: {{ neteaseId }}</span>
+    <div v-if="manualView === 'workspace'" class="manual-workspace">
+    <div class="manual-top-grid">
+      <section class="section-card manual-input-card">
+        <div class="manual-card-header">
+          <div>
+            <h3>下载工作台</h3>
+            <p>支持链接、纯数字 ID、多首换行、逗号或分号分隔。</p>
           </div>
-          <div v-if="error" class="flex items-center gap-2 mt-2">
-            <span class="text-2xs text-danger">{{ error }}</span>
-          </div>
-
-          <!-- Download result notice -->
-          <div
-            v-if="downloadResult"
-            class="flex items-center gap-3 mt-3 px-3 py-2 rounded-md"
-            style="background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2)"
-          >
-            <span class="text-xs text-success font-medium">
-              下载已启动，共 {{ downloadResult.total }} 首歌曲
-            </span>
-            <NuxtLink
-              v-if="resourceType && resourceType !== 'songs' && neteaseId"
-              to="/sync-sources"
-              class="text-2xs text-accent hover:underline"
-            >
-              查看同步源
-            </NuxtLink>
-          </div>
-
-          <!-- Save-as-source error -->
-          <div
-            v-if="saveError"
-            class="flex items-center gap-2 mt-3 px-3 py-2 rounded-md"
-            style="background: rgba(231,76,60,0.08); border: 1px solid rgba(231,76,60,0.2)"
-          >
-            <span class="text-xs text-danger">{{ saveError }}</span>
-            <button class="text-2xs text-accent hover:underline shrink-0" @click="saveError = ''">✕</button>
-          </div>
-
-          <!-- Options row -->
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
-            <div class="flex items-center gap-1.5">
-              <span class="text-2xs text-muted-deep shrink-0">音质</span>
-              <select v-model="quality" class="form-input text-2xs" style="width: auto; padding: 0.25rem 1.5rem 0.25rem 0.5rem; font-size: 0.6875rem; height: 1.625rem; background-position: right 0.4rem center;">
-                <option value="jymaster">臻品母带</option>
-                <option value="jyeffect">臻品</option>
-                <option value="hires">Hi-Res</option>
-                <option value="lossless">无损</option>
-                <option value="exhigh">极高</option>
-                <option value="higher">较高</option>
-                <option value="standard">标准</option>
-              </select>
-            </div>
-            <label class="flex items-center gap-1.5 cursor-pointer">
-              <input v-model="downloadLyrics" type="checkbox" class="w-3.5 h-3.5" />
-              <span class="text-2xs text-muted-deep">歌词</span>
-            </label>
-            <label class="flex items-center gap-1.5 cursor-pointer">
-              <input v-model="downloadImages" type="checkbox" class="w-3.5 h-3.5" />
-              <span class="text-2xs text-muted-deep">封面</span>
-            </label>
-            <label class="flex items-center gap-1.5 cursor-pointer">
-              <input v-model="embedMetadata" type="checkbox" class="w-3.5 h-3.5" />
-              <span class="text-2xs text-muted-deep">元数据</span>
-            </label>
-          </div>
-
-          <!-- Action buttons — state-machine driven -->
-          <div class="flex items-center gap-3 mt-4">
-            <!-- idle: 解析 is primary -->
-            <template v-if="parseState === 'idle'">
-              <button
-                class="btn btn-primary"
-                :disabled="!inputValue.trim()"
-                @click="handleParse"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M14 14L10 10M6.5 11.5a5 5 0 100-10 5 5 0 000 10z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                </svg>
-                <span>解析</span>
-              </button>
-            </template>
-
-            <!-- parsing: all disabled -->
-            <template v-else-if="parseState === 'parsing'">
-              <button class="btn btn-primary" disabled>
-                <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25" stroke-width="3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-                </svg>
-                <span>解析中...</span>
-              </button>
-            </template>
-
-            <!-- preview: 下载 is primary, 下载并保存为同步源 is secondary, 重新解析 is ghost -->
-            <template v-else-if="parseState === 'preview'">
-              <button
-                class="btn btn-primary"
-                :disabled="downloading || selectedCount === 0"
-                @click="handleDownload"
-              >
-                <svg
-                  v-if="downloading"
-                  class="animate-spin"
-                  width="14" height="14" viewBox="0 0 24 24" fill="none"
-                >
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity="0.25" stroke-width="3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-                </svg>
-                <svg v-else width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 2v9m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <span>{{ downloading ? '启动中...' : `下载${selectedCount > 0 ? ' (' + selectedCount + ')' : ''}` }}</span>
-              </button>
-              <button
-                v-if="resourceType && resourceType !== 'songs'"
-                class="btn btn-secondary"
-                :disabled="downloading || selectedCount === 0"
-                @click="handleDownloadAndSave"
-              >
-                下载并保存为同步源
-              </button>
-              <button
-                class="btn btn-ghost"
-                @click="handleParse"
-              >
-                重新解析
-              </button>
-            </template>
-          </div>
-        </section>
-
-        <!-- ── Right: Parse Preview ── -->
-        <section class="section-card p-4 flex flex-col overflow-hidden">
-          <!-- Idle placeholder -->
-          <div
-            v-if="parseState === 'idle'"
-            class="flex-1 flex flex-col items-center justify-center gap-3"
-          >
-            <svg
-              width="36" height="36" viewBox="0 0 24 24" fill="none"
-              style="color: var(--border-secondary)"
-            >
-              <path d="M9 12h6M12 9v6M4 4l16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              <rect x="2" y="2" width="20" height="20" rx="4" stroke="currentColor" stroke-width="1.5" />
-            </svg>
-            <p class="text-sm" style="color: var(--text-tertiary)">解析预览</p>
-            <p class="text-2xs" style="color: var(--text-tertiary); opacity: 0.6">
-              输入链接或 ID 后点击解析，将在此处显示预览
-            </p>
-          </div>
-
-          <!-- Parsing skeleton -->
-          <div v-else-if="parseState === 'parsing'" class="flex-1 flex flex-col gap-4">
-            <div class="flex items-center gap-4">
-              <div class="w-20 h-20 rounded-lg bg-[var(--bg-input)] animate-pulse shrink-0" />
-              <div class="flex-1 space-y-3">
-                <div class="h-4 bg-[var(--bg-input)] animate-pulse rounded w-2/3" />
-                <div class="h-3 bg-[var(--bg-input)] animate-pulse rounded w-1/3" />
-                <div class="h-3 bg-[var(--bg-input)] animate-pulse rounded w-1/2" />
-              </div>
-            </div>
-            <div class="space-y-2 flex-1 overflow-hidden">
-              <div v-for="i in 6" :key="i" class="h-8 bg-[var(--bg-input)] animate-pulse rounded" />
-            </div>
-          </div>
-
-          <!-- Preview content -->
-          <template v-else-if="parseState === 'preview'">
-            <!-- Header: cover + info -->
-            <div class="flex items-start gap-4 mb-3">
-              <div
-                class="w-20 h-20 rounded-lg bg-[var(--bg-input)] shrink-0 overflow-hidden"
-                style="border: 1px solid var(--border-primary)"
-              >
-                <img
-                  v-if="coverUrl"
-                  :src="coverUrl"
-                  :alt="title"
-                  class="w-full h-full object-cover"
-                  @error="(e) => { (e.target as HTMLImageElement).style.display = 'none' }"
-                />
-                <div
-                  v-if="!coverUrl"
-                  class="w-full h-full flex items-center justify-center"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="color: var(--border-secondary)">
-                    <path d="M9 17V7l8 5-8 5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </div>
-              </div>
-              <div class="flex-1 min-w-0">
-                <h4
-                  class="text-sm font-semibold truncate"
-                  :title="title"
-                  style="color: var(--text-primary)"
-                >
-                  {{ title }}
-                </h4>
-                <p
-                  v-if="artist"
-                  class="text-xs truncate mt-0.5"
-                  :title="artist"
-                  style="color: var(--text-secondary)"
-                >
-                  {{ artist }}
-                </p>
-                <div class="flex items-center gap-2 mt-1.5">
-                  <span
-                    class="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-medium"
-                    :class="typeBadgeClass"
-                  >
-                    {{ typeLabel }}
-                  </span>
-                  <span class="text-2xs" style="color: var(--text-tertiary)">
-                    {{ trackCount }} 首歌曲
-                  </span>
-                </div>
-                <p
-                  v-if="albumInfo?.company"
-                  class="text-2xs mt-1"
-                  style="color: var(--text-tertiary)"
-                >
-                  {{ albumInfo.company }}{{ albumInfo.publishTime ? ' · ' + new Date(albumInfo.publishTime).getFullYear() : '' }}
-                </p>
-              </div>
-            </div>
-
-            <!-- Track list header -->
-            <div
-              class="flex items-center justify-between py-2"
-              style="border-bottom: 1px solid var(--border-primary)"
-            >
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate.prop="!allSelected && selectedCount > 0"
-                  @change="toggleAll"
-                />
-                <span class="text-2xs" style="color: var(--text-secondary)">
-                  {{ allSelected ? '取消全选' : '全选' }}
-                  <span v-if="selectedCount > 0 && selectedCount < trackCount" style="color: var(--text-tertiary)">
-                    ({{ selectedCount }}/{{ trackCount }})
-                  </span>
-                </span>
-              </label>
-            </div>
-
-            <!-- Track list -->
-            <div class="flex-1 overflow-y-auto -mx-1 px-1" style="max-height: 300px">
-              <div
-                v-for="(track, idx) in tracks"
-                :key="track.id"
-                class="flex items-center gap-3 py-1.5 px-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
-              >
-                <input
-                  type="checkbox"
-                  :checked="track.selected"
-                  @change="toggleTrack(track.id)"
-                />
-                <span class="text-2xs w-5 text-right shrink-0" style="color: var(--text-tertiary)">
-                  {{ idx + 1 }}
-                </span>
-                <div class="flex-1 min-w-0">
-                  <p class="text-xs truncate" style="color: var(--text-primary)">
-                    {{ track.name }}
-                  </p>
-                  <p class="text-2xs truncate" style="color: var(--text-tertiary)">
-                    {{ track.artists.map((a) => a.name).join(' / ') }} · {{ track.album.name }}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                v-if="tracks.length === 0"
-                class="flex items-center justify-center py-8"
-              >
-                <span class="text-2xs text-muted-deep">暂无歌曲</span>
-              </div>
-            </div>
-          </template>
-        </section>
-      </div>
-    </div>
-
-    <!-- ═══ Bottom: Tabs ═══ -->
-    <div class="flex flex-col pb-6" style="min-height: 300px">
-      <div class="section-card flex flex-col flex-1 min-h-0 overflow-hidden">
-        <!-- Tab headers -->
-        <div class="flex items-center shrink-0" style="border-bottom: 1px solid var(--border-primary)">
-          <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            class="px-4 py-2.5 text-xs font-medium transition-colors relative cursor-pointer"
-            :style="{ color: activeTab === tab.key ? 'var(--text-primary)' : 'var(--text-tertiary)' }"
-            @click="activeTab = tab.key"
-          >
-            {{ tab.label }}
-            <div
-              v-if="activeTab === tab.key"
-              class="absolute bottom-0 left-4 right-4 h-0.5 rounded-full"
-              style="background: var(--accent)"
-            />
+          <button class="manual-help-link" type="button" aria-label="查看如何获取链接或 ID">
+            如何获取链接或 ID?
+            <AppIcon name="info" :size="14" />
           </button>
         </div>
 
-        <!-- Tab: Current Queue -->
-        <div v-if="activeTab === 'queue'" class="flex-1 overflow-y-auto p-4">
-          <!-- Queue stats bar -->
-          <div class="flex items-center gap-4 mb-4">
-            <div
-              v-for="stat in queueStats"
-              :key="stat.key"
-              class="flex items-center gap-1.5"
-            >
-              <span
-                class="w-2 h-2 rounded-full shrink-0"
-                :style="{ background: stat.color }"
-              />
-              <span class="text-2xs" style="color: var(--text-secondary)">
-                {{ stat.label }}
-              </span>
-              <span class="text-2xs font-semibold" style="color: var(--text-primary)">
-                {{ stat.count }}
-              </span>
+        <label class="sr-only" for="manual-download-input">网易云链接、歌单 ID、专辑 ID 或歌曲 ID</label>
+        <textarea
+          id="manual-download-input"
+          v-model="inputValue"
+          class="form-input manual-textarea"
+          :placeholder="placeholderText"
+          :disabled="parseState === 'parsing'"
+          @keydown.enter.ctrl.prevent="handleParse"
+          @paste="onPaste"
+        />
+
+        <div class="manual-input-hints" aria-label="输入帮助">
+          <span><AppIcon name="keyboard" :size="13" /> Ctrl+Enter 快速解析</span>
+          <span>链接</span>
+          <span>歌单 ID</span>
+          <span>歌曲 ID</span>
+          <span>多行批量输入</span>
+        </div>
+
+        <div class="manual-alert-stack" aria-live="polite">
+          <div v-if="detectHint && parseState === 'preview'" class="manual-alert manual-alert--success">
+            <AppIcon name="check-circle" :size="16" />
+            <div>
+              <strong>{{ detectHint }}</strong>
+              <span>{{ parsedTargetLine }}</span>
             </div>
           </div>
 
-          <!-- Active tasks -->
-          <div v-if="activeTasks.length > 0" class="space-y-2">
-            <div
-              v-for="task in activeTasks"
-              :key="task.id"
-              class="flex items-center gap-3 px-3 py-2 rounded-md"
-              style="background: var(--bg-input); border: 1px solid var(--border-primary)"
-            >
-              <div
-                class="w-1.5 h-1.5 rounded-full shrink-0"
-                :style="{ background: task.status === 'downloading' ? 'var(--accent)' : task.status === 'tagging' ? '#f59e0b' : '#22c55e' }"
-              />
-              <div class="flex-1 min-w-0">
-                <p class="text-xs truncate" style="color: var(--text-primary)">
-                  {{ task.songName }}
-                </p>
-                <p class="text-2xs truncate" style="color: var(--text-tertiary)">
-                  {{ task.artist }} · {{ task.quality || 'jymaster' }} · {{ statusLabel(task.status) }}
-                </p>
-              </div>
-              <div
-                v-if="task.status === 'downloading' || task.status === 'tagging'"
-                class="h-1 flex-1 max-w-20 rounded-full bg-[var(--border-primary)] overflow-hidden shrink-0"
-              >
-                <div
-                  class="h-full rounded-full transition-all duration-300"
-                  style="background: var(--accent)"
-                  :style="{ width: task.progress + '%' }"
-                />
-              </div>
-              <span v-else class="text-2xs text-muted-deep shrink-0">
-                {{ task.status === 'done' ? '完成' : '等待' }}
-              </span>
+          <div v-if="downloadResult" class="manual-alert manual-alert--success">
+            <AppIcon name="download" :size="16" />
+            <div>
+              <strong>下载已启动，共 {{ downloadResult.total }} 首歌曲</strong>
+              <span>任务已进入队列，下方会持续刷新执行状态。</span>
             </div>
           </div>
 
-          <div
-            v-else-if="!loading"
-            class="flex items-center justify-center py-12"
-          >
-            <span class="text-sm" style="color: var(--text-tertiary)">
-              当前没有正在进行的下载任务
-            </span>
+          <div v-if="saveError" class="manual-alert manual-alert--danger">
+            <AppIcon name="warn" :size="16" />
+            <div>
+              <strong>保存同步源失败</strong>
+              <span>{{ saveError }}</span>
+            </div>
+            <button class="manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
+              <AppIcon name="x" :size="14" />
+            </button>
           </div>
 
-          <div v-else class="flex items-center justify-center py-12">
-            <span class="text-sm text-muted-deep">加载中...</span>
+          <div v-if="error" class="manual-alert manual-alert--danger">
+            <AppIcon name="warn" :size="16" />
+            <div>
+              <strong>解析或启动失败</strong>
+              <span>{{ error }}</span>
+            </div>
           </div>
         </div>
 
-        <!-- Tab: Recent Downloads -->
-        <div v-if="activeTab === 'recent'" class="flex-1 overflow-y-auto p-4">
-          <div v-if="recentItems.length > 0" class="space-y-1">
-            <div
-              v-for="item in recentItems"
-              :key="item.id"
-              class="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-[var(--bg-hover)] transition-colors"
+        <div class="manual-action-row">
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="primaryActionDisabled"
+            @click="handlePrimaryAction"
+          >
+            <AppIcon :name="primaryActionIcon" :size="15" :class="{ 'animate-spin': parseState === 'parsing' || downloading }" />
+            <span>{{ primaryActionLabel }}</span>
+          </button>
+          <button
+            v-if="parseState === 'preview'"
+            class="btn btn-secondary"
+            type="button"
+            :disabled="parseState === 'parsing'"
+            @click="handleParse"
+          >
+            <AppIcon name="refresh" :size="14" />
+            <span>重新解析</span>
+          </button>
+          <button
+            v-if="canSaveAsSource"
+            class="btn btn-ghost"
+            type="button"
+            :disabled="downloading || selectedCount === 0"
+            @click="handleDownloadAndSave"
+          >
+            <AppIcon name="save" :size="14" />
+            <span>下载并保存为同步源</span>
+          </button>
+        </div>
+      </section>
+
+      <aside class="section-card manual-config-card" aria-label="下载配置">
+        <div class="manual-card-header">
+          <div>
+            <h3>下载配置</h3>
+            <p>当前下载配置</p>
+          </div>
+        </div>
+
+        <div class="manual-config-list">
+          <label class="manual-config-row" for="manual-quality">
+            <span class="manual-config-icon manual-config-icon--accent">
+              <AppIcon name="music" :size="15" />
+            </span>
+            <span>
+              <strong>音质</strong>
+            </span>
+            <select id="manual-quality" v-model="quality" class="manual-quality-select" aria-label="选择下载音质">
+              <option v-for="option in qualityOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+
+          <label class="manual-config-row manual-config-row--toggle">
+            <span class="manual-config-icon manual-config-icon--success">
+              <AppIcon name="list" :size="15" />
+            </span>
+            <span>
+              <strong>下载歌词</strong>
+              <small>{{ downloadLyrics ? '已开启' : '已关闭' }}</small>
+            </span>
+            <input v-model="downloadLyrics" type="checkbox" aria-label="下载歌词" />
+          </label>
+
+          <label class="manual-config-row manual-config-row--toggle">
+            <span class="manual-config-icon manual-config-icon--success">
+              <AppIcon name="album" :size="15" />
+            </span>
+            <span>
+              <strong>下载封面</strong>
+              <small>{{ downloadImages ? '已开启' : '已关闭' }}</small>
+            </span>
+            <input v-model="downloadImages" type="checkbox" aria-label="下载封面" />
+          </label>
+
+          <label class="manual-config-row manual-config-row--toggle">
+            <span class="manual-config-icon manual-config-icon--accent">
+              <AppIcon name="edit" :size="15" />
+            </span>
+            <span>
+              <strong>写入元数据</strong>
+              <small>{{ embedMetadata ? '已开启' : '已关闭' }}</small>
+            </span>
+            <input v-model="embedMetadata" type="checkbox" aria-label="写入元数据" />
+          </label>
+        </div>
+
+        <button class="btn btn-secondary manual-reset-button" type="button" @click="resetOptions">
+          <AppIcon name="rotate-ccw" :size="14" />
+          <span>恢复默认设置</span>
+        </button>
+      </aside>
+    </div>
+
+    <section v-if="parseHistory.length > 0" class="section-card manual-parse-history-card">
+      <div class="manual-parse-history-header">
+        <div>
+          <div class="manual-parse-history-title">
+            <h3>最近解析</h3>
+            <span>{{ parseHistory.length }}</span>
+          </div>
+          <p>回到常用歌单或刚刚试过的资源。</p>
+        </div>
+        <button class="btn btn-ghost btn-xs" type="button" @click="clearParseHistory">清空</button>
+      </div>
+      <div class="manual-parse-history-list">
+        <button
+          v-for="item in parseHistory"
+          :key="item.id"
+          class="manual-parse-history-item"
+          type="button"
+          @click="restoreParseHistory(item)"
+        >
+          <span class="manual-parse-history-cover" :class="{ 'manual-parse-history-cover--empty': !item.coverUrl }">
+            <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title" />
+            <AppIcon v-else name="music" :size="14" />
+          </span>
+          <span class="manual-parse-history-copy">
+            <strong>{{ item.title }}</strong>
+            <small>{{ manualResourceTypeLabel(item.type) }} · {{ item.trackCount }} 首 · {{ formatManualRelativeTime(item.parsedAt) }}</small>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section class="section-card manual-results-card">
+      <div class="manual-results-header" :class="{ 'manual-results-header--parsed': parseState === 'preview' }">
+        <div class="manual-resource-summary">
+          <div class="manual-cover" :class="{ 'manual-cover--empty': !coverUrl }">
+            <img
+              v-if="coverUrl"
+              :src="coverUrl"
+              :alt="title || '解析资源封面'"
+              @error="hideBrokenImage"
+            />
+            <AppIcon v-else name="music" :size="24" />
+          </div>
+          <div class="min-w-0">
+            <div class="manual-heading-line manual-heading-line--compact">
+              <h3>解析结果</h3>
+              <span class="manual-count-chip">共 {{ trackCount || 0 }} 首</span>
+            </div>
+            <p class="manual-resource-title" :title="title || undefined">{{ title || resultEmptyTitle }}</p>
+            <p class="manual-resource-meta" :title="resultMetaLine">{{ resultMetaLine }}</p>
+            <p
+              v-if="parseState === 'preview' && resourceDescription"
+              class="manual-resource-description"
+              :title="resourceDescription"
             >
-              <div class="flex-1 min-w-0">
-                <p class="text-xs truncate" style="color: var(--text-primary)">
-                  {{ item.songName }}
-                </p>
-                <p class="text-2xs truncate" style="color: var(--text-tertiary)">
-                  {{ item.artist }} · {{ item.quality || 'jymaster' }}
-                </p>
-              </div>
-              <div class="text-right shrink-0">
-                <p class="text-2xs" style="color: var(--text-secondary)">
-                  {{ item.filePath || '-' }}
-                </p>
-                <p class="text-2xs" style="color: var(--text-tertiary)">
-                  {{ formatTime(item.createdAt) }}
-                </p>
-              </div>
-              <span
-                class="text-2xs px-1.5 py-0.5 rounded shrink-0"
-                :style="{
-                  background: item.status === 'done' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                  color: item.status === 'done' ? '#22c55e' : '#ef4444',
-                }"
-              >
-                {{ item.status === 'done' ? '完成' : '失败' }}
-              </span>
+              {{ resourceDescription }}
+            </p>
+            <div v-if="parseState === 'preview'" class="manual-resource-facts">
+              <span><strong>{{ trackCount }}</strong> 首歌曲</span>
+              <span>{{ totalDurationLabel }}</span>
+              <span>{{ manualResourceTypeLabel(resourceType) }}</span>
+              <span v-if="resourceUpdatedAt">更新于 {{ formatResourceDate(resourceUpdatedAt) }}</span>
+              <span v-if="artist">{{ resourceType === 'playlist' ? '创建者' : '艺人' }}：{{ artist }}</span>
             </div>
           </div>
+        </div>
 
-          <div
-            v-else-if="!loading"
-            class="flex flex-col items-center justify-center py-12 gap-2"
+        <div class="manual-results-actions">
+          <button
+            v-if="parseState === 'preview'"
+            class="btn btn-primary manual-result-download"
+            type="button"
+            :disabled="downloading || selectedCount === 0"
+            @click="handleDownload"
           >
-            <span class="text-sm" style="color: var(--text-tertiary)">
-              暂无最近的下载记录
-            </span>
-          </div>
+            <AppIcon :name="downloading ? 'loader' : 'download'" :size="15" :class="{ 'animate-spin': downloading }" />
+            <span>{{ downloading ? '启动中...' : `下载 ${selectedCount} 首` }}</span>
+          </button>
+        </div>
+      </div>
 
-          <div v-else class="flex items-center justify-center py-12">
-            <span class="text-sm text-muted-deep">加载中...</span>
-          </div>
+      <div v-if="parseState === 'idle'" class="manual-state-panel manual-state-panel--result-empty">
+        <AppIcon name="search" :size="26" />
+        <strong>等待解析资源</strong>
+        <span>粘贴网易云歌单、专辑或歌曲后，这里会生成可选择的下载表格。</span>
+      </div>
 
-          <!-- Footer link -->
-          <div class="flex items-center justify-between mt-4 pt-3" style="border-top: 1px solid var(--border-primary)">
-            <span class="text-2xs" style="color: var(--text-tertiary)">
-              显示最近 {{ recentItems.length }} 条下载记录
-            </span>
-            <NuxtLink to="/task-center" class="text-2xs text-accent hover:underline">
-              查看全部历史 → 任务中心
-            </NuxtLink>
+      <div v-else-if="parseState === 'parsing'" class="manual-table-skeleton" aria-live="polite">
+        <div v-for="row in 7" :key="row" class="manual-skeleton-row" />
+      </div>
+
+      <div v-else class="manual-track-list">
+        <div class="manual-track-list-header">
+          <div>
+            <h4>歌曲列表</h4>
+            <p aria-live="polite">已选择 {{ selectedCount }} / {{ tracks.length }} 首</p>
+          </div>
+          <div class="manual-track-list-actions">
+            <button
+              class="btn btn-secondary btn-xs"
+              type="button"
+              :disabled="tracks.length === 0"
+              @click="toggleAll"
+            >
+              <AppIcon name="check" :size="13" />
+              <span>{{ allSelected ? '取消全选' : '全部选择' }}</span>
+            </button>
+            <button
+              class="btn btn-secondary btn-xs"
+              type="button"
+              :disabled="tracks.length === 0"
+              @click="invertSelection"
+            >
+              <AppIcon name="sync" :size="13" />
+              <span>反选</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="manual-table-shell manual-track-table-shell" tabindex="0" aria-label="歌曲列表，可上下滚动">
+          <table class="manual-track-table">
+            <thead>
+              <tr>
+                <th class="manual-col-check">
+                  <label class="sr-only" for="manual-select-all">全选解析歌曲</label>
+                  <input
+                    id="manual-select-all"
+                    type="checkbox"
+                    :checked="allSelected"
+                    :indeterminate.prop="!allSelected && selectedCount > 0"
+                    :disabled="tracks.length === 0"
+                    @change="toggleAll"
+                  />
+                </th>
+                <th>#</th>
+                <th>歌曲名称</th>
+                <th>歌手</th>
+                <th>专辑</th>
+                <th>时长</th>
+                <th>音质</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(track, index) in tracks" :key="track.id" :class="{ 'manual-row-muted': !track.selected }">
+                <td>
+                  <label class="sr-only" :for="`manual-track-${track.id}`">选择 {{ track.name }}</label>
+                  <input
+                    :id="`manual-track-${track.id}`"
+                    type="checkbox"
+                    :checked="track.selected"
+                    @change="toggleTrack(track.id)"
+                  />
+                </td>
+                <td class="manual-table-index">{{ index + 1 }}</td>
+                <td>
+                  <div class="manual-song-cell">
+                    <strong :title="track.name">{{ track.name }}</strong>
+                    <span>
+                      <span v-if="qualityBadgeTone" class="manual-quality-badge" :class="`manual-quality-badge--${qualityBadgeTone}`">
+                        {{ qualityShortLabel }}
+                      </span>
+                      <span v-if="embedMetadata" class="manual-quality-badge manual-quality-badge--green">元数据</span>
+                    </span>
+                  </div>
+                </td>
+                <td>{{ artistsLine(track) }}</td>
+                <td>{{ track.album?.name || '-' }}</td>
+                <td>{{ formatManualDuration(track.dt) }}</td>
+                <td>{{ qualityLabel }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div v-if="tracks.length === 0" class="manual-state-panel manual-state-panel--compact">
+            <strong>暂无可下载歌曲</strong>
+            <span>资源已解析，但没有返回可下载曲目。</span>
           </div>
         </div>
       </div>
+
+    </section>
+
+    <section class="section-card manual-queue-card">
+      <div class="manual-tabs-header">
+        <div>
+          <h3>下载队列</h3>
+          <p>只展示真实可执行的队列动作；当前系统不承诺暂停正在写入的任务。</p>
+        </div>
+        <div class="manual-queue-actions">
+          <button class="btn btn-secondary btn-xs" type="button" :disabled="retrying || queueStatus.failed === 0" @click="retryAll">
+            <AppIcon :name="retrying ? 'loader' : 'refresh'" :size="13" :class="{ 'animate-spin': retrying }" />
+            <span>重试失败</span>
+          </button>
+          <button class="btn btn-danger btn-xs" type="button" :disabled="clearableQueueCount === 0" @click="clearQueue">
+            <AppIcon name="trash" :size="13" />
+            <span>清空等待与失败</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="manual-tab-strip" role="tablist" aria-label="下载队列分段">
+        <button
+          v-for="tabItem in queueTabs"
+          :key="tabItem.key"
+          class="manual-tab-button"
+          :class="{ 'manual-tab-button--active': activeQueueTab === tabItem.key }"
+          type="button"
+          role="tab"
+          :aria-selected="activeQueueTab === tabItem.key"
+          @click="activeQueueTab = tabItem.key"
+        >
+          {{ tabItem.label }}
+          <span>{{ tabItem.count }}</span>
+        </button>
+      </div>
+
+      <div class="manual-queue-panel">
+        <div v-if="visibleQueueTasks.length > 0" class="manual-task-list">
+          <article v-for="task in visibleQueueTasks" :key="task.id" class="manual-task-row">
+            <div class="manual-task-cover">
+              <AppIcon :name="task.status === 'failed' ? 'warn' : 'music'" :size="16" />
+            </div>
+            <div class="manual-task-main">
+              <div class="manual-task-title-row">
+                <strong>{{ task.songName }}</strong>
+                <span class="manual-status-badge" :class="`manual-status-badge--${manualDownloadStatusTone(task.status)}`">
+                  {{ manualDownloadStatusLabel(task.status) }}
+                </span>
+              </div>
+              <p>{{ task.artist || '未知艺人' }} · {{ task.album || '未知专辑' }} · {{ manualQualityLabel(task.quality) }}</p>
+              <p v-if="task.error" class="manual-task-error">{{ task.error }}</p>
+              <div v-if="task.status === 'downloading' || task.status === 'tagging'" class="manual-progress-line">
+                <div :style="{ width: `${task.progress}%` }" />
+              </div>
+            </div>
+            <div class="manual-task-side">
+              <span>{{ task.progress }}%</span>
+              <small>{{ formatManualRelativeTime(task.updatedAt) }}</small>
+            </div>
+            <div class="manual-task-actions">
+              <button
+                v-if="task.status === 'failed'"
+                class="manual-icon-action"
+                type="button"
+                :aria-label="`重试 ${task.songName}`"
+                :disabled="retryingOne === task.id"
+                @click="retryOne(task.id)"
+              >
+                <AppIcon :name="retryingOne === task.id ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': retryingOne === task.id }" />
+              </button>
+              <button
+                v-if="canDeleteManualDownloadTask(task)"
+                class="manual-icon-action"
+                type="button"
+                :aria-label="`删除 ${task.songName}`"
+                @click="deleteOne(task.id)"
+              >
+                <AppIcon name="x" :size="14" />
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="manual-state-panel manual-state-panel--queue-empty">
+          <AppIcon name="archive" :size="22" />
+          <strong>{{ queueEmptyTitle }}</strong>
+          <span>{{ loading ? '正在刷新下载队列。' : '这一分段现在没有任务。' }}</span>
+        </div>
+      </div>
+    </section>
     </div>
+
+    <section v-else class="manual-history">
+      <div class="manual-history__header">
+        <div>
+          <h3>手动下载记录</h3>
+          <p>每次下载批次都是一个完整运行，失败项可从异常处理统一重试。</p>
+        </div>
+        <button class="btn btn-secondary btn-xs" type="button" :disabled="manualRuns.loading.value" @click="manualRuns.fetch()">
+          <AppIcon :name="manualRuns.loading.value ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': manualRuns.loading.value }" />
+          刷新
+        </button>
+      </div>
+      <div v-if="manualRuns.loading.value && manualRuns.items.value.length === 0" class="manual-state-panel">
+        <strong>正在加载下载记录</strong>
+      </div>
+      <EmptyState v-else-if="manualRuns.items.value.length === 0" title="暂无手动下载记录" description="从工作台启动下载后，批次记录会显示在这里。" />
+      <div v-else class="space-y-3">
+        <RunCard v-for="run in manualRuns.items.value" :key="run.id" :run="run" />
+        <Pagination :has-more="manualRuns.hasMore.value" :loading="manualRuns.loadingMore.value" :current-count="manualRuns.items.value.length" :total="manualRuns.total.value" @load-more="manualRuns.loadMore()" />
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { URL_PATTERNS } from '~~/composables/useManualDownload'
+import {
+  MANUAL_DOWNLOAD_QUALITY_LABELS,
+  buildManualQueueTabs,
+  canDeleteManualDownloadTask,
+  formatManualDuration,
+  formatManualRelativeTime,
+  formatManualTotalDuration,
+  manualDownloadStatusLabel,
+  manualDownloadStatusTone,
+  manualQualityLabel,
+  manualResourceTypeLabel,
+} from '~~/composables/useManualDownloadPresentation'
+import type { DownloadTask } from '~~/server/lib/download/queue'
+import { useRuns } from '~~/composables/useRuns'
+
+const route = useRoute()
+const router = useRouter()
+const manualView = ref<'workspace' | 'history'>(route.query.view === 'history' ? 'history' : 'workspace')
+const manualPageTabs = [
+  { key: 'workspace', label: '工作台' },
+  { key: 'history', label: '下载记录' },
+]
+const manualRuns = useRuns({ type: 'manual_download' })
+
+async function switchManualView(view: string) {
+  if (view !== 'workspace' && view !== 'history') return
+  manualView.value = view
+  void router.replace({ query: { ...route.query, view: view === 'history' ? 'history' : undefined } })
+  if (view === 'history' && manualRuns.items.value.length === 0) await manualRuns.fetch()
+}
+
+interface ParseHistoryItem {
+  id: string
+  input: string
+  type: 'playlist' | 'album' | 'songs' | null
+  title: string
+  artist: string
+  coverUrl: string
+  trackCount: number
+  parsedAt: string
+}
 
 const {
   parseState,
@@ -480,11 +529,12 @@ const {
   neteaseId,
   trackCount,
   albumInfo,
+  resourceDescription,
+  resourceUpdatedAt,
   quality,
   downloadLyrics,
   downloadImages,
   embedMetadata,
-  // plexEnabled not exposed — one-shot downloads stay local; bridge to Plex via "save as sync source"
   error,
   saveError,
   downloadResult,
@@ -501,105 +551,1273 @@ const {
 const {
   queueStatus,
   activeTasks,
-  historyItems,
+  failedTasks,
   loading,
-} = useDownloadQueue()
+  retrying,
+  retryingOne,
+  retryOne,
+  retryAll,
+  clearQueue,
+  deleteOne,
+} = useDownloadQueue({ includeHistory: false })
 
-// ── Tabs ──
-const activeTab = ref<'queue' | 'recent'>('queue')
-const tabs = [
-  { key: 'queue' as const, label: '当前下载队列' },
-  { key: 'recent' as const, label: '最近下载' },
-]
+type QueueTab = 'running' | 'pending' | 'failed'
 
-// ── Derived ──
-const placeholderText = '粘贴网易云链接或输入 ID，自动识别歌单/专辑/单曲\n\n支持格式：\n· 链接：https://music.163.com/playlist?id=123456\n· 歌单/专辑/单曲 ID 纯数字\n· 多首歌曲 ID（换行或逗号分隔）\n· Ctrl+Enter 快捷解析'
+const activeQueueTab = ref<QueueTab>('running')
+const parseHistory = ref<ParseHistoryItem[]>([])
+const PARSE_HISTORY_KEY = 'yunplex-manual-parse-history'
+const PARSE_HISTORY_LIMIT = 10
 
-const typeLabel = computed(() => {
-  if (resourceType.value === 'playlist') return '歌单'
-  if (resourceType.value === 'album') return '专辑'
-  if (resourceType.value === 'songs') return '单曲'
-  return ''
+const placeholderText = '粘贴网易云链接、歌单 ID、专辑 ID 或歌曲 ID\n例如：https://music.163.com/#/playlist?id=123456\n也支持多首歌曲 ID 换行输入'
+
+const qualityOptions = Object.entries(MANUAL_DOWNLOAD_QUALITY_LABELS).map(([value, label]) => ({ value, label }))
+const qualityLabel = computed(() => manualQualityLabel(quality.value))
+const qualityShortLabel = computed(() => {
+  if (quality.value === 'jymaster') return 'SQ'
+  if (quality.value === 'hires') return 'Hi-Res'
+  if (quality.value === 'lossless') return '无损'
+  return qualityLabel.value
+})
+const qualityBadgeTone = computed(() => quality.value === 'jymaster' || quality.value === 'hires' || quality.value === 'lossless' ? 'gold' : 'green')
+const totalDurationLabel = computed(() => formatManualTotalDuration(
+  tracks.value.reduce((total, track) => total + (track.dt || 0), 0),
+))
+const canSaveAsSource = computed(() => parseState.value === 'preview' && resourceType.value && resourceType.value !== 'songs' && neteaseId.value)
+
+const parsedTargetLine = computed(() => {
+  if (neteaseId.value) return `当前目标 ID ${neteaseId.value}，已生成可选择下载列表。`
+  return `当前目标为 ${trackCount.value} 首单曲集合，已生成可选择下载列表。`
 })
 
-const typeBadgeClass = computed(() => {
-  if (resourceType.value === 'playlist') return 'bg-[rgba(99,102,241,0.12)] text-accent'
-  if (resourceType.value === 'album') return 'bg-[rgba(34,197,94,0.12)] text-success'
-  if (resourceType.value === 'songs') return 'bg-[rgba(245,158,11,0.12)] text-warning'
-  return ''
+const resultEmptyTitle = computed(() => {
+  if (parseState.value === 'parsing') return '正在解析资源'
+  return '尚未解析资源'
 })
 
-const queueStats = computed(() => [
-  { key: 'pending', label: '等待', count: queueStatus.value.pending, color: 'var(--text-tertiary)' },
-  { key: 'downloading', label: '下载中', count: queueStatus.value.downloading, color: 'var(--accent)' },
-  { key: 'tagging', label: '标记中', count: queueStatus.value.tagging, color: '#f59e0b' },
-  { key: 'done', label: '已完成', count: queueStatus.value.done, color: '#22c55e' },
-  { key: 'failed', label: '失败', count: queueStatus.value.failed, color: '#ef4444' },
-])
+const resultMetaLine = computed(() => {
+  if (parseState.value === 'idle') return '解析后会显示资源类型、艺人、专辑和曲目数。'
+  if (parseState.value === 'parsing') return '正在拉取网易云元数据。'
+  const parts = [manualResourceTypeLabel(resourceType.value)]
+  if (artist.value) parts.push(artist.value)
+  if (albumInfo.value?.company) parts.push(albumInfo.value.company)
+  if (albumInfo.value?.publishTime) parts.push(String(new Date(albumInfo.value.publishTime).getFullYear()))
+  return parts.join(' · ')
+})
 
-// Last ~30 recent downloads (done + failed, sorted by time desc)
-const recentItems = computed(() =>
-  historyItems.value.slice(0, 30),
+const primaryActionLabel = computed(() => {
+  if (parseState.value === 'parsing') return '解析中...'
+  if (parseState.value === 'preview') return downloading.value ? '启动中...' : `下载选中 (${selectedCount.value})`
+  return '解析并预览'
+})
+const primaryActionIcon = computed(() => {
+  if (parseState.value === 'parsing' || downloading.value) return 'loader'
+  if (parseState.value === 'preview') return 'download'
+  return 'search'
+})
+const primaryActionDisabled = computed(() => {
+  if (parseState.value === 'parsing' || downloading.value) return true
+  if (parseState.value === 'preview') return selectedCount.value === 0
+  return !inputValue.value.trim()
+})
+
+const queueTabs = computed(() => buildManualQueueTabs(queueStatus.value))
+const pendingTasks = computed(() => activeTasks.value.filter((task) => task.status === 'pending'))
+const runningTasks = computed(() => activeTasks.value.filter((task) => task.status === 'downloading' || task.status === 'tagging'))
+const clearableQueueCount = computed(() =>
+  queueStatus.value.pending
+  + queueStatus.value.failed,
 )
 
-// ── Actions ──
+const visibleQueueTasks = computed<DownloadTask[]>(() => {
+  if (activeQueueTab.value === 'pending') return pendingTasks.value
+  if (activeQueueTab.value === 'failed') return failedTasks.value.slice(0, 8)
+  return runningTasks.value
+})
+
+const queueEmptyTitle = computed(() => {
+  if (activeQueueTab.value === 'pending') return '没有等待中的任务'
+  if (activeQueueTab.value === 'failed') return '没有失败任务'
+  return '当前没有正在执行的下载'
+})
+
 function onPaste(e: ClipboardEvent) {
   const text = e.clipboardData?.getData('text') || ''
-  // Use same URL patterns as the parser for consistent detection
-  if (URL_PATTERNS.some(p => p.pattern.test(text))) {
-    // Auto-parse when a recognizable Netease URL is pasted
+  if (URL_PATTERNS.some((p) => p.pattern.test(text))) {
     nextTick(() => {
-      if (inputValue.value.trim()) {
-        handleParse()
-      }
+      if (inputValue.value.trim()) void handleParse()
     })
   }
 }
 
+async function handlePrimaryAction() {
+  if (parseState.value === 'preview') {
+    await handleDownload()
+    return
+  }
+  await handleParse()
+}
+
 async function handleParse() {
   await parse()
+  rememberParsedResource()
 }
 
 async function handleDownload() {
   await download()
+  activeQueueTab.value = 'running'
 }
 
 async function handleDownloadAndSave() {
   await downloadAndSave()
+  activeQueueTab.value = 'running'
 }
 
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    pending: '等待中',
-    downloading: '下载中',
-    tagging: '写入标签',
-    done: '已完成',
-    failed: '失败',
+function resetOptions() {
+  quality.value = 'jymaster'
+  downloadLyrics.value = true
+  downloadImages.value = true
+  embedMetadata.value = true
+}
+
+function invertSelection() {
+  for (const track of tracks.value) {
+    track.selected = !track.selected
   }
-  return map[status] || status
 }
 
-function formatTime(iso: string) {
-  if (!iso) return '-'
+function artistsLine(track: { artists?: { name: string }[] }) {
+  return track.artists?.map((item) => item.name).join(' / ') || '-'
+}
+
+function formatResourceDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+function hideBrokenImage(event: Event) {
+  const img = event.target as HTMLImageElement
+  img.style.display = 'none'
+}
+
+function loadParseHistory() {
   try {
-    const d = new Date(iso)
-    const now = new Date()
-    const diffMs = now.getTime() - d.getTime()
-    const diffMin = Math.floor(diffMs / 60000)
-    if (diffMin < 1) return '刚刚'
-    if (diffMin < 60) return `${diffMin} 分钟前`
-    const diffHours = Math.floor(diffMin / 60)
-    if (diffHours < 24) return `${diffHours} 小时前`
-    const diffDays = Math.floor(diffHours / 24)
-    if (diffDays < 7) return `${diffDays} 天前`
-    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+    const raw = localStorage.getItem(PARSE_HISTORY_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as ParseHistoryItem[]
+    parseHistory.value = parsed.filter((item) => item && item.id && item.title).slice(0, PARSE_HISTORY_LIMIT)
   } catch {
-    return iso.slice(0, 10)
+    parseHistory.value = []
   }
 }
 
-// ── Reset on unmount ──
-onUnmounted(() => {
-  // Keep page state for navigation, but reset if navigating away permanently
+function saveParseHistory() {
+  try {
+    localStorage.setItem(PARSE_HISTORY_KEY, JSON.stringify(parseHistory.value.slice(0, PARSE_HISTORY_LIMIT)))
+  } catch {
+    // localStorage can be unavailable in private contexts.
+  }
+}
+
+function rememberParsedResource() {
+  if (parseState.value !== 'preview' || tracks.value.length === 0) return
+  const item: ParseHistoryItem = {
+    id: `${resourceType.value || 'resource'}:${neteaseId.value || tracks.value.map((track) => track.id).join(',')}`,
+    input: inputValue.value.trim(),
+    type: resourceType.value,
+    title: title.value || '未命名资源',
+    artist: artist.value,
+    coverUrl: coverUrl.value,
+    trackCount: trackCount.value,
+    parsedAt: new Date().toISOString(),
+  }
+  parseHistory.value = [item, ...parseHistory.value.filter((historyItem) => historyItem.id !== item.id)].slice(0, PARSE_HISTORY_LIMIT)
+  saveParseHistory()
+}
+
+async function restoreParseHistory(item: ParseHistoryItem) {
+  inputValue.value = item.input
+  await handleParse()
+}
+
+function clearParseHistory() {
+  parseHistory.value = []
+  saveParseHistory()
+}
+
+onMounted(() => {
+  loadParseHistory()
+  if (manualView.value === 'history') void manualRuns.fetch()
 })
 </script>
+
+<style scoped>
+.manual-page{display:flex;flex-direction:column;gap:1.5rem;padding-bottom:1.5rem}
+.manual-history{display:flex;flex-direction:column;gap:1rem}
+.manual-history__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.manual-history__header h3{margin:0;color:var(--text-primary);font-size:1rem}
+.manual-history__header p{margin:.35rem 0 0;color:var(--text-secondary);font-size:.78rem}
+.manual-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-bottom: 0;
+}
+
+.manual-workspace > * {
+  flex: none;
+}
+
+.manual-heading-line,
+.manual-card-header,
+.manual-results-header,
+.manual-results-actions,
+.manual-action-row,
+.manual-tabs-header,
+.manual-queue-actions,
+.manual-task-title-row,
+.manual-task-actions {
+  display: flex;
+  align-items: center;
+}
+
+.manual-card-header,
+.manual-results-header,
+.manual-tabs-header {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.manual-card-header h3,
+.manual-results-header h3,
+.manual-tabs-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.manual-card-header p,
+.manual-tabs-header p,
+.manual-resource-meta,
+.manual-resource-title,
+.manual-task-main p,
+.manual-song-cell span,
+.manual-config-row small {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.manual-heading-line {
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.manual-heading-line--compact {
+  gap: 0.55rem;
+}
+
+.manual-count-chip,
+.manual-status-badge,
+.manual-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.manual-count-chip {
+  min-height: 1.75rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-input);
+}
+
+.manual-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  gap: 1rem;
+  align-items: start;
+}
+
+.manual-input-card,
+.manual-config-card,
+.manual-parse-history-card,
+.manual-results-card,
+.manual-queue-card {
+  padding: 1rem;
+}
+
+.manual-input-card,
+.manual-config-card {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.manual-help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.manual-textarea {
+  min-height: 9.25rem;
+  resize: vertical;
+  padding: 0.95rem 1rem;
+  line-height: 1.65;
+  background: var(--bg-input);
+}
+
+.manual-input-hints {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.manual-input-hints span {
+  display: inline-flex;
+  min-height: 1.65rem;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+  font-size: 0.72rem;
+}
+
+.manual-input-hints span:first-child {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.manual-alert-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.manual-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.65rem;
+  padding: 0.72rem 0.8rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  font-size: 0.8rem;
+}
+
+.manual-alert strong,
+.manual-alert span {
+  display: block;
+  line-height: 1.4;
+}
+
+.manual-alert strong {
+  color: var(--text-primary);
+}
+
+.manual-alert span {
+  color: var(--text-secondary);
+}
+
+.manual-alert--success {
+  color: var(--success);
+  border-color: rgba(22, 163, 74, 0.22);
+  background: var(--success-soft);
+}
+
+.manual-alert--danger {
+  color: var(--danger);
+  border-color: rgba(220, 38, 38, 0.22);
+  background: var(--danger-soft);
+}
+
+.manual-action-row,
+.manual-results-actions,
+.manual-queue-actions,
+.manual-task-actions {
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.manual-action-row > .btn-primary {
+  min-width: 160px;
+  min-height: 48px;
+  font-size: 0.92rem;
+}
+
+.manual-config-card {
+  gap: 0.7rem;
+  padding: 0.8rem;
+  background: color-mix(in srgb, var(--bg-surface) 84%, var(--bg-app));
+  box-shadow: var(--shadow-xs);
+}
+
+.manual-config-card::before {
+  opacity: 0.35;
+}
+
+.manual-config-list {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.manual-config-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  width: 100%;
+  min-height: 3.2rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.manual-config-row > span:nth-child(2) {
+  min-width: 0;
+}
+
+.manual-config-row:hover {
+  border-color: var(--border-secondary);
+  background: var(--bg-surface);
+}
+
+.manual-config-row strong,
+.manual-config-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-config-row strong {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.manual-config-icon,
+.manual-task-cover,
+.manual-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.manual-config-icon {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.6rem;
+}
+
+.manual-config-icon--accent {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.manual-config-icon--success {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.manual-quality-select {
+  width: 6rem;
+  max-width: 100%;
+  min-height: 2.2rem;
+  padding: 0 1.7rem 0 0.65rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.manual-reset-button {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+}
+
+.manual-parse-history-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.manual-parse-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.manual-parse-history-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 750;
+}
+
+.manual-parse-history-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manual-parse-history-title span {
+  display: inline-flex;
+  min-width: 1.65rem;
+  min-height: 1.65rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.manual-parse-history-header p {
+  margin: 0.15rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.manual-parse-history-list {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding: 0.1rem 0 0.4rem;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
+}
+
+.manual-parse-history-item {
+  display: grid;
+  flex: 0 0 clamp(13rem, 19vw, 17rem);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  min-height: 3.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: inherit;
+  background: var(--bg-input);
+  cursor: pointer;
+  scroll-snap-align: start;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.manual-parse-history-item:hover {
+  border-color: var(--border-secondary);
+  background: var(--bg-hover);
+}
+
+.manual-parse-history-cover {
+  width: 2.65rem;
+  height: 2.65rem;
+  overflow: hidden;
+  border-radius: 0.55rem;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-surface);
+}
+
+.manual-parse-history-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.manual-parse-history-cover--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.manual-parse-history-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.manual-parse-history-copy strong,
+.manual-parse-history-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-parse-history-copy strong {
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.manual-parse-history-copy small {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
+
+.manual-results-card,
+.manual-queue-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto);
+  gap: 0;
+  overflow: hidden;
+}
+
+.manual-results-header,
+.manual-tabs-header {
+  padding-bottom: 0.95rem;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.manual-results-header--parsed {
+  min-height: 192px;
+  align-items: stretch;
+  padding: 0 0 1rem;
+}
+
+.manual-results-header--parsed .manual-resource-summary {
+  flex: 1;
+}
+
+.manual-results-header--parsed .manual-results-actions {
+  align-content: flex-end;
+  justify-content: flex-end;
+  max-width: 20rem;
+}
+
+.manual-resource-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.manual-cover {
+  width: 4.25rem;
+  height: 4.25rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-input);
+}
+
+.manual-results-header--parsed .manual-cover {
+  width: 160px;
+  height: 160px;
+  max-height: 160px;
+  border-radius: 0.85rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.manual-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 160px;
+  object-fit: cover;
+}
+
+.manual-cover--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.manual-resource-title {
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.manual-results-header--parsed .manual-resource-title {
+  margin-top: 0.55rem;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.manual-resource-meta {
+  margin-top: 0.15rem;
+}
+
+.manual-resource-description {
+  display: -webkit-box;
+  max-width: 58rem;
+  margin: 0.45rem 0 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.manual-resource-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.manual-resource-facts span {
+  display: inline-flex;
+  min-height: 1.7rem;
+  align-items: center;
+  padding: 0 0.6rem;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  font-size: 0.74rem;
+}
+
+.manual-resource-facts strong {
+  margin-right: 0.2rem;
+  color: var(--text-primary);
+}
+
+.manual-result-download {
+  min-width: 9.5rem;
+  min-height: 2.75rem;
+}
+
+.manual-state-panel {
+  display: flex;
+  min-height: 10rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.25rem;
+  color: var(--text-tertiary);
+  text-align: center;
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-input) 70%, transparent);
+}
+
+.manual-state-panel strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.manual-state-panel span {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.manual-state-panel--result-empty {
+  min-height: 200px;
+}
+
+.manual-state-panel--queue-empty {
+  min-height: 140px;
+}
+
+.manual-state-panel--compact {
+  min-height: 10rem;
+  margin-top: 0.8rem;
+}
+
+.manual-table-shell {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.manual-track-list {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.manual-track-list-header {
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+}
+
+.manual-track-list-header h4,
+.manual-track-list-header p {
+  margin: 0;
+}
+
+.manual-track-list-header h4 {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.manual-track-list-header p {
+  margin-top: 0.15rem;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+}
+
+.manual-track-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.manual-track-table-shell {
+  height: clamp(360px, 52vh, 600px);
+  max-height: 600px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--border-primary);
+  scrollbar-gutter: stable;
+}
+
+.manual-track-table-shell .manual-track-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.manual-track-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.manual-track-table th,
+.manual-track-table td {
+  height: 3.05rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.manual-track-table th {
+  color: var(--text-tertiary);
+  font-weight: 750;
+  background: color-mix(in srgb, var(--bg-input) 74%, transparent);
+}
+
+.manual-track-table tbody tr {
+  transition: background 150ms ease;
+}
+
+.manual-track-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.manual-col-check {
+  width: 3rem;
+}
+
+.manual-row-muted {
+  opacity: 0.55;
+}
+
+.manual-table-index {
+  width: 3.25rem;
+  color: var(--text-tertiary);
+}
+
+.manual-song-cell {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.manual-song-cell strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-quality-badge {
+  min-height: 1.3rem;
+  margin-right: 0.3rem;
+  padding: 0 0.42rem;
+  border-radius: 0.38rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.manual-quality-badge--gold {
+  color: #b7791f;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.manual-quality-badge--green {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.manual-results-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.manual-table-skeleton {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 0 0;
+}
+
+.manual-skeleton-row {
+  height: 3rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-input) 82%, transparent);
+  animation: manual-pulse 1.2s ease-in-out infinite;
+}
+
+.manual-tab-strip {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.9rem 0 0.8rem;
+  overflow-x: auto;
+}
+
+.manual-tab-button {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.manual-tab-button span {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-muted);
+  font-size: 0.72rem;
+}
+
+.manual-tab-button--active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: var(--accent-muted);
+  box-shadow: 0 10px 26px var(--accent-glow);
+}
+
+.manual-task-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.manual-task-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 4.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+
+.manual-task-cover {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.7rem;
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.manual-task-main {
+  min-width: 0;
+}
+
+.manual-task-title-row {
+  justify-content: flex-start;
+  gap: 0.55rem;
+}
+
+.manual-task-title-row strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-task-error {
+  color: var(--danger) !important;
+}
+
+.manual-task-side {
+  display: grid;
+  gap: 0.2rem;
+  text-align: right;
+}
+
+.manual-task-side span {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.manual-task-side small {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+}
+
+.manual-progress-line {
+  height: 0.42rem;
+  margin-top: 0.55rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-primary) 60%, transparent);
+}
+
+.manual-progress-line div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+  transition: width 220ms ease;
+}
+
+.manual-status-badge {
+  min-height: 1.55rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.manual-status-badge--idle {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
+}
+
+.manual-status-badge--running {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.manual-status-badge--success {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.manual-status-badge--danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.manual-icon-action {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.manual-icon-action:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-secondary);
+  background: var(--bg-hover);
+}
+
+.manual-icon-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+:global(.dark .manual-workspace) {
+  --manual-page-bg: #020617;
+  --manual-card-bg: #0f172a;
+  --manual-input-bg: #111827;
+}
+
+:global(.dark .manual-workspace)::before {
+  content: none;
+}
+
+:global(.dark .manual-workspace .manual-input-card),
+:global(.dark .manual-workspace .manual-parse-history-card),
+:global(.dark .manual-workspace .manual-results-card),
+:global(.dark .manual-workspace .manual-queue-card) {
+  background: var(--manual-card-bg) !important;
+}
+
+:global(.dark .manual-workspace .manual-config-card) {
+  background: #0b1324 !important;
+}
+
+:global(.dark .manual-workspace .manual-textarea),
+:global(.dark .manual-workspace .manual-config-row),
+:global(.dark .manual-workspace .manual-parse-history-item),
+:global(.dark .manual-workspace .manual-task-row),
+:global(.dark .manual-workspace .manual-state-panel),
+:global(.dark .manual-workspace .manual-resource-facts span) {
+  background: var(--manual-input-bg) !important;
+}
+
+@keyframes manual-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@media (max-width: 1279px) {
+  .manual-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .manual-card-header,
+  .manual-results-header,
+  .manual-tabs-header,
+  .manual-results-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .manual-results-actions,
+  .manual-action-row,
+  .manual-queue-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .manual-action-row .btn,
+  .manual-results-footer .btn,
+  .manual-reset-button {
+    width: 100%;
+  }
+
+  .manual-task-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .manual-results-header--parsed {
+    min-height: 0;
+  }
+
+  .manual-results-header--parsed .manual-resource-summary {
+    width: 100%;
+  }
+
+  .manual-results-header--parsed .manual-cover {
+    width: 6rem;
+    height: 6rem;
+  }
+
+  .manual-results-header--parsed .manual-results-actions {
+    max-width: none;
+  }
+
+  .manual-track-list-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .manual-track-list-actions {
+    width: 100%;
+  }
+
+  .manual-track-list-actions .btn {
+    flex: 1;
+  }
+
+  .manual-track-table-shell {
+    height: min(56vh, 32rem);
+    min-height: 20rem;
+  }
+
+  .manual-result-download {
+    width: 100%;
+  }
+
+  .manual-parse-history-item {
+    flex-basis: min(82vw, 17rem);
+  }
+
+  .manual-task-side,
+  .manual-task-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manual-skeleton-row,
+  .manual-progress-line div,
+  .manual-track-table tbody tr,
+  .manual-tab-button,
+  .manual-config-row,
+  .manual-icon-action {
+    animation: none;
+    transition: none;
+  }
+}
+</style>

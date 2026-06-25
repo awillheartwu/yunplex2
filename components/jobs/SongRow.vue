@@ -1,13 +1,13 @@
 <template>
-  <div>
+  <div class="song-row" :class="toneClass">
     <button
-      class="w-full text-left px-5 py-3 flex items-center gap-4 hover:bg-[var(--bg-surface)] transition-colors"
+      class="song-row__button"
       @click="$emit('toggle')"
     >
       <!-- Status dot -->
       <div
-        class="w-2 h-2 rounded-full shrink-0"
-        :class="statusDot"
+        class="song-status-dot"
+        :class="toneClass"
       />
 
       <!-- Info -->
@@ -17,23 +17,18 @@
       </div>
 
       <!-- Status badge -->
-      <span class="text-2xs px-2 py-0.5 rounded font-medium shrink-0" :class="statusBadge">
+      <span class="song-status-badge" :class="toneClass">
+        <AppIcon :name="statusPresentation.icon" :size="11" :class="{ 'animate-spin': song.status === 'downloading' }" />
         {{ statusLabel }}
       </span>
 
       <!-- Expand arrow -->
-      <svg
-        class="shrink-0 transition-transform"
-        :class="expanded ? 'rotate-90' : ''"
-        width="12" height="12" viewBox="0 0 16 16" fill="none"
-      >
-        <path d="M6 3l5 5-5 5" stroke="#6b6b6b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <AppIcon name="chevronRight" :size="12" class="shrink-0 transition-transform" :class="expanded ? 'rotate-90' : ''" />
     </button>
 
     <!-- Expanded detail -->
-    <div v-if="expanded" class="px-5 pb-4 pl-12">
-      <div class="bg-[var(--bg-app)] rounded-lg p-3 space-y-2">
+    <div v-if="expanded" class="song-row__expanded">
+      <div class="song-row__detail-card">
         <!-- Download progress -->
         <div v-if="retrying && retryProgress !== undefined && retryProgress > 0" class="space-y-1">
           <div class="flex justify-between text-2xs">
@@ -85,17 +80,17 @@
             @click.stop="$emit('retry')"
           >{{ retrying ? '重试中...' : '重试下载' }}</button>
           <div v-if="song.ops" class="flex items-center gap-4 mb-2">
-            <span class="text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
-              {{ song.ops.download === 'ok' ? '✓' : '✗' }} 下载
+            <span class="inline-flex items-center gap-1 text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.download === 'ok' ? 'check' : 'x'" :size="11" /> 下载
             </span>
-            <span v-if="song.ops.lyric !== 'skipped'" class="text-2xs" :class="song.ops.lyric === 'ok' ? 'text-success' : 'text-danger'">
-              {{ song.ops.lyric === 'ok' ? '✓' : '✗' }} 歌词
+            <span v-if="song.ops.lyric !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.lyric === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.lyric === 'ok' ? 'check' : 'x'" :size="11" /> 歌词
             </span>
-            <span v-if="song.ops.tags !== 'skipped'" class="text-2xs" :class="song.ops.tags === 'ok' ? 'text-success' : 'text-danger'">
-              {{ song.ops.tags === 'ok' ? '✓' : '✗' }} 标签
+            <span v-if="song.ops.tags !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.tags === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.tags === 'ok' ? 'check' : 'x'" :size="11" /> 标签
             </span>
-            <span v-if="song.ops.cover !== 'skipped'" class="text-2xs" :class="song.ops.cover === 'ok' ? 'text-success' : 'text-danger'">
-              {{ song.ops.cover === 'ok' ? '✓' : '✗' }} 封面
+            <span v-if="song.ops.cover !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.cover === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.cover === 'ok' ? 'check' : 'x'" :size="11" /> 封面
             </span>
           </div>
 
@@ -131,37 +126,25 @@
 </template>
 
 <script setup lang="ts">
-import type { SongTask, SongStatus } from '~~/server/lib/job/types'
+import type { SongTask } from '~~/server/lib/job/types'
+import {
+  isFailedSongStatus,
+  isIgnoredSongStatus,
+  semanticToneClass,
+  songStatusPresentation,
+} from '~~/lib/task-status'
 
 const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean; retryProgress?: number }>()
 defineEmits<{ toggle: []; retry: [] }>()
 
 const showRetry = computed(() => {
-  const actionable: SongStatus[] = [
-    'failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert',
-    'copyright_restricted', 'ignored_failure',
-  ]
-  return actionable.includes(props.song.status) && !!props.song.neteaseSongId
+  return (isFailedSongStatus(props.song.status) || isIgnoredSongStatus(props.song.status))
+    && !!props.song.neteaseSongId
 })
 
-const statusConfig = computed(() => {
-  switch (props.song.status) {
-    case 'success': return { dot: 'bg-success', badge: 'bg-[#2ecc7120] text-success', label: '成功' }
-    case 'skipped_existing': return { dot: 'bg-muted-deep', badge: 'bg-[#6b6b6b20] text-muted-deep', label: '已存在' }
-    case 'removed': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: '已移除' }
-    case 'failed_download': return { dot: 'bg-danger', badge: 'bg-[#e74c3c20] text-danger', label: '下载失败' }
-    case 'failed_tags': return { dot: 'bg-danger', badge: 'bg-[#e74c3c20] text-danger', label: '标签失败' }
-    case 'failed_plex_match': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: 'Plex 匹配失败' }
-    case 'failed_plex_insert': return { dot: 'bg-warning', badge: 'bg-[#f1c40f20] text-warning', label: 'Plex 插入失败' }
-    case 'copyright_restricted': return { dot: 'bg-[#f59e0b]', badge: 'bg-[#f59e0b20] text-[var(--warning,#f59e0b)]', label: '版权受限' }
-    case 'ignored_failure': return { dot: 'bg-[#71717a]', badge: 'bg-[#71717a20] text-muted-deep', label: '已忽略' }
-    default: return { dot: 'bg-[#4a4a4a]', badge: 'bg-[#6b6b6b20] text-muted', label: '等待中' }
-  }
-})
-
-const statusDot = computed(() => statusConfig.value.dot)
-const statusBadge = computed(() => statusConfig.value.badge)
-const statusLabel = computed(() => statusConfig.value.label)
+const statusPresentation = computed(() => songStatusPresentation(props.song.status))
+const toneClass = computed(() => semanticToneClass(statusPresentation.value.tone))
+const statusLabel = computed(() => statusPresentation.value.label)
 
 function formatDuration(ms: number): string {
   const sec = Math.round(ms / 1000)
@@ -170,3 +153,13 @@ function formatDuration(ms: number): string {
   return `${min}:${s}`
 }
 </script>
+
+<style scoped>
+.song-row{border-left:3px solid;border-left-color:currentColor}
+.song-row__button{display:flex;width:100%;align-items:center;gap:1rem;padding:.75rem 1.25rem;border:0;background:transparent;text-align:left;cursor:pointer;transition:background 150ms ease}
+.song-row__button:hover{background:color-mix(in srgb,currentColor 7%,var(--bg-surface))}
+.song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:999px;background:currentColor}
+.song-status-badge{display:inline-flex;align-items:center;gap:.3rem;flex:none;padding:.18rem .5rem;border:1px solid;border-radius:.45rem;font-size:.68rem;font-weight:700}
+.song-row__expanded{padding:0 1.25rem 1rem 3rem}
+.song-row__detail-card{display:flex;flex-direction:column;gap:.5rem;padding:.75rem;border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app)}
+</style>

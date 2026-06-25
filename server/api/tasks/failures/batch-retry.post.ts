@@ -5,7 +5,7 @@ import { processAll } from '../../../lib/download/queue'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { appendLog } from '../../../lib/log/store'
-import { resolveCompositeIds } from '../../../lib/tasks/failure-store'
+import { getFailureRecords, incrementFailureRetries, setFailureRecordStatus } from '../../../lib/tasks/failure-records'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ ids: string[] }>(event)
@@ -25,9 +25,10 @@ export default defineEventHandler(async (event) => {
   const cfg = readConfig()
   const retentionDays = cfg.sync.logRetentionDays ?? 30
 
-  const taskIds = resolveCompositeIds(body.ids)
+  const records = getFailureRecords(body.ids)
+  const taskIds = [...new Set(records.flatMap(record => record.downloadTaskIds))]
   if (taskIds.length === 0) {
-    return success({ count: 0 }, '没有找到可重试的下载任务（同步失败项需通过同步源页面重试）')
+    return success({ count: 0 }, '这些问题需要从对应运行或同步源重新执行')
   }
 
   // Reset to pending
@@ -35,6 +36,8 @@ export default defineEventHandler(async (event) => {
   const result = db.prepare(
     `UPDATE download_tasks SET status = 'pending', error = NULL, progress = 0, updated_at = ? WHERE id IN (${idPlaceholders}) AND status = 'failed'`,
   ).run(now, ...taskIds)
+  incrementFailureRetries(body.ids)
+  setFailureRecordStatus(body.ids, 'open')
 
   appendLog(dataDir, {
     level: 'info',
@@ -81,7 +84,7 @@ export default defineEventHandler(async (event) => {
       }, retentionDays)
       throw err
     }
-  }).catch(() => { /* errors reported via SSE */ })
+  }, undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch(() => { /* errors reported via SSE */ })
 
   return success({ count: result.changes }, `${result.changes} 个失败项已重新加入队列并开始下载`)
 })

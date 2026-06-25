@@ -1,27 +1,20 @@
 <template>
   <div class="space-y-6">
-    <div>
-      <h2 class="text-sm font-semibold">系统</h2>
-      <p class="text-2xs text-muted mt-0.5">实时资源监控 · 运行状态 · 日志</p>
-    </div>
+    <PageHeader
+      description="查看实时资源、运行状态与数据维护工具"
+    />
 
-    <!-- Tab bar -->
-    <div class="flex gap-1" style="border-bottom: 1px solid var(--border-primary)">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="px-4 py-2 text-sm font-medium transition-colors duration-150 border-b-2 -mb-px"
-        :class="activeTab === tab.key
-          ? 'border-accent text-accent'
-          : 'border-transparent text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'"
-        @click="activeTab = tab.key"
-      >{{ tab.label }}</button>
-    </div>
+    <PageTabs
+      :model-value="activeTab"
+      :tabs="tabs"
+      aria-label="系统视图"
+      @change="switchSystemTab"
+    />
 
     <!-- Tab: 系统监控 -->
     <template v-if="activeTab === 'monitor'">
       <!-- KPI cards -->
-      <div class="grid grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div class="section-card p-4">
           <p class="text-2xs text-muted-deep mb-1">CPU</p>
           <p class="text-xl font-semibold" style="color:var(--text-primary)">{{ stats?.cpu ?? '--' }}%</p>
@@ -41,7 +34,7 @@
       </div>
 
       <!-- Charts -->
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div class="section-card p-4">
           <p class="text-2xs text-muted-deep mb-2">CPU 使用率</p>
           <v-chart class="w-full" style="height:160px" :option="cpuChartOption" :autoresize="true" />
@@ -53,7 +46,7 @@
       </div>
 
       <!-- Info + Stats -->
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div class="section-card p-4">
           <p class="text-2xs text-muted-deep mb-3">系统信息</p>
           <div class="space-y-2 text-xs">
@@ -82,69 +75,54 @@
       </div>
     </template>
 
-    <!-- Tab: 日志 -->
-    <template v-if="activeTab === 'logs'">
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <p class="text-2xs text-muted">超过保留天数的日志自动清理，5,000 行硬上限兜底</p>
-          <div class="flex items-center gap-4">
-            <div class="flex items-center rounded-lg border border-[var(--border-secondary)] overflow-hidden">
-              <button
-                v-for="f in logFilters"
-                :key="f.value"
-                class="px-3 py-1.5 text-sm transition-colors"
-                :class="logActiveFilter === f.value
-                  ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]'
-                  : 'text-muted hover:text-[var(--text-primary)]'"
-                @click="setLogFilter(f.value)"
-              >{{ f.label }}</button>
-            </div>
-            <button class="btn btn-danger btn-sm" @click="showClearConfirm = true">清空日志</button>
-          </div>
+    <template v-if="activeTab === 'maintenance'">
+      <section class="section-card p-5">
+        <div class="mb-5">
+          <h3 class="text-sm font-semibold">运行记录维护</h3>
+          <p class="mt-1 text-2xs text-muted">按明确条件清理旧运行。待处理和已忽略的问题记录会保留，但被清理运行的详情将无法继续查看。</p>
         </div>
-
-        <!-- Count bar -->
-        <div v-if="logLoading" class="flex items-center justify-center py-16">
-          <span class="text-sm text-muted">加载中...</span>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <label class="space-y-1.5 text-xs text-muted">
+            <span>早于日期</span>
+            <input v-model="cleanupBefore" type="date" class="form-input" />
+          </label>
+          <label class="space-y-1.5 text-xs text-muted">
+            <span>运行类型</span>
+            <select v-model="cleanupType" class="form-input">
+              <option value="">全部类型</option>
+              <option value="sync">同步</option>
+              <option value="repair">补全</option>
+              <option value="manual_download">手动下载</option>
+            </select>
+          </label>
+          <label class="space-y-1.5 text-xs text-muted">
+            <span>运行状态</span>
+            <select v-model="cleanupStatus" class="form-input">
+              <option value="">全部状态</option>
+              <option value="success">成功</option>
+              <option value="partial">部分成功</option>
+              <option value="failed">失败</option>
+              <option value="cancelled">已取消</option>
+            </select>
+          </label>
         </div>
-        <template v-else-if="logs.length > 0">
-          <div class="flex items-center justify-between text-2xs text-muted-deep mb-1">
-            <span>共 {{ logTotal }} 条记录</span>
-          </div>
-          <div class="section-card overflow-hidden font-mono text-sm">
-            <div class="overflow-x-auto">
-              <div
-                v-for="log in logs"
-                :key="log.id"
-                class="px-4 py-1.5 flex gap-4 hover:bg-[var(--bg-hover)] border-b border-[var(--border-primary)] last:border-0"
-              >
-                <span class="text-2xs text-muted-deep shrink-0 whitespace-nowrap">{{ formatLogTime(log.timestamp) }}</span>
-                <span class="shrink-0 w-10" :class="logLevelColor(log.level)">{{ log.level.toUpperCase() }}</span>
-                <span v-if="log.stage && log.stage !== 'idle'" class="text-muted-deep shrink-0">[{{ log.stage }}]</span>
-                <span class="text-muted flex-1">{{ log.message }}</span>
-              </div>
-            </div>
-          </div>
-        </template>
-        <EmptyState v-else-if="!logLoading" title="暂无日志" :description="logActiveFilter ? '当前筛选条件下没有匹配的日志' : '执行同步任务后日志将出现在这里'" />
-
-        <Pagination
-          :has-more="logHasMore"
-          :loading="logLoadingMore"
-          :current-count="logs.length"
-          :total="logTotal"
-          @load-more="loadMoreLogs"
-        />
-      </div>
+        <div class="mt-5 flex flex-wrap items-center gap-3">
+          <button class="btn btn-danger" type="button" :disabled="!cleanupBefore || cleanupLoading" @click="showRunCleanupConfirm = true">
+            <AppIcon :name="cleanupLoading ? 'loader' : 'trash'" :size="14" :class="{ 'animate-spin': cleanupLoading }" />
+            清理运行记录
+          </button>
+          <span v-if="cleanupMessage" class="text-xs text-muted">{{ cleanupMessage }}</span>
+        </div>
+      </section>
 
       <ConfirmDialog
-        :visible="showClearConfirm"
-        title="清空日志"
-        message="确定要清空所有同步日志吗？此操作不可撤销。"
-        confirm-label="清空"
+        :visible="showRunCleanupConfirm"
+        title="清理运行记录"
+        message="将删除符合条件的运行详情及已完成下载明细。待处理和已忽略的问题仍会保留，但可能失去原运行详情链接。此操作不可撤销。"
+        confirm-label="确认清理"
         variant="danger"
-        @confirm="handleClearLogs"
-        @cancel="showClearConfirm = false"
+        @confirm="handleRunCleanup"
+        @cancel="showRunCleanupConfirm = false"
       />
     </template>
   </div>
@@ -156,19 +134,57 @@ import { use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { TooltipComponent, GridComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import type { LogEntry, LogLevel } from '~~/server/lib/log/types'
+import { useIntervalFn } from '~~/composables/useTiming'
+import { resolveLegacyActivityRedirect } from '~~/lib/activity-navigation'
 
 use([LineChart, TooltipComponent, GridComponent, CanvasRenderer])
 
 const api = useApi()
+const route = useRoute()
+const legacyRedirect = resolveLegacyActivityRedirect(route.path, route.query)
+if (legacyRedirect) {
+  await navigateTo(legacyRedirect, { replace: true, redirectCode: 302 })
+}
+const router = useRouter()
 
 // --- Tabs ---
 const tabs = [
   { key: 'monitor', label: '系统监控' },
-  { key: 'logs', label: '日志' },
+  { key: 'maintenance', label: '数据维护' },
 ]
-const route = useRoute()
-const activeTab = ref((route.query.tab === 'logs' || route.query.tab === 'monitor') ? (route.query.tab as string) : 'monitor')
+const activeTab = ref(route.query.tab === 'maintenance' ? 'maintenance' : 'monitor')
+
+function switchSystemTab(tab: string) {
+  if (!['monitor', 'maintenance'].includes(tab)) return
+  activeTab.value = tab
+  void router.replace({ query: { ...route.query, tab: tab === 'monitor' ? undefined : tab } })
+}
+
+const cleanupBefore = ref('')
+const cleanupType = ref('')
+const cleanupStatus = ref('')
+const cleanupLoading = ref(false)
+const cleanupMessage = ref('')
+const showRunCleanupConfirm = ref(false)
+
+async function handleRunCleanup() {
+  showRunCleanupConfirm.value = false
+  cleanupLoading.value = true
+  cleanupMessage.value = ''
+  try {
+    const response = await api.rawPost<{ count: number }>('/runs/cleanup', {
+      before: cleanupBefore.value,
+      type: cleanupType.value || undefined,
+      status: cleanupStatus.value || undefined,
+    })
+    cleanupMessage.value = response.msg || `已清理 ${response.data?.count || 0} 条记录`
+    await fetchStats()
+  } catch {
+    cleanupMessage.value = '清理失败，请稍后重试'
+  } finally {
+    cleanupLoading.value = false
+  }
+}
 
 // --- System Monitor State ---
 interface SystemStats {
@@ -183,7 +199,8 @@ const info = ref<Record<string, string> | null>(null)
 const tableDescs: Record<string, string> = {
   config: '系统配置',
   logs: '同步日志',
-  jobs: '同步任务记录',
+  task_runs: '统一运行记录',
+  failure_records: '异常生命周期',
   playlist_sources: '歌单源',
   download_tasks: '下载队列',
   song_lookup: 'Plex 匹配缓存',
@@ -264,8 +281,6 @@ function formatUptime(s: number): string {
   return `${Math.floor(s)}s`
 }
 
-let timer: ReturnType<typeof setInterval> | null = null
-
 async function fetchStats() {
   try {
     const s = await api.get<SystemStats>('/system/stats')
@@ -276,124 +291,16 @@ async function fetchStats() {
   } catch { /* ignore */ }
 }
 
-// --- Log State ---
-const logs = ref<LogEntry[]>([])
-const logTotal = ref(0)
-const logLoading = ref(false)
-const logLoadingMore = ref(false)
-const logActiveFilter = ref<LogLevel | ''>('')
-const showClearConfirm = ref(false)
-const LOG_PAGE_SIZE = 50
-const logOffset = ref(0)
-
-const logHasMore = computed(() => logs.value.length < logTotal.value)
-
-const logFilters: { label: string; value: LogLevel | '' }[] = [
-  { label: '全部', value: '' },
-  { label: '信息', value: 'info' },
-  { label: '警告', value: 'warn' },
-  { label: '错误', value: 'error' },
-]
-
-async function fetchLogs() {
-  logLoading.value = true
-  logOffset.value = 0
-  try {
-    const params: Record<string, string> = { limit: String(LOG_PAGE_SIZE) }
-    if (logActiveFilter.value) params.level = logActiveFilter.value
-    const res = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
-    logs.value = res.items
-    logTotal.value = res.total
-  } catch { /* ignore */ } finally {
-    logLoading.value = false
-  }
-}
-
-async function loadMoreLogs() {
-  if (logLoadingMore.value || !logHasMore.value) return
-  logLoadingMore.value = true
-  try {
-    const newOffset = logOffset.value + LOG_PAGE_SIZE
-    const params: Record<string, string> = { limit: String(LOG_PAGE_SIZE), offset: String(newOffset) }
-    if (logActiveFilter.value) params.level = logActiveFilter.value
-    const res = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
-    logs.value = [...logs.value, ...res.items]
-    logTotal.value = res.total
-    logOffset.value = newOffset
-  } catch { /* ignore */ } finally {
-    logLoadingMore.value = false
-  }
-}
-
-function setLogFilter(level: LogLevel | '') {
-  logActiveFilter.value = level
-  fetchLogs()
-}
-
-async function handleClearLogs() {
-  showClearConfirm.value = false
-  try {
-    await api.del('/logs')
-    logs.value = []
-    logTotal.value = 0
-  } catch { /* ignore */ }
-}
-
-function logLevelColor(level: string): string {
-  switch (level) {
-    case 'error': return 'text-danger'
-    case 'warn': return 'text-warning'
-    default: return 'text-muted-deep'
-  }
-}
-
-function formatLogTime(ts: string): string {
-  const d = new Date(ts)
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  return `${y}-${mo}-${dd} ${h}:${mi}:${ss}`
-}
-
-// --- SSE log streaming ---
-let sse: EventSource | null = null
-
-// Lazy-load logs when switching to logs tab
-watch(activeTab, (tab) => {
-  if (tab === 'logs' && logs.value.length === 0) {
-    fetchLogs()
-  }
-})
+const statsPolling = useIntervalFn(() => { void fetchStats() }, 3000)
 
 // --- Lifecycle ---
 onMounted(async () => {
   try { info.value = await api.get('/system/info') } catch { /* ignore */ }
   await fetchStats()
-  timer = setInterval(fetchStats, 3000)
-
-  // If loaded directly with ?tab=logs, fetch initial logs
-  if (activeTab.value === 'logs') {
-    fetchLogs()
-  }
-
-  // SSE for real-time log streaming
-  try {
-    sse = new EventSource('/api/sync/events')
-    sse.addEventListener('log', (e: MessageEvent) => {
-      const data = JSON.parse(e.data)
-      if (!logActiveFilter.value || data.level === logActiveFilter.value) {
-        logs.value = [data as LogEntry, ...logs.value]
-        logTotal.value++
-      }
-    })
-  } catch { /* SSE unsupported */ }
+  statsPolling.start()
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
-  if (sse) { sse.close(); sse = null }
+  statsPolling.stop()
 })
 </script>

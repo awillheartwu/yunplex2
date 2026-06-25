@@ -3,6 +3,8 @@ import { initDb } from '../lib/db'
 import { getSyncService } from '../lib/sync/service'
 import { startWorker } from '../lib/sync/worker'
 import { setSyncService, setSyncWorker } from '../lib/sync/instance'
+import { recoverInterruptedRuns } from '../lib/run/store'
+import { backfillFailureRecords } from '../lib/tasks/failure-records'
 
 export default defineNitroPlugin(() => {
   const config = useRuntimeConfig()
@@ -10,6 +12,8 @@ export default defineNitroPlugin(() => {
   setDataDir(dataDir)
 
   initDb(dataDir)
+  recoverInterruptedRuns()
+  backfillFailureRecords()
 
   const svc = getSyncService(dataDir, () => readConfig())
   setSyncService(svc)

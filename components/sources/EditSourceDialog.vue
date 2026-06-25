@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
-    <div v-if="source" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5);backdrop-filter:blur(4px)" @click.self="$emit('close')">
+    <div v-if="source" class="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="$emit('close')">
       <div class="w-[460px] max-w-[92vw] rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
         <!-- Header -->
         <div class="flex items-center gap-2 px-5 py-4" style="border-bottom:1px solid var(--border-primary)">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <AppIcon name="edit" :size="16" class="text-accent" />
           <h3 class="text-sm font-semibold" style="color:var(--text-primary)">{{ source.type === 'album' ? '编辑专辑源' : '编辑歌单源' }}</h3>
         </div>
 
@@ -13,7 +13,7 @@
           <div>
             <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">{{ source.type === 'album' ? '网易云专辑' : '网易云歌单' }}</label>
             <div class="flex items-center gap-2 text-xs px-3 py-2 rounded-lg" style="background:var(--bg-input);color:var(--text-secondary)">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="var(--text-tertiary)" stroke-width="1.3"/><path d="M10.5 5.5v3.8a1.8 1.8 0 01-1.8 1.8 1.8 1.8 0 01-1.8-1.8 1.8 1.8 0 013.6 0z" stroke="var(--text-tertiary)" stroke-width="1.3" stroke-linecap="round"/></svg>
+              <AppIcon :name="source.type === 'album' ? 'album' : 'music'" :size="12" class="text-muted-deep" />
               {{ source.neteasePlaylistName }}
             </div>
           </div>
