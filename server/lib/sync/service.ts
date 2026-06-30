@@ -19,55 +19,14 @@ import { detectChanges } from './change-detection'
 import { deleteSongLookups, getSongLookupRatingKeys } from './song-lookup-store'
 import { buildCachedTargetOrder } from './reorder-cache'
 import { recordActivityEvent } from '../activity/store'
-import {
-  getFailureMemoryEntry,
-  inferFailurePhase,
-  parseFailureMemory,
-  recordFailure,
-  removeFailures,
-  serializeFailureMemory,
-  shouldSkipSongDueToFailure,
-} from './failure-memory'
-import {
-  describePlexMatchFailure,
-  inferPlexMatchFailureCause,
-} from './plex-match'
-import {
-  classifyDownloadTaskFailure,
-  shouldAttemptPlexRetryForResolution,
-} from './download-diagnostics'
+import { getFailureMemoryEntry, inferFailurePhase, parseFailureMemory, recordFailure, removeFailures, serializeFailureMemory, shouldSkipSongDueToFailure } from './failure-memory'
+import { describePlexMatchFailure, inferPlexMatchFailureCause } from './plex-match'
+import { classifyDownloadTaskFailure, shouldAttemptPlexRetryForResolution } from './download-diagnostics'
 import { findExistingLocalSongPath } from './local-file-discovery'
+import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
+import { buildSyncRunSummary, recordSyncRunCompletion } from './service-summary'
 
-export const STAGE_LABELS: Record<string, string> = {
-  idle: '空闲',
-  fetching_playlist: '获取源曲目',
-  comparing: '对比歌曲',
-  downloading: '下载歌曲',
-  processing_tags: '写入元数据',
-  refreshing_plex: '刷新 Plex 库',
-  updating_plex_playlist: '更新 Plex 歌单',
-  reorder: '重排歌单',
-  cancelled: '已取消',
-  error: '同步错误',
-}
-
-function createInitialState(): SyncState {
-  return {
-    isRunning: false, currentStage: 'idle', startedAt: null,
-    currentSourceName: null,
-    lastSyncAt: null, lastSyncResult: null, syncCount: 0,
-    successCount: 0, failureCount: 0, currentSong: null,
-    progress: null, failures: [], dryRun: false,
-  }
-}
-
-interface SyncRunOptions {
-  dryRun?: boolean
-  sourceIds?: string[]
-  forceFull?: boolean
-  rebuildMatch?: boolean
-  trigger?: 'user' | 'schedule' | 'system' | 'retry'
-}
+export { STAGE_LABELS } from './service-state'
 
 export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
   let state = createInitialState()
@@ -754,24 +713,10 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     totalSuccess > 0 ? 'partial' : 'failed'
 
   const finishedJob = job.finish(jobStatus, '')
-  const summaryPrefix = rebuildMatch ? '重建缓存后全量同步' : dryRun ? '[预览]' : ''
-  const summary = dryRun
-    ? `${summaryPrefix} ${sources.length} 个歌单源`.trim()
-    : finishedJob.failedSongs > 0 || finishedJob.warnings > 0
-      ? `${summaryPrefix ? `${summaryPrefix}：` : ''}${sources.length} 个源，成功 ${finishedJob.successSongs} 首${finishedJob.failedSongs > 0 ? `，失败 ${finishedJob.failedSongs} 首` : ''}${finishedJob.warnings > 0 ? `，${finishedJob.warnings} 首已忽略` : ''}`
-      : `${summaryPrefix ? `${summaryPrefix}：` : ''}${sources.length} 个源，共同步 ${finishedJob.totalSongs} 首歌曲`
+  const summary = buildSyncRunSummary({ job: finishedJob, sourceCount: sources.length, dryRun, rebuildMatch })
   finishedJob.summary = summary
   saveSyncRun(finishedJob)
-  recordActivityEvent({
-    domain: 'sync',
-    type: jobStatus === 'success' ? 'sync_run_completed' : jobStatus === 'partial' ? 'sync_run_partial' : 'sync_run_failed',
-    severity: jobStatus === 'success' ? 'success' : jobStatus === 'partial' ? 'warning' : 'error',
-    title: `本轮同步${jobStatus === 'success' ? '完成' : jobStatus === 'partial' ? '部分完成' : '失败'}`,
-    summary,
-    context: { jobId: finishedJob.id, successSongs: finishedJob.successSongs, failedSongs: finishedJob.failedSongs, totalSongs: finishedJob.totalSongs },
-    link: `/task-center/runs/${finishedJob.id}`,
-    groupKey: `job:${finishedJob.id}`,
-  })
+  recordSyncRunCompletion(finishedJob, summary)
 
   log('info', summary)
   finishState(finishedJob.status === 'success' ? 'success' : 'failure')
@@ -851,5 +796,3 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
   return { getState, runSync, runSyncForSource, cancelSync }
 }
-
-class CancellationError extends Error { constructor() { super('Cancelled') } }

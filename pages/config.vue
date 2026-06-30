@@ -13,10 +13,6 @@
         <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
           {{ saving ? '保存中...' : '保存配置' }}
         </button>
-        <span v-if="saveMsg" class="inline-flex items-center gap-1 text-sm transition-opacity duration-300" :class="saveOk ? 'text-success' : 'text-danger'">
-          <AppIcon :name="saveOk ? 'check' : 'x'" :size="14" />
-          {{ saveMsg }}
-        </span>
       </template>
     </PageHeader>
 
@@ -173,9 +169,28 @@
       <ConfigSection title="其他策略" description="细节行为控制" :collapsed="!!collapsed.other" @toggle="toggle('other')">
         <template #icon><SidebarIcon name="settings" :active="true" /></template>
         <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
-          <div class="flex items-center gap-3">
-            <input v-model.number="form.other.fontScale" type="range" min="0.8" max="1.5" step="0.05" class="flex-1 accent-[#818cf8]" />
-            <span class="text-xs text-muted w-10 text-right">{{ form.other.fontScale?.toFixed(2) }}x</span>
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <div class="flex w-full max-w-xl items-center gap-3">
+              <input
+                v-model.number="form.other.fontScale"
+                type="range"
+                min="0.8"
+                max="1.5"
+                step="0.05"
+                class="w-full accent-[#818cf8]"
+                aria-label="字体缩放"
+              />
+              <span class="w-12 shrink-0 text-right text-xs text-muted">{{ form.other.fontScale?.toFixed(2) }}x</span>
+            </div>
+            <div class="flex min-h-11 items-center gap-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-input)] px-3 py-2">
+              <span class="shrink-0 text-2xs font-medium text-muted-deep">预览</span>
+              <span
+                class="font-semibold text-[var(--text-primary)]"
+                :style="{ fontSize: `${Math.round((form.other.fontScale || 1) * 16)}px`, lineHeight: '1.25' }"
+              >
+                示例文字 Aa 123
+              </span>
+            </div>
           </div>
         </FormField>
         <FormField label="存储路径格式">
@@ -198,7 +213,7 @@
             <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
             <option value="__custom__">自定义...</option>
           </select>
-          <input v-if="pathFormatMode === '__custom__'" :value="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" @input="interceptPathFormatChange(($event.target as HTMLInputElement).value)" />
+          <input v-if="pathFormatMode === '__custom__'" :value="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" @input="updateCustomPathFormat(($event.target as HTMLInputElement).value)" />
         </FormField>
         <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
           <select v-model="form.other.multiArtistFormat" class="form-input">
@@ -224,6 +239,12 @@
         </FormField>
 
         <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
+        <div class="space-y-3">
+          <ToggleField v-model="form.other.enableMusicBrainzResolver" label="启用 MusicBrainz 艺人解析" hint="本地别名未命中时，尝试使用 MusicBrainz 查找英文名、罗马音和别名。" />
+          <FormField label="MusicBrainz 最低匹配分数" hint="0-100，分数越高越保守；建议保持 90。">
+            <input v-model.number="form.other.musicBrainzMinScore" type="number" min="0" max="100" class="form-input" :disabled="!form.other.enableMusicBrainzResolver" />
+          </FormField>
+        </div>
         <FormField label="艺人名替换映射" hint="替换影响 Plex 搜索、文件路径、ID3 标签等。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
           <AliasEditor v-model="form.other.artistAliases" />
         </FormField>
@@ -349,6 +370,11 @@ function interceptPathFormatChange(newValue: string) {
   showPathFormatConfirm.value = true
 }
 
+function updateCustomPathFormat(newValue: string) {
+  if (!form.value) return
+  form.value.other.pathFormat = newValue
+}
+
 function confirmPathFormatChange() {
   pathFormatMode.value = pendingPathFormat.value
   showPathFormatConfirm.value = false
@@ -367,8 +393,6 @@ const showResetConfirm = ref(false)
 const form = ref<AppConfig | null>(null)
 const savedConfig = ref<AppConfig | null>(null)
 const testing = ref<string | null>(null)
-const saveMsg = ref<string | null>(null)
-const saveOk = ref(true)
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
 
 // ── Tab navigation ──
@@ -409,9 +433,12 @@ async function loadConfig() {
     const loaded = await api.get<AppConfig>('/config')
     form.value = loaded
     savedConfig.value = structuredClone(loaded)
+    applyFontScale(loaded.other.fontScale)
   } catch {
-    form.value = { ...DEFAULT_CONFIG }
-    savedConfig.value = { ...DEFAULT_CONFIG }
+    const fallback = structuredClone(DEFAULT_CONFIG)
+    form.value = fallback
+    savedConfig.value = structuredClone(fallback)
+    applyFontScale(fallback.other.fontScale)
   } finally {
     loading.value = false
   }
@@ -420,25 +447,24 @@ async function loadConfig() {
 async function handleSave() {
   if (!form.value) return
   saving.value = true
-  saveMsg.value = null
   try {
     const previous = savedConfig.value
     const updated = await api.put<AppConfig>('/config', form.value)
     form.value = updated
     savedConfig.value = structuredClone(updated)
+    applyFontScale(updated.other.fontScale)
 
     const pathChanged = !!previous && (
       previous.download.dir !== updated.download.dir ||
       previous.download.plexLibraryPathPrefix !== updated.download.plexLibraryPathPrefix
     )
-    showSaveMsg(
-      true,
-      pathChanged
-        ? '配置已保存。路径配置已变更，建议对受影响的同步源执行“重建匹配并同步”。'
-        : '配置已保存',
+    showConfigFeedback(
+      'success',
+      '配置已保存',
+      pathChanged ? '路径配置已变更，建议对受影响的同步源执行“重建匹配并同步”。' : undefined,
     )
   } catch (err) {
-    showSaveMsg(false, err instanceof Error ? err.message : '保存失败')
+    showConfigFeedback('error', '配置保存失败', err instanceof Error ? err.message : '保存失败')
   } finally {
     saving.value = false
   }
@@ -447,18 +473,23 @@ async function handleSave() {
 async function handleReset() {
   showResetConfirm.value = false
   try {
-    await api.put<AppConfig>('/config', DEFAULT_CONFIG)
-    form.value = { ...DEFAULT_CONFIG }
-    savedConfig.value = { ...DEFAULT_CONFIG }
-    showSaveMsg(true, '已恢复默认配置')
-  } catch { /* ignore */ }
+    const defaults = structuredClone(DEFAULT_CONFIG)
+    await api.put<AppConfig>('/config', defaults)
+    form.value = defaults
+    savedConfig.value = structuredClone(defaults)
+    applyFontScale(defaults.other.fontScale)
+    showConfigFeedback('success', '已恢复默认配置')
+  } catch (err) {
+    showConfigFeedback('error', '恢复默认失败', err instanceof Error ? err.message : '请稍后重试')
+  }
 }
 
 async function testConnection(section: 'netease' | 'plex') {
+  if (!form.value) return
   testing.value = section
   testResult.value = { ...testResult.value, [section]: undefined as unknown as { ok: boolean; msg: string } }
   try {
-    await api.post('/config/test-connection', { section })
+    await api.post('/config/test-connection', { section, config: form.value })
     testResult.value = { ...testResult.value, [section]: { ok: true, msg: '连接正常' } }
   } catch (err) {
     testResult.value = { ...testResult.value, [section]: { ok: false, msg: err instanceof Error ? err.message : '连接失败' } }
@@ -467,11 +498,14 @@ async function testConnection(section: 'netease' | 'plex') {
   }
 }
 
-function showSaveMsg(ok: boolean, msg: string) {
-  saveOk.value = ok
-  saveMsg.value = msg
-  if (ok) feedback.success('配置已保存', msg)
-  else feedback.error('配置保存失败', msg)
+function showConfigFeedback(type: 'success' | 'error', title: string, message?: string) {
+  if (type === 'success') feedback.success(title, message)
+  else feedback.error(title, message)
+}
+
+function applyFontScale(scale: number) {
+  if (import.meta.server) return
+  document.documentElement.style.setProperty('--font-scale', String(scale || 1))
 }
 
 // ── Import / Export ──

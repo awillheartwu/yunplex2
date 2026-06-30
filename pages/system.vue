@@ -37,11 +37,11 @@
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div class="section-card p-4">
           <p class="text-2xs text-muted-deep mb-2">CPU 使用率</p>
-          <v-chart class="w-full" style="height:160px" :option="cpuChartOption" :autoresize="true" />
+          <LazySystemLineChart :option="cpuChartOption" />
         </div>
         <div class="section-card p-4">
           <p class="text-2xs text-muted-deep mb-2">内存使用</p>
-          <v-chart class="w-full" style="height:160px" :option="memChartOption" :autoresize="true" />
+          <LazySystemLineChart :option="memChartOption" />
         </div>
       </div>
 
@@ -129,15 +129,8 @@
 </template>
 
 <script setup lang="ts">
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { TooltipComponent, GridComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
 import { useIntervalFn } from '~~/composables/useTiming'
 import { resolveLegacyActivityRedirect } from '~~/lib/activity-navigation'
-
-use([LineChart, TooltipComponent, GridComponent, CanvasRenderer])
 
 const api = useApi()
 const route = useRoute()

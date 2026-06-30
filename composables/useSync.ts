@@ -154,6 +154,7 @@ export function useSyncStatus() {
       await fetchStatusShared()
     } catch (err) {
       sharedError.value = err instanceof Error ? err.message : '取消同步失败'
+      throw err
     }
   }
 

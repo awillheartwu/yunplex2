@@ -23,6 +23,7 @@
             <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">任务名称</label>
             <input v-model="form.name" type="text" class="form-input w-full text-sm" />
           </div>
+          <p v-if="saveError" class="text-2xs text-danger">{{ saveError }}</p>
 
           <!-- Album-only: skip Plex playlist -->
           <template v-if="source.type === 'album'">
@@ -95,6 +96,7 @@ const api = useApi()
 const loading = ref(false)
 const plexPlaylists = ref<PlexPlaylistItem[]>([])
 const plexError = ref('')
+const saveError = ref('')
 
 const form = reactive({
   name: '',
@@ -112,6 +114,7 @@ const form = reactive({
 
 watch(() => props.source, (s) => {
   if (!s) return
+  saveError.value = ''
   form.name = s.name
   form.plexPlaylistName = s.plexPlaylistName || s.neteasePlaylistName
   form.syncLimit = s.syncLimit
@@ -139,6 +142,7 @@ async function fetchPlexPlaylists() {
 async function handleSave() {
   if (!props.source) return
   loading.value = true
+  saveError.value = ''
   try {
     await api.put(`/playlist-sources/${props.source.id}`, {
       name: form.name,
@@ -155,6 +159,8 @@ async function handleSave() {
     })
     emit('saved')
     emit('close')
-  } catch { /* ignore */ } finally { loading.value = false }
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : '保存同步源失败'
+  } finally { loading.value = false }
 }
 </script>

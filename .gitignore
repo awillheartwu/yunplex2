@@ -15,11 +15,6 @@ test/
 .agents/
 CLAUDE.md
 
-# Scripts & tests
-scripts/
-tests/
-vitest.config.ts
-
 # Local tooling
 .husky/
 skills-lock.json

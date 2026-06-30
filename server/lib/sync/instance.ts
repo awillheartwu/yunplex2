@@ -27,3 +27,7 @@ export function setSyncWorker(w: ReturnType<typeof startWorker>) {
 export function getSyncWorker() {
   return syncWorker
 }
+
+export function clearSyncWorker() {
+  syncWorker = null
+}

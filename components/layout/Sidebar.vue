@@ -43,7 +43,7 @@
         :style="{ color: 'var(--text-tertiary)' }"
         :aria-label="desktopCollapsed ? '展开菜单' : '收起菜单'"
         :title="desktopCollapsed ? '展开菜单' : undefined"
-        @click="collapsed = !collapsed; saveState()"
+        @click="toggleSidebarCollapsed"
       >
         <AppIcon name="chevronLeft" :size="14" class="transition-transform duration-200" :class="desktopCollapsed ? 'rotate-180' : ''" />
         <span
@@ -56,28 +56,19 @@
 </template>
 
 <script setup lang="ts">
+import { useSidebarState } from '~/composables/useSidebarState'
+
 const props = withDefaults(defineProps<{ mobile?: boolean }>(), { mobile: false })
 const emit = defineEmits<{ navigate: [] }>()
 
-const STORAGE_KEY = 'yunplex-sidebar-collapsed'
-
-const collapsed = ref(false)
-const desktopCollapsed = computed(() => collapsed.value && !props.mobile)
+const { sidebarCollapsed, loadSidebarState, toggleSidebarCollapsed } = useSidebarState()
+const desktopCollapsed = computed(() => sidebarCollapsed.value && !props.mobile)
 const sidebarWidth = computed(() => {
   if (props.mobile) return 'min(18rem, 82vw)'
   return desktopCollapsed.value ? '64px' : '220px'
 })
 
-function saveState() {
-  try { localStorage.setItem(STORAGE_KEY, String(collapsed.value)) } catch { /* ignore */ }
-}
-
-onMounted(() => {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    if (v === 'true') collapsed.value = true
-  } catch { /* ignore */ }
-})
+onMounted(loadSidebarState)
 
 const navItems = [
   { icon: 'dashboard', label: '仪表盘', path: '/' },
