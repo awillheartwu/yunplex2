@@ -5,8 +5,41 @@ import { readConfig, getDataDir } from './config/store'
 import { getDb } from './db'
 import os from 'node:os'
 
+export const DEPENDENCY_HEALTH_TTL_MS = 60_000
+
 let lastCpuUsage = process.cpuUsage()
 let lastCpuTime = Date.now()
+let dependencyHealthCache: DependencyHealthSnapshot | null = null
+
+type HealthCheckers = {
+  plex: () => Promise<boolean>
+  netease: () => Promise<boolean>
+  dirWritable: () => boolean
+}
+
+function defaultHealthCheckers(): HealthCheckers {
+  return {
+    plex: checkPlexHealth,
+    netease: checkNeteaseHealth,
+    dirWritable: checkDownloadDirWritable,
+  }
+}
+
+let healthCheckers = defaultHealthCheckers()
+
+export interface DependencyHealthSnapshot {
+  plexOk: boolean
+  neteaseOk: boolean
+  dirWritable: boolean
+  dependencyCheckedAt: number
+  dependencyCacheExpiresAt: number
+  dependencyCacheTtlMs: number
+}
+
+export interface DependencyHealthOptions {
+  force?: boolean
+  now?: number
+}
 
 export interface SystemHealthSnapshot {
   cpu: number
@@ -23,6 +56,9 @@ export interface SystemHealthSnapshot {
   plexOk: boolean
   neteaseOk: boolean
   dirWritable: boolean
+  dependencyCheckedAt: number
+  dependencyCacheExpiresAt: number
+  dependencyCacheTtlMs: number
   timestamp: number
 }
 
@@ -92,10 +128,13 @@ export async function checkPlexHealth() {
     const cfg = readConfig()
     const url = `http://${cfg.plex.server}:${cfg.plex.port}/identity?X-Plex-Token=${cfg.plex.token}`
     const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 3000)
-    const res = await fetch(url, { signal: controller.signal })
-    clearTimeout(t)
-    return res.ok
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      return res.ok
+    } finally {
+      clearTimeout(timeout)
+    }
   } catch {
     return false
   }
@@ -112,14 +151,44 @@ export function checkDownloadDirWritable() {
   }
 }
 
+export async function getDependencyHealthSnapshot(options: DependencyHealthOptions = {}): Promise<DependencyHealthSnapshot> {
+  const now = options.now ?? Date.now()
+  if (!options.force && dependencyHealthCache && dependencyHealthCache.dependencyCacheExpiresAt > now) {
+    return dependencyHealthCache
+  }
+
+  const [plexOk, neteaseOk, dirWritable] = await Promise.all([
+    healthCheckers.plex(),
+    healthCheckers.netease(),
+    Promise.resolve(healthCheckers.dirWritable()),
+  ])
+  dependencyHealthCache = {
+    plexOk,
+    neteaseOk,
+    dirWritable,
+    dependencyCheckedAt: now,
+    dependencyCacheExpiresAt: now + DEPENDENCY_HEALTH_TTL_MS,
+    dependencyCacheTtlMs: DEPENDENCY_HEALTH_TTL_MS,
+  }
+  return dependencyHealthCache
+}
+
+export function resetSystemHealthCacheForTest() {
+  dependencyHealthCache = null
+  healthCheckers = defaultHealthCheckers()
+}
+
+export function setSystemHealthCheckersForTest(checkers: Partial<HealthCheckers>) {
+  dependencyHealthCache = null
+  healthCheckers = { ...defaultHealthCheckers(), ...checkers }
+}
+
 export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
-  const [mem, dbStats, dbSize, plexOk, neteaseOk, dirWritable] = await Promise.all([
+  const [mem, dbStats, dbSize, dependencyHealth] = await Promise.all([
     Promise.resolve(getMemUsage()),
     Promise.resolve(getDbStats()),
     Promise.resolve(getDbFileSize()),
-    checkPlexHealth(),
-    checkNeteaseHealth(),
-    Promise.resolve(checkDownloadDirWritable()),
+    getDependencyHealthSnapshot(),
   ])
 
   return {
@@ -129,9 +198,7 @@ export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
     pid: process.pid,
     dbSize,
     dbStats,
-    plexOk,
-    neteaseOk,
-    dirWritable,
+    ...dependencyHealth,
     timestamp: Date.now(),
   }
 }
