@@ -5,6 +5,7 @@ interface WorkerHandle {
   schedule: () => void
   update: () => void
   stop: () => void
+  isScheduled: () => boolean
 }
 
 let worker: WorkerHandle | null = null
@@ -37,6 +38,11 @@ export function startWorker(
 
     if (timer) clearInterval(timer)
     timer = setInterval(async () => {
+      const latestConfig = getConfig()
+      if (!latestConfig.sync.enabled) {
+        stop()
+        return
+      }
       const state = syncService.getState()
       if (state.isRunning) return
       try {
@@ -48,6 +54,11 @@ export function startWorker(
   }
 
   function update() {
+    const cfg = getConfig()
+    if (!cfg.sync.enabled) {
+      stop()
+      return
+    }
     schedule()
   }
 
@@ -64,7 +75,11 @@ export function startWorker(
     schedule()
   }
 
-  worker = { schedule, update, stop }
+  function isScheduled() {
+    return timer !== null
+  }
+
+  worker = { schedule, update, stop, isScheduled }
 
   return worker
 }

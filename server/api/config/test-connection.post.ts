@@ -1,18 +1,19 @@
 import { success, fail } from '../../lib/response'
-import { readConfig } from '../../lib/config/store'
+import { resolveConnectionTestConfig } from '../../lib/config/connection-test'
+import { ConfigValidationError } from '../../lib/config/validation'
 import { checkCookie } from '../../lib/netease'
 import { initPlexClient } from '../../lib/plex-client'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ section: 'netease' | 'plex' }>(event)
+  const body = await readBody<{ section: 'netease' | 'plex'; config?: unknown }>(event)
 
   if (!body.section || !['netease', 'plex'].includes(body.section)) {
     return fail('缺少测试目标 (netease 或 plex)')
   }
 
-  const config = readConfig()
-
   try {
+    const config = resolveConnectionTestConfig(body.config)
+
     if (body.section === 'netease') {
       if (!config.netease.cookie) {
         return fail('未配置网易云 Cookie')
@@ -39,6 +40,9 @@ export default defineEventHandler(async (event) => {
       )
     }
   } catch (err) {
+    if (err instanceof ConfigValidationError) {
+      return fail(err.message)
+    }
     const message = err instanceof Error ? err.message : '连接失败'
     return fail(`${body.section === 'netease' ? '网易云' : 'Plex'} 连接失败: ${message}`)
   }

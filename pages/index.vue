@@ -56,7 +56,7 @@
           <div class="dashboard-trend-card__header">
             <h2 class="dashboard-section-title">近 7 天同步情况</h2>
           </div>
-          <DownloadChart :data="summary.trend.points" :days="summary.trend.days" />
+          <LazyDownloadChart :data="summary.trend.points" :days="summary.trend.days" />
         </section>
 
         <div class="dashboard-top-grid__kpis dashboard-layout__kpis">
@@ -81,8 +81,10 @@
 import type { AppConfig } from '~~/server/lib/config/types'
 import type { DashboardSummary, PlexRecentItem } from '~~/types/dashboard'
 import { formatDashboardLastSyncLabel } from '~~/composables/useDashboardFormat'
+import { useFeedback } from '~~/composables/useFeedback'
 
 const api = useApi()
+const feedback = useFeedback()
 const { state: syncState, loading: syncLoading, triggerSync, startPolling, stopPolling } = useSync()
 
 const summary = ref<DashboardSummary | null>(null)
@@ -134,6 +136,9 @@ async function toggleAutoSync() {
     })
     config.value = updated
     await fetchDashboard()
+    feedback.success(updated.sync.enabled ? '自动同步已开启' : '自动同步已关闭')
+  } catch (err) {
+    feedback.error('自动同步切换失败', err instanceof Error ? err.message : '请稍后重试')
   } finally {
     autoSyncLoading.value = false
   }
@@ -143,7 +148,10 @@ async function handleSync() {
   try {
     await triggerSync(false)
     await fetchDashboard()
-  } catch { /* handled by sync state */ }
+    feedback.success('同步已触发', '可在任务中心或动态页查看后续进度。')
+  } catch (err) {
+    feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试')
+  }
 }
 
 let unsubSse: (() => void) | null = null

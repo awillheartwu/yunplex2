@@ -1,6 +1,7 @@
 import type { AppConfig, ConfigSection } from './types'
 import { DEFAULT_CONFIG } from './defaults'
-import { readConfigFromDb, writeConfigToDb } from '../db'
+import { readRawConfigFromDb, writeConfigToDb } from '../db'
+import { cloneConfig, mergeAndValidateConfig, migrateConfig, validateFullConfig } from './validation'
 
 let dataDir = './data'
 
@@ -12,66 +13,29 @@ export function getDataDir(): string {
   return dataDir
 }
 
-/**
- * Returns true when `v` is a plain object whose every value is a primitive,
- * null, or array — i.e. it contains no nested plain objects. Such "flat map"
- * objects are treated as leaf values and replaced entirely, so that deleting
- * a key from the partial actually removes it from the result.
- */
-function isFlatRecord(v: unknown): v is Record<string, unknown> {
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
-  return Object.values(v as Record<string, unknown>).every(
-    (val) => typeof val !== 'object' || val === null || Array.isArray(val),
-  )
-}
-
-function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>): T {
-  const result = { ...base }
-  for (const key of Object.keys(partial) as (keyof T)[]) {
-    const v = partial[key]
-    if (v !== undefined && v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      if (isFlatRecord(v)) {
-        // Flat maps (e.g. artistAliases: Record<string, string>):
-        // replace the whole object so deletions are persisted.
-        ;(result as Record<string, unknown>)[key as string] = v
-      } else {
-        ;(result as Record<string, unknown>)[key as string] = deepMerge(
-          (base[key] as Record<string, unknown>) || {},
-          v as Record<string, unknown>,
-        )
-      }
-    } else if (v !== undefined) {
-      ;(result as Record<string, unknown>)[key as string] = v
-    }
-  }
-  return result
-}
-
 export function readConfig(): AppConfig {
-  return readConfigFromDb()
-}
+  const raw = readRawConfigFromDb()
+  if (!raw) return cloneConfig(DEFAULT_CONFIG)
 
-function normalizeConfig(config: AppConfig): AppConfig {
-  return {
-    ...config,
-    download: {
-      ...config.download,
-      dir: config.download.dir.trim(),
-      plexLibraryPathPrefix: config.download.plexLibraryPathPrefix.trim().replace(/[\\/]+$/, ''),
-    },
+  const migrated = migrateConfig(raw)
+  if (migrated.changed) {
+    writeConfigToDb(migrated.config)
   }
+
+  return migrated.config
 }
 
-export function writeConfig(partial: Partial<AppConfig>): AppConfig {
+export function writeConfig(partial: unknown): AppConfig {
   const current = readConfig()
-  const merged = normalizeConfig(deepMerge(current, partial))
+  const merged = mergeAndValidateConfig(current, partial)
   writeConfigToDb(merged)
   return merged
 }
 
 export function resetConfig(): AppConfig {
-  writeConfigToDb({ ...DEFAULT_CONFIG })
-  return { ...DEFAULT_CONFIG }
+  const config = validateFullConfig(cloneConfig(DEFAULT_CONFIG))
+  writeConfigToDb(config)
+  return config
 }
 
 export function updateConfigSection<K extends ConfigSection>(
@@ -81,7 +45,7 @@ export function updateConfigSection<K extends ConfigSection>(
   const sectionUpdate: Partial<AppConfig> = {
     [section]: partial,
   }
-  return writeConfig(sectionUpdate as Partial<AppConfig>)
+  return writeConfig(sectionUpdate)
 }
 
 export function configPath(): string {

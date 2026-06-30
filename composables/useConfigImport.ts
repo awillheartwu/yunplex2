@@ -2,6 +2,7 @@ import type { AppConfig } from '~~/server/lib/config/types'
 
 export function useConfigImport(loadConfig: () => Promise<void>) {
   const api = useApi()
+  const feedback = useFeedback()
 
   const showImportTextarea = ref(false)
   const importJson = ref('')
@@ -16,9 +17,11 @@ export function useConfigImport(loadConfig: () => Promise<void>) {
     try {
       const text = await file.text()
       const parsed = JSON.parse(text)
-      await doImport(parsed)
+      await doImport(parsed, { toastFailure: true })
     } catch (err) {
-      importResult.value = { ok: false, msg: '文件解析失败: ' + (err instanceof Error ? err.message : 'JSON 格式错误') }
+      const message = '文件解析失败: ' + (err instanceof Error ? err.message : 'JSON 格式错误')
+      importResult.value = { ok: false, msg: message }
+      feedback.error('配置导入失败', message)
     } finally {
       input.value = ''
     }
@@ -28,13 +31,14 @@ export function useConfigImport(loadConfig: () => Promise<void>) {
     if (!importJson.value) return
     try {
       const parsed = JSON.parse(importJson.value)
-      await doImport(parsed)
+      await doImport(parsed, { toastFailure: false })
     } catch (err) {
-      importResult.value = { ok: false, msg: 'JSON 解析失败: ' + (err instanceof Error ? err.message : '格式错误') }
+      const message = 'JSON 解析失败: ' + (err instanceof Error ? err.message : '格式错误')
+      importResult.value = { ok: false, msg: message }
     }
   }
 
-  async function doImport(data: unknown) {
+  async function doImport(data: unknown, options: { toastFailure: boolean }) {
     importing.value = true
     importResult.value = null
     try {
@@ -43,8 +47,11 @@ export function useConfigImport(loadConfig: () => Promise<void>) {
       importJson.value = ''
       showImportTextarea.value = false
       await loadConfig()
+      feedback.success('配置导入成功')
     } catch (err) {
-      importResult.value = { ok: false, msg: '导入失败: ' + (err instanceof Error ? err.message : '未知错误') }
+      const message = '导入失败: ' + (err instanceof Error ? err.message : '未知错误')
+      importResult.value = { ok: false, msg: message }
+      if (options.toastFailure) feedback.error('配置导入失败', message)
     } finally {
       importing.value = false
     }
@@ -59,6 +66,7 @@ export function useConfigImport(loadConfig: () => Promise<void>) {
     a.download = 'yunplex2-config.json'
     a.click()
     URL.revokeObjectURL(url)
+    feedback.success('配置已导出')
   }
 
   return {

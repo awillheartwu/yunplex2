@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "check:repo-size": "node scripts/check-repo-size.mjs",
     "format": "prettier --write .",
     "prepare": "husky"
   },

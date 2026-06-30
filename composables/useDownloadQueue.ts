@@ -116,26 +116,29 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
 
   async function retryOne(id: string) {
     retryingOne.value = id
-    try { await api.post(`/downloads/tasks/${id}/retry`); await fetchAll() } catch { /* ignore */ }
+    try { await api.post(`/downloads/tasks/${id}/retry`); await fetchAll() }
     finally { retryingOne.value = null }
   }
 
   async function retryAll() {
     retrying.value = true
-    try { await api.post('/downloads/tasks/retry-failed'); await fetchAll() } catch { /* ignore */ }
+    try { await api.post('/downloads/tasks/retry-failed'); await fetchAll() }
     finally { retrying.value = false }
   }
 
   async function clearAll() {
-    try { await api.del('/downloads/tasks'); await fetchAll() } catch { /* ignore */ }
+    await api.del('/downloads/tasks')
+    await fetchAll()
   }
 
   async function clearQueue() {
-    try { await api.del('/downloads/tasks?scope=queue'); await fetchAll() } catch { /* ignore */ }
+    await api.del('/downloads/tasks?scope=queue')
+    await fetchAll()
   }
 
   async function deleteOne(id: string) {
-    try { await api.del(`/downloads/tasks/${id}`); await fetchAll() } catch { /* ignore */ }
+    await api.del(`/downloads/tasks/${id}`)
+    await fetchAll()
   }
 
   const polling = useIntervalFn(() => { void fetchAll() }, 5000)

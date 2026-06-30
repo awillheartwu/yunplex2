@@ -110,8 +110,9 @@
           </template>
 
           <!-- Footer -->
-          <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
+          <div class="flex items-center justify-between gap-3 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
             <span class="text-2xs text-muted">已选 {{ selectedIds.length }} 个</span>
+            <p v-if="saveError" class="min-w-0 flex-1 truncate text-right text-2xs text-danger">{{ saveError }}</p>
             <div class="flex gap-2">
               <button class="btn btn-secondary" @click="$emit('update:visible', false)">取消</button>
               <button class="btn btn-primary" :disabled="saving || selectedIds.length === 0" @click="handleAddSelected">
@@ -130,7 +131,8 @@
               <input v-model="manualId" type="number" placeholder="输入 ID" class="form-input w-full text-sm" @keyup.enter="handleAddSingle" />
             </div>
           </div>
-          <div class="flex justify-end gap-2 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
+          <div class="flex items-center justify-end gap-2 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
+            <p v-if="saveError" class="mr-auto min-w-0 truncate text-2xs text-danger">{{ saveError }}</p>
             <button class="btn btn-secondary" @click="$emit('update:visible', false)">取消</button>
             <button class="btn btn-primary" :disabled="saving" @click="handleAddSingle">确认添加</button>
           </div>
@@ -154,7 +156,7 @@ interface AlbumItem {
 }
 
 const props = defineProps<{ visible: boolean; sourceIds: number[] }>()
-const emit = defineEmits<{ 'update:visible': [v: boolean]; created: []; 'created-album': [] }>()
+const emit = defineEmits<{ 'update:visible': [v: boolean]; created: [count: number]; 'created-album': [count: number] }>()
 
 const api = useApi()
 
@@ -181,6 +183,7 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const saving = ref(false)
 const error = ref('')
+const saveError = ref('')
 const selectedIds = ref<number[]>([])
 const manualId = ref('')
 
@@ -290,6 +293,7 @@ function publishYear(ts: number): string {
 async function handleAddSelected() {
   if (selectedIds.value.length === 0) return
   saving.value = true
+  saveError.value = ''
   const isAlbum = dialogType.value === 'album'
   try {
     for (const pid of selectedIds.value) {
@@ -304,15 +308,18 @@ async function handleAddSelected() {
       })
     }
     emit('update:visible', false)
-    if (isAlbum) emit('created-album')
-    else emit('created')
-  } catch { /* ignore */ } finally { saving.value = false }
+    if (isAlbum) emit('created-album', selectedIds.value.length)
+    else emit('created', selectedIds.value.length)
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : '添加同步源失败'
+  } finally { saving.value = false }
 }
 
 async function handleAddSingle() {
   const id = parseInt(manualId.value, 10)
   if (isNaN(id) || id <= 0) return
   saving.value = true
+  saveError.value = ''
   const isAlbum = dialogType.value === 'album'
   try {
     const playlist = !isAlbum ? list.value.find(p => p.id === id) : null
@@ -323,15 +330,18 @@ async function handleAddSingle() {
       coverUrl: playlist?.coverImgUrl || undefined,
     })
     emit('update:visible', false)
-    if (isAlbum) emit('created-album')
-    else emit('created')
-  } catch { /* ignore */ } finally { saving.value = false }
+    if (isAlbum) emit('created-album', 1)
+    else emit('created', 1)
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : '添加同步源失败'
+  } finally { saving.value = false }
 }
 
 watch(() => props.visible, (v) => {
   if (v) {
     manualId.value = ''
     selectedIds.value = []
+    saveError.value = ''
     clearPlaylistDialogFilters()
     clearAlbumDialogFilters()
     fetchList(true)

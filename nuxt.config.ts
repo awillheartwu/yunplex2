@@ -11,6 +11,9 @@ export default defineNuxtConfig({
   },
 
   vite: {
+    build: {
+      chunkSizeWarningLimit: 600,
+    },
     server: {
       watch: {
         ignored: ['**/node_modules/**', '**/data/**', '**/test/**', '**/../yunplex/**', '**/../yunPlexBackend/**', '**/../yunPlexFrontend/**'],
@@ -52,7 +55,10 @@ export default defineNuxtConfig({
     },
   },
 
-  css: ['~/assets/css/main.css'],
+  css: [
+    '~/assets/css/main.css',
+    '~/assets/css/global/components.css',
+  ],
 
   tailwindcss: {
     config: {

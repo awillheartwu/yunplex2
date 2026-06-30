@@ -1,7 +1,15 @@
 <template>
   <header class="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8" style="background:color-mix(in srgb, var(--bg-app) 84%, transparent);border-bottom:1px solid var(--border-primary);backdrop-filter:blur(16px)">
     <div class="flex min-w-0 items-center gap-3 sm:gap-4">
-      <button class="icon-button md:hidden" type="button" aria-label="打开导航" @click="$emit('toggle-menu')">
+      <button
+        class="icon-button"
+        type="button"
+        :aria-label="menuButtonLabel"
+        :aria-expanded="menuOpen"
+        :aria-controls="menuControls"
+        :title="menuButtonLabel"
+        @click="$emit('toggle-menu')"
+      >
         <AppIcon name="menu" :size="18" />
       </button>
       <h1 class="truncate text-[1.75rem] font-semibold tracking-[-0.03em] sm:text-[1.9rem]" style="color:var(--text-primary)">{{ pageTitle }}</h1>
@@ -36,6 +44,13 @@
 </template>
 
 <script setup lang="ts">
+const props = withDefaults(defineProps<{
+  menuOpen?: boolean
+  menuMode?: 'desktop' | 'mobile'
+}>(), {
+  menuOpen: false,
+  menuMode: 'mobile',
+})
 defineEmits<{ 'toggle-menu': [] }>()
 
 const route = useRoute()
@@ -44,6 +59,12 @@ const { theme, toggle: toggleTheme } = useTheme()
 
 const version = ref('0.1.0')
 const githubUrl = 'https://github.com/awillheartwu/yunplex2'
+
+const menuControls = computed(() => props.menuMode === 'desktop' ? 'app-sidebar' : 'mobile-navigation')
+const menuButtonLabel = computed(() => {
+  if (props.menuMode === 'desktop') return props.menuOpen ? '收起侧边栏' : '展开侧边栏'
+  return props.menuOpen ? '关闭导航' : '打开导航'
+})
 
 onMounted(async () => {
   try {
