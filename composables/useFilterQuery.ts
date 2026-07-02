@@ -32,6 +32,12 @@ export function parseDateQueryValue(value: unknown): string | undefined {
     : undefined
 }
 
+export function formatDateFilterLabel(from?: string | null, to?: string | null): string {
+  if (from && to) return `日期：${from} 至 ${to}`
+  if (from) return `日期：${from} 起`
+  return `日期：截至 ${to}`
+}
+
 export function isActiveFilterValue(value: FilterQueryValue): boolean {
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === 'boolean') return value

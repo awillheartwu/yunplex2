@@ -48,4 +48,7 @@ export interface ActivityEventListFilter {
   domains?: ActivityDomain[]
   severities?: ActivitySeverity[]
   query?: string
+  from?: string
+  to?: string
+  timeZone?: string
 }

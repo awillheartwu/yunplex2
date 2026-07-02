@@ -52,6 +52,7 @@
               </FilterChip>
             </div>
           </div>
+          <FilterDateRange :model-value="draftActivityDateFilter" :min-date="null" @update:model-value="setDraftActivityDate" />
         </template>
 
         <template #advanced-footer="{ close }">
@@ -94,6 +95,7 @@
         <ProcessTimeline
           v-else-if="activityTimelineItems.length > 0"
           :items="activityTimelineItems"
+          wide-time
           aria-label="最近活动时间线"
         />
         <EmptyState
@@ -189,7 +191,7 @@ import type { LogEntry, LogLevel } from '~~/server/lib/log/types'
 import type { ProcessTimelineItem } from '~~/lib/process-timeline'
 import { buildActivityTimelineItems } from '~~/lib/activity-timeline'
 import { useFeedback } from '~~/composables/useFeedback'
-import { countActiveFilters } from '~~/composables/useFilterQuery'
+import { countActiveFilters, formatDateFilterLabel, parseDateQueryValue } from '~~/composables/useFilterQuery'
 import { useDebounceFn } from '~~/composables/useTiming'
 
 const api = useApi()
@@ -241,7 +243,7 @@ const severityFilters: Array<{ label: string; value: ActivitySeverity | '' }> = 
   { label: '记录', value: 'info' },
 ]
 
-type ActivityFilterChipKey = 'search' | 'domain' | 'severity'
+type ActivityFilterChipKey = 'search' | 'domain' | 'severity' | 'date'
 
 const activityDomainValues = new Set<ActivityDomain>(['sync', 'download', 'plex', 'user'])
 const activitySeverityValues = new Set<ActivitySeverity>(['success', 'warning', 'error', 'info'])
@@ -265,14 +267,19 @@ function initialActivitySeverity(): ActivitySeverity | '' {
 const activityDomain = ref<ActivityDomain | ''>(initialActivityDomain())
 const activitySeverity = ref<ActivitySeverity | ''>(initialActivitySeverity())
 const activityQuery = ref(queryString('q'))
+const activityFrom = ref<string | null>(parseDateQueryValue(route.query.from) ?? null)
+const activityTo = ref<string | null>(parseDateQueryValue(route.query.to) ?? null)
 const draftActivityDomain = ref<ActivityDomain | ''>('')
 const draftActivitySeverity = ref<ActivitySeverity | ''>('')
+const draftActivityFrom = ref<string | null>(null)
+const draftActivityTo = ref<string | null>(null)
+const draftActivityDateFilter = computed(() => ({ from: draftActivityFrom.value, to: draftActivityTo.value }))
 const activityHasMore = computed(() => activityEvents.value.length < activityTotal.value)
-const hasActivityFilter = computed(() => Boolean(activityDomain.value || activitySeverity.value || activityQuery.value))
+const hasActivityFilter = computed(() => Boolean(activityDomain.value || activitySeverity.value || activityQuery.value || activityFrom.value || activityTo.value))
 const activityAdvancedFilterCount = computed(() => countActiveFilters({
   domain: activityDomain.value,
   severity: activitySeverity.value,
-}))
+}) + (activityFrom.value || activityTo.value ? 1 : 0))
 const activityAdvancedFilterLabel = computed(() => activityAdvancedFilterCount.value > 0 ? '筛选' : '高级筛选')
 const highlightedEventId = computed(() => typeof route.query.event === 'string' ? route.query.event : '')
 
@@ -284,6 +291,7 @@ const activityFilterChips = computed<Array<{ key: ActivityFilterChipKey; label: 
   if (activityQuery.value) chips.push({ key: 'search', label: `搜索：${activityQuery.value}` })
   if (activityDomain.value) chips.push({ key: 'domain', label: `类型：${domainFilters.find(item => item.value === activityDomain.value)?.label ?? activityDomain.value}` })
   if (activitySeverity.value) chips.push({ key: 'severity', label: `状态：${severityFilters.find(item => item.value === activitySeverity.value)?.label ?? activitySeverity.value}` })
+  if (activityFrom.value || activityTo.value) chips.push({ key: 'date', label: formatDateFilterLabel(activityFrom.value, activityTo.value) })
   return chips
 })
 
@@ -323,6 +331,9 @@ function activityParams(offset = 0): Record<string, string> {
   if (activityDomain.value) params.domain = activityDomain.value
   if (activitySeverity.value) params.severity = activitySeverity.value
   if (activityQuery.value) params.q = activityQuery.value
+  if (activityFrom.value) params.from = activityFrom.value
+  if (activityTo.value) params.to = activityTo.value
+  params.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   return params
 }
 
@@ -333,6 +344,8 @@ function syncActivityFilterQuery() {
       q: activityQuery.value || undefined,
       domain: activityDomain.value || undefined,
       severity: activitySeverity.value || undefined,
+      from: activityFrom.value || undefined,
+      to: activityTo.value || undefined,
     },
   })
 }
@@ -353,16 +366,27 @@ function onActivitySearch(value: string) {
 function prepareActivityDraftFilters() {
   draftActivityDomain.value = activityDomain.value
   draftActivitySeverity.value = activitySeverity.value
+  draftActivityFrom.value = activityFrom.value
+  draftActivityTo.value = activityTo.value
 }
 
 function resetActivityDraftFilters() {
   draftActivityDomain.value = ''
   draftActivitySeverity.value = ''
+  draftActivityFrom.value = null
+  draftActivityTo.value = null
+}
+
+function setDraftActivityDate(value: { from: string | null; to: string | null }) {
+  draftActivityFrom.value = value.from
+  draftActivityTo.value = value.to
 }
 
 function applyActivityDraftFilters(close?: () => void) {
   activityDomain.value = draftActivityDomain.value
   activitySeverity.value = draftActivitySeverity.value
+  activityFrom.value = draftActivityFrom.value
+  activityTo.value = draftActivityTo.value
   close?.()
   applyActivityFilters()
 }
@@ -371,6 +395,8 @@ function clearActivityFilters() {
   activityDomain.value = ''
   activitySeverity.value = ''
   activityQuery.value = ''
+  activityFrom.value = null
+  activityTo.value = null
   resetActivityDraftFilters()
   applyActivityFilters()
 }
@@ -379,22 +405,32 @@ function removeActivityFilter(key: ActivityFilterChipKey) {
   if (key === 'search') activityQuery.value = ''
   if (key === 'domain') activityDomain.value = ''
   if (key === 'severity') activitySeverity.value = ''
+  if (key === 'date') {
+    activityFrom.value = null
+    activityTo.value = null
+  }
   applyActivityFilters()
 }
 
-watch(() => [route.query.q, route.query.domain, route.query.severity], () => {
+watch(() => [route.query.q, route.query.domain, route.query.severity, route.query.from, route.query.to], () => {
   const nextQuery = queryString('q')
   const nextDomain = initialActivityDomain()
   const nextSeverity = initialActivitySeverity()
+  const nextFrom = parseDateQueryValue(route.query.from) ?? null
+  const nextTo = parseDateQueryValue(route.query.to) ?? null
   if (
     nextQuery === activityQuery.value
     && nextDomain === activityDomain.value
     && nextSeverity === activitySeverity.value
+    && nextFrom === activityFrom.value
+    && nextTo === activityTo.value
   ) return
 
   activityQuery.value = nextQuery
   activityDomain.value = nextDomain
   activitySeverity.value = nextSeverity
+  activityFrom.value = nextFrom
+  activityTo.value = nextTo
   resetActivityDraftFilters()
   if (activeTab.value === 'activity') void fetchActivityEvents()
 })

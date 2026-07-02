@@ -3,6 +3,7 @@ import type { FailureRecord, FailureRecordStatus } from '~~/server/lib/tasks/fai
 import type { JobStatus, TaskRunSummary, TaskRunType } from '~~/server/lib/job/types'
 import {
   countActiveFilters,
+  formatDateFilterLabel,
   parseAllowedQueryValue,
   parseDateQueryValue,
 } from '~~/composables/useFilterQuery'
@@ -124,7 +125,7 @@ export function useTaskCenterPage() {
     if (runs.filter.value.type) chips.push({ key: 'type', label: `类型：${runTypeFilters.find(item => item.value === runs.filter.value.type)?.label || runs.filter.value.type}` })
     if (runs.filter.value.status) chips.push({ key: 'status', label: `状态：${runStatusFilters.find(item => item.value === runs.filter.value.status)?.label || runs.filter.value.status}` })
     if (runs.filter.value.sourceId) chips.push({ key: 'source', label: `来源：${sourceLabel(runs.filter.value.sourceId)}` })
-    if (runs.filter.value.from || runs.filter.value.to) chips.push({ key: 'date', label: formatDateFilter(runs.filter.value.from, runs.filter.value.to) })
+    if (runs.filter.value.from || runs.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(runs.filter.value.from, runs.filter.value.to) })
     return chips
   })
   const groupedRuns = computed(() => {
@@ -201,7 +202,7 @@ export function useTaskCenterPage() {
     if (failures.filter.value.type) chips.push({ key: 'type', label: `类型：${failureTypeFilters.find(item => item.value === failures.filter.value.type)?.label || failures.filter.value.type}` })
     if (failures.filter.value.failureKind) chips.push({ key: 'kind', label: `阶段：${failureKindFilters.find(item => item.value === failures.filter.value.failureKind)?.label || failures.filter.value.failureKind}` })
     if (failures.filter.value.sourceId) chips.push({ key: 'source', label: `来源：${sourceLabel(failures.filter.value.sourceId)}` })
-    if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilter(failures.filter.value.from, failures.filter.value.to) })
+    if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(failures.filter.value.from, failures.filter.value.to) })
     return chips
   })
   const failureEmptyTitle = computed(() => failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : '没有待处理问题')
@@ -417,11 +418,6 @@ export function useTaskCenterPage() {
     const fallback = source.name === source.id ? source.id.slice(0, 8) : source.name
     return `${fallback}（已删除）`
   }
-  function formatDateFilter(from?: string, to?: string) {
-    if (from && to) return `日期：${from} 至 ${to}`
-    if (from) return `日期：${from} 起`
-    return `日期：截至 ${to}`
-  }
   function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   function formatElapsed(value: string) {
     if (!value) return '刚开始'
@@ -493,12 +489,12 @@ export function useTaskCenterPage() {
     draftFailureTo, draftFailureType, draftRunDateFilter, draftRunFrom, draftRunSource, draftRunStatus, draftRunTo, draftRunType,
     elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
-    failureStatusTabs,
-    formatDateFilter, formatElapsed, formatRunDuration, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure,
+    failureStatusTabs, failureTypeFilters,
+    formatElapsed, formatRunDuration, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure,
     isRetryable, latestRun, liveDescription, livePercent, liveTitle, localDateKey, onFailureSearch, onRunSearch,
     onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, prepareRunDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter, removeRunFilter,
     reopenFailure, requestedTab, resetFailureDraftFilters, resetRunDraftFilters, retryFailure, runActiveFilterCount, runAdvancedFilterCount, runAdvancedFilterLabel,
-    runBadgeStatus, runCanClear, runFilterChips, runs, runSearchDebounce, runTypeLabel, secondaryActiveRuns, selectedFailures,
+    runBadgeStatus, runCanClear, runFilterChips, runs, runSearchDebounce, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
     semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, showMutationResult, sourceLabel, sourceOptionLabel, sourceOptions,
     stageLabel, switchTab, syncError, syncFailureQuery, syncLoading, syncRunQuery, syncState, taskCenterTabs,
     toggleFailure, triggerSync,

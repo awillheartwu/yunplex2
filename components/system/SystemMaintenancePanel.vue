@@ -2,13 +2,19 @@
   <section class="section-card p-5">
     <div class="mb-5">
       <h3 class="text-sm font-semibold">运行记录维护</h3>
-      <p class="mt-1 text-2xs text-muted">按明确条件清理旧运行。待处理和已忽略的问题记录会保留，但被清理运行的详情将无法继续查看。</p>
+      <p class="mt-1 text-2xs text-muted">
+        主动清理任务中心里的历史运行详情，以及关联的已完成/失败下载明细。不会删除配置、歌单源、同步日志、异常记录或本地媒体文件；异常记录会保留，但被清理运行的详情将无法继续查看。
+      </p>
     </div>
 
     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
       <label class="space-y-1.5 text-xs text-muted">
-        <span>早于日期</span>
-        <input :value="cleanupBefore" type="date" class="form-input" @input="$emit('update:cleanupBefore', ($event.target as HTMLInputElement).value)" />
+        <span>日期范围</span>
+        <DateRange
+          :model-value="cleanupDateFilter"
+          :min-date="null"
+          @update:model-value="setCleanupDate"
+        />
       </label>
       <label class="space-y-1.5 text-xs text-muted">
         <span>运行类型</span>
@@ -41,7 +47,7 @@
         <AppIcon :name="cleanupLoading ? 'loader' : 'trash'" :size="14" :class="{ 'animate-spin': cleanupLoading }" />
         清理运行记录
       </button>
-      <button class="btn btn-secondary btn-xs" type="button" :disabled="!cleanupBefore || cleanupPreviewLoading" @click="$emit('preview')">
+      <button class="btn btn-secondary btn-xs" type="button" :disabled="(!cleanupFrom && !cleanupTo) || cleanupPreviewLoading" @click="$emit('preview')">
         <AppIcon :name="cleanupPreviewLoading ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': cleanupPreviewLoading }" />
         重新预估
       </button>
@@ -61,9 +67,9 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   canCleanup: boolean
-  cleanupBefore: string
+  cleanupFrom: string
   cleanupConfirmMessage: string
   cleanupLoading: boolean
   cleanupMessage: string
@@ -71,18 +77,27 @@ defineProps<{
   cleanupPreviewLoading: boolean
   cleanupPreviewMessage: string
   cleanupStatus: string
+  cleanupTo: string
   cleanupType: string
   showRunCleanupConfirm: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'confirm-cleanup': []
   preview: []
-  'update:cleanupBefore': [value: string]
+  'update:cleanupFrom': [value: string]
   'update:cleanupStatus': [value: string]
+  'update:cleanupTo': [value: string]
   'update:cleanupType': [value: string]
   'update:showRunCleanupConfirm': [value: boolean]
 }>()
+
+const cleanupDateFilter = computed(() => ({ from: props.cleanupFrom || null, to: props.cleanupTo || null }))
+
+function setCleanupDate(value: { from: string | null; to: string | null }) {
+  emit('update:cleanupFrom', value.from || '')
+  emit('update:cleanupTo', value.to || '')
+}
 </script>
 
 <style scoped>

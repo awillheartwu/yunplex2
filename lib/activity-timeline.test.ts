@@ -40,9 +40,10 @@ describe('activity timeline presentation', () => {
 
   it('keeps primary activity actions ahead of weak status metadata', () => {
     const items = buildActivityTimelineItems([
-      event({ id: 'run', type: 'sync_run_completed', severity: 'success', title: '同步完成', link: '/task-center/runs/1' }),
+      event({ id: 'run', type: 'sync_run_completed', severity: 'success', title: '同步完成', occurredAt: '2026-06-25T08:00:00', link: '/task-center/runs/1' }),
     ])
 
+    expect(items[0]?.timeLabel).toBe('2026-06-25 08:00:00')
     expect(items[0]?.action).toMatchObject({
       label: '查看运行',
       icon: 'activity',

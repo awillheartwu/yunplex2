@@ -1,15 +1,22 @@
 import Database from 'better-sqlite3'
 import { getDb } from '../db'
+import { dateEndBoundary, dateStartBoundary, isValidDateFilter, isValidTimeZone } from '../date-range'
 import type { JobStatus, TaskRunType } from '../job/types'
 
 export interface RunCleanupRequest {
-  before: string
+  before?: string
+  from?: string
+  to?: string
+  timeZone?: string
   type?: TaskRunType | ''
   status?: JobStatus | ''
 }
 
 export interface RunCleanupFilter {
-  before: string
+  before?: string
+  from?: string
+  to?: string
+  timeZone?: string
   type?: TaskRunType
   status?: JobStatus
 }
@@ -28,9 +35,15 @@ const VALID_RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download
 const VALID_RUN_STATUSES = new Set<JobStatus>(['running', 'success', 'partial', 'failed', 'cancelled'])
 
 export function parseRunCleanupRequest(body: RunCleanupRequest | null | undefined): { ok: true; filter: RunCleanupFilter } | { ok: false; message: string } {
-  if (!body?.before || !/^\d{4}-\d{2}-\d{2}$/.test(body.before)) {
+  const before = normalizeDate(body?.before)
+  const from = normalizeDate(body?.from)
+  const to = normalizeDate(body?.to)
+  const timeZone = body?.timeZone && isValidTimeZone(body.timeZone) ? body.timeZone : undefined
+  if (!before && !from && !to) {
     return { ok: false, message: '请选择有效的清理日期' }
   }
+  if ((body?.before && !before) || (body?.from && !from) || (body?.to && !to)) return { ok: false, message: '请选择有效的清理日期' }
+  if (from && to && from > to) return { ok: false, message: '开始日期不能晚于结束日期' }
   if (body.type && !VALID_RUN_TYPES.has(body.type)) {
     return { ok: false, message: '请选择有效的运行类型' }
   }
@@ -43,16 +56,38 @@ export function parseRunCleanupRequest(body: RunCleanupRequest | null | undefine
   return {
     ok: true,
     filter: {
-      before: body.before,
+      before,
+      from,
+      to,
+      timeZone,
       type: body.type || undefined,
       status: body.status || undefined,
     },
   }
 }
 
+function normalizeDate(value: string | undefined): string | undefined {
+  const normalized = value?.trim()
+  return normalized && isValidDateFilter(normalized) ? normalized : undefined
+}
+
 function buildRunCleanupWhere(filter: RunCleanupFilter) {
-  const conditions = ["started_at < ?", "status != 'running'"]
-  const params: unknown[] = [`${filter.before}T00:00:00.000Z`]
+  const conditions = ["status != 'running'"]
+  const params: unknown[] = []
+  if (filter.from) {
+    const boundary = dateStartBoundary(filter.from, filter.timeZone)
+    conditions.push(`started_at ${boundary.exclusive ? '>' : '>='} ?`)
+    params.push(boundary.value)
+  }
+  if (filter.to) {
+    const boundary = dateEndBoundary(filter.to, filter.timeZone)
+    conditions.push(`started_at ${boundary.exclusive ? '<' : '<='} ?`)
+    params.push(boundary.value)
+  } else if (filter.before) {
+    const boundary = dateStartBoundary(filter.before, filter.timeZone)
+    conditions.push('started_at < ?')
+    params.push(boundary.value)
+  }
   if (filter.type) {
     conditions.push('type = ?')
     params.push(filter.type)

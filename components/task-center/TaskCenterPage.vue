@@ -155,10 +155,7 @@
                 <option v-for="source in sourceOptions" :key="source.id" :value="source.id">{{ sourceOptionLabel(source) }}</option>
               </select>
             </div>
-            <div class="filter-sheet-group">
-              <p class="filter-sheet-group__label">日期范围</p>
-              <DateRange :model-value="draftRunDateFilter" :min-date="runs.earliestDate.value" @update:model-value="setDraftRunDate" />
-            </div>
+            <FilterDateRange :model-value="draftRunDateFilter" :min-date="runs.earliestDate.value" @update:model-value="setDraftRunDate" />
           </template>
 
           <template #advanced-footer="{ close }">
@@ -248,10 +245,7 @@
                 <option v-for="source in sourceOptions" :key="source.id" :value="source.id">{{ sourceOptionLabel(source) }}</option>
               </select>
             </div>
-            <div class="filter-sheet-group">
-              <p class="filter-sheet-group__label">日期范围</p>
-              <DateRange :model-value="draftFailureDateFilter" :min-date="null" @update:model-value="setDraftFailureDate" />
-            </div>
+            <FilterDateRange :model-value="draftFailureDateFilter" :min-date="null" @update:model-value="setDraftFailureDate" />
           </template>
 
           <template #advanced-footer="{ close }">
@@ -351,10 +345,10 @@ const {
   draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType, draftRunDateFilter, draftRunSource, draftRunStatus, draftRunType,
   elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed, formatRunDuration,
-  failureStatusTabs, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
+  failureStatusTabs, failureTypeFilters, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
   livePercent, liveTitle, onFailureSearch, onRunSearch, onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, prepareRunDraftFilters,
   primaryActiveRun, removeFailureFilter, removeRunFilter, reopenFailure, resetFailureDraftFilters, resetRunDraftFilters, retryFailure, runAdvancedFilterCount,
-  runAdvancedFilterLabel, runBadgeStatus, runCanClear, runFilterChips, runs, runTypeLabel, secondaryActiveRuns, selectedFailures,
+  runAdvancedFilterLabel, runBadgeStatus, runCanClear, runFilterChips, runs, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
   semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, sourceOptionLabel, sourceOptions, stageLabel, switchTab,
   syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
 } = useTaskCenterPage()
