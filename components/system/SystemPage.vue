@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-6">
-    <PageHeader description="查看实时资源、运行状态与数据维护工具" />
+    <PageHeader description="查看实时资源、运行健康与运行记录清理" />
 
     <PageTabs
       :model-value="activeTab"
@@ -29,7 +29,8 @@
 
     <SystemMaintenancePanel
       v-else
-      v-model:cleanup-before="cleanupBefore"
+      v-model:cleanup-from="cleanupFrom"
+      v-model:cleanup-to="cleanupTo"
       v-model:cleanup-type="cleanupType"
       v-model:cleanup-status="cleanupStatus"
       v-model:show-run-cleanup-confirm="showRunCleanupConfirm"
@@ -52,7 +53,7 @@ import { useSystemPage } from '~~/composables/useSystemPage'
 const {
   activeTab,
   canCleanup,
-  cleanupBefore,
+  cleanupFrom,
   cleanupConfirmMessage,
   cleanupLoading,
   cleanupMessage,
@@ -60,6 +61,7 @@ const {
   cleanupPreviewLoading,
   cleanupPreviewMessage,
   cleanupStatus,
+  cleanupTo,
   cleanupType,
   copyDiagnostics,
   cpuChartOption,

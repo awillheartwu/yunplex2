@@ -74,4 +74,52 @@ describe('activity event store', () => {
       context: expect.any(Object),
     }))
   })
+
+  it('filters activity events by local date range inclusively', () => {
+    tempPath = mkdtempSync(join(tmpdir(), 'yunplex-activity-date-test-'))
+    initDb(tempPath)
+
+    recordActivityEvent({
+      domain: 'sync',
+      type: 'old_sync',
+      severity: 'success',
+      title: '旧同步',
+      summary: '不在范围内',
+      occurredAt: '2026-06-08T23:59:59.000Z',
+    })
+    recordActivityEvent({
+      domain: 'sync',
+      type: 'morning_sync',
+      severity: 'success',
+      title: '早间同步',
+      summary: '范围开始',
+      occurredAt: '2026-06-09T00:00:00.000Z',
+    })
+    recordActivityEvent({
+      domain: 'download',
+      type: 'evening_download',
+      severity: 'info',
+      title: '晚间下载',
+      summary: '范围结束当天',
+      occurredAt: '2026-06-25T23:59:59.000Z',
+    })
+    recordActivityEvent({
+      domain: 'plex',
+      type: 'new_plex',
+      severity: 'warning',
+      title: '新 Plex 事件',
+      summary: '不在范围内',
+      occurredAt: '2026-06-26T00:00:00.000Z',
+    })
+
+    const { items, total } = listActivityEvents({
+      limit: 10,
+      from: '2026-06-09',
+      to: '2026-06-25',
+      timeZone: 'UTC',
+    })
+
+    expect(total).toBe(2)
+    expect(items.map(item => item.type)).toEqual(['evening_download', 'morning_sync'])
+  })
 })

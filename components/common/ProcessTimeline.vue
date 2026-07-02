@@ -1,5 +1,5 @@
 <template>
-  <ol class="process-timeline" :class="{ 'process-timeline--compact': compact }" :aria-label="ariaLabel">
+  <ol class="process-timeline" :class="{ 'process-timeline--compact': compact, 'process-timeline--wide-time': wideTime }" :aria-label="ariaLabel">
     <li
       v-for="(item, index) in items"
       :id="item.id"
@@ -98,9 +98,11 @@ withDefaults(defineProps<{
   items: ProcessTimelineItem[]
   ariaLabel?: string
   compact?: boolean
+  wideTime?: boolean
 }>(), {
   ariaLabel: '过程时间线',
   compact: false,
+  wideTime: false,
 })
 
 const expanded = reactive(new Set<string>())
@@ -132,7 +134,7 @@ function formatDuration(ms: number): string {
 .process-timeline{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
 .process-timeline__item{display:grid;grid-template-columns:4.75rem 2rem minmax(0,1fr);column-gap:.8rem;position:relative;padding-bottom:1.15rem;border-radius:var(--radius-md);transition:background 180ms ease,box-shadow 180ms ease}
 .process-timeline__item.is-highlighted{background:color-mix(in srgb,var(--accent-muted) 52%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent)}
-.process-timeline__time{padding-top:.35rem;color:var(--text-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.7rem;font-variant-numeric:tabular-nums}
+.process-timeline__time{padding-top:.35rem;color:var(--text-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.7rem;font-variant-numeric:tabular-nums;white-space:nowrap}
 .process-timeline__rail{display:flex;justify-content:center;position:relative}
 .process-timeline__rail::after{content:"";position:absolute;top:2rem;bottom:-1.15rem;width:2px;border-radius:999px;background:var(--border-primary)}
 .process-timeline__item.is-last .process-timeline__rail::after{display:none}
@@ -164,6 +166,7 @@ function formatDuration(ms: number): string {
 .process-timeline__detail strong{display:block;overflow:hidden;color:var(--text-primary);font-size:.75rem;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
 .process-timeline__detail-subject{display:inline-flex;max-width:45%;overflow:hidden;padding:.08rem .35rem;border-radius:999px;background:var(--bg-muted);color:var(--text-tertiary);font-size:.62rem;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
 .process-timeline__detail p{margin:.12rem 0 0;overflow:hidden;color:var(--text-tertiary);font-size:.68rem;line-height:1.45;text-overflow:ellipsis;white-space:nowrap}
+.process-timeline--wide-time .process-timeline__item{grid-template-columns:8.9rem 2rem minmax(0,1fr)}
 .process-timeline--compact .process-timeline__item{grid-template-columns:3.65rem 1.85rem minmax(0,1fr);column-gap:.65rem;padding-bottom:.7rem}
 .process-timeline--compact .process-timeline__time{font-size:.68rem}
 .process-timeline--compact .process-timeline__rail::after{top:1.85rem;bottom:-.7rem;width:2px}

@@ -125,9 +125,8 @@ function toneForCpu(value?: number): Tone {
 
 function toneForMemory(stats: SystemStats | null): Tone {
   if (!stats) return 'idle'
-  const heapRatio = stats.mem.heapTotal > 0 ? stats.mem.heapUsed / stats.mem.heapTotal : 0
-  if (stats.mem.rss >= 1536 || heapRatio >= 0.9) return 'error'
-  if (stats.mem.rss >= 1024 || heapRatio >= 0.75) return 'warning'
+  if (stats.mem.rss >= 1536) return 'error'
+  if (stats.mem.rss >= 1024) return 'warning'
   return 'ok'
 }
 
@@ -157,7 +156,7 @@ function formatUptime(seconds: number): string {
 }
 
 function cleanupPreviewSummary(preview: RunCleanupPreview | null): string {
-  if (!preview) return '选择日期后会预估影响范围'
+  if (!preview) return '选择日期范围后会预估影响范围'
   if (preview.runCount === 0) return '没有符合条件的运行记录'
   return `预计清理 ${preview.runCount} 条运行、${preview.downloadTaskCount} 条已完成/失败下载明细；${preview.linkedFailureCount} 条异常记录会保留但可能失去运行详情链接。`
 }
@@ -194,7 +193,7 @@ export function useSystemPage() {
 
   const tabs = [
     { key: 'monitor', label: '系统监控' },
-    { key: 'maintenance', label: '数据维护' },
+    { key: 'maintenance', label: '运行记录' },
   ]
   const activeTab = ref<SystemTab>(route.query.tab === 'maintenance' ? 'maintenance' : 'monitor')
   const stats = ref<SystemStats | null>(null)
@@ -203,7 +202,8 @@ export function useSystemPage() {
   const cpuHistory = ref<{ time: string; value: number }[]>([])
   const memHistory = ref<{ time: string; value: number }[]>([])
 
-  const cleanupBefore = ref('')
+  const cleanupFrom = ref('')
+  const cleanupTo = ref('')
   const cleanupType = ref('')
   const cleanupStatus = ref('')
   const cleanupLoading = ref(false)
@@ -235,9 +235,9 @@ export function useSystemPage() {
       tone: toneForCpu(stats.value?.cpu),
     },
     {
-      label: '内存 RSS',
+      label: '应用 RSS',
       value: stats.value ? `${stats.value.mem.rss} MB` : '--',
-      detail: stats.value ? `Heap ${stats.value.mem.heapUsed}/${stats.value.mem.heapTotal} MB` : '等待采样',
+      detail: stats.value ? `Node Heap ${stats.value.mem.heapUsed}/${stats.value.mem.heapTotal} MB` : '等待采样',
       tone: toneForMemory(stats.value),
     },
     {
@@ -300,7 +300,7 @@ export function useSystemPage() {
   })
 
   const cleanupPreviewMessage = computed(() => cleanupPreviewSummary(cleanupPreview.value))
-  const canCleanup = computed(() => Boolean(cleanupBefore.value && cleanupPreview.value && cleanupPreview.value.runCount > 0 && !cleanupPreviewLoading.value && !cleanupLoading.value))
+  const canCleanup = computed(() => Boolean((cleanupFrom.value || cleanupTo.value) && cleanupPreview.value && cleanupPreview.value.runCount > 0 && !cleanupPreviewLoading.value && !cleanupLoading.value))
   const cleanupConfirmMessage = computed(() => {
     const preview = cleanupPreview.value
     if (!preview) return '将删除符合条件的运行详情及已完成下载明细。此操作不可撤销。'
@@ -342,11 +342,13 @@ export function useSystemPage() {
   async function fetchCleanupPreview() {
     cleanupPreview.value = null
     cleanupPreviewError.value = ''
-    if (!cleanupBefore.value) return
+    if (!cleanupFrom.value && !cleanupTo.value) return
     cleanupPreviewLoading.value = true
     try {
       cleanupPreview.value = await api.post<RunCleanupPreview>('/runs/cleanup/preview', {
-        before: cleanupBefore.value,
+        from: cleanupFrom.value || undefined,
+        to: cleanupTo.value || undefined,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         type: cleanupType.value || undefined,
         status: cleanupStatus.value || undefined,
       })
@@ -358,7 +360,7 @@ export function useSystemPage() {
   }
 
   const previewDebounce = useDebounceFn(fetchCleanupPreview, 250)
-  watch([cleanupBefore, cleanupType, cleanupStatus], () => previewDebounce.run())
+  watch([cleanupFrom, cleanupTo, cleanupType, cleanupStatus], () => previewDebounce.run())
 
   async function handleRunCleanup() {
     showRunCleanupConfirm.value = false
@@ -366,7 +368,9 @@ export function useSystemPage() {
     cleanupMessage.value = ''
     try {
       const response = await api.rawPost<RunCleanupPreview & { count: number }>('/runs/cleanup', {
-        before: cleanupBefore.value,
+        from: cleanupFrom.value || undefined,
+        to: cleanupTo.value || undefined,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         type: cleanupType.value || undefined,
         status: cleanupStatus.value || undefined,
       })
@@ -405,7 +409,7 @@ export function useSystemPage() {
   return {
     activeTab,
     canCleanup,
-    cleanupBefore,
+    cleanupFrom,
     cleanupConfirmMessage,
     cleanupLoading,
     cleanupMessage,
@@ -414,6 +418,7 @@ export function useSystemPage() {
     cleanupPreviewLoading,
     cleanupPreviewMessage,
     cleanupStatus,
+    cleanupTo,
     cleanupType,
     copyDiagnostics,
     cpuChartOption,

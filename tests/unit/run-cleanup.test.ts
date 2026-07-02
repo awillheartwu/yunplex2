@@ -49,6 +49,7 @@ describe('run cleanup preview', () => {
 
   it('validates cleanup filters', () => {
     expect(parseRunCleanupRequest({ before: 'bad-date' })).toEqual({ ok: false, message: '请选择有效的清理日期' })
+    expect(parseRunCleanupRequest({ from: '2026-06-10', to: '2026-06-01' })).toEqual({ ok: false, message: '开始日期不能晚于结束日期' })
     expect(parseRunCleanupRequest({ before: '2026-06-01', status: 'running' })).toEqual({ ok: false, message: '运行中的记录不能清理' })
   })
 
@@ -75,5 +76,28 @@ describe('run cleanup preview', () => {
     expect(result).toMatchObject({ count: 2, runCount: 2, downloadTaskCount: 2, linkedFailureCount: 1 })
     expect(getDb().prepare('SELECT id FROM task_runs ORDER BY id').all()).toEqual([{ id: 'new-success' }, { id: 'old-running' }])
     expect(getDb().prepare('SELECT id FROM failure_records').all()).toEqual([{ id: 'failure-one' }])
+  })
+
+  it('previews and cleans runs inside an inclusive date range', () => {
+    setup()
+    insertRun('before-range', '2026-06-08T23:59:59.000Z', 'success', 'sync')
+    insertRun('range-start', '2026-06-09T00:00:00.000Z', 'success', 'sync')
+    insertRun('range-end', '2026-06-25T23:59:59.000Z', 'failed', 'manual_download')
+    insertRun('after-range', '2026-06-26T00:00:00.000Z', 'success', 'sync')
+    insertRun('range-running', '2026-06-10T12:00:00.000Z', 'running', 'sync')
+
+    expect(previewRunCleanup({ from: '2026-06-09', to: '2026-06-25', timeZone: 'UTC' })).toMatchObject({
+      runCount: 2,
+    })
+    expect(previewRunCleanup({ from: '2026-06-09', to: '2026-06-25', type: 'manual_download', timeZone: 'UTC' })).toMatchObject({
+      runCount: 1,
+    })
+
+    cleanupRuns({ from: '2026-06-09', to: '2026-06-25', timeZone: 'UTC' })
+    expect(getDb().prepare('SELECT id FROM task_runs ORDER BY id').all()).toEqual([
+      { id: 'after-range' },
+      { id: 'before-range' },
+      { id: 'range-running' },
+    ])
   })
 })

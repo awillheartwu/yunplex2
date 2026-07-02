@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import { readConfig } from '../config/store'
+import { dateEndBoundary, dateStartBoundary } from '../date-range'
 import type {
   ActivityDomain,
   ActivityEvent,
@@ -115,6 +116,18 @@ export function listActivityEvents(filter: ActivityEventListFilter = {}): { item
   if (filter.severities?.length) {
     conditions.push(`severity IN (${filter.severities.map(() => '?').join(', ')})`)
     params.push(...filter.severities)
+  }
+
+  if (filter.from) {
+    const boundary = dateStartBoundary(filter.from, filter.timeZone)
+    conditions.push(`occurred_at ${boundary.exclusive ? '>' : '>='} ?`)
+    params.push(boundary.value)
+  }
+
+  if (filter.to) {
+    const boundary = dateEndBoundary(filter.to, filter.timeZone)
+    conditions.push(`occurred_at ${boundary.exclusive ? '<' : '<='} ?`)
+    params.push(boundary.value)
   }
 
   if (query) {

@@ -7,8 +7,8 @@
           <span class="font-mono" style="color:var(--text-primary)">{{ row.name }}</span>
           <span class="ml-2 text-muted-deep">{{ row.desc }}</span>
         </div>
-        <div class="system-table-row__actions">
-          <span style="color:var(--text-primary)">{{ row.count.toLocaleString() }} 行</span>
+        <div class="system-table-row__meta">
+          <span class="system-table-row__count">{{ row.count.toLocaleString() }} 行</span>
           <NuxtLink v-if="row.href" :to="row.href" class="btn btn-ghost btn-xs">查看</NuxtLink>
         </div>
       </div>
@@ -25,23 +25,33 @@ defineProps<{
 
 <style scoped>
 .system-table-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5rem 4.5rem;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
 }
 
-.system-table-row__actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.5rem;
+.system-table-row__meta {
+  display: contents;
+}
+
+.system-table-row__count {
+  color: var(--text-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.system-table-row__meta .btn {
+  justify-self: end;
+  min-width: 3.5rem;
 }
 
 @media (max-width: 640px) {
   .system-table-row {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
+
+  .system-table-row__count { text-align: left; }
+  .system-table-row__meta .btn { justify-self: start; }
 }
 </style>
