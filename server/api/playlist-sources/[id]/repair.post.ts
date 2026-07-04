@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
       const albumSongs = await fetchAlbumSongs(source.neteasePlaylistId, cfg.netease.cookie)
       songs = albumSongs.map((s) => ({ id: s.id, name: s.name }))
     } else {
-      const limit = source.syncLimit === 0 ? undefined : source.syncLimit
+      const limit = source.syncLimit == null || source.syncLimit === 0 ? undefined : source.syncLimit
       const result = await fetchPlaylistSongs(source.neteasePlaylistId, limit, cfg.netease.cookie)
       songs = result.songs.map((s) => ({ id: s.id, name: s.name }))
     }

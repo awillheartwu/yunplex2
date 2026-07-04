@@ -1,5 +1,5 @@
 declare module 'node-id3' {
-  interface Tags {
+  export interface Tags {
     title?: string
     artist?: string
     albumArtist?: string

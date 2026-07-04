@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { extname, join, relative } from 'node:path'
 import dayjs from 'dayjs'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../netease'
 import { downloadSong, buildDownloadPath, checkAncillaryFiles } from '../tag-writer'
 import type { SongOps } from '../tag-writer'
 import { createSplitArtists } from '../sync/artist-utils'
 import type { DownloadMode } from './types'
+import type { MultiArtistFormat } from '../config/types'
 import { getDb } from '../db'
 import { upsertLookup } from '../sync/lookup'
 
@@ -46,22 +47,33 @@ export async function downloadSingleSong(
   // 1. Fetch song detail
   const song = await fetchSongDetail(songId, config.cookie)
 
-  // 2. Get download URL (always needed — fileType is required for path building)
-  const { url, type: fileType } = await getSongUrl(song.id, config.quality, config.cookie)
+  const existingAudioPath = config.audioPath
+    && !relative(config.downloadDir, config.audioPath).startsWith('..')
+    && existsSync(config.audioPath)
+    ? config.audioPath
+    : null
 
-  // 3. Fetch lyrics (if enabled)
+  let url: string | undefined
+  let fileType = existingAudioPath ? inferFileTypeFromPath(existingAudioPath) : ''
+  if (!fileType) {
+    const songUrl = await getSongUrl(song.id, config.quality, config.cookie)
+    url = songUrl.url
+    fileType = songUrl.type
+  }
+
+  // 2. Fetch lyrics (if enabled)
   const lyricData = config.downloadLyrics
     ? await fetchLyric(song.id, config.cookie, config.lyricOrder, config.downloadTranslatedLyric)
     : undefined
 
-  // 4. Fetch album detail for richer metadata
+  // 3. Fetch album detail for richer metadata
   const albumDetail = await fetchAlbumDetail(song.album.id, config.cookie)
 
-  // 5. Parse artists
-  const splitArtists = createSplitArtists(config.multiArtistFormat)
+  // 4. Parse artists
+  const splitArtists = createSplitArtists(config.multiArtistFormat as MultiArtistFormat)
   const [albumArtist, trackArtist] = splitArtists(song.artists)
 
-  // 6. Build download path (use audioPath override if provided)
+  // 5. Build download path (use audioPath override if provided)
   let targetPath: string
   let relativePath: string
 
@@ -94,7 +106,7 @@ export async function downloadSingleSong(
   }
   const audioExists = existsSync(targetPath)
 
-  // 7. Determine what to skip based on mode and file existence
+  // 6. Determine what to skip based on mode and file existence
   let skipAudio = false
   let skipLyrics = false
   let skipAlbumCover = false
@@ -121,7 +133,7 @@ export async function downloadSingleSong(
     // In 'full' mode: skip audio, but always write ancillary files (overwrite)
   }
 
-  // 8. Build metadata
+  // 7. Build metadata
   const songMeta = {
     title: song.name,
     albumArtist,
@@ -144,7 +156,7 @@ export async function downloadSingleSong(
     artistImgUrl: albumDetail?.artistImgUrl ?? '',
   }
 
-  // 9. Download + tag (pass undefined url when skipping audio)
+  // 8. Download + tag (pass undefined url when skipping audio)
   const result = await downloadSong(
     skipAudio ? undefined : url,
     songMeta,
@@ -165,7 +177,7 @@ export async function downloadSingleSong(
     onProgress,
   )
 
-  // 10. Cache file path for future lookups
+  // 9. Cache file path for future lookups
   if (result.ops.download !== 'failed') {
     try {
       upsertLookup(getDb(), songId, null, result.filePath)
@@ -173,4 +185,10 @@ export async function downloadSingleSong(
   }
 
   return { filePath: result.filePath, fileType, ops: result.ops }
+}
+
+function inferFileTypeFromPath(filePath: string): string {
+  const ext = extname(filePath).replace(/^\./, '').toLowerCase()
+  if (ext === 'flac' || ext === 'mp3') return ext
+  return ''
 }

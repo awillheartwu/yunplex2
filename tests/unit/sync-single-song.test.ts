@@ -51,7 +51,8 @@ vi.mock('../../server/lib/sync/lookup', () => ({
   upsertLookup: vi.fn(),
 }))
 
-import { downloadSingleSong, SingleSongConfig } from '../../server/lib/download/single-song'
+import { downloadSingleSong } from '../../server/lib/download/single-song'
+import type { SingleSongConfig } from '../../server/lib/download/single-song'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../../server/lib/netease'
 import { downloadSong } from '../../server/lib/tag-writer'
 import { existsSync } from 'node:fs'
@@ -69,6 +70,7 @@ const mockConfig: SingleSongConfig = {
   saveArtistImage: false,
   lyricOrder: 'original_first',
   downloadTranslatedLyric: true,
+  downloadRomajiLyric: false,
 }
 
 const mockSong = {
@@ -96,7 +98,7 @@ describe('downloadSingleSong', () => {
       translated: '[00:01]Translated',
       romaji: '[00:01]ro ma ji',
       merged: '[00:01]Original\n[00:01]Translated',
-      separateFiles: null,
+      separateFiles: false,
     })
     vi.mocked(fetchAlbumDetail).mockResolvedValue({
       name: 'Test Album',
@@ -260,6 +262,29 @@ describe('downloadSingleSong', () => {
     )
   })
 
+  it('does not request a download URL when missing-mode repairs an existing audioPath', async () => {
+    const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
+    vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
+    vi.mocked(getSongUrl).mockRejectedValue(new Error('No URL available'))
+
+    await downloadSingleSong(123456, {
+      ...mockConfig,
+      audioPath: overridePath,
+      downloadMode: 'missing',
+    })
+
+    expect(getSongUrl).not.toHaveBeenCalled()
+    expect(downloadSong).toHaveBeenCalledWith(
+      undefined,
+      expect.any(Object),
+      'flac',
+      expect.any(String),
+      expect.any(Object),
+      'Old Artist/Old Album (2020)/Test Song.flac',
+      undefined,
+    )
+  })
+
   it('writes file_path after successful download', async () => {
     const { upsertLookup } = await import('../../server/lib/sync/lookup')
 
@@ -305,7 +330,7 @@ describe('downloadSingleSong', () => {
     await downloadSingleSong(123456, mockConfig, onProgress)
 
     // downloadSong is called with the onProgress callback
-    const downloadCall = vi.mocked(downloadSong).mock.calls[0]
+    const downloadCall = vi.mocked(downloadSong).mock.calls[0]!
     expect(downloadCall[6]).toBe(onProgress)
   })
 
@@ -331,7 +356,7 @@ describe('downloadSingleSong', () => {
   it('constructs SongMeta from Netease data and album detail', async () => {
     await downloadSingleSong(123456, mockConfig)
 
-    const downloadCall = vi.mocked(downloadSong).mock.calls[0]
+    const downloadCall = vi.mocked(downloadSong).mock.calls[0]!
     const songMeta = downloadCall[1]
 
     expect(songMeta.title).toBe('Test Song')

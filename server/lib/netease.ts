@@ -147,9 +147,9 @@ export async function fetchPlaylistSongs(
 interface RawSong {
   id: number
   name: string
-  no: number
-  dt: number
-  cd: string
+  no?: number
+  dt?: number
+  cd?: string
   publishTime?: number
   ar?: { name: string }[]
   al?: {

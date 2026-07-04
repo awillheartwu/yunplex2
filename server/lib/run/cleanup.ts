@@ -35,22 +35,23 @@ const VALID_RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download
 const VALID_RUN_STATUSES = new Set<JobStatus>(['running', 'success', 'partial', 'failed', 'cancelled'])
 
 export function parseRunCleanupRequest(body: RunCleanupRequest | null | undefined): { ok: true; filter: RunCleanupFilter } | { ok: false; message: string } {
-  const before = normalizeDate(body?.before)
-  const from = normalizeDate(body?.from)
-  const to = normalizeDate(body?.to)
-  const timeZone = body?.timeZone && isValidTimeZone(body.timeZone) ? body.timeZone : undefined
+  const request = body ?? {}
+  const before = normalizeDate(request.before)
+  const from = normalizeDate(request.from)
+  const to = normalizeDate(request.to)
+  const timeZone = request.timeZone && isValidTimeZone(request.timeZone) ? request.timeZone : undefined
   if (!before && !from && !to) {
     return { ok: false, message: '请选择有效的清理日期' }
   }
-  if ((body?.before && !before) || (body?.from && !from) || (body?.to && !to)) return { ok: false, message: '请选择有效的清理日期' }
+  if ((request.before && !before) || (request.from && !from) || (request.to && !to)) return { ok: false, message: '请选择有效的清理日期' }
   if (from && to && from > to) return { ok: false, message: '开始日期不能晚于结束日期' }
-  if (body.type && !VALID_RUN_TYPES.has(body.type)) {
+  if (request.type && !VALID_RUN_TYPES.has(request.type)) {
     return { ok: false, message: '请选择有效的运行类型' }
   }
-  if (body.status && !VALID_RUN_STATUSES.has(body.status)) {
+  if (request.status && !VALID_RUN_STATUSES.has(request.status)) {
     return { ok: false, message: '请选择有效的运行状态' }
   }
-  if (body.status === 'running') {
+  if (request.status === 'running') {
     return { ok: false, message: '运行中的记录不能清理' }
   }
   return {
@@ -60,8 +61,8 @@ export function parseRunCleanupRequest(body: RunCleanupRequest | null | undefine
       from,
       to,
       timeZone,
-      type: body.type || undefined,
-      status: body.status || undefined,
+      type: request.type || undefined,
+      status: request.status || undefined,
     },
   }
 }

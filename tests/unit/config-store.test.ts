@@ -15,7 +15,7 @@ describe('config deepMerge', () => {
       },
     }
 
-    const merged = deepMerge(base, partial)
+    const merged = deepMerge(base, partial as Partial<typeof base>)
 
     expect(merged.other.artistAliases).toEqual({ '旧名A': '新名A' })
     expect(merged.other.artistAliases).not.toHaveProperty('旧名B')
@@ -36,7 +36,7 @@ describe('config deepMerge', () => {
       },
     }
 
-    const merged = deepMerge(base, partial)
+    const merged = deepMerge(base, partial as Partial<typeof base>)
 
     expect(merged.sync).toEqual({
       intervalMinutes: 30,
@@ -57,7 +57,7 @@ describe('config deepMerge', () => {
       },
     }
 
-    const merged = deepMerge(base, partial)
+    const merged = deepMerge(base, partial as Partial<typeof base>)
     expect(merged.other.artistAliases).toEqual({})
   })
 })

@@ -85,6 +85,10 @@ export function createSchema(db: Database.Database): void {
       retry_count     INTEGER NOT NULL DEFAULT 0,
       job_id          TEXT,
       run_id          TEXT,
+      idempotency_key TEXT,
+      lease_owner     TEXT,
+      lease_expires_at TEXT,
+      attempt_started_at TEXT,
       created_at      TEXT NOT NULL,
       updated_at      TEXT NOT NULL
     );
@@ -92,6 +96,9 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_run ON download_tasks(run_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_download_tasks_active_idempotency
+      ON download_tasks(idempotency_key)
+      WHERE idempotency_key IS NOT NULL AND status IN ('pending','downloading','tagging');
 
     CREATE TABLE IF NOT EXISTS playlist_sources (
       id                      TEXT PRIMARY KEY,

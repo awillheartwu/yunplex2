@@ -22,6 +22,7 @@ export async function resolveTracks(
   plexPlaylistRatingKey: string,
   sectionKey: string,
   cfg: AppConfig,
+  dryRun = false,
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }> }> {
   const db = getDb()
   const plexPlaylistTracks = plexPlaylistRatingKey
@@ -34,9 +35,9 @@ export async function resolveTracks(
 
   for (let i = 0; i < yunSongs.length; i++) {
     const song = yunSongs[i]!
-    const resolution = await resolveOne(song, i, plexPlaylistTracks, sectionKey, cfg, db)
+    const resolution = await resolveOne(song, i, plexPlaylistTracks, sectionKey, cfg, db, dryRun)
     const dedupedResolution = dedupeResolutionBinding(resolution, claimedBindings)
-    if (dedupedResolution !== resolution) {
+    if (dedupedResolution !== resolution && !dryRun) {
       deleteSongLookup(song.id)
     }
     resolutions.push(dedupedResolution)
@@ -61,6 +62,7 @@ async function resolveOne(
   sectionKey: string,
   cfg: AppConfig,
   db: ReturnType<typeof getDb>,
+  dryRun: boolean,
 ): Promise<TrackResolution> {
   const base: Omit<TrackResolution, 'resolution'> = { neteaseIndex: index, song }
 
@@ -69,6 +71,8 @@ async function resolveOne(
   const artistCandidates = artistCandidateNames.map((name) => ({
     name,
     normalizedName: normalizeArtistName(name),
+    source: 'original' as const,
+    confidence: 100,
   }))
 
   // ── Step 1: Check if already in Plex playlist ──
@@ -78,7 +82,7 @@ async function resolveOne(
     fuzzyMatchAlbum(pt.parentTitle, song.album.name),
   )
   if (inPlaylist && inPlaylist.playlistItemID) {
-    const filePath = await cacheTrackFilePath(db, song.id, inPlaylist.ratingKey, cfg)
+    const filePath = await cacheTrackFilePath(db, song.id, inPlaylist.ratingKey, cfg, dryRun)
     return {
       ...base,
       resolution: 'matched_plex_playlist',
@@ -93,7 +97,7 @@ async function resolveOne(
   if (cached?.plex_rating_key) {
     const verifiedTrack = await quickVerify(cached.plex_rating_key)
     if (verifiedTrack && trackMatchesSong(verifiedTrack, song, artistCandidates)) {
-      const filePath = await cacheTrackFilePath(db, song.id, cached.plex_rating_key, cfg)
+      const filePath = await cacheTrackFilePath(db, song.id, cached.plex_rating_key, cfg, dryRun)
       return {
         ...base,
         resolution: 'found_in_plex_library',
@@ -101,13 +105,13 @@ async function resolveOne(
         filePath: filePath ?? undefined,
       }
     }
-    deleteSongLookup(song.id)
+    if (!dryRun) deleteSongLookup(song.id)
   }
 
   // ── Step 3: Search Plex library (now with resolved artist candidates) ──
   const found = await searchTrack(sectionKey, song.name, artistCandidateNames, song.album.name)
   if (found) {
-    const filePath = await cacheTrackFilePath(db, song.id, found.ratingKey, cfg)
+    const filePath = await cacheTrackFilePath(db, song.id, found.ratingKey, cfg, dryRun)
     return {
       ...base,
       resolution: 'found_in_plex_library',
@@ -120,10 +124,10 @@ async function resolveOne(
   const expectedPath = cached?.file_path ?? findExistingLocalSongPath(song, cfg)
   const accessiblePath = resolveAccessibleLocalPath(expectedPath, cfg)
   if (accessiblePath) {
-    upsertLookup(db, song.id, null, accessiblePath)
+    if (!dryRun) upsertLookup(db, song.id, null, accessiblePath)
     return { ...base, resolution: 'found_on_disk', filePath: accessiblePath }
   }
-  if (expectedPath) {
+  if (expectedPath && !dryRun) {
     clearSongLookupFilePath(song.id)
   }
 
@@ -141,15 +145,16 @@ async function cacheTrackFilePath(
   neteaseSongId: number,
   plexRatingKey: string,
   cfg: AppConfig,
+  dryRun: boolean,
 ): Promise<string | null> {
   const plexPath = await getTrackFilePathByRatingKey(plexRatingKey)
   const localPath = resolveAccessibleLocalPath(plexPath, cfg)
   if (localPath) {
-    upsertLookup(db, neteaseSongId, plexRatingKey, localPath)
+    if (!dryRun) upsertLookup(db, neteaseSongId, plexRatingKey, localPath)
     return localPath
   }
 
-  upsertLookup(db, neteaseSongId, plexRatingKey, null)
+  if (!dryRun) upsertLookup(db, neteaseSongId, plexRatingKey, null)
   return null
 }
 

@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest'
-import { computeLCS } from '../../server/lib/sync/reorder'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../server/lib/plex-client', () => ({
+  insertTrackIntoPlaylist: vi.fn(),
+  getPlaylistItemId: vi.fn(),
+  movePlaylistItemAfter: vi.fn(),
+  movePlaylistItemToTop: vi.fn(),
+  removeTrackFromPlaylist: vi.fn(),
+}))
+
+import { applyFullReorder, computeLCS, PlexReorderError } from '../../server/lib/sync/reorder'
+import { insertTrackIntoPlaylist } from '../../server/lib/plex-client'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('computeLCS', () => {
   it('returns all elements for identical arrays', () => {
@@ -55,5 +69,18 @@ describe('computeLCS', () => {
     for (let i = 0; i < 50; i += 2) {
       expect(result.has(i)).toBe(true)
     }
+  })
+
+  it('throws when Plex insert fails instead of silently reporting success', async () => {
+    vi.mocked(insertTrackIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))
+
+    await expect(applyFullReorder(
+      'playlist-1',
+      ['rating-1'],
+      [],
+      'section-1',
+      () => false,
+      () => {},
+    )).rejects.toBeInstanceOf(PlexReorderError)
   })
 })

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { enqueueTask, processAll } from './queue'
+import { buildDownloadTaskIdempotencyKey, enqueueTask, processAll } from './queue'
 import { downloadSingleSong, type SingleSongConfig } from './single-song'
 import { emitEvent } from '../sync/events'
 import {
@@ -110,6 +110,12 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
       album: song.album?.name ?? '',
       quality: config.quality,
       jobId: batchId,
+      idempotencyKey: buildDownloadTaskIdempotencyKey({
+        songId: song.id,
+        quality: config.quality,
+        downloadDir: config.downloadDir,
+        pathFormat: config.pathFormat,
+      }),
     })
   }
 

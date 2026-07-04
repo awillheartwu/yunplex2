@@ -432,6 +432,20 @@ const MIGRATIONS: Array<(d: Database.Database) => void> = [
   ensureTaskRunSources,
   /* v31: remove legacy jobs table after its records have been migrated into task_runs */
   migrateLegacyJobsToTaskRunsAndDrop,
+  /* v32: download task idempotency and processing leases */
+  (d) => {
+    const columns = d.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
+    const hasColumn = (name: string) => columns.some(column => column.name === name)
+    if (!hasColumn('idempotency_key')) d.prepare('ALTER TABLE download_tasks ADD COLUMN idempotency_key TEXT').run()
+    if (!hasColumn('lease_owner')) d.prepare('ALTER TABLE download_tasks ADD COLUMN lease_owner TEXT').run()
+    if (!hasColumn('lease_expires_at')) d.prepare('ALTER TABLE download_tasks ADD COLUMN lease_expires_at TEXT').run()
+    if (!hasColumn('attempt_started_at')) d.prepare('ALTER TABLE download_tasks ADD COLUMN attempt_started_at TEXT').run()
+    d.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_download_tasks_active_idempotency
+      ON download_tasks(idempotency_key)
+      WHERE idempotency_key IS NOT NULL AND status IN ('pending','downloading','tagging')
+    `).run()
+  },
 ]
 
 export function runMigrations(d: Database.Database): void {
