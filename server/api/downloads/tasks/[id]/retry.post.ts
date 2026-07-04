@@ -1,6 +1,5 @@
 import { success, fail } from '../../../../lib/response'
-import { getDownloadTask, updateTaskState } from '../../../../lib/download/queue'
-import { emitEvent } from '../../../../lib/sync/events'
+import { getDownloadTask, processAll } from '../../../../lib/download/queue'
 import { getSyncServiceInstance } from '../../../../lib/sync/instance'
 import { readConfig } from '../../../../lib/config/store'
 import { downloadSingleSong } from '../../../../lib/download/single-song'
@@ -28,11 +27,10 @@ export default defineEventHandler(async (event) => {
     stage: 'download',
   }, retentionDays)
 
-  // Reset to pending
-  updateTaskState(id, { status: 'pending', progress: 0, error: undefined })
-
-  // Build processor with logging
-  const processor = async (t: typeof task, onProgress: (pct: number) => void) => {
+  const processor = async (
+    t: typeof task,
+    onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
+  ) => {
     return downloadSingleSong(t.songId, {
       quality: t.quality || cfg.netease.quality,
       cookie: cfg.netease.cookie,
@@ -47,62 +45,30 @@ export default defineEventHandler(async (event) => {
       lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
       downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
       downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
-      downloadMode: 'full',
+    downloadMode: 'full',
     }, onProgress)
   }
 
-  // Process just this one task — don't use processAll to avoid picking up other pending tasks
-  updateTaskState(id, { status: 'downloading', progress: 0 })
-  emitEvent({
-    type: 'queue-update',
-    data: { taskId: id, songName: task.songName, status: 'downloading', progress: 0, sourceId: task.sourceId },
-    timestamp: new Date().toISOString(),
-  })
-
-  // Fire-and-forget
-  ;(async () => {
+  processAll(async (t, onProgress) => {
     try {
-      const result = await processor(task, (pct, phase) => {
-        updateTaskState(id, { progress: pct, status: phase || 'downloading' })
-        emitEvent({
-          type: 'queue-update',
-          data: { taskId: id, songName: task.songName, status: phase || 'downloading', progress: pct, sourceId: task.sourceId },
-          timestamp: new Date().toISOString(),
-        })
-      })
-
-      // Tag-writing failures must not silently pass as "done"
-      if (result.ops?.tags === 'failed') {
-        throw new Error(`标签写入失败: ${task.songName}`)
-      }
-
-      updateTaskState(id, { status: 'done', progress: 100, filePath: result.filePath, fileType: result.fileType, error: undefined })
-      emitEvent({
-        type: 'queue-update',
-        data: { taskId: id, songName: task.songName, status: 'done', progress: 100, sourceId: task.sourceId },
-        timestamp: new Date().toISOString(),
-      })
+      const result = await processor(t, onProgress)
       appendLog(dataDir, {
         level: 'info',
-        message: `[重试] 下载成功: ${task.songName} - ${task.artist} → ${result.filePath}`,
+        message: `[重试] 下载成功: ${t.songName} - ${t.artist} → ${result.filePath}`,
         stage: 'download',
       }, retentionDays)
-    } catch (err) {
+      return result
+    } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '下载失败'
-      updateTaskState(id, { status: 'failed', error: msg, progress: 0 })
-      emitEvent({
-        type: 'queue-update',
-        data: { taskId: id, songName: task.songName, status: 'failed', error: msg, sourceId: task.sourceId },
-        timestamp: new Date().toISOString(),
-      })
       appendLog(dataDir, {
         level: 'error',
-        message: `[重试] 下载失败: ${task.songName} - ${task.artist}`,
+        message: `[重试] 下载失败: ${t.songName} - ${t.artist}`,
         detail: msg,
         stage: 'download',
       }, retentionDays)
+      throw err
     }
-  })()
+  }, undefined, 1, [id]).catch(() => { /* processAll records task failure and emits queue events */ })
 
   return success({ retried: true }, '重试已启动')
 })

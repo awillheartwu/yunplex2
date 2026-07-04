@@ -45,7 +45,7 @@ describe('sync source presentation helpers', () => {
     expect(getSourceStateLabel({ type: 'album', enabled: true })).toBe('专辑')
     expect(getSourceStateTone({ type: 'playlist', enabled: true })).toBe('success')
     expect(getSourceStateTone({ type: 'playlist', enabled: false })).toBe('neutral')
-    expect(getSyncResultLabel({ lastSyncedAt: null, lastStatus: 'success' })).toBe('未同步')
+    expect(getSyncResultLabel({ type: 'playlist', lastSyncedAt: null, lastStatus: 'success' })).toBe('未同步')
     expect(getSyncResultTone({ lastSyncedAt: '2026-06-11T11:30:00.000Z', lastStatus: 'partial' })).toBe('warning')
     expect(getPlexTargetName({ plexPlaylistName: '', neteasePlaylistName: 'Loica 2023' })).toBe('Loica 2023')
     expect(getPlexTargetHint({ plexPlaylistName: '' })).toBe('按名称匹配')
@@ -56,13 +56,13 @@ describe('sync source presentation helpers', () => {
     expect(getSourceMetaLabel({
       name: 'repeat',
       neteasePlaylistName: 'repeat',
-      neteasePlaylistId: '17635087321',
+      neteasePlaylistId: 17635087321,
     })).toBe('ID 17635087321')
 
     expect(getSourceMetaLabel({
       name: '告白 - Original Soundtrack',
       neteasePlaylistName: '告白 - Original Soundtrack (告白 电影原任务)',
-      neteasePlaylistId: '433349401',
+      neteasePlaylistId: 433349401,
     })).toBe('告白 - Original Soundtrack (告白 电影原任务) · ID 433349401')
 
     expect(getIssueSummaryLabel({

@@ -13,6 +13,8 @@ import {
   serializeFailureMemory,
 } from '../../../lib/sync/failure-memory'
 import { classifyDownloadFailure } from '../../../lib/sync/download-diagnostics'
+import { isTagWriteError } from '../../../lib/tag-writer'
+import { getSyncServiceInstance } from '../../../lib/sync/instance'
 
 function refreshRunStats(run: NonNullable<ReturnType<typeof getSyncRun>>): void {
   run.failedSongs = run.songs.filter((song) =>
@@ -45,6 +47,8 @@ export default defineEventHandler(async (event) => {
 
   const source = getSource(song.sourceId)
   if (!source) return fail('歌单源不存在')
+  const syncService = getSyncServiceInstance()
+  if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
 
   const neteaseId = song.neteaseSongId
   let restrictedIds: number[] = source.copyrightRestrictedIds
@@ -130,14 +134,21 @@ export default defineEventHandler(async (event) => {
     refreshRunStats(currentRun)
     saveSyncRun(currentRun)
     appendLog(dataDir, { level: 'info', message: `[重试] 下载成功: ${song.songName} - ${song.artist} → ${result.filePath}`, stage: 'download' }, retentionDays)
+    if (!syncService.getState().isRunning) {
+      syncService.runSyncForSource(source.id, { forceFull: true, trigger: 'retry' }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        appendLog(dataDir, { level: 'error', message: `[重试] Plex 补同步触发失败: ${song.songName} - ${song.artist}`, detail: msg, stage: 'plex_match' }, retentionDays)
+      })
+    }
     emitEvent({
       type: 'song-retry-progress',
       data: { jobId: runId, runId, songId, status: 'success', filePath: result.filePath, fileType: result.fileType, ops: result.ops },
       timestamp: new Date().toISOString(),
     })
   }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : '下载失败'
-    const diagnosis = classifyDownloadFailure(msg)
+    const tagError = isTagWriteError(err) ? err : null
+    const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
+    const diagnosis = classifyDownloadFailure(msg, tagError?.filePath)
     appendLog(dataDir, { level: 'error', message: `[重试] 下载失败: ${song.songName} - ${song.artist}`, detail: msg, stage: diagnosis.phase }, retentionDays)
 
     const currentSource = getSource(song.sourceId!)
@@ -167,6 +178,9 @@ export default defineEventHandler(async (event) => {
     if (currentRun && currentSong) {
       currentSong.status = diagnosis.status
       currentSong.phase = diagnosis.phase
+      if (tagError?.filePath) currentSong.filePath = tagError.filePath
+      if (tagError?.fileType) currentSong.fileType = tagError.fileType
+      if (tagError?.ops) currentSong.ops = tagError.ops
       currentSong.error = { title: diagnosis.title, message: msg, stage: diagnosis.phase, songName: song.songName, artist: song.artist }
       refreshRunStats(currentRun)
       saveSyncRun(currentRun)

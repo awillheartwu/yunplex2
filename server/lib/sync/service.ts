@@ -9,7 +9,7 @@ import { cleanupOldRuns, saveSyncRun } from '../run/store'
 import type { SongStatus } from '../job/types'
 import { getEnabledSources, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
-import { enqueueTask, processAll, listDownloadTasks, cleanupOldDownloadTasks } from '../download/queue'
+import { buildDownloadTaskIdempotencyKey, enqueueTask, processAll, cleanupOldDownloadTasks, getDownloadTask } from '../download/queue'
 import type { DownloadTask } from '../download/queue'
 import { downloadSingleSong } from '../download/single-song'
 import { emitEvent } from './events'
@@ -25,6 +25,8 @@ import { classifyDownloadTaskFailure, shouldAttemptPlexRetryForResolution } from
 import { findExistingLocalSongPath } from './local-file-discovery'
 import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
 import { buildSyncRunSummary, recordSyncRunCompletion } from './service-summary'
+import { PlexReorderError } from './reorder'
+import { buildPlexReorderStepError, markPlexReorderFailures } from './reorder-failure-reporting'
 
 export { STAGE_LABELS } from './service-state'
 
@@ -35,6 +37,12 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
   let currentRun: RunBuilder | null = null
 
   function getState(): SyncState { return { ...state } }
+
+  function throwIfCancelled(): void {
+    if (!cancelRequested) return
+    state.currentStage = 'cancelled'
+    throw new CancellationError()
+  }
 
   function log(level: 'info' | 'warn' | 'error', message: string, detail?: string) {
     const cfg = getConfig()
@@ -97,7 +105,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       let totalFailed = 0
 
       for (const source of sources) {
-        if (cancelRequested) break
+        throwIfCancelled()
         currentSourceName = source.name || `网易云歌单 #${source.neteasePlaylistId}`
         const rawLimit = source.syncLimit ?? cfg.sync.songLimit
         const sourceSongLimit = rawLimit === 0 ? undefined : rawLimit
@@ -141,12 +149,13 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           const { songs: yunSongs, trackUpdateTime: rawTrackUpdateTime, trackIds, playlistName: nePlaylistName } = source.type === 'album'
             ? { songs: await fetchAlbumSongs(playlistId, cfg.netease.cookie), trackUpdateTime: null, trackIds: [], playlistName: source.neteasePlaylistName }
             : await fetchPlaylistSongs(playlistId, sourceSongLimit, cfg.netease.cookie)
+          throwIfCancelled()
           const trackUpdateTime = rawTrackUpdateTime
 
           // Detect Netease playlist rename
           if (nePlaylistName && nePlaylistName !== source.neteasePlaylistName) {
             log('info', `歌单名称已更改: 「${source.neteasePlaylistName}」→「${nePlaylistName}」`)
-            updateSource(source.id, { neteasePlaylistName: nePlaylistName })
+            if (!dryRun) updateSource(source.id, { neteasePlaylistName: nePlaylistName })
             source.neteasePlaylistName = nePlaylistName
           }
 
@@ -229,20 +238,50 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                 if (pp) {
                   const sk = (await getSectionKey(cfg.plex.section)) ?? ''
                   const currentItems = (await getPlaylistTracks(pp.ratingKey, 99999)).filter(t => t.playlistItemID).map(t => ({ ratingKey: t.ratingKey, playlistItemId: t.playlistItemID! }))
-                  await applyFullReorder(pp.ratingKey, targetOrder, currentItems, sk, () => cancelRequested, (lvl, msg) => log(lvl as 'info'|'warn'|'error', msg), skipRemoveExtra)
+                  const reorderStep = job.startStep('reorder', '重排 Plex 歌单', { context: stepContext })
+                  try {
+                    await applyFullReorder(pp.ratingKey, targetOrder, currentItems, sk, () => cancelRequested, (lvl, msg) => log(lvl as 'info'|'warn'|'error', msg), skipRemoveExtra)
+                    job.finishStep(reorderStep, 'success', 'Plex 歌单重排完成')
+                  } catch (err) {
+                    if (err instanceof PlexReorderError) {
+                      const ratingKeyToSongId = new Map<string, string>()
+                      for (const [neteaseSongId, ratingKey] of cacheKeys) {
+                        const taskSongId = job.findSongId(source.id, neteaseSongId)
+                        if (taskSongId) ratingKeyToSongId.set(ratingKey, taskSongId)
+                      }
+                      markPlexReorderFailures(job, err.result.failures, {
+                        ratingKeyToSongId,
+                        playlistItemIdToRatingKey: new Map(currentItems.map(item => [item.playlistItemId, item.ratingKey])),
+                      })
+                      job.failStep(reorderStep, 'Plex 歌单重排失败', buildPlexReorderStepError(err))
+                    }
+                    throw err
+                  }
+                  throwIfCancelled()
                 }
               }
-              updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null, lastJobId: job.getId(), trackCount: yunSongs.length, lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt, consecutiveSkips: 0, lastFullCompareAt: new Date().toISOString(), trackIdSnapshot: JSON.stringify(currentIdOrder) })
+              if (!dryRun) updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null, lastJobId: job.getId(), trackCount: yunSongs.length, lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt, consecutiveSkips: 0, lastFullCompareAt: new Date().toISOString(), trackIdSnapshot: JSON.stringify(currentIdOrder) })
               totalSuccess += yunSongs.length
               continue
             }
           }
 
           if (yunSongs.length === 0) {
-            const j = job.finish('success', '歌单为空，无需同步')
-            saveSyncRun(j)
-            finishState('success')
-            return { ...state }
+            log('info', `歌单「${playlistName}」为空，跳过当前来源`)
+            if (!dryRun) {
+              updateSource(source.id, {
+                lastSyncedAt: new Date().toISOString(),
+                lastStatus: 'success',
+                lastError: null,
+                lastJobId: job.getId(),
+                trackCount: 0,
+                lastTrackUpdateTime: trackUpdateTime,
+                consecutiveSkips: 0,
+                lastFullCompareAt: new Date().toISOString(),
+                trackIdSnapshot: JSON.stringify(currentIdOrder),
+              })
+            }
+            continue
           }
 
           // Register all songs to job
@@ -296,7 +335,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             () => cancelRequested,
             (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
             skipPlexPL,
+            dryRun,
           )
+          throwIfCancelled()
           const plexPlaylist = plexPlaylistResult
 
           // Update job song statuses from TrackResolution results
@@ -330,6 +371,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           const songsOnDisk = resolutions.filter((r) => r.resolution === 'found_on_disk')
           const needsRefresh = songsToDownload.length > 0 || songsOnDisk.length > 0
+          const queuedDownloadTasks = new Map<number, DownloadTask>()
 
           if (!dryRun && songsToDownload.length > 0) {
             const s3 = job.startStep('download', '下载歌曲', { context: stepContext })
@@ -338,7 +380,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
             for (const r of songsToDownload) {
               const [, trackArtist] = splitArtists(r.song.artists)
-              enqueueTask({
+              const task = enqueueTask({
                 sourceId: source.id,
                 songId: r.song.id,
                 songName: r.song.name,
@@ -346,10 +388,18 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                 album: r.song.album.name,
                 quality: cfg.netease.quality,
                 jobId: job.getId(),
+                idempotencyKey: buildDownloadTaskIdempotencyKey({
+                  songId: r.song.id,
+                  quality: cfg.netease.quality,
+                  downloadDir: cfg.download.dir,
+                  pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+                }),
               })
+              queuedDownloadTasks.set(r.song.id, task)
             }
 
             const processor = async (task: DownloadTask, onProgress: (pct: number) => void) => {
+              throwIfCancelled()
               return downloadSingleSong(task.songId, {
                 quality: cfg.netease.quality,
                 cookie: cfg.netease.cookie,
@@ -368,16 +418,16 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               }, onProgress)
             }
 
-            await processAll(processor, job.getId(), cfg.sync.downloadConcurrency || 3)
+            await processAll(processor, undefined, cfg.sync.downloadConcurrency || 3, [...queuedDownloadTasks.values()].map(task => task.id))
+            throwIfCancelled()
             setStage('processing_tags')
 
-            // Update job songs from queue
-            const allTasks = listDownloadTasks({ status: undefined })
             for (const r of songsToDownload) {
               const songId = job.findSongId(source.id, r.song.id)
               if (!songId) continue
 
-              const task = allTasks.items.find((t) => t.songId === r.song.id && t.jobId === job.getId())
+              const queuedTaskId = queuedDownloadTasks.get(r.song.id)?.id
+              const task = queuedTaskId ? getDownloadTask(queuedTaskId) : null
               if (!task || task.status === 'failed') {
                 const diagnosis = classifyDownloadTaskFailure(task)
                 const artist = splitArtists(r.song.artists)[0]
@@ -438,10 +488,12 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           }
 
           // Mark copyright-restricted resolutions (skip Plex retry)
-          const allTasks = listDownloadTasks({ status: undefined })
           for (const r of resolutions) {
             if (r.resolution === 'needs_download') {
-              const task = allTasks.items.find((t) => t.songId === r.song.id && t.jobId === job.getId())
+              const queuedTaskId = queuedDownloadTasks.get(r.song.id)?.id
+              const task = queuedTaskId
+                ? getDownloadTask(queuedTaskId)
+                : null
               const diagnosis = classifyDownloadTaskFailure(task)
               if (task?.filePath && !r.filePath) {
                 r.filePath = task.filePath
@@ -467,6 +519,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             // Trigger Plex scan if needed (fire and forget — we'll retry-search below)
             if (needsRefresh && sectionKey) {
               await triggerRescan(sectionKey)
+              throwIfCancelled()
               recordActivityEvent({
                 domain: 'plex',
                 type: 'plex_library_refresh_requested',
@@ -487,6 +540,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             const failedPlexRetrySongIds: number[] = []
 
             for (const r of resolutions) {
+              throwIfCancelled()
               const sid = job.findSongId(source.id, r.song.id)
               const currentSong = sid ? job.getSong(source.id, r.song.id) : null
               const effectiveStatus = currentSong?.status
@@ -560,13 +614,47 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             const currentItems = (await getPlaylistTracks(plexPlaylist.ratingKey, 99999))
               .filter((t) => t.playlistItemID)
               .map((t) => ({ ratingKey: t.ratingKey, playlistItemId: t.playlistItemID! }))
-
-            await applyFullReorder(
-              plexPlaylist.ratingKey, targetOrder, currentItems, sectionKey,
-              () => cancelRequested,
-              (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
-              skipRemoveExtra,
+            const hasIncompleteTargetOrder = resolutions.some((r) =>
+              !['copyright_restricted', 'unavailable'].includes(r.resolution)
+              && !r.plexRatingKey,
             )
+            const shouldSkipRemoveForSafety = skipRemoveExtra || hasIncompleteTargetOrder
+            if (hasIncompleteTargetOrder && !skipRemoveExtra) {
+              log('warn', `歌单「${playlistName}」仍有歌曲未解析到 Plex，已跳过删除 Plex 多余歌曲以避免误删`)
+            }
+
+            try {
+              await applyFullReorder(
+                plexPlaylist.ratingKey, targetOrder, currentItems, sectionKey,
+                () => cancelRequested,
+                (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
+                shouldSkipRemoveForSafety,
+              )
+            } catch (err) {
+              if (err instanceof PlexReorderError) {
+                const ratingKeyToSongId = new Map<string, string>()
+                for (const r of resolutions) {
+                  if (!r.plexRatingKey) continue
+                  const taskSongId = job.findSongId(source.id, r.song.id)
+                  if (taskSongId) ratingKeyToSongId.set(r.plexRatingKey, taskSongId)
+                }
+
+                const playlistItemIdToRemovedSongId = new Map<number, string>()
+                for (const xt of extraTracks) {
+                  const removedSongId = job.findRemovedSongId(source.id, xt.title, xt.artist, xt.album)
+                  if (removedSongId) playlistItemIdToRemovedSongId.set(xt.playlistItemId, removedSongId)
+                }
+
+                markPlexReorderFailures(job, err.result.failures, {
+                  ratingKeyToSongId,
+                  playlistItemIdToRatingKey: new Map(currentItems.map(item => [item.playlistItemId, item.ratingKey])),
+                  playlistItemIdToRemovedSongId,
+                })
+                job.failStep(s4, 'Plex 歌单重排失败', buildPlexReorderStepError(err))
+              }
+              throw err
+            }
+            throwIfCancelled()
 
             job.finishStep(s4, 'success', 'Plex 歌单重排完成')
             recordActivityEvent({
@@ -599,29 +687,34 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             finalPlexUpdatedAt = await getPlaylistUpdatedAt(plexPlaylist.ratingKey)
           }
 
-          updateSource(source.id, {
-            lastSyncedAt: new Date().toISOString(),
-            lastStatus: sourceStatus,
-            lastError: failCount > 0 ? `${failCount} 首失败`
-              : restrictedCount > 0 || ignoredCount > 0
-                ? `${[restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '', ignoredCount > 0 ? `${ignoredCount} 首已忽略` : ''].filter(Boolean).join('，')}`
-                : null,
-            lastJobId: job.getId(),
-            trackCount: yunSongs.length,
-            plexPlaylistRatingKey: plexPlaylist?.ratingKey || '',
-            lastTrackUpdateTime: trackUpdateTime,
-            plexUpdatedAt: finalPlexUpdatedAt,
-            consecutiveSkips: 0,
-            lastFullCompareAt: new Date().toISOString(),
-            trackIdSnapshot: JSON.stringify(currentIdOrder),
-          })
+          if (!dryRun) {
+            const sourceUpdate: Parameters<typeof updateSource>[1] = {
+              lastSyncedAt: new Date().toISOString(),
+              lastStatus: sourceStatus,
+              lastError: failCount > 0 ? `${failCount} 首失败`
+                : restrictedCount > 0 || ignoredCount > 0
+                  ? `${[restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '', ignoredCount > 0 ? `${ignoredCount} 首已忽略` : ''].filter(Boolean).join('，')}`
+                  : null,
+              lastJobId: job.getId(),
+              trackCount: yunSongs.length,
+              plexPlaylistRatingKey: plexPlaylist?.ratingKey || '',
+              plexUpdatedAt: finalPlexUpdatedAt,
+              consecutiveSkips: 0,
+            }
+            if (sourceStatus === 'success') {
+              sourceUpdate.lastTrackUpdateTime = trackUpdateTime
+              sourceUpdate.lastFullCompareAt = new Date().toISOString()
+              sourceUpdate.trackIdSnapshot = JSON.stringify(currentIdOrder)
+            }
+            updateSource(source.id, sourceUpdate)
+          }
 
           // Update copyright-restricted and failure caches
           const newRestricted = job.getRun().songs
             .filter((s) => s.status === 'copyright_restricted' && s.sourceId === source.id)
             .map((s) => s.neteaseSongId)
             .filter(Boolean) as number[]
-          if (newRestricted.length > 0) {
+          if (!dryRun && newRestricted.length > 0) {
             const merged = [...new Set([...knownRestricted, ...newRestricted])]
             updateSource(source.id, { copyrightRestrictedIds: JSON.stringify(merged) })
           }
@@ -641,7 +734,11 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             .filter((s) =>
               ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status) && s.sourceId === source.id,
             )
-            .filter((s): s is typeof s & { neteaseSongId: number } => typeof s.neteaseSongId === 'number')
+            .filter((s): s is typeof s & {
+              neteaseSongId: number
+              status: 'failed_download' | 'failed_tags' | 'failed_plex_match' | 'failed_plex_insert'
+              phase: 'download' | 'tags' | 'plex_match' | 'plex_insert'
+            } => typeof s.neteaseSongId === 'number' && s.phase !== 'done')
 
           for (const failedSong of failedSongs) {
             const cause = failedSong.error?.context?.cause
@@ -655,7 +752,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             })
           }
 
-          updateSource(source.id, { ignoredFailureIds: serializeFailureMemory(nextFailureMemory) })
+          if (!dryRun) updateSource(source.id, { ignoredFailureIds: serializeFailureMemory(nextFailureMemory) })
 
           totalSuccess += succCount
           totalFailed += failCount
@@ -688,11 +785,13 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
       const message = err instanceof Error ? err.message : '未知错误'
       log('error', `歌单「${source.name}」同步失败: ${message}`)
-      updateSource(source.id, {
-        lastSyncedAt: new Date().toISOString(),
-        lastStatus: 'failed',
-        lastError: message,
-      })
+      if (!dryRun) {
+        updateSource(source.id, {
+          lastSyncedAt: new Date().toISOString(),
+          lastStatus: 'failed',
+          lastError: message,
+        })
+      }
       recordActivityEvent({
         domain: 'sync',
         type: 'source_sync_failed',

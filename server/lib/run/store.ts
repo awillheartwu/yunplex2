@@ -10,7 +10,8 @@ import type {
 } from '../job/types'
 import { getDb } from '../db'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
-import { reconcileRunFailures } from '../tasks/failure-records'
+import { reconcileRunFailures, recordFailure } from '../tasks/failure-records'
+import { classifyDownloadFailure } from '../sync/download-diagnostics'
 
 function normalizeRun(run: TaskRun): TaskRun {
   const sourceIds = new Set(run.sourceIds || [])
@@ -288,31 +289,42 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
   run.successSongs = success
   run.failedSongs = failed
   run.summary = `手动下载 ${rows.length} 首歌曲${failed > 0 ? `，${failed} 首失败` : ''}`
-  run.songs = rows.map(row => ({
-    id: row.id,
-    neteaseSongId: row.song_id,
-    songName: row.song_name,
-    artist: row.artist,
-    album: row.album,
-    status: row.status === 'done'
-      ? 'success'
-      : row.status === 'failed'
-        ? 'failed_download'
-        : row.status === 'downloading' || row.status === 'tagging'
-          ? 'downloading'
-          : 'pending',
-    phase: row.status === 'tagging' ? 'tags' : row.status === 'done' ? 'done' : 'download',
-    filePath: row.file_path || undefined,
-    fileType: row.file_type || undefined,
-    metadata: row.quality ? { quality: row.quality } : undefined,
-    error: row.error ? {
-      title: '下载失败',
-      message: row.error,
-      stage: 'download',
+  run.songs = rows.map((row) => {
+    const diagnosis = row.status === 'failed'
+      ? classifyDownloadFailure(row.error, row.file_path)
+      : null
+    return {
+      id: row.id,
+      neteaseSongId: row.song_id,
       songName: row.song_name,
       artist: row.artist,
-    } : undefined,
-  }))
+      album: row.album,
+      status: row.status === 'done'
+        ? 'success'
+        : row.status === 'failed'
+          ? diagnosis!.status
+          : row.status === 'downloading' || row.status === 'tagging'
+            ? 'downloading'
+            : 'pending',
+      phase: row.status === 'failed'
+        ? diagnosis!.phase
+        : row.status === 'tagging'
+          ? 'tags'
+          : row.status === 'done'
+            ? 'done'
+            : 'download',
+      filePath: row.file_path || undefined,
+      fileType: row.file_type || undefined,
+      metadata: row.quality ? { quality: row.quality } : undefined,
+      error: row.error ? {
+        title: diagnosis?.title ?? '下载失败',
+        message: row.error,
+        stage: diagnosis?.phase ?? 'download',
+        songName: row.song_name,
+        artist: row.artist,
+      } : undefined,
+    }
+  })
   const step = run.steps[0]
   if (step) {
     step.status = run.status === 'running' ? 'running' : run.status === 'success' ? 'success' : run.status
@@ -326,8 +338,48 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
 
 export function recoverInterruptedRuns(): number {
   const now = new Date().toISOString()
+  const interruptedDownloads = getDb().prepare(`
+    SELECT id, source_id, song_id, song_name, artist, COALESCE(run_id, job_id) AS run_id, status
+    FROM download_tasks
+    WHERE status IN ('downloading','tagging')
+  `).all() as Array<{
+    id: string
+    source_id: string | null
+    song_id: number
+    song_name: string
+    artist: string
+    run_id: string | null
+    status: string
+  }>
+  if (interruptedDownloads.length > 0) {
+    getDb().prepare(`
+      UPDATE download_tasks
+      SET status = 'failed',
+        progress = 0,
+        error = ?,
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        updated_at = ?
+      WHERE status IN ('downloading','tagging')
+    `).run('任务因服务重启中断', now)
+    for (const task of interruptedDownloads) {
+      recordFailure({
+        songId: task.song_id,
+        songName: task.song_name,
+        artist: task.artist,
+        sourceId: task.source_id,
+        runId: task.run_id,
+        runType: task.source_id ? 'sync' : 'manual_download',
+        failureKind: task.status === 'tagging' ? 'failed_tags' : 'failed_download',
+        failureReason: '任务因服务重启中断',
+        occurredAt: now,
+        downloadTaskId: task.id,
+      })
+    }
+  }
+
   const rows = getDb().prepare("SELECT id, data FROM task_runs WHERE status = 'running'").all() as Array<{ id: string; data: string }>
-  let changed = 0
+  let changed = interruptedDownloads.length
   for (const row of rows) {
     const run = JSON.parse(row.data) as TaskRun
     if (run.type === 'manual_download') {

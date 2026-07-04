@@ -288,7 +288,7 @@ export function useManualDownloadPage() {
   async function retryOne(id: string) {
     try {
       await retryQueueItem(id)
-      feedback.success('已重新加入下载队列')
+      feedback.success('已开始重试下载')
     } catch (err) {
       feedback.error('重试失败', err instanceof Error ? err.message : '请稍后重试')
     }
@@ -297,7 +297,7 @@ export function useManualDownloadPage() {
   async function retryAll() {
     try {
       await retryAllFailedQueueItems()
-      feedback.success('失败任务已重新加入队列')
+      feedback.success('失败任务已开始重试')
     } catch (err) {
       feedback.error('批量重试失败', err instanceof Error ? err.message : '请稍后重试')
     }

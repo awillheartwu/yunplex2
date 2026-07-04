@@ -10,6 +10,30 @@ interface PlexItem {
   playlistItemId: number
 }
 
+export interface ReorderFailure {
+  action: 'remove' | 'insert' | 'move'
+  ratingKey?: string
+  playlistItemId?: number
+  message: string
+}
+
+export interface ReorderResult {
+  inserted: number
+  removed: number
+  moved: number
+  failures: ReorderFailure[]
+}
+
+export class PlexReorderError extends Error {
+  result: ReorderResult
+
+  constructor(result: ReorderResult) {
+    super(`Plex 歌单重排失败: ${result.failures.length} 个写入操作失败`)
+    this.name = 'PlexReorderError'
+    this.result = result
+  }
+}
+
 /**
  * Full reorder: ensure the Plex playlist matches the target order exactly.
  *
@@ -32,20 +56,23 @@ export async function applyFullReorder(
   cancelRequested: () => boolean,
   log: (level: 'info' | 'warn' | 'error', msg: string) => void,
   skipRemove = false,
-): Promise<void> {
+): Promise<ReorderResult> {
+  const result: ReorderResult = { inserted: 0, removed: 0, moved: 0, failures: [] }
   const targetSet = new Set(targetOrder)
 
   // ── Step 1: Remove extra tracks ──
   if (!skipRemove) {
     for (const item of currentItems) {
-      if (cancelRequested()) return
+      if (cancelRequested()) return result
       if (!targetSet.has(item.ratingKey)) {
         try {
           const { removeTrackFromPlaylist } = await import('../plex-client')
           await removeTrackFromPlaylist(playlistRatingKey, item.playlistItemId)
+          result.removed++
           log('info', `从歌单移除: ${item.ratingKey}`)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
+          result.failures.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId, message: msg })
           log('error', `移除失败: ${msg}`)
         }
       }
@@ -55,7 +82,7 @@ export async function applyFullReorder(
   // ── Step 2: Insert missing tracks ──
   const currentKeys = new Set(currentItems.map((i) => i.ratingKey))
   for (const key of targetOrder) {
-    if (cancelRequested()) return
+    if (cancelRequested()) return result
     if (!currentKeys.has(key)) {
       try {
         await insertTrackIntoPlaylist(playlistRatingKey, key)
@@ -63,9 +90,11 @@ export async function applyFullReorder(
         if (itemId) {
           currentItems.push({ ratingKey: key, playlistItemId: itemId })
           currentKeys.add(key)
+          result.inserted++
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        result.failures.push({ action: 'insert', ratingKey: key, message: msg })
         log('error', `插入歌单失败 (${key}): ${msg}`)
       }
     }
@@ -78,7 +107,10 @@ export async function applyFullReorder(
   const keyToItemId = new Map(currentItems.map((i) => [i.ratingKey, i.playlistItemId]))
   const targetItemIds = targetOrder.map((k) => keyToItemId.get(k)).filter(Boolean) as number[]
 
-  if (targetItemIds.length <= 1) return
+  if (targetItemIds.length <= 1) {
+    if (result.failures.length > 0) throw new PlexReorderError(result)
+    return result
+  }
 
   const currentOrder = currentItems
     .filter((i) => targetSet.has(i.ratingKey))
@@ -92,7 +124,7 @@ export async function applyFullReorder(
   let isFirst = true
 
   for (const itemId of targetItemIds) {
-    if (cancelRequested()) return
+    if (cancelRequested()) return result
     if (lcs.has(itemId)) {
       // In LCS — update anchor, no move needed
       afterId = itemId
@@ -107,12 +139,17 @@ export async function applyFullReorder(
       } else if (afterId) {
         await movePlaylistItemAfter(playlistRatingKey, itemId, afterId)
       }
+      result.moved++
       afterId = itemId
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      result.failures.push({ action: 'move', playlistItemId: itemId, message: msg })
       log('error', `重排失败 (item ${itemId}): ${msg}`)
     }
   }
+
+  if (result.failures.length > 0) throw new PlexReorderError(result)
+  return result
 }
 
 /** Compute LCS of two arrays, returning the set of items in the common subsequence */

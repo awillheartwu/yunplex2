@@ -47,8 +47,10 @@ function getChangedTopLevelKeys(previous: AppConfig, updated: AppConfig, patch: 
     ? Object.keys(patch as Record<string, unknown>)
     : Object.keys(updated)
 
+  const updatedRecord = updated as unknown as Record<string, unknown>
+  const previousRecord = previous as unknown as Record<string, unknown>
+
   return patchKeys.filter((key) =>
-    JSON.stringify((updated as Record<string, unknown>)[key]) !==
-    JSON.stringify((previous as Record<string, unknown>)[key]),
+    JSON.stringify(updatedRecord[key]) !== JSON.stringify(previousRecord[key]),
   )
 }

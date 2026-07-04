@@ -1,6 +1,5 @@
 import { success, fail } from '../../../lib/response'
 import { getSyncServiceInstance } from '../../../lib/sync/instance'
-import { getDb } from '../../../lib/db'
 import { processAll } from '../../../lib/download/queue'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
@@ -19,8 +18,6 @@ export default defineEventHandler(async (event) => {
     return fail('已有同步任务在运行中，请等待完成')
   }
 
-  const db = getDb()
-  const now = new Date().toISOString()
   const dataDir = useRuntimeConfig(event).dataDir
   const cfg = readConfig()
   const retentionDays = cfg.sync.logRetentionDays ?? 30
@@ -31,17 +28,12 @@ export default defineEventHandler(async (event) => {
     return success({ count: 0 }, '这些问题需要从对应运行或同步源重新执行')
   }
 
-  // Reset to pending
-  const idPlaceholders = taskIds.map(() => '?').join(',')
-  const result = db.prepare(
-    `UPDATE download_tasks SET status = 'pending', error = NULL, progress = 0, updated_at = ? WHERE id IN (${idPlaceholders}) AND status = 'failed'`,
-  ).run(now, ...taskIds)
   incrementFailureRetries(body.ids)
   setFailureRecordStatus(body.ids, 'open')
 
   appendLog(dataDir, {
     level: 'info',
-    message: `[批量重试] ${result.changes} 个失败项重新加入队列`,
+    message: `[批量重试] ${taskIds.length} 个失败项开始重试`,
     stage: 'download',
   }, retentionDays)
 
@@ -86,5 +78,5 @@ export default defineEventHandler(async (event) => {
     }
   }, undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch(() => { /* errors reported via SSE */ })
 
-  return success({ count: result.changes }, `${result.changes} 个失败项已重新加入队列并开始下载`)
+  return success({ count: taskIds.length }, `${taskIds.length} 个失败项已开始下载`)
 })

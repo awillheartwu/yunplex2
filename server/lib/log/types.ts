@@ -11,6 +11,11 @@ export interface LogEntry {
 
 export type SyncStage =
   | 'idle'
+  | 'download'
+  | 'tags'
+  | 'plex_match'
+  | 'plex_insert'
+  | 'done'
   | 'fetching_playlist'
   | 'comparing'
   | 'downloading'

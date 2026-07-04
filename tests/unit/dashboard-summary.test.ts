@@ -19,6 +19,7 @@ function makeSource(overrides: Partial<PlaylistSource> = {}): PlaylistSource {
     type: 'playlist',
     subscribed: false,
     enabled: true,
+    coverUrl: '',
     plexPlaylistName: 'Source',
     plexPlaylistRatingKey: 'plex-1',
     syncLimit: null,

@@ -5,7 +5,7 @@ import type { FailureRecordFilter, FailureRecordStatus } from './tasks/failure-r
 import { isValidDateFilter, isValidTimeZone } from './date-range'
 
 type QueryValue = string | string[] | number | boolean | null | undefined
-type QueryRecord = Record<string, QueryValue>
+type QueryRecord = Record<string, unknown>
 
 export interface DownloadHistoryFilter {
   status: string
@@ -32,8 +32,18 @@ const FAILURE_KINDS = new Set([
 ])
 const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatus>(['open', 'ignored', 'resolved'])
 
-function firstValue(value: QueryValue): QueryValue {
-  return Array.isArray(value) ? value[0] : value
+function firstValue(value: unknown): QueryValue {
+  if (Array.isArray(value)) return firstValue(value[0])
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null ||
+    value === undefined
+  ) {
+    return value
+  }
+  return undefined
 }
 
 function stringParam(query: QueryRecord, key: string): string | undefined {
@@ -49,7 +59,7 @@ function parseBoundedInt(query: QueryRecord, key: string, fallback: number, min:
   return Math.min(Math.max(value, min), max)
 }
 
-export function parseOptionalBoolean(value: QueryValue): boolean | undefined {
+export function parseOptionalBoolean(value: unknown): boolean | undefined {
   const raw = firstValue(value)
   if (raw === undefined || raw === null || raw === '') return undefined
   if (raw === true || raw === '1' || raw === 'true') return true

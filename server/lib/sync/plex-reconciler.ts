@@ -45,6 +45,7 @@ export async function reconcileSource(
   _cancelRequested: () => boolean,
   _log: (level: string, msg: string) => void,
   skipPlexPlaylist = false,
+  dryRun = false,
 ): Promise<ReconcileResult> {
   await initPlexClient(cfg.plex)
 
@@ -61,7 +62,9 @@ export async function reconcileSource(
       if (source.autoCreatePlexPlaylist) {
         const sectionKey = await getSectionKey(cfg.plex.section)
         if (!sectionKey) throw new Error('未找到 Plex 音乐库分区')
-        plexPlaylist = await createPlaylist(plexName, sectionKey)
+        plexPlaylist = dryRun
+          ? { title: plexName, ratingKey: '' }
+          : await createPlaylist(plexName, sectionKey)
       } else {
         throw new Error(`Plex 中未找到同名歌单 "${plexName}"，请在 Plex 中创建或开启自动创建`)
       }
@@ -75,6 +78,7 @@ export async function reconcileSource(
     skipPlexPlaylist ? '' : plexPlaylist!.ratingKey,
     sectionKey,
     cfg,
+    dryRun,
   )
 
   const newCount = resolutions.filter((r) =>

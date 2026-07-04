@@ -10,6 +10,7 @@ import {
   listRuns,
   saveRun,
   syncManualDownloadRun,
+  recoverInterruptedRuns,
 } from '../../server/lib/run/store'
 import type { TaskRun } from '../../server/lib/job/types'
 
@@ -91,10 +92,10 @@ describe('task run store', () => {
     getDb().prepare(`
       INSERT INTO download_tasks (
         id, source_id, song_id, song_name, artist, album, status, progress,
-        job_id, run_id, created_at, updated_at
+        file_path, file_type, error, job_id, run_id, created_at, updated_at
       ) VALUES
-        ('one', NULL, 1, 'One', 'A', 'X', 'done', 100, 'batch-1', 'batch-1', ?, ?),
-        ('two', NULL, 2, 'Two', 'B', 'Y', 'failed', 0, 'batch-1', 'batch-1', ?, ?)
+        ('one', NULL, 1, 'One', 'A', 'X', 'done', 100, NULL, NULL, NULL, 'batch-1', 'batch-1', ?, ?),
+        ('two', NULL, 2, 'Two', 'B', 'Y', 'failed', 0, '/tmp/music/two.flac', 'flac', '标签写入失败: EIO', 'batch-1', 'batch-1', ?, ?)
     `).run(now, now, now, now)
 
     const run = syncManualDownloadRun('batch-1')
@@ -106,6 +107,44 @@ describe('task run store', () => {
       failedSongs: 1,
     })
     expect(run?.songs).toHaveLength(2)
+    expect(run?.songs[1]).toMatchObject({
+      id: 'two',
+      status: 'failed_tags',
+      phase: 'tags',
+      filePath: '/tmp/music/two.flac',
+      fileType: 'flac',
+      error: {
+        title: '标签写入失败',
+        stage: 'tags',
+      },
+    })
+  })
+
+  it('marks interrupted active download tasks as failed during recovery', () => {
+    setup()
+    createManualDownloadRun({ id: 'batch-interrupted', total: 2, sourceLabel: '两首单曲' })
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO download_tasks (
+        id, source_id, song_id, song_name, artist, album, status, progress,
+        job_id, run_id, created_at, updated_at
+      ) VALUES
+        ('downloading-one', NULL, 11, 'One', 'A', 'X', 'downloading', 50, 'batch-interrupted', 'batch-interrupted', ?, ?),
+        ('tagging-two', NULL, 12, 'Two', 'B', 'Y', 'tagging', 90, 'batch-interrupted', 'batch-interrupted', ?, ?)
+    `).run(now, now, now, now)
+
+    expect(recoverInterruptedRuns()).toBeGreaterThanOrEqual(2)
+
+    const rows = getDb().prepare('SELECT id, status, error FROM download_tasks ORDER BY id').all() as Array<{
+      id: string
+      status: string
+      error: string
+    }>
+    expect(rows).toEqual([
+      { id: 'downloading-one', status: 'failed', error: '任务因服务重启中断' },
+      { id: 'tagging-two', status: 'failed', error: '任务因服务重启中断' },
+    ])
+    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(2)
   })
 
   it('filters unified runs by type', () => {

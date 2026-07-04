@@ -5,6 +5,7 @@ import { recordActivityEvent } from '../activity/store'
 import { recordFailure, resolveFailures } from '../tasks/failure-records'
 import { syncManualDownloadRun } from '../run/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
+import { isTagWriteError } from '../tag-writer'
 
 export interface DownloadTask {
   id: string
@@ -21,6 +22,7 @@ export interface DownloadTask {
   error?: string
   retryCount: number
   jobId?: string
+  idempotencyKey?: string
   createdAt: string
   updatedAt: string
 }
@@ -39,6 +41,7 @@ interface TaskRow {
   artist: string; album: string; status: string; progress: number
   file_path: string | null; file_type: string | null; quality: string | null
   error: string | null; retry_count: number; job_id: string | null; run_id: string | null
+  idempotency_key: string | null; lease_owner: string | null; lease_expires_at: string | null; attempt_started_at: string | null
   created_at: string; updated_at: string
 }
 
@@ -50,6 +53,7 @@ function rowToTask(r: TaskRow): DownloadTask {
     filePath: r.file_path ?? undefined, fileType: r.file_type ?? undefined,
     quality: r.quality ?? undefined, error: r.error ?? undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
+    idempotencyKey: r.idempotency_key ?? undefined,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }
@@ -140,7 +144,8 @@ export function getQueueStatus(): QueueStatus {
 
 export function updateTaskState(id: string, updates: Partial<{
   status: string; progress: number; filePath: string; fileType: string
-  quality: string; error: string; retryCount: number
+  quality: string; error: string | null; retryCount: number; leaseOwner: string | null
+  leaseExpiresAt: string | null; attemptStartedAt: string | null
 }>) {
   const sets: string[] = []
   const vals: unknown[] = []
@@ -152,6 +157,9 @@ export function updateTaskState(id: string, updates: Partial<{
   if (updates.quality !== undefined) { sets.push('quality = ?'); vals.push(updates.quality) }
   if (updates.error !== undefined) { sets.push('error = ?'); vals.push(updates.error) }
   if (updates.retryCount !== undefined) { sets.push('retry_count = ?'); vals.push(updates.retryCount) }
+  if (updates.leaseOwner !== undefined) { sets.push('lease_owner = ?'); vals.push(updates.leaseOwner) }
+  if (updates.leaseExpiresAt !== undefined) { sets.push('lease_expires_at = ?'); vals.push(updates.leaseExpiresAt) }
+  if (updates.attemptStartedAt !== undefined) { sets.push('attempt_started_at = ?'); vals.push(updates.attemptStartedAt) }
 
   sets.push('updated_at = ?')
   vals.push(new Date().toISOString())
@@ -189,20 +197,90 @@ export function updateTaskState(id: string, updates: Partial<{
 
 export function enqueueTask(task: {
   sourceId?: string | null; songId: number; songName: string; artist: string
-  album: string; quality?: string; jobId?: string
+  album: string; quality?: string; jobId?: string; idempotencyKey?: string
 }): DownloadTask {
   const db = getDb()
+  const idempotencyKey = task.idempotencyKey ?? buildDownloadTaskIdempotencyKey({
+    songId: task.songId,
+    quality: task.quality,
+  })
+
+  const existing = db.prepare(`
+    SELECT * FROM download_tasks
+    WHERE idempotency_key = ?
+      AND status IN ('pending','downloading','tagging')
+    ORDER BY created_at ASC
+    LIMIT 1
+  `).get(idempotencyKey) as TaskRow | undefined
+  if (existing) return rowToTask(existing)
+
   const id = randomUUID()
   const now = new Date().toISOString()
 
-  db.prepare(`
-    INSERT INTO download_tasks (id, source_id, song_id, song_name, artist, album, status, progress, quality, job_id, run_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)
-  `).run(id, task.sourceId ?? null, task.songId, task.songName, task.artist, task.album,
-    task.quality ?? null, task.jobId ?? null, task.jobId ?? null, now, now)
+  try {
+    db.prepare(`
+      INSERT INTO download_tasks (id, source_id, song_id, song_name, artist, album, status, progress, quality, job_id, run_id, idempotency_key, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?, ?)
+    `).run(id, task.sourceId ?? null, task.songId, task.songName, task.artist, task.album,
+      task.quality ?? null, task.jobId ?? null, task.jobId ?? null, idempotencyKey, now, now)
+  } catch {
+    const raced = db.prepare(`
+      SELECT * FROM download_tasks
+      WHERE idempotency_key = ?
+        AND status IN ('pending','downloading','tagging')
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get(idempotencyKey) as TaskRow | undefined
+    if (raced) return rowToTask(raced)
+    throw new Error('下载任务入队失败')
+  }
 
   const row = db.prepare('SELECT * FROM download_tasks WHERE id = ?').get(id) as TaskRow
   return rowToTask(row)
+}
+
+export function buildDownloadTaskIdempotencyKey(input: {
+  songId: number
+  quality?: string | null
+  downloadDir?: string | null
+  pathFormat?: string | null
+}): string {
+  return [
+    'song',
+    input.songId,
+    input.quality || '',
+    input.downloadDir || '',
+    input.pathFormat || '',
+  ].join(':')
+}
+
+function claimTask(id: string, leaseOwner: string): DownloadTask | null {
+  const now = new Date().toISOString()
+  const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+  const result = getDb().prepare(`
+    UPDATE download_tasks
+    SET status = 'downloading',
+      progress = 0,
+      lease_owner = ?,
+      lease_expires_at = ?,
+      attempt_started_at = ?,
+      retry_count = retry_count + CASE WHEN status = 'failed' THEN 1 ELSE 0 END,
+      updated_at = ?
+    WHERE id = ?
+      AND status IN ('pending','failed')
+      AND (
+        idempotency_key IS NULL
+        OR NOT EXISTS (
+          SELECT 1
+          FROM download_tasks active_task
+          WHERE active_task.id != download_tasks.id
+            AND active_task.idempotency_key = download_tasks.idempotency_key
+            AND active_task.status IN ('pending','downloading','tagging')
+        )
+      )
+  `).run(leaseOwner, leaseExpiresAt, now, now, id)
+  if (result.changes === 0) return null
+  return getDownloadTask(id)
 }
 
 export async function processAll(
@@ -212,7 +290,9 @@ export async function processAll(
   taskIds?: string[],
 ): Promise<number> {
   const db = getDb()
-  const conditions = ["status IN ('pending','failed')"]
+  const conditions = taskIds?.length
+    ? ["status IN ('pending','failed','downloading','tagging')"]
+    : ["status IN ('pending','failed')"]
   const queryParams: unknown[] = []
   if (jobId) {
     conditions.push('COALESCE(run_id, job_id) = ?')
@@ -228,15 +308,17 @@ export async function processAll(
   const tasks = rows.map(rowToTask)
   if (tasks.length === 0) return 0
 
+  const leaseOwner = randomUUID()
   let completed = 0
   let idx = 0
 
   async function worker() {
     while (idx < tasks.length) {
-      const task = tasks[idx++]
+      const selected = tasks[idx++]
+      if (!selected) continue
+      const task = claimTask(selected.id, leaseOwner)
       if (!task) continue
       try {
-        updateTaskState(task.id, { status: 'downloading', progress: 0 })
         emitEvent({
           type: 'queue-update',
           data: { taskId: task.id, songName: task.songName, status: 'downloading', progress: 0, sourceId: task.sourceId },
@@ -263,6 +345,8 @@ export async function processAll(
             progress: 0,
             filePath: result.filePath,
             fileType: result.fileType,
+            leaseOwner: null,
+            leaseExpiresAt: null,
           })
 
           emitEvent({
@@ -287,7 +371,7 @@ export async function processAll(
             title: `标签写入失败：${task.songName}`,
             summary: msg,
             context: {
-              sourceId: task.sourceId,
+              sourceId: task.sourceId ?? undefined,
               taskId: task.id,
               songId: task.songId,
               songName: task.songName,
@@ -303,7 +387,9 @@ export async function processAll(
         updateTaskState(task.id, {
           status: 'done', progress: 100,
           filePath: result.filePath, fileType: result.fileType,
-          error: undefined,
+          error: null,
+          leaseOwner: null,
+          leaseExpiresAt: null,
         })
 
         emitEvent({
@@ -322,12 +408,31 @@ export async function processAll(
           groupKey: `download:${task.jobId || 'manual'}:${task.sourceId || 'manual'}`,
         })
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '下载失败'
-        updateTaskState(task.id, { status: 'failed', error: msg, progress: 0 })
+        const tagError = isTagWriteError(err) ? err : null
+        const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
+        updateTaskState(task.id, {
+          status: 'failed',
+          error: msg,
+          progress: 0,
+          ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
+          ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        })
 
         emitEvent({
           type: 'song-progress',
-          data: { taskId: task.id, songName: task.songName, status: 'failed', error: msg, completed: ++completed, total: tasks.length, sourceId: task.sourceId },
+          data: {
+            taskId: task.id,
+            songName: task.songName,
+            status: 'failed',
+            error: msg,
+            completed: ++completed,
+            total: tasks.length,
+            sourceId: task.sourceId,
+            ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
+            ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),
+          },
           timestamp: new Date().toISOString(),
         })
         recordActivityEvent({
@@ -346,6 +451,7 @@ export async function processAll(
 
   const workers = Array.from({ length: concurrency }, () => worker())
   await Promise.all(workers)
+  if (taskIds?.length) await waitForTasksToSettle(taskIds)
 
   // Count only tasks matching the same filter as the workers (batch-specific if jobId provided)
   const countConditions = ["status = 'failed'"]
@@ -370,6 +476,21 @@ export async function processAll(
   return failed
 }
 
+async function waitForTasksToSettle(taskIds: string[], timeoutMs = 30 * 60 * 1000): Promise<void> {
+  if (taskIds.length === 0) return
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const row = getDb().prepare(`
+      SELECT COUNT(*) AS count
+      FROM download_tasks
+      WHERE id IN (${taskIds.map(() => '?').join(',')})
+        AND status IN ('pending','downloading','tagging')
+    `).get(...taskIds) as { count: number }
+    if (row.count === 0) return
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+}
+
 export async function retryTask(
   id: string,
   processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
@@ -377,10 +498,7 @@ export async function retryTask(
   const task = getDownloadTask(id)
   if (!task || task.status !== 'failed') return null
 
-  updateTaskState(task.id, { status: 'pending', error: undefined, progress: 0 })
-
-  // Process just this one task
-  await processAll(async (t, onProgress) => processor(t, onProgress), task.jobId)
+  await processAll(async (t, onProgress) => processor(t, onProgress), undefined, 1, [task.id])
 
   return getDownloadTask(id)
 }
@@ -389,11 +507,9 @@ export async function retryAllFailed(
   processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
 ): Promise<number> {
   const db = getDb()
-  db.prepare("UPDATE download_tasks SET status = 'pending', error = NULL, progress = 0 WHERE status = 'failed'").run()
-
-  const count = (db.prepare("SELECT COUNT(*) as cnt FROM download_tasks WHERE status = 'pending'").get() as { cnt: number }).cnt
-  await processAll(processor)
-  return count
+  const rows = db.prepare("SELECT id FROM download_tasks WHERE status = 'failed'").all() as Array<{ id: string }>
+  await processAll(processor, undefined, 3, rows.map(row => row.id))
+  return rows.length
 }
 
 export function clearDownloadTasks(): void {

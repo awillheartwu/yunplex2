@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import dayjs from 'dayjs'
 import type { SongTask } from './job/types'
+import type { Tags as NodeId3Tags } from 'node-id3'
 
 export interface SongMeta {
   title: string
@@ -31,6 +32,24 @@ export type SongOps = NonNullable<SongTask['ops']>
 export interface DownloadResult {
   filePath: string
   ops: SongOps
+}
+
+export class TagWriteError extends Error {
+  filePath: string
+  fileType: string
+  ops: SongOps
+
+  constructor(input: { filePath: string; fileType: string; ops: SongOps; detail: string; cause?: unknown }) {
+    super(`标签写入失败: ${input.detail}`, { cause: input.cause })
+    this.name = 'TagWriteError'
+    this.filePath = input.filePath
+    this.fileType = input.fileType
+    this.ops = input.ops
+  }
+}
+
+export function isTagWriteError(error: unknown): error is TagWriteError {
+  return error instanceof TagWriteError
 }
 
 const FLAC_TAG_TIMEOUT_MS = 120000
@@ -251,8 +270,7 @@ export async function downloadSong(
       ops.tags = 'failed'
       ops.cover = 'failed'
       onProgress?.(100, 'tagging')
-      // Surface the real error so the queue can store it
-      throw new Error(detail, { cause: err })
+      throw new TagWriteError({ filePath, fileType, ops, detail, cause: err })
     }
   }
 
@@ -336,7 +354,7 @@ export async function writeMp3Tags(
   imageBuffer: Buffer | null,
 ): Promise<void> {
   const hasDate = meta.publishTime > 0
-  const tags: NodeID3.Tags = {
+  const tags: NodeId3Tags = {
     title: meta.title,
     albumArtist: meta.albumArtist,
     artist: meta.trackArtist || meta.albumArtist,

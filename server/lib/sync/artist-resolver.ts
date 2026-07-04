@@ -206,7 +206,7 @@ export async function resolveArtistCandidates(artistName: string): Promise<Resol
   const candidates: ArtistCandidate[] = []
   let mbQueried = false
   let mbHadError = false
-  let mbResult: MusicBrainzResolveResult | null
+  let mbResult: MusicBrainzResolveResult | null = null
 
   function add(name: string, source: ArtistCandidateSource, confidence: number, locale?: string | null, isPrimary?: boolean) {
     const nKey = normalizeKey(name)
@@ -263,6 +263,7 @@ export async function resolveArtistCandidates(artistName: string): Promise<Resol
 
   // ── Classify status ──
   let status: CacheStatus
+  let score: number | null = null
   if (mbHadError) {
     status = 'failed'       // transient MB outage → 15min TTL
   } else if (candidates.length > 1) {
@@ -276,7 +277,8 @@ export async function resolveArtistCandidates(artistName: string): Promise<Resol
   const resolved: ResolvedArtist = { input: artistName, normalizedInput: key, candidates, cacheHit: false, mbQueried }
 
   memoryCache.set(key, { resolved, expiresAt: Date.now() + cacheTTL(status) })
-  dbPut(key, resolved, status, mbResult?.score ?? null)
+  if (mbResult) score = mbResult.score
+  dbPut(key, resolved, status, score)
 
   return resolved
 }
