@@ -7,6 +7,31 @@ export function createSchema(db: Database.Database): void {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_state (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_admin (
+      id            INTEGER PRIMARY KEY CHECK(id = 1),
+      password_hash TEXT NOT NULL,
+      updated_at    TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id          TEXT PRIMARY KEY,
+      token_hash  TEXT NOT NULL UNIQUE,
+      csrf_token  TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      expires_at  TEXT NOT NULL,
+      revoked_at  TEXT,
+      ip_address  TEXT NOT NULL DEFAULT '',
+      user_agent  TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+
     CREATE TABLE IF NOT EXISTS logs (
       id        TEXT PRIMARY KEY,
       timestamp TEXT NOT NULL,
@@ -96,9 +121,6 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_run ON download_tasks(run_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_download_tasks_active_idempotency
-      ON download_tasks(idempotency_key)
-      WHERE idempotency_key IS NOT NULL AND status IN ('pending','downloading','tagging');
 
     CREATE TABLE IF NOT EXISTS playlist_sources (
       id                      TEXT PRIMARY KEY,
@@ -201,4 +223,13 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_failure_occurrences_fingerprint ON failure_occurrences(fingerprint);
 
   `)
+
+  const downloadTaskColumns = db.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
+  if (downloadTaskColumns.some(column => column.name === 'idempotency_key')) {
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_download_tasks_active_idempotency
+      ON download_tasks(idempotency_key)
+      WHERE idempotency_key IS NOT NULL AND status IN ('pending','downloading','tagging')
+    `).run()
+  }
 }

@@ -105,6 +105,56 @@
           <ToggleField v-model="form.download.saveArtistImage" label="保存歌手图片" hint="将歌手头像保存为 artist.jpg 到歌手文件夹（首次下载后不覆盖）" />
         </div>
       </ConfigSection>
+
+      <ConfigSection title="文件命名与歌词" description="下载产物的目录格式、歌词版本和艺人写入方式" :collapsed="!!collapsed.filePolicy" @toggle="toggle('filePolicy')">
+        <template #icon><SidebarIcon name="folder" :active="true" /></template>
+        <FormField label="存储路径格式">
+          <template #hint>
+            <span class="inline-flex items-center gap-1">
+              <span>用 / 分隔目录层级</span>
+              <span class="relative inline-flex group">
+                <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
+                <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                  <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
+                  <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
+                    <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
+                    <span class="text-muted-deep">{{ v.desc }}</span>
+                  </div>
+                </div>
+              </span>
+            </span>
+          </template>
+          <select :value="pathFormatMode" class="form-input" @change="interceptPathFormatChange(($event.target as HTMLSelectElement).value)">
+            <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
+            <option value="__custom__">自定义...</option>
+          </select>
+          <input v-if="pathFormatMode === '__custom__'" :value="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" @input="updateCustomPathFormat(($event.target as HTMLInputElement).value)" />
+        </FormField>
+        <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
+          <select v-model="form.other.multiArtistFormat" class="form-input">
+            <option value="ampersand">A & B → A, B & C</option>
+            <option value="and">A and B → A, B and C</option>
+            <option value="comma">A, B → A, B, C</option>
+            <option value="slash">A / B → A / B / C</option>
+            <option value="plus">A + B → A + B + C</option>
+            <option value="feat">A feat. B → A feat. B, C & D</option>
+            <option value="ft">A ft. B → A ft. B, C & D</option>
+            <option value="featuring">A featuring B → A featuring B, C & D</option>
+            <option value="with">A with B → A with B, C & D</option>
+          </select>
+        </FormField>
+        <div class="space-y-3">
+          <ToggleField v-model="form.other.downloadTranslatedLyric" label="下载翻译歌词" hint="关闭后只下载原文歌词，不合并翻译版本。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
+          <ToggleField v-model="form.other.downloadRomajiLyric" label="下载罗马音歌词" hint="日/韩语等歌曲的罗马音注音单独保存为 (romaji).lrc 文件，不与原文合并。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
+        </div>
+        <FormField v-if="form.other.downloadTranslatedLyric" label="双语歌词存储方式" hint="合并到一个文件或分开保存为两个文件">
+          <select v-model="form.other.lyricOrder" class="form-input">
+            <option value="original_first">合并：原文在上 / 翻译在下（翻译高亮）</option>
+            <option value="translated_first">合并：翻译在上 / 原文在下（原文高亮）</option>
+            <option value="separate">分开存储：歌名 (orgi).lrc + 歌名 (trans).lrc</option>
+          </select>
+        </FormField>
+      </ConfigSection>
       </template>
 
       <!-- ═══ Tab: 同步 ═══ -->
@@ -150,23 +200,9 @@
       </ConfigSection>
       </template>
 
-      <!-- ═══ Tab: 高级 ═══ -->
-      <template v-if="activeTab === 'advanced'">
-
-      <!-- Data Retention -->
-      <ConfigSection title="数据保留" description="控制各类历史数据的自动清理周期" :collapsed="!!collapsed.retention" @toggle="toggle('retention')">
-        <template #icon><SidebarIcon name="database" :active="true" /></template>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" /></FormField>
-          <FormField label="成功运行保留天数" hint="成功或取消的运行记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
-          <FormField label="失败运行保留天数" hint="失败或部分成功的运行记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
-          <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
-          <FormField label="内部事件保留天数" hint="仪表盘摘要和内部诊断事件的保留天数，0 = 永不清除"><input v-model.number="form.sync.activityRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
-        </div>
-      </ConfigSection>
-
-      <!-- Other strategies -->
-      <ConfigSection title="其他策略" description="细节行为控制" :collapsed="!!collapsed.other" @toggle="toggle('other')">
+      <!-- ═══ Tab: 偏好 ═══ -->
+      <template v-if="activeTab === 'preferences'">
+      <ConfigSection title="其他策略" description="界面显示、艺人解析和维护动作" :collapsed="!!collapsed.other" @toggle="toggle('other')">
         <template #icon><SidebarIcon name="settings" :active="true" /></template>
         <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -193,53 +229,9 @@
             </div>
           </div>
         </FormField>
-        <FormField label="存储路径格式">
-          <template #hint>
-            <span class="inline-flex items-center gap-1">
-              <span>用 / 分隔目录层级</span>
-              <span class="relative inline-flex group">
-                <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
-                <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
-                  <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
-                  <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
-                    <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
-                    <span class="text-muted-deep">{{ v.desc }}</span>
-                  </div>
-                </div>
-              </span>
-            </span>
-          </template>
-          <select :value="pathFormatMode" class="form-input" @change="interceptPathFormatChange(($event.target as HTMLSelectElement).value)">
-            <option v-for="p in pathPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
-            <option value="__custom__">自定义...</option>
-          </select>
-          <input v-if="pathFormatMode === '__custom__'" :value="form.other.pathFormat" type="text" placeholder="{artist}/{album} ({year})/{track:02d} - {title}" class="form-input mt-2" @input="updateCustomPathFormat(($event.target as HTMLInputElement).value)" />
-        </FormField>
-        <FormField label="多歌手格式" hint="多人合作歌曲写入 Track Artist 的分隔格式。正确的格式可被 Plexamp 等客户端识别为多歌手关联">
-          <select v-model="form.other.multiArtistFormat" class="form-input">
-            <option value="ampersand">A & B → A, B & C</option>
-            <option value="and">A and B → A, B and C</option>
-            <option value="comma">A, B → A, B, C</option>
-            <option value="slash">A / B → A / B / C</option>
-            <option value="plus">A + B → A + B + C</option>
-            <option value="feat">A feat. B → A feat. B, C & D</option>
-            <option value="ft">A ft. B → A ft. B, C & D</option>
-            <option value="featuring">A featuring B → A featuring B, C & D</option>
-            <option value="with">A with B → A with B, C & D</option>
-          </select>
-        </FormField>
-        <ToggleField v-model="form.other.downloadTranslatedLyric" label="下载翻译歌词" hint="关闭后只下载原文歌词，不合并翻译版本。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
-        <ToggleField v-model="form.other.downloadRomajiLyric" label="下载罗马音歌词" hint="日/韩语等歌曲的罗马音注音单独保存为 (romaji).lrc 文件，不与原文合并。仅对新下载的歌曲生效，已存在的歌曲不会自动补全" />
-        <FormField v-if="form.other.downloadTranslatedLyric" label="双语歌词存储方式" hint="合并到一个文件或分开保存为两个文件">
-          <select v-model="form.other.lyricOrder" class="form-input">
-            <option value="original_first">合并：原文在上 / 翻译在下（翻译高亮）</option>
-            <option value="translated_first">合并：翻译在上 / 原文在下（原文高亮）</option>
-            <option value="separate">分开存储：歌名 (orgi).lrc + 歌名 (trans).lrc</option>
-          </select>
-        </FormField>
 
-        <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
         <div class="space-y-3">
+          <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
           <ToggleField v-model="form.other.enableMusicBrainzResolver" label="启用 MusicBrainz 艺人解析" hint="本地别名未命中时，尝试使用 MusicBrainz 查找英文名、罗马音和别名。" />
           <FormField label="MusicBrainz 最低匹配分数" hint="0-100，分数越高越保守；建议保持 90。">
             <input v-model.number="form.other.musicBrainzMinScore" type="number" min="0" max="100" class="form-input" :disabled="!form.other.enableMusicBrainzResolver" />
@@ -248,6 +240,67 @@
         <FormField label="艺人名替换映射" hint="替换影响 Plex 搜索、文件路径、ID3 标签等。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
           <AliasEditor v-model="form.other.artistAliases" />
         </FormField>
+
+        <div class="mt-2 border-t border-[var(--border-primary)] pt-5">
+          <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
+            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div class="flex min-w-0 items-start gap-3">
+                <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-input)] text-danger">
+                  <AppIcon name="warn" :size="18" />
+                </span>
+                <div class="min-w-0">
+                  <h4 class="text-sm font-semibold text-[var(--text-primary)]">重新初始化</h4>
+                  <p class="mt-1 text-2xs leading-5 text-muted">保留现有配置和管理员密码，但重新进入 setup，要求再次通过网易云、Plex 和下载目录检查。</p>
+                </div>
+              </div>
+              <button class="btn btn-danger btn-sm shrink-0" type="button" :disabled="reinitializing" @click="showReinitializeConfirm = true">
+                <AppIcon name="rotateCcw" :size="15" />
+                {{ reinitializing ? '处理中...' : '触发重新初始化' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </ConfigSection>
+      </template>
+
+      <!-- ═══ Tab: 高级 ═══ -->
+      <template v-if="activeTab === 'advanced'">
+
+      <ConfigSection title="安全" description="管理员密码与登录状态" :collapsed="!!collapsed.security" @toggle="toggle('security')">
+        <template #icon><SidebarIcon name="shield" :active="true" /></template>
+        <form class="space-y-4" @submit.prevent="handleChangePassword">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <FormField label="当前密码" required>
+              <input v-model="passwordForm.current" type="password" autocomplete="current-password" class="form-input" :disabled="changingPassword" />
+            </FormField>
+            <FormField label="新密码" hint="至少 8 个字符" required>
+              <input v-model="passwordForm.next" type="password" autocomplete="new-password" class="form-input" :disabled="changingPassword" />
+            </FormField>
+            <FormField label="确认新密码" required>
+              <input v-model="passwordForm.confirm" type="password" autocomplete="new-password" class="form-input" :disabled="changingPassword" />
+            </FormField>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button class="btn btn-secondary btn-sm" type="submit" :disabled="changingPassword || !passwordForm.current || !passwordForm.next || !passwordForm.confirm">
+              <AppIcon v-if="changingPassword" name="loader" class="animate-spin" :size="15" />
+              <AppIcon v-else name="save" :size="15" />
+              {{ changingPassword ? '修改中...' : '修改管理员密码' }}
+            </button>
+            <p class="text-2xs text-muted-deep">修改成功后会撤销全部登录状态，需要重新登录。</p>
+          </div>
+        </form>
+      </ConfigSection>
+
+      <!-- Data Retention -->
+      <ConfigSection title="数据保留" description="控制各类历史数据的自动清理周期" :collapsed="!!collapsed.retention" @toggle="toggle('retention')">
+        <template #icon><SidebarIcon name="database" :active="true" /></template>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="成功运行保留天数" hint="成功或取消的运行记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="失败运行保留天数" hint="失败或部分成功的运行记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
+          <FormField label="内部事件保留天数" hint="仪表盘摘要和内部诊断事件的保留天数，0 = 永不清除"><input v-model.number="form.sync.activityRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
+        </div>
       </ConfigSection>
 
       <!-- Import / Export -->
@@ -284,6 +337,16 @@
       variant="danger"
       @confirm="handleReset"
       @cancel="showResetConfirm = false"
+    />
+
+    <ConfirmDialog
+      :visible="showReinitializeConfirm"
+      title="重新初始化"
+      message="此操作会让应用重新进入 setup 流程。现有配置和管理员密码会保留，但完成前无法进入正式控制台。确定继续？"
+      confirm-label="重新初始化"
+      variant="danger"
+      @confirm="handleReinitialize"
+      @cancel="showReinitializeConfirm = false"
     />
 
     <!-- Path format change warning -->
@@ -386,30 +449,40 @@ function cancelPathFormatChange() {
 
 const api = useApi()
 const feedback = useFeedback()
+const auth = useAuth()
 
 const loading = ref(true)
 const saving = ref(false)
 const showResetConfirm = ref(false)
+const showReinitializeConfirm = ref(false)
 const form = ref<AppConfig | null>(null)
 const savedConfig = ref<AppConfig | null>(null)
 const testing = ref<string | null>(null)
 const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
+const changingPassword = ref(false)
+const reinitializing = ref(false)
+const passwordForm = ref({
+  current: '',
+  next: '',
+  confirm: '',
+})
 
 // ── Tab navigation ──
 const activeTab = ref<string>('connection')
 const tabs = [
   { key: 'connection', label: '连接' },
-  { key: 'sync',       label: '同步' },
   { key: 'download',   label: '下载' },
+  { key: 'sync',       label: '同步' },
+  { key: 'preferences', label: '偏好' },
   { key: 'advanced',   label: '高级' },
 ]
 
 // ── Collapsible sections ──
-type SectionKey = 'netease' | 'plex' | 'download' | 'schedule' | 'sync' | 'album' | 'retention' | 'other' | 'import'
+type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'schedule' | 'sync' | 'album' | 'security' | 'retention' | 'other' | 'import'
 const collapsed = ref<Partial<Record<SectionKey, boolean>>>({})
 
 const allExpanded = computed(() => {
-  const keys: SectionKey[] = ['netease', 'plex', 'download', 'schedule', 'sync', 'album', 'retention', 'other', 'import']
+  const keys: SectionKey[] = ['netease', 'plex', 'download', 'filePolicy', 'schedule', 'sync', 'album', 'security', 'retention', 'other', 'import']
   return keys.every((k) => !collapsed.value[k])
 })
 
@@ -419,7 +492,7 @@ function toggle(key: SectionKey) {
 
 function toggleAll() {
   if (allExpanded.value) {
-    collapsed.value = { netease: true, plex: true, download: true, schedule: true, sync: true, album: true, retention: true, other: true, import: true }
+    collapsed.value = { netease: true, plex: true, download: true, filePolicy: true, schedule: true, sync: true, album: true, security: true, retention: true, other: true, import: true }
   } else {
     collapsed.value = {}
   }
@@ -495,6 +568,38 @@ async function testConnection(section: 'netease' | 'plex') {
     testResult.value = { ...testResult.value, [section]: { ok: false, msg: err instanceof Error ? err.message : '连接失败' } }
   } finally {
     testing.value = null
+  }
+}
+
+async function handleChangePassword() {
+  if (passwordForm.value.next !== passwordForm.value.confirm) {
+    feedback.error('密码修改失败', '两次输入的新密码不一致')
+    return
+  }
+  changingPassword.value = true
+  try {
+    await auth.changePassword(passwordForm.value.current, passwordForm.value.next)
+    passwordForm.value = { current: '', next: '', confirm: '' }
+    feedback.success('管理员密码已修改', '请使用新密码重新登录。')
+    await navigateTo('/login')
+  } catch (err) {
+    feedback.error('密码修改失败', err instanceof Error ? err.message : '请稍后重试')
+  } finally {
+    changingPassword.value = false
+  }
+}
+
+async function handleReinitialize() {
+  showReinitializeConfirm.value = false
+  reinitializing.value = true
+  try {
+    await auth.reinitializeSetup('manual')
+    feedback.success('已进入重新初始化', '请重新确认运行所需条件。')
+    await navigateTo('/setup')
+  } catch (err) {
+    feedback.error('重新初始化失败', err instanceof Error ? err.message : '请稍后重试')
+  } finally {
+    reinitializing.value = false
   }
 }
 

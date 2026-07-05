@@ -39,6 +39,17 @@
       >
         <AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="17" />
       </button>
+      <button
+        v-if="authState?.authEnabled && authState.authenticated"
+        class="icon-button"
+        type="button"
+        aria-label="退出登录"
+        title="退出登录"
+        :disabled="loggingOut"
+        @click="handleLogout"
+      >
+        <AppIcon :name="loggingOut ? 'loader' : 'logOut'" :class="loggingOut ? 'animate-spin' : ''" :size="17" />
+      </button>
     </div>
   </header>
 </template>
@@ -56,9 +67,12 @@ defineEmits<{ 'toggle-menu': [] }>()
 const route = useRoute()
 const { state: syncState } = useSync()
 const { theme, toggle: toggleTheme } = useTheme()
+const auth = useAuth()
 
 const version = ref('0.1.0')
+const loggingOut = ref(false)
 const githubUrl = 'https://github.com/awillheartwu/yunplex2'
+const authState = computed(() => auth.state.value)
 
 const menuControls = computed(() => props.menuMode === 'desktop' ? 'app-sidebar' : 'mobile-navigation')
 const menuButtonLabel = computed(() => {
@@ -67,12 +81,23 @@ const menuButtonLabel = computed(() => {
 })
 
 onMounted(async () => {
+  await auth.ensureState().catch(() => null)
   try {
     const api = useApi()
     const info = await api.get<{ version: string }>('/system/info')
     version.value = info.version
   } catch { /* use default */ }
 })
+
+async function handleLogout() {
+  loggingOut.value = true
+  try {
+    await auth.logout()
+    await navigateTo('/login')
+  } finally {
+    loggingOut.value = false
+  }
+}
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
