@@ -19,9 +19,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     url += `?${search.toString()}`
   }
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (import.meta.client && method !== 'GET') {
+    const auth = useAuth()
+    const state = await auth.ensureState().catch(() => null)
+    if (state?.csrfToken) headers['X-CSRF-Token'] = state.csrfToken
+  }
+
   const fetchOptions: RequestInit = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
+    credentials: 'same-origin',
   }
 
   if (body && method !== 'GET') {
@@ -30,7 +38,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const res = await fetch(url, fetchOptions)
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
+    await handleAuthStatus(res)
+    throw new Error(await readErrorMessage(res))
   }
 
   const json = (await res.json()) as ApiResponse<T>
@@ -55,14 +64,38 @@ export function useApi() {
     request<T>(path, { method: 'DELETE' })
 
   const rawPost = async <T>(path: string, body?: unknown): Promise<ApiResponse<T>> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (import.meta.client) {
+      const auth = useAuth()
+      const state = await auth.ensureState().catch(() => null)
+      if (state?.csrfToken) headers['X-CSRF-Token'] = state.csrfToken
+    }
     const fetchOptions: RequestInit = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'same-origin',
       body: JSON.stringify(body),
     }
     const res = await fetch(`/api${path}`, fetchOptions)
+    if (!res.ok) await handleAuthStatus(res)
     return (await res.json()) as ApiResponse<T>
   }
 
   return { get, post, put, del, rawPost }
+}
+
+async function handleAuthStatus(res: Response): Promise<void> {
+  if (!import.meta.client) return
+  if (res.status === 401) {
+    const route = useRoute()
+    await navigateTo({ path: '/login', query: { redirect: route.fullPath } })
+  } else if (res.status === 428) {
+    await navigateTo('/setup')
+  }
+}
+
+async function readErrorMessage(res: Response): Promise<string> {
+  const cloned = res.clone()
+  const json = await cloned.json().catch(() => null) as Partial<ApiResponse<unknown>> | null
+  return json?.msg || `HTTP ${res.status}`
 }
