@@ -14,6 +14,9 @@ export default defineNuxtConfig({
     build: {
       chunkSizeWarningLimit: 600,
     },
+    optimizeDeps: {
+      include: ['@lucide/vue'],
+    },
     server: {
       watch: {
         ignored: ['**/node_modules/**', '**/data/**', '**/test/**', '**/../yunplex/**', '**/../yunPlexBackend/**', '**/../yunPlexFrontend/**'],
