@@ -10,7 +10,7 @@
       </div>
 
       <!-- Scrollable rows -->
-      <div class="max-h-48 overflow-y-auto">
+      <div class="alias-editor__rows overflow-y-auto">
         <div
           v-for="(row, i) in rows"
           :key="row.id"
@@ -21,6 +21,7 @@
           type="text"
           placeholder="旧名"
           class="form-input text-xs py-1 px-2"
+          :aria-label="`第 ${i + 1} 行原艺人名`"
           :class="{ '!border-danger': row.key && duplicateKeys.has(row.key) }"
           :title="row.key && duplicateKeys.has(row.key) ? '此名称已存在，保存时将覆盖前面的映射' : undefined"
           @input="updateRow(row.id, 'key', ($event.target as HTMLInputElement).value)"
@@ -30,12 +31,14 @@
           type="text"
           placeholder="新名"
           class="form-input text-xs py-1 px-2"
+          :aria-label="`第 ${i + 1} 行替换为`"
           @input="updateRow(row.id, 'value', ($event.target as HTMLInputElement).value)"
         />
         <button
-          class="w-7 h-7 flex items-center justify-center rounded text-muted-deep hover:text-danger hover:bg-[var(--danger-bg)] transition-colors"
+          class="icon-button alias-editor__row-action hover:text-danger hover:bg-[var(--danger-soft)]"
           title="删除映射"
           type="button"
+          :aria-label="`删除第 ${i + 1} 行映射`"
           @click="removeRow(i)"
         >
           <AppIcon name="trash" :size="14" />
@@ -50,7 +53,7 @@
 
       <!-- Add button -->
       <div class="px-3 py-2 border-t border-[var(--border-primary)] bg-[var(--bg-surface)]">
-        <button class="text-xs text-accent hover:underline flex items-center gap-1" @click="addRow">
+        <button class="btn btn-ghost btn-xs alias-editor__add" type="button" @click="addRow">
           <AppIcon name="plus" :size="12" />
           添加映射
         </button>
@@ -65,7 +68,9 @@
 
     <!-- ═══ JSON editor toggle ═══ -->
     <button
-      class="text-2xs text-muted hover:text-[var(--text-primary)] mt-2 flex items-center gap-1 transition-colors"
+      class="btn btn-ghost btn-xs alias-editor__json-toggle mt-2"
+      type="button"
+      :aria-expanded="jsonExpanded"
       @click="toggleJson"
     >
       <AppIcon name="chevronRight" :size="10" class="transition-transform" :class="{ 'rotate-90': jsonExpanded }" />
@@ -76,7 +81,7 @@
     <div v-if="jsonExpanded" class="mt-2">
       <textarea
         v-model="jsonText"
-        class="form-input font-mono text-xs h-28"
+        class="form-input font-mono text-xs alias-editor__json"
         :class="{ '!border-danger': jsonError }"
         placeholder='{ "旧名": "新名" }'
         @input="onJsonInput"
@@ -286,7 +291,26 @@ function toggleJson() {
   background: var(--accent-hover, #6366f1);
 }
 /* Firefox */
-.alias-editor .max-h-48 {
+.alias-editor__rows {
+  max-block-size: min(18rem, 45dvh);
+}
+
+.alias-editor__row-action {
+  min-inline-size: 2.5rem;
+  min-block-size: 2.5rem;
+}
+
+.alias-editor__add,
+.alias-editor__json-toggle {
+  width: fit-content;
+}
+
+.alias-editor__json {
+  min-block-size: min(12rem, 32dvh);
+  resize: vertical;
+}
+
+.alias-editor__rows {
   scrollbar-width: thin;
   scrollbar-color: var(--accent, #818cf8) transparent;
 }

@@ -1,5 +1,5 @@
 <template>
-  <VChart class="w-full" style="height:160px" :option="option" :autoresize="true" />
+  <VChart class="system-line-chart w-full" :option="option" :autoresize="true" />
 </template>
 
 <script setup lang="ts">
@@ -15,3 +15,10 @@ defineProps<{
 
 use([LineChart, TooltipComponent, GridComponent, CanvasRenderer])
 </script>
+
+<style scoped>
+.system-line-chart {
+  block-size: 100%;
+  min-block-size: var(--chart-plot-min-block-size);
+}
+</style>

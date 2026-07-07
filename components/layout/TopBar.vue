@@ -1,5 +1,5 @@
 <template>
-  <header class="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8" style="background:color-mix(in srgb, var(--bg-app) 84%, transparent);border-bottom:1px solid var(--border-primary);backdrop-filter:blur(16px)">
+  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8" style="background:color-mix(in srgb, var(--bg-app) 84%, transparent);border-bottom:1px solid var(--border-primary);backdrop-filter:blur(16px)">
     <div class="flex min-w-0 items-center gap-3 sm:gap-4">
       <button
         class="icon-button"
@@ -12,7 +12,7 @@
       >
         <AppIcon name="menu" :size="18" />
       </button>
-      <h1 class="truncate text-[1.75rem] font-semibold tracking-[-0.03em] sm:text-[1.9rem]" style="color:var(--text-primary)">{{ pageTitle }}</h1>
+      <h1 class="truncate text-[1.35rem] font-semibold tracking-normal sm:text-[1.65rem] md:text-[1.9rem]" style="color:var(--text-primary)">{{ pageTitle }}</h1>
       <StatusBadge
         v-if="syncState"
         class="hidden sm:inline-flex"
@@ -26,7 +26,7 @@
       <a
         :href="githubUrl"
         target="_blank"
-        class="hidden sm:inline-flex text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
+        class="topbar-version-link hidden sm:inline-flex text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
         style="color:var(--text-tertiary)"
         title="GitHub"
       >v{{ version }}</a>
@@ -126,3 +126,15 @@ function formatTime(iso: string): string {
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 </script>
+
+<style scoped>
+.app-topbar {
+  min-block-size: var(--app-topbar-block-size);
+  padding-block: 0.75rem;
+}
+
+.topbar-version-link {
+  min-block-size: 2.5rem;
+  align-items: center;
+}
+</style>

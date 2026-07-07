@@ -4,7 +4,9 @@
       <div class="flex items-center gap-0.5 p-0.5 rounded-lg" style="background:var(--bg-input)">
         <button
           v-for="mode in modes" :key="mode.key"
-          class="text-2xs px-2.5 py-0.75 rounded-md transition-all duration-150 cursor-pointer"
+          class="download-chart__mode-button"
+          type="button"
+          :aria-pressed="chartMode === mode.key"
           :style="chartMode === mode.key
             ? { background: 'var(--bg-surface)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-xs)' }
             : { color: 'var(--text-tertiary)' }"
@@ -112,6 +114,30 @@ const option = computed(() => ({
 </script>
 
 <style scoped>
-.chart-root { min-height: clamp(180px, 22vh, 260px); }
-.chart { min-height: clamp(140px, 18vh, 220px); }
+.chart-root {
+  block-size: 100%;
+  min-block-size: var(--chart-card-min-block-size);
+}
+
+.chart {
+  min-block-size: var(--chart-plot-min-block-size);
+}
+
+.download-chart__mode-button {
+  display: inline-flex;
+  min-block-size: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.download-chart__mode-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
 </style>

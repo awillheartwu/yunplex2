@@ -357,10 +357,15 @@ onUnmounted(() => {
 }
 
 .dashboard-trend-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
   padding: 0.9rem 1rem;
-  min-height: 12.6rem;
+  min-block-size: var(--chart-card-min-block-size);
+}
+
+.dashboard-trend-card > :deep(.chart-root) {
+  flex: 1;
 }
 
 @media (max-width: 1279px) {

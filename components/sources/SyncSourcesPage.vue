@@ -463,6 +463,7 @@
           :class="[
             dragOverIdx === idx ? 'sync-mobile-card--drag-over' : '',
             dragIdx === idx ? 'opacity-50' : '',
+            expandedId === s.id ? 'sync-mobile-card--expanded' : '',
           ]"
           @dragstart="onFilteredDragStart(idx, $event)"
           @dragover.prevent="onFilteredDragOver(idx)"
@@ -471,30 +472,40 @@
           @dragend="onDragEnd"
         >
           <div class="sync-mobile-card__header">
-            <div class="sync-mobile-card__title-block">
-              <div class="sync-mobile-card__title-row">
-                <input
-                  type="checkbox"
-                  class="sync-source-checkbox"
-                  :checked="selectedSourceIds.has(s.id)"
-                  :aria-label="`选择 ${sourceDisplayName(s)}`"
-                  @change="toggleSourceSelection(s.id)"
-                  @click.stop
-                >
-                <div class="sync-mobile-card__cover">
-                  <img v-if="s.coverUrl" :src="sourceCoverSrc(s.coverUrl)" :alt="`${sourceDisplayName(s)} 封面`">
-                  <div v-else class="sync-mobile-card__cover-fallback">
-                    <AppIcon :name="s.type === 'album' ? 'album' : 'music'" :size="15" />
-                  </div>
-                </div>
-                <span v-if="canDragReorder" class="sync-drag-handle" aria-hidden="true">
-                  <AppIcon name="grip" :size="15" />
-                </span>
-                <SourceBadge :type="s.type" :subscribed="s.subscribed" />
-                <span class="sync-mobile-card__title">{{ sourceDisplayName(s) }}</span>
-              </div>
-              <p class="sync-mobile-card__subtitle">{{ sourceOriginName(s) }}</p>
+            <div class="sync-mobile-card__controls">
+              <input
+                type="checkbox"
+                class="sync-source-checkbox"
+                :checked="selectedSourceIds.has(s.id)"
+                :aria-label="`选择 ${sourceDisplayName(s)}`"
+                @change="toggleSourceSelection(s.id)"
+                @click.stop
+              >
+              <span v-if="canDragReorder" class="sync-drag-handle" aria-hidden="true">
+                <AppIcon name="grip" :size="15" />
+              </span>
             </div>
+            <button
+              class="sync-mobile-card__identity"
+              type="button"
+              :aria-label="`查看 ${sourceDisplayName(s)} 的来源详情`"
+              @click="openMobileSourcePreview(s)"
+            >
+              <span class="sync-mobile-card__cover">
+                <img v-if="s.coverUrl" :src="sourceCoverSrc(s.coverUrl)" :alt="`${sourceDisplayName(s)} 封面`">
+                <span v-else class="sync-mobile-card__cover-fallback">
+                  <AppIcon :name="s.type === 'album' ? 'album' : 'music'" :size="15" />
+                </span>
+              </span>
+              <span class="sync-mobile-card__copy">
+                <span class="sync-mobile-card__title-line">
+                  <SourceBadge :type="s.type" :subscribed="s.subscribed" />
+                  <span class="sync-mobile-card__title">{{ sourceDisplayName(s) }}</span>
+                </span>
+                <span class="sync-mobile-card__subtitle">{{ sourceOriginName(s) }}</span>
+              </span>
+              <AppIcon name="info" :size="13" class="sync-mobile-card__preview-icon" />
+            </button>
             <button
               v-if="s.type === 'playlist'"
               class="sync-toggle"
@@ -508,16 +519,25 @@
             </button>
           </div>
 
+          <div class="sync-mobile-card__status-row">
+            <span class="sync-pill" :class="sourceStateClass(s)">{{ sourceStateLabel(s) }}</span>
+            <span class="sync-mobile-card__result">
+              <span class="sync-result-dot" :class="syncResultDotClass(s)" />
+              <span class="sync-table__result-label" :class="syncResultTextClass(s)">{{ repairingSourceId === s.id ? '补全中' : syncResultLabel(s) }}</span>
+            </span>
+            <span class="sync-mobile-card__time">{{ s.lastSyncedAt ? formatRelative(s.lastSyncedAt) : '未同步' }}</span>
+          </div>
+
           <div class="sync-mobile-card__stats">
-            <div>
-              <span class="sync-mobile-card__stat-label">Plex</span>
+            <div class="sync-mobile-card__stat sync-mobile-card__stat--target">
+              <span class="sync-mobile-card__stat-label">Plex 目标</span>
               <span class="sync-mobile-card__stat-value">{{ plexTargetName(s) }}</span>
             </div>
-            <div>
-              <span class="sync-mobile-card__stat-label">歌曲数</span>
+            <div class="sync-mobile-card__stat">
+              <span class="sync-mobile-card__stat-label">歌曲</span>
               <span class="sync-mobile-card__stat-value">{{ s.trackCount }} 首</span>
             </div>
-            <div>
+            <div class="sync-mobile-card__stat">
               <span class="sync-mobile-card__stat-label">忽略</span>
               <button
                 class="sync-mobile-card__issue"
@@ -529,18 +549,9 @@
             </div>
           </div>
 
-          <div class="sync-mobile-card__status-row">
-            <span class="sync-pill" :class="sourceStateClass(s)">{{ sourceStateLabel(s) }}</span>
-            <span class="sync-mobile-card__result">
-              <span class="sync-result-dot" :class="syncResultDotClass(s)" />
-              <span class="sync-table__result-label" :class="syncResultTextClass(s)">{{ repairingSourceId === s.id ? '补全中' : syncResultLabel(s) }}</span>
-            </span>
-            <span class="text-2xs text-muted-deep">{{ s.lastSyncedAt ? formatRelative(s.lastSyncedAt) : '未同步' }}</span>
-          </div>
-
           <div class="sync-mobile-card__actions">
             <button
-              class="btn btn-secondary btn-xs grow"
+              class="btn btn-primary btn-xs sync-mobile-card__primary-action"
               :disabled="isAnySyncing || (s.type === 'playlist' && !s.enabled)"
               @click="s.type === 'playlist' ? syncSource(s) : syncSource(s, true)"
             >
@@ -551,11 +562,13 @@
               />
               {{ s.type === 'playlist' ? '同步' : '下载' }}
             </button>
-            <button class="icon-button" type="button" aria-label="展开歌曲明细" @click="toggleExpand(s.id)">
+            <button class="btn btn-secondary btn-xs sync-mobile-card__secondary-action" type="button" @click="toggleExpand(s.id)">
               <AppIcon name="chevronRight" :size="14" class="transition-transform" :class="expandedId === s.id ? 'rotate-90' : ''" />
+              歌曲
             </button>
-            <button class="icon-button" type="button" aria-label="编辑同步源" @click="openEdit(s)">
+            <button class="btn btn-secondary btn-xs sync-mobile-card__secondary-action" type="button" @click="openEdit(s)">
               <AppIcon name="edit" :size="14" />
+              编辑
             </button>
             <div class="sync-row-actions__menu">
               <button class="icon-button" type="button" aria-label="更多操作" @click.stop="toggleMoreMenu(s.id)">
@@ -648,6 +661,82 @@
       </p>
     </div>
 
+    <Teleport to="body">
+      <Transition name="sheet">
+        <div
+          v-if="mobilePreviewSource"
+          class="sync-mobile-source-backdrop md:hidden"
+          :style="{ zIndex: OVERLAY_LAYERS.filterSheet }"
+          @click.self="closeMobileSourcePreview"
+        >
+          <section
+            class="sync-mobile-source-sheet"
+            role="dialog"
+            aria-modal="true"
+            :aria-label="`${sourceDisplayName(mobilePreviewSource)} 来源详情`"
+          >
+            <div class="sheet-handle" />
+            <div class="sync-mobile-source-sheet__header">
+              <div class="sync-hover-card__cover">
+                <img
+                  v-if="mobilePreviewSource.coverUrl"
+                  :src="sourceCoverSrc(mobilePreviewSource.coverUrl)"
+                  :alt="`${sourceDisplayName(mobilePreviewSource)} 封面`"
+                >
+                <div v-else class="sync-hover-card__cover-fallback">
+                  <AppIcon :name="mobilePreviewSource.type === 'album' ? 'album' : 'music'" :size="22" />
+                </div>
+              </div>
+              <div class="min-w-0">
+                <div class="sync-hover-card__title-row">
+                  <span class="sync-hover-card__title">{{ sourceDisplayName(mobilePreviewSource) }}</span>
+                  <SourceBadge :type="mobilePreviewSource.type" :subscribed="mobilePreviewSource.subscribed" />
+                </div>
+                <p v-if="sourceHoverOrigin(mobilePreviewSource)" class="sync-hover-card__origin">{{ sourceHoverOrigin(mobilePreviewSource) }}</p>
+                <p class="sync-hover-card__meta">ID {{ mobilePreviewSource.neteasePlaylistId }} · Plex {{ plexTargetName(mobilePreviewSource) }}</p>
+              </div>
+              <button class="icon-button sync-mobile-source-sheet__close" type="button" aria-label="关闭来源详情" @click="closeMobileSourcePreview">
+                <AppIcon name="close" :size="16" />
+              </button>
+            </div>
+            <div class="sync-hover-card__stats">
+              <span>{{ mobilePreviewSource.trackCount }} 首</span>
+              <span>{{ sourceIssueCount(mobilePreviewSource) > 0 ? sourceIssueSummary(mobilePreviewSource) : '无忽略' }}</span>
+              <span>{{ repairingSourceId === mobilePreviewSource.id ? '补全中' : syncResultLabel(mobilePreviewSource) }}</span>
+            </div>
+            <p class="sync-hover-card__footer">
+              {{ mobilePreviewSource.lastSyncedAt
+                ? `${mobilePreviewSource.type === 'album' ? '上次下载' : '上次同步'} ${formatRelative(mobilePreviewSource.lastSyncedAt)}`
+                : (mobilePreviewSource.type === 'album' ? '尚未下载' : '尚未同步') }}
+            </p>
+            <div class="sync-mobile-source-sheet__actions">
+              <button
+                class="btn btn-primary"
+                type="button"
+                :disabled="isAnySyncing || (mobilePreviewSource.type === 'playlist' && !mobilePreviewSource.enabled)"
+                @click="mobilePreviewSource.type === 'playlist' ? syncSource(mobilePreviewSource) : syncSource(mobilePreviewSource, true)"
+              >
+                <AppIcon
+                  :name="mobilePreviewSource.type === 'playlist' ? 'sync' : 'download'"
+                  :size="14"
+                  :class="(syncingSourceId === mobilePreviewSource.id || forceFullId === mobilePreviewSource.id) ? 'animate-spin' : ''"
+                />
+                {{ mobilePreviewSource.type === 'playlist' ? '同步' : '下载' }}
+              </button>
+              <button class="btn btn-secondary" type="button" @click="toggleMobilePreviewSongs">
+                <AppIcon name="chevronRight" :size="14" :class="expandedId === mobilePreviewSource.id ? 'rotate-90' : ''" />
+                {{ expandedId === mobilePreviewSource.id ? '收起歌曲' : '展开歌曲' }}
+              </button>
+              <button class="btn btn-secondary" type="button" @click="editMobilePreviewSource">
+                <AppIcon name="edit" :size="14" />
+                编辑
+              </button>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Dialogs -->
     <AddPlaylistDialog
       :visible="showAdd"
@@ -689,14 +778,17 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import AddPlaylistDialog from '~/components/sources/AddPlaylistDialog.vue'
 import EditSourceDialog from '~/components/sources/EditSourceDialog.vue'
+import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import { useSyncSourcesPage } from '~~/composables/useSyncSourcesPage'
+import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
 
 const {
   advancedFilterCount, advancedFilterLabel, allSources, allVisibleSelected, applyDraftFilters, batchDeleting, batchLoading, batchToggling,
   canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearIgnored, clearSourceFilters, confirmBatchDelete, confirmDelete, confirmRebuild,
-  desktopActionDensity, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget,
+  clearHoverHideTimer, desktopActionDensity, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget,
   enabledCount, expandedId, expandedLoading, expandedSongs, filteredSources, filterType, forceFullId, formatRelative,
   handleBatchDelete, handleDelete, handleRebuildSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
   onAlbumCreated, onDragEnd, onDragLeave, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved,
@@ -705,10 +797,45 @@ const {
   runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedSourceIds, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction,
   showSourceHover, someVisibleSelected, songStatusDot, sourceCanClear, sourceCopyrightCount, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
   sourceHoverOrigin, sourceIgnoredCount, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
-  sourceStateClass, sourceStateLabel, syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, tableShellRef,
+  sourceStateClass, sourceStateLabel, statusFilterOptions, syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, tableShellRef,
   toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright, totalIgnored,
   totalSourceCount,
 } = useSyncSourcesPage()
+
+const mobilePreviewSource = ref<PlaylistSource | null>(null)
+
+function openMobileSourcePreview(source: PlaylistSource) {
+  clearHoverHideTimer()
+  hoverCard.value = null
+  mobilePreviewSource.value = source
+}
+
+function closeMobileSourcePreview() {
+  mobilePreviewSource.value = null
+}
+
+function toggleMobilePreviewSongs() {
+  if (!mobilePreviewSource.value) return
+  toggleExpand(mobilePreviewSource.value.id)
+}
+
+function editMobilePreviewSource() {
+  if (!mobilePreviewSource.value) return
+  openEdit(mobilePreviewSource.value)
+  closeMobileSourcePreview()
+}
+
+function closeMobilePreviewOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeMobileSourcePreview()
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', closeMobilePreviewOnEscape)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', closeMobilePreviewOnEscape)
+})
 </script>
 
 <style scoped>

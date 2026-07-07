@@ -1,7 +1,8 @@
 
 .manual-track-table-shell {
-  height: clamp(360px, 52vh, 600px);
-  max-height: 600px;
+  block-size: 100%;
+  max-block-size: var(--panel-scroll-max-block-size);
+  min-block-size: min(22rem, 58dvh);
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--border-primary);
@@ -24,7 +25,6 @@
 
 .manual-track-table th,
 .manual-track-table td {
-  height: 3.05rem;
   padding: 0.65rem 0.75rem;
   border-bottom: 1px solid var(--border-primary);
   color: var(--text-secondary);
@@ -393,16 +393,27 @@
   }
 
   .manual-track-table-shell {
-    height: min(56vh, 32rem);
-    min-height: 20rem;
+    max-block-size: 64dvh;
+    min-block-size: min(20rem, 62dvh);
   }
 
   .manual-result-download {
     width: 100%;
   }
 
+  .manual-parse-history-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+    padding-bottom: 0;
+    scroll-snap-type: none;
+    scrollbar-gutter: auto;
+  }
+
   .manual-parse-history-item {
-    flex-basis: min(82vw, 17rem);
+    width: 100%;
+    flex: none;
+    scroll-snap-align: none;
   }
 
   .manual-task-side,
