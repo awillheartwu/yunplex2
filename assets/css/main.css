@@ -57,6 +57,12 @@
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.25rem;
+  --app-shell-min-block-size: 100dvh;
+  --app-topbar-block-size: 5rem;
+  --panel-fluid-min-block-size: clamp(12rem, 32dvh, 20rem);
+  --panel-scroll-max-block-size: min(62dvh, 100%);
+  --chart-card-min-block-size: clamp(12rem, 26dvh, 18rem);
+  --chart-plot-min-block-size: clamp(8.75rem, 20dvh, 14rem);
 }
 
 .dark {
@@ -119,6 +125,7 @@
 html {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: calc(16px * var(--font-scale, 1));
+  min-height: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -126,6 +133,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100%;
   background:
     radial-gradient(circle at 18% -10%, rgba(110, 168, 255, 0.22), transparent 31rem),
     radial-gradient(circle at 85% 8%, rgba(245, 158, 11, 0.12), transparent 28rem),
@@ -140,7 +148,27 @@ body {
     linear-gradient(145deg, #07101f 0%, #0a1426 45%, #101d36 100%);
 }
 
-#__nuxt { min-height: 100vh; }
+#__nuxt {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  min-block-size: var(--app-shell-min-block-size);
+}
+
+.app-main {
+  min-block-size: 0;
+}
+
+.fluid-panel {
+  min-block-size: var(--panel-fluid-min-block-size);
+}
+
+.fluid-scroll-area {
+  max-block-size: var(--panel-scroll-max-block-size);
+  min-block-size: min(22rem, 58dvh);
+}
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

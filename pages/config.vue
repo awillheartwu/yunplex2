@@ -4,15 +4,22 @@
       description="管理网易云音乐和 Plex 的连接、下载与同步策略"
     >
       <template #actions>
-        <button type="button" class="btn btn-ghost btn-sm" @click="toggleAll">
-          {{ allExpanded ? '收起全部' : '展开全部' }}
-        </button>
-        <button type="button" class="btn btn-danger btn-sm" @click="showResetConfirm = true">
-          恢复默认
-        </button>
-        <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
-          {{ saving ? '保存中...' : '保存配置' }}
-        </button>
+        <div class="config-header-actions" aria-label="配置操作">
+          <button type="button" class="btn btn-ghost btn-sm config-header-actions__toggle" @click="toggleAll">
+            <AppIcon :name="allExpanded ? 'chevronsUp' : 'chevronsDown'" :size="14" />
+            {{ allExpanded ? '收起全部' : '展开全部' }}
+          </button>
+          <div class="config-header-actions__primary">
+            <button type="button" class="btn btn-danger btn-sm" @click="showResetConfirm = true">
+              <AppIcon name="rotateCcw" :size="14" />
+              恢复默认
+            </button>
+            <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
+              <AppIcon :name="saving ? 'loader' : 'save'" :size="15" :class="{ 'animate-spin': saving }" />
+              {{ saving ? '保存中...' : '保存配置' }}
+            </button>
+          </div>
+        </div>
       </template>
     </PageHeader>
 
@@ -618,3 +625,51 @@ const { showImportTextarea, importJson, importing, importResult, handleFileImpor
 
 onMounted(loadConfig)
 </script>
+
+<style scoped>
+.config-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.config-header-actions__primary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 767px) {
+  .config-header-actions {
+    width: 100%;
+    justify-content: center;
+    gap: 0.5rem;
+    padding-top: 0.15rem;
+  }
+
+  .config-header-actions__toggle {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .config-header-actions__primary {
+    width: auto;
+    flex: 0 1 auto;
+    justify-content: center;
+  }
+
+  .config-header-actions__primary > .btn {
+    min-width: 6.9rem;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 390px) {
+  .config-header-actions__primary {
+    width: 100%;
+  }
+}
+</style>

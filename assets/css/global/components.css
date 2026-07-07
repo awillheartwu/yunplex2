@@ -123,7 +123,7 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   font-size: 1.125rem;
   line-height: 1.2;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--text-primary);
 }
 
@@ -153,7 +153,8 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding-top: 0.9rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0;
   color: var(--accent);
   text-decoration: none;
   font-size: 0.85rem;
@@ -164,8 +165,8 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.25rem;
-  min-height: 2.25rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
   border-radius: var(--radius-md);
   color: var(--text-tertiary);
   border: 1px solid transparent;
@@ -366,6 +367,8 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   position: fixed;
   width: min(360px, calc(100vw - 2rem));
   max-width: 360px;
+  max-block-size: min(42rem, calc(100dvh - 2rem));
+  overflow: auto;
   padding: 0.95rem 1rem 1rem;
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-primary);
@@ -559,6 +562,9 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   .filter-chip {
     min-height: 2.75rem;
   }
+  .icon-button {
+    min-width: 2.75rem;
+  }
   .filter-desktop { display: none; }
   .filter-row { align-items: stretch; }
   .filter-search { flex-basis: 100%; min-width: 0; }
@@ -590,16 +596,26 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
     bottom: 0.5rem;
     left: 0.5rem !important;
     width: calc(100vw - 1rem) !important;
-    max-height: 86vh;
-    overflow-y: auto;
+    max-height: min(82dvh, 42rem) !important;
+    overflow: hidden;
     border-radius: 1.25rem;
+    background: var(--bg-elevated) !important;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
   }
   .date-range-calendars {
     flex-direction: column;
+    max-height: calc(82dvh - 4.6rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .date-range-calendars > div:first-child {
     border-right: 0 !important;
-    border-bottom: 1px solid var(--border-primary);
+    border-bottom: 0 !important;
+  }
+  .date-range-presets {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elevated);
   }
   .section-card { border-radius: var(--radius-lg); }
   .toast-region { top: auto; bottom: 1rem; }

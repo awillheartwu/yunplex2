@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-dvh overflow-hidden" style="background:var(--bg-app);color:var(--text-primary)">
-    <Sidebar id="app-sidebar" class="hidden md:flex" />
+  <div class="app-shell flex overflow-x-hidden" :style="shellStyle">
+    <Sidebar id="app-sidebar" class="app-sidebar hidden md:flex" />
 
     <Transition name="sheet">
       <div
@@ -13,18 +13,18 @@
         style="background:var(--bg-overlay);backdrop-filter:blur(8px)"
         @click.self="mobileNavOpen = false"
       >
-        <Sidebar mobile class="h-full max-w-[18rem]" @navigate="mobileNavOpen = false" />
+        <Sidebar mobile class="min-h-full max-w-[18rem]" @navigate="mobileNavOpen = false" />
       </div>
     </Transition>
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="app-content flex min-w-0 flex-1 flex-col">
       <TopBar
         :menu-open="topBarMenuOpen"
         :menu-mode="isDesktopViewport ? 'desktop' : 'mobile'"
         @toggle-menu="toggleNavigation"
       />
-      <main class="flex-1 overflow-auto px-4 py-5 sm:px-6 md:px-8 md:py-7 xl:px-10">
-        <div class="w-full">
+      <main class="app-main flex-1 px-4 py-5 sm:px-6 md:px-8 md:py-7 xl:px-10">
+        <div class="w-full min-w-0">
           <slot />
         </div>
       </main>
@@ -40,6 +40,14 @@ const isDesktopViewport = ref(false)
 const { sidebarCollapsed, loadSidebarState, toggleSidebarCollapsed } = useSidebarState()
 
 let desktopMediaQuery: MediaQueryList | undefined
+
+const sidebarInlineSize = computed(() => sidebarCollapsed.value ? '64px' : '220px')
+
+const shellStyle = computed(() => ({
+  background: 'var(--bg-app)',
+  color: 'var(--text-primary)',
+  '--app-sidebar-inline-size': sidebarInlineSize.value,
+}))
 
 const topBarMenuOpen = computed(() => {
   return isDesktopViewport.value ? !sidebarCollapsed.value : mobileNavOpen.value
@@ -76,3 +84,21 @@ onUnmounted(() => {
   window.removeEventListener('keydown', closeMobileNavigation)
 })
 </script>
+
+<style scoped>
+@media (min-width: 768px) {
+  .app-sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 30;
+    block-size: 100dvh;
+    max-block-size: 100dvh;
+  }
+
+  .app-content {
+    min-block-size: var(--app-shell-min-block-size);
+    padding-inline-start: var(--app-sidebar-inline-size);
+  }
+}
+</style>

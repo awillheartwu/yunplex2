@@ -745,7 +745,7 @@ export function useSyncSourcesPage() {
     selectedSourceIds, selectedSources, setSourceType, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction, showSourceHover,
     someVisibleSelected, songStatusDot, sourceActiveCount, sourceCanClear, sourceCopyrightCount, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
     sourceFilters, sourceHoverOrigin, sourceIgnoredCount, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs,
-    sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel, sourceSyncTriggerTitle, statusFilter, subscribedFilter,
+    sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
     syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver,
     tableShellWidth, toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright,
     totalIgnored, totalSourceCount, triggerSourceSync, updateTableShellWidth,

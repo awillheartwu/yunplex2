@@ -397,7 +397,7 @@ function canOpenStep(key: StepKey): boolean {
 
 .setup-title {
   margin: 0;
-  font-size: clamp(1.8rem, 5vw, 2.55rem);
+  font-size: 2.35rem;
   line-height: 1.1;
   font-weight: 800;
   letter-spacing: 0;
@@ -589,6 +589,10 @@ function canOpenStep(key: StepKey): boolean {
 }
 
 @media (max-width: 640px) {
+  .setup-title {
+    font-size: 1.9rem;
+  }
+
   .setup-progress {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -125,7 +125,7 @@
               <AppIcon name="chevronRight" :size="12" class="transition-transform shrink-0" :class="collapsedGroups.has(group.sourceId) ? '' : 'rotate-90'" />
               <AppIcon name="source" :size="12" class="text-muted-deep" />
               <SourceBadge :type="(sourceTypeMap[group.sourceId] as 'playlist' | 'album') || 'playlist'" :subscribed="sourceSubscribedMap[group.sourceId]" />
-              <span class="text-xs font-medium flex-1">{{ group.sourceName }}</span>
+              <span class="run-detail__song-group-name">{{ group.sourceName }}</span>
               <span class="run-detail__song-group-stats" aria-label="来源内歌曲状态统计">
                 <span
                   v-for="stat in group.stats"
@@ -458,6 +458,7 @@ onUnmounted(() => {
 .run-detail__song-filter strong{font-size:.65rem;font-weight:800;font-variant-numeric:tabular-nums;opacity:.88}
 .run-detail__song-group{display:flex;min-height:3.25rem;align-items:center;gap:.75rem;padding:.35rem 1.25rem;border-bottom:1px solid var(--border-primary);background:var(--bg-app)}
 .run-detail__song-group-toggle{display:flex;min-width:0;min-height:2.75rem;flex:1;align-items:center;gap:.65rem;padding:0;border:0;background:transparent;color:var(--text-primary);text-align:left;cursor:pointer}
+.run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:.75rem;font-weight:650;line-height:1.4;overflow-wrap:anywhere}
 .run-detail__song-group-toggle:hover .run-detail__song-group-stats{filter:saturate(1.08)}
 .run-detail__song-group-stats{display:flex;align-items:center;justify-content:flex-end;gap:.35rem;flex-wrap:wrap;transition:filter 150ms ease}
 .run-detail__song-group-stat{display:inline-flex;min-height:1.35rem;align-items:center;gap:.25rem;padding:.08rem .45rem;border:1px solid;border-radius:999px;font-size:.64rem;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -473,7 +474,8 @@ onUnmounted(() => {
   .run-detail__song-toolbar{align-items:flex-start;flex-direction:column}
   .run-detail__song-filters{justify-content:flex-start}
   .run-detail__song-group{align-items:flex-start;flex-direction:column;gap:.35rem;padding:.55rem 1rem}
-  .run-detail__song-group-toggle{width:100%;align-items:flex-start}
-  .run-detail__song-group-stats{justify-content:flex-start}
+  .run-detail__song-group-toggle{width:100%;align-items:flex-start;flex-wrap:wrap;gap:.55rem}
+  .run-detail__song-group-name{flex:1 1 calc(100% - 7rem);font-size:.84rem;line-height:1.45}
+  .run-detail__song-group-stats{flex:1 1 100%;justify-content:flex-start;padding-left:3.05rem}
 }
 </style>

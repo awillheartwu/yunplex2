@@ -81,7 +81,7 @@ defineProps<{
 .dashboard-kpi-card__value {
   margin: 0;
   width: 100%;
-  font-size: clamp(1.55rem, 2.2vw, 2.15rem);
+  font-size: 2rem;
   line-height: 1;
   text-align: left;
   color: var(--text-primary);
@@ -98,6 +98,10 @@ defineProps<{
   .dashboard-kpi-card {
     min-height: auto;
     padding: 1rem;
+  }
+
+  .dashboard-kpi-card__value {
+    font-size: 1.55rem;
   }
 }
 </style>

@@ -6,7 +6,7 @@
   >
     <div
       data-testid="sidebar-brand"
-      class="sidebar-brand h-20 shrink-0 overflow-hidden"
+      class="sidebar-brand shrink-0 overflow-hidden"
       :class="{ 'sidebar-brand--collapsed': desktopCollapsed }"
       style="border-bottom:1px solid var(--border-primary)"
     >
@@ -86,6 +86,7 @@ const navItems = [
   display: flex;
   align-items: center;
   gap: 12px;
+  min-block-size: var(--app-topbar-block-size);
   padding-inline: 20px;
 }
 
