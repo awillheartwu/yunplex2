@@ -192,7 +192,7 @@ import type { ProcessTimelineItem } from '~~/lib/process-timeline'
 import { buildActivityTimelineItems } from '~~/lib/activity-timeline'
 import { useFeedback } from '~~/composables/useFeedback'
 import { countActiveFilters, formatDateFilterLabel, parseDateQueryValue } from '~~/composables/useFilterQuery'
-import { useDebounceFn } from '~~/composables/useTiming'
+import { createLatestAsyncGuard, useDebounceFn, useThrottleFn } from '~~/composables/useTiming'
 
 const api = useApi()
 const feedback = useFeedback()
@@ -227,6 +227,7 @@ const activityTotal = ref(0)
 const activityOffset = ref(0)
 const activityLoading = ref(false)
 const activityLoadingMore = ref(false)
+const activityFetchGuard = createLatestAsyncGuard()
 const domainFilters: Array<{ label: string; value: ActivityDomain | '' }> = [
   { label: '全部', value: '' },
   { label: '同步', value: 'sync' },
@@ -296,30 +297,35 @@ const activityFilterChips = computed<Array<{ key: ActivityFilterChipKey; label: 
 })
 
 async function fetchActivityEvents() {
+  const token = activityFetchGuard.next()
   activityLoading.value = true
+  activityLoadingMore.value = false
   activityOffset.value = 0
   try {
     const res = await api.get<{ items: ActivityEvent[]; total: number }>('/activity-events', activityParams())
+    if (!activityFetchGuard.isLatest(token)) return
     activityEvents.value = res.items
     activityTotal.value = res.total
     await scrollToHighlightedActivity()
   } finally {
-    activityLoading.value = false
+    if (activityFetchGuard.isLatest(token)) activityLoading.value = false
   }
 }
 
 async function loadMoreActivityEvents() {
   if (activityLoadingMore.value || !activityHasMore.value) return
+  const token = activityFetchGuard.next()
   activityLoadingMore.value = true
   try {
     const nextOffset = activityOffset.value + ACTIVITY_PAGE_SIZE
     const res = await api.get<{ items: ActivityEvent[]; total: number }>('/activity-events', activityParams(nextOffset))
+    if (!activityFetchGuard.isLatest(token)) return
     activityEvents.value = [...activityEvents.value, ...res.items]
     activityTotal.value = res.total
     activityOffset.value = nextOffset
     await scrollToHighlightedActivity()
   } finally {
-    activityLoadingMore.value = false
+    if (activityFetchGuard.isLatest(token)) activityLoadingMore.value = false
   }
 }
 
@@ -351,6 +357,7 @@ function syncActivityFilterQuery() {
 }
 
 function applyActivityFilters() {
+  activitySearchDebounce.cancel()
   syncActivityFilterQuery()
   void fetchActivityEvents()
 }
@@ -359,7 +366,6 @@ const activitySearchDebounce = useDebounceFn(applyActivityFilters, 350)
 
 function onActivitySearch(value: string) {
   activityQuery.value = value
-  syncActivityFilterQuery()
   activitySearchDebounce.run()
 }
 
@@ -448,6 +454,7 @@ const logTotal = ref(0)
 const logOffset = ref(0)
 const logLoading = ref(false)
 const logLoadingMore = ref(false)
+const logFetchGuard = createLatestAsyncGuard()
 const logActiveFilter = ref<LogLevel | ''>('')
 const showClearConfirm = ref(false)
 const logHasMore = computed(() => logs.value.length < logTotal.value)
@@ -461,37 +468,43 @@ const logFilters: Array<{ label: string; value: LogLevel | '' }> = [
 ]
 
 async function fetchLogs() {
+  const token = logFetchGuard.next()
   logLoading.value = true
+  logLoadingMore.value = false
   logOffset.value = 0
   try {
     const params: Record<string, string> = { limit: String(LOG_PAGE_SIZE) }
     if (logActiveFilter.value) params.level = logActiveFilter.value
     const res = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
+    if (!logFetchGuard.isLatest(token)) return
     logs.value = res.items
     logTotal.value = res.total
   } finally {
-    logLoading.value = false
+    if (logFetchGuard.isLatest(token)) logLoading.value = false
   }
 }
 
 async function loadMoreLogs() {
   if (logLoadingMore.value || !logHasMore.value) return
+  const token = logFetchGuard.next()
   logLoadingMore.value = true
   try {
     const nextOffset = logOffset.value + LOG_PAGE_SIZE
     const params: Record<string, string> = { limit: String(LOG_PAGE_SIZE), offset: String(nextOffset) }
     if (logActiveFilter.value) params.level = logActiveFilter.value
     const res = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
+    if (!logFetchGuard.isLatest(token)) return
     logs.value = [...logs.value, ...res.items]
     logTotal.value = res.total
     logOffset.value = nextOffset
   } finally {
-    logLoadingMore.value = false
+    if (logFetchGuard.isLatest(token)) logLoadingMore.value = false
   }
 }
 
 function setLogFilter(level: LogLevel | '') {
   logActiveFilter.value = level
+  pendingRealtimeLogs.length = 0
   void fetchLogs()
 }
 
@@ -527,6 +540,22 @@ function formatLogTime(ts: string): string {
 }
 
 let sse: EventSource | null = null
+const pendingRealtimeLogs: LogEntry[] = []
+
+function flushRealtimeLogs() {
+  if (pendingRealtimeLogs.length === 0) return
+  const nextLogs = pendingRealtimeLogs.splice(0).reverse()
+  logs.value = [...nextLogs, ...logs.value]
+  logTotal.value += nextLogs.length
+}
+
+const realtimeLogBatch = useThrottleFn(flushRealtimeLogs, 80)
+
+function enqueueRealtimeLog(data: LogEntry) {
+  if (logActiveFilter.value && data.level !== logActiveFilter.value) return
+  pendingRealtimeLogs.push(data)
+  realtimeLogBatch.run()
+}
 
 watch(activeTab, (tab) => {
   if (tab === 'logs' && logs.value.length === 0) void fetchLogs()
@@ -541,15 +570,13 @@ onMounted(async () => {
     sse = new EventSource('/api/sync/events')
     sse.addEventListener('log', (e: MessageEvent) => {
       const data = JSON.parse(e.data) as LogEntry
-      if (!logActiveFilter.value || data.level === logActiveFilter.value) {
-        logs.value = [data, ...logs.value]
-        logTotal.value++
-      }
+      enqueueRealtimeLog(data)
     })
   } catch { /* SSE unsupported */ }
 })
 
 onUnmounted(() => {
+  realtimeLogBatch.flush()
   if (sse) {
     sse.close()
     sse = null

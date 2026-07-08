@@ -117,6 +117,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
+import { useRafThrottleFn } from '~~/composables/useTiming'
 
 export interface DateRangeValue {
   from: string | null
@@ -373,15 +374,18 @@ function handleViewportChange() {
   if (open.value) updatePanelPosition()
 }
 
+const viewportChangeThrottle = useRafThrottleFn(handleViewportChange)
+const handleViewportChangeOnFrame = () => viewportChangeThrottle.run()
+
 onMounted(() => {
   isMobileViewport.value = window.matchMedia('(max-width: 767px)').matches
-  window.addEventListener('resize', handleViewportChange)
-  window.addEventListener('scroll', handleViewportChange, true)
+  window.addEventListener('resize', handleViewportChangeOnFrame)
+  window.addEventListener('scroll', handleViewportChangeOnFrame, true)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleViewportChange)
-  window.removeEventListener('scroll', handleViewportChange, true)
+  window.removeEventListener('resize', handleViewportChangeOnFrame)
+  window.removeEventListener('scroll', handleViewportChangeOnFrame, true)
 })
 </script>
 

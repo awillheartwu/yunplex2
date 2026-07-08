@@ -3,6 +3,7 @@ import type {
   FailureRecordStatus,
 } from '~~/server/lib/tasks/failure-records'
 import type { TaskRunType } from '~~/server/lib/job/types'
+import { createLatestAsyncGuard } from '~~/composables/useTiming'
 
 export interface FailureFilter {
   status?: FailureRecordStatus
@@ -22,6 +23,7 @@ export function useFailures() {
   const loadingMore = ref(false)
   const limit = 50
   const filter = ref<FailureFilter>({ status: 'open' })
+  const fetchGuard = createLatestAsyncGuard()
   const hasMore = computed(() => items.value.length < total.value)
 
   function toParams(offset = 0): Record<string, string> {
@@ -41,28 +43,34 @@ export function useFailures() {
   }
 
   async function fetch() {
+    const token = fetchGuard.next()
     loading.value = true
+    loadingMore.value = false
     try {
       const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams())
+      if (!fetchGuard.isLatest(token)) return
       items.value = response.items
       total.value = response.total
     } catch {
+      if (!fetchGuard.isLatest(token)) return
       items.value = []
       total.value = 0
     } finally {
-      loading.value = false
+      if (fetchGuard.isLatest(token)) loading.value = false
     }
   }
 
   async function loadMore() {
     if (!hasMore.value || loadingMore.value) return
+    const token = fetchGuard.next()
     loadingMore.value = true
     try {
       const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams(items.value.length))
+      if (!fetchGuard.isLatest(token)) return
       items.value = [...items.value, ...response.items]
       total.value = response.total
     } finally {
-      loadingMore.value = false
+      if (fetchGuard.isLatest(token)) loadingMore.value = false
     }
   }
 

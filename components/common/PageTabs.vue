@@ -1,5 +1,5 @@
 <template>
-  <nav class="page-tabs" role="tablist" :aria-label="ariaLabel">
+  <nav class="page-tabs" role="tablist" :aria-label="resolvedAriaLabel">
     <button
       v-for="tab in tabs"
       :key="tab.key"
@@ -24,6 +24,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAttrs } from 'vue'
+
 export interface PageTab {
   key: string
   label: string
@@ -35,8 +37,14 @@ export interface PageTab {
 const props = defineProps<{
   modelValue: string
   tabs: PageTab[]
-  ariaLabel: string
+  ariaLabel?: string
 }>()
+
+const attrs = useAttrs()
+const resolvedAriaLabel = computed(() => {
+  const ariaLabelAttr = attrs['aria-label']
+  return props.ariaLabel ?? (typeof ariaLabelAttr === 'string' ? ariaLabelAttr : undefined) ?? '页面切换'
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]

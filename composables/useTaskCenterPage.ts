@@ -227,9 +227,9 @@ export function useTaskCenterPage() {
       runTo: runs.filter.value.to || undefined,
     } })
   }
-  function applyRunFilters() { syncRunQuery(); void runs.fetch() }
+  function applyRunFilters() { runSearchDebounce.cancel(); syncRunQuery(); void runs.fetch() }
   const runSearchDebounce = useDebounceFn(applyRunFilters, 350)
-  function onRunSearch(value: string) { runs.filter.value.search = value || undefined; syncRunQuery(); runSearchDebounce.run() }
+  function onRunSearch(value: string) { runs.filter.value.search = value || undefined; runSearchDebounce.run() }
   function prepareRunDraftFilters() {
     draftRunType.value = runs.filter.value.type || ''
     draftRunStatus.value = runs.filter.value.status || ''
@@ -287,7 +287,7 @@ export function useTaskCenterPage() {
       failureTo: failures.filter.value.to || undefined,
     } })
   }
-  function applyFailureFilters() { selectedFailures.value = new Set(); syncFailureQuery(); void failures.fetch() }
+  function applyFailureFilters() { failureSearchDebounce.cancel(); selectedFailures.value = new Set(); syncFailureQuery(); void failures.fetch() }
   const failureSearchDebounce = useDebounceFn(applyFailureFilters, 350)
   function onFailureSearch(value: string) { failures.filter.value.search = value || undefined; failureSearchDebounce.run() }
   function setFailureStatus(value: FailureRecordStatus) { failures.filter.value.status = value; applyFailureFilters() }
