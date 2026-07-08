@@ -363,7 +363,7 @@
                       @click="repairSource(s)"
                     >
                       <span v-if="repairingSourceId === s.id && repairProgress[s.id]" class="sync-row-actions__progress">
-                        {{ repairProgress[s.id].processed }}/{{ repairProgress[s.id].total }}
+                        {{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}
                       </span>
                       <AppIcon v-else name="music" :size="14" />
                     </button>
@@ -420,7 +420,7 @@
                           :disabled="isAnySyncing"
                           @click="repairSource(s); moreMenuId = null"
                         >
-                          <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id].processed }}/{{ repairProgress[s.id].total }}</span>
+                          <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
                           <AppIcon v-else name="music" :size="12" />
                           <span>补词/图</span>
                         </button>
@@ -594,7 +594,7 @@
                   :disabled="isAnySyncing"
                   @click="repairSource(s); moreMenuId = null"
                 >
-                  <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id].processed }}/{{ repairProgress[s.id].total }}</span>
+                  <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
                   <AppIcon v-else name="music" :size="12" />
                   <span>补词/图</span>
                 </button>

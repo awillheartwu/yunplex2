@@ -1,4 +1,5 @@
 import type { JobStatus, TaskRun, TaskRunSummary, TaskRunType } from '~~/server/lib/job/types'
+import { createLatestAsyncGuard } from '~~/composables/useTiming'
 
 export interface RunFilter {
   type?: TaskRunType | ''
@@ -18,6 +19,7 @@ export function useRuns(initial: RunFilter = {}) {
   const loadingMore = ref(false)
   const filter = ref<RunFilter>({ ...initial })
   const pageSize = 30
+  const fetchGuard = createLatestAsyncGuard()
 
   const hasMore = computed(() => items.value.length < total.value)
   const activeRuns = computed(() => items.value.filter(run => run.status === 'running'))
@@ -38,26 +40,31 @@ export function useRuns(initial: RunFilter = {}) {
   }
 
   async function fetch() {
+    const token = fetchGuard.next()
     loading.value = true
+    loadingMore.value = false
     try {
       const response = await api.get<{ items: TaskRunSummary[]; total: number; earliestDate: string | null }>('/runs', params())
+      if (!fetchGuard.isLatest(token)) return
       items.value = response.items
       total.value = response.total
       earliestDate.value = response.earliestDate
     } finally {
-      loading.value = false
+      if (fetchGuard.isLatest(token)) loading.value = false
     }
   }
 
   async function loadMore() {
     if (!hasMore.value || loadingMore.value) return
+    const token = fetchGuard.next()
     loadingMore.value = true
     try {
       const response = await api.get<{ items: TaskRunSummary[]; total: number; earliestDate: string | null }>('/runs', params(items.value.length))
+      if (!fetchGuard.isLatest(token)) return
       items.value = [...items.value, ...response.items]
       total.value = response.total
     } finally {
-      loadingMore.value = false
+      if (fetchGuard.isLatest(token)) loadingMore.value = false
     }
   }
 

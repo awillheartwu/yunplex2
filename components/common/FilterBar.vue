@@ -149,6 +149,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
 import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
+import { useRafThrottleFn } from '~~/composables/useTiming'
 
 const props = withDefaults(defineProps<{
   search: string
@@ -222,14 +223,17 @@ function handleWindowChange() {
   }
 }
 
+const windowChangeThrottle = useRafThrottleFn(handleWindowChange)
+const handleWindowChangeOnFrame = () => windowChangeThrottle.run()
+
 onMounted(() => {
   syncViewportMode()
-  window.addEventListener('resize', handleWindowChange)
-  window.addEventListener('scroll', handleWindowChange, true)
+  window.addEventListener('resize', handleWindowChangeOnFrame)
+  window.addEventListener('scroll', handleWindowChangeOnFrame, true)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleWindowChange)
-  window.removeEventListener('scroll', handleWindowChange, true)
+  window.removeEventListener('resize', handleWindowChangeOnFrame)
+  window.removeEventListener('scroll', handleWindowChangeOnFrame, true)
 })
 </script>

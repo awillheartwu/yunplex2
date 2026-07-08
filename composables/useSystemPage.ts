@@ -215,12 +215,15 @@ export function useSystemPage() {
 
   const tableRows = computed(() => Object.entries(stats.value?.dbStats || {})
     .filter(([name]) => tableDescs[name])
-    .map(([name, count]) => ({
-      name,
-      count,
-      desc: tableDescs[name],
-      href: tableLinks[name],
-    })))
+    .map(([name, count]) => {
+      const href = tableLinks[name]
+      return {
+        name,
+        count,
+        desc: tableDescs[name] ?? '',
+        ...(href ? { href } : {}),
+      }
+    }))
 
   const cpuChartOption = computed(() => historyChart(cpuHistory.value, 'CPU %', '#818cf8', 'rgba(129,140,248,0.25)'))
   const memChartOption = computed(() => historyChart(memHistory.value, 'RSS MB', '#22c55e', 'rgba(34,197,94,0.2)'))

@@ -17,7 +17,7 @@ import {
   getSyncResultTone,
 } from '~~/composables/useSyncSourcePresentation'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
-import { useDebounceFn } from '~~/composables/useTiming'
+import { createLatestAsyncGuard, useDebounceFn, useRafThrottleFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
 
 export function useSyncSourcesPage() {
@@ -30,6 +30,7 @@ export function useSyncSourcesPage() {
   const sources = ref<PlaylistSource[]>([])
   const allSources = ref<PlaylistSource[]>([])
   const loading = ref(false)
+  const sourceFetchGuard = createLatestAsyncGuard()
   const togglingId = ref<string | null>(null)
   const forceFullId = ref<string | null>(null)
   const rebuildSyncId = ref<string | null>(null)
@@ -161,6 +162,7 @@ export function useSyncSourcesPage() {
   }
 
   async function applySourceFilters() {
+    sourceSearchDebounce.cancel()
     syncSourceFilterQuery()
     await fetchSources()
   }
@@ -168,7 +170,6 @@ export function useSyncSourcesPage() {
   const sourceSearchDebounce = useDebounceFn(() => { void applySourceFilters() }, 400)
   function onSourceSearchInput(value: string) {
     sourceSearch.value = value
-    syncSourceFilterQuery()
     sourceSearchDebounce.run()
   }
 
@@ -259,6 +260,7 @@ export function useSyncSourcesPage() {
     async (orderedIds) => { await api.put('/playlist-sources/reorder', { orderedIds }) },
     (s) => s.id,
   )
+  const throttledDragOver = useRafThrottleFn(onDragOver)
 
   // Wrap drag handlers to work with filteredSources indices → sources indices
   function onFilteredDragStart(idx: number, e: DragEvent) {
@@ -273,7 +275,7 @@ export function useSyncSourcesPage() {
     const item = filteredSources.value[idx]
     if (!item) return
     const realIdx = sources.value.findIndex(s => s.id === item!.id)
-    if (realIdx >= 0) onDragOver(realIdx)
+    if (realIdx >= 0) throttledDragOver.run(realIdx)
   }
   function onFilteredDrop(idx: number) {
     if (!canDragReorder.value) return
@@ -365,6 +367,7 @@ export function useSyncSourcesPage() {
   function updateTableShellWidth() {
     tableShellWidth.value = tableShellRef.value?.clientWidth ?? window.innerWidth
   }
+  const updateTableShellWidthOnFrame = useRafThrottleFn(updateTableShellWidth)
 
   // Expand songs
   const expandedId = ref<string | null>(null)
@@ -525,12 +528,17 @@ export function useSyncSourcesPage() {
   }
 
   async function fetchSources() {
+    const token = sourceFetchGuard.next()
     loading.value = true
     try {
-      sources.value = await api.get<PlaylistSource[]>('/playlist-sources', buildSourceParams())
+      const items = await api.get<PlaylistSource[]>('/playlist-sources', buildSourceParams())
+      if (!sourceFetchGuard.isLatest(token)) return
+      sources.value = items
       pruneSelectionToVisible()
     } catch { /* ignore */ }
-    finally { loading.value = false }
+    finally {
+      if (sourceFetchGuard.isLatest(token)) loading.value = false
+    }
   }
 
   async function toggleEnabled(s: PlaylistSource) {
@@ -683,19 +691,21 @@ export function useSyncSourcesPage() {
 
   // SSE: clear spinners when sync finishes
   const sseUnsubs: Array<() => void> = []
+  const hideHoverOnFrame = useRafThrottleFn(() => { hoverCard.value = null })
+  const handleHoverInvalidation = () => hideHoverOnFrame.run()
+  const handleTableShellResize = () => updateTableShellWidthOnFrame.run()
 
   onMounted(() => {
     restoreSourceFiltersFromRoute()
     void refreshSources()
     updateTableShellWidth()
 
-    const hideHover = () => { hoverCard.value = null }
-    window.addEventListener('scroll', hideHover, true)
-    window.addEventListener('resize', hideHover)
-    window.addEventListener('resize', updateTableShellWidth)
+    window.addEventListener('scroll', handleHoverInvalidation, true)
+    window.addEventListener('resize', handleHoverInvalidation)
+    window.addEventListener('resize', handleTableShellResize)
 
     if (typeof ResizeObserver !== 'undefined' && tableShellRef.value) {
-      tableShellResizeObserver = new ResizeObserver(() => updateTableShellWidth())
+      tableShellResizeObserver = new ResizeObserver(() => updateTableShellWidthOnFrame.run())
       tableShellResizeObserver.observe(tableShellRef.value)
     }
 
@@ -715,9 +725,9 @@ export function useSyncSourcesPage() {
         repairProgress.value = { ...repairProgress.value, [sourceId as string]: { processed, total: totalSongs as number } }
       }
     }))
-    sseUnsubs.push(() => window.removeEventListener('scroll', hideHover, true))
-    sseUnsubs.push(() => window.removeEventListener('resize', hideHover))
-    sseUnsubs.push(() => window.removeEventListener('resize', updateTableShellWidth))
+    sseUnsubs.push(() => window.removeEventListener('scroll', handleHoverInvalidation, true))
+    sseUnsubs.push(() => window.removeEventListener('resize', handleHoverInvalidation))
+    sseUnsubs.push(() => window.removeEventListener('resize', handleTableShellResize))
   })
 
   onUnmounted(() => {

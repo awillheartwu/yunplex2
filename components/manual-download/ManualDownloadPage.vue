@@ -95,7 +95,6 @@
             v-if="parseState === 'preview'"
             class="btn btn-secondary"
             type="button"
-            :disabled="parseState === 'parsing'"
             @click="handleParse"
           >
             <AppIcon name="refresh" :size="14" />
