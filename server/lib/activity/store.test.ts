@@ -74,12 +74,13 @@ describe('activity retention', () => {
 
   it('filters activity events by domain, severity, query, and offset', () => {
     initDb(createTempDataDir())
+    const now = Date.now()
 
     recordActivityEvent({
       domain: 'sync',
       type: 'sync_run_completed',
       severity: 'success',
-      occurredAt: '2026-06-12T08:00:00.000Z',
+      occurredAt: new Date(now - 2 * 60_000).toISOString(),
       title: '同步源“华语摇滚”完成',
       summary: '成功 12 首',
     })
@@ -87,7 +88,7 @@ describe('activity retention', () => {
       domain: 'download',
       type: 'download_failed',
       severity: 'error',
-      occurredAt: '2026-06-12T08:01:00.000Z',
+      occurredAt: new Date(now - 60_000).toISOString(),
       title: '下载失败',
       summary: '耳鬼出风 下载失败',
     })
@@ -95,7 +96,7 @@ describe('activity retention', () => {
       domain: 'sync',
       type: 'source_sync_warning',
       severity: 'warning',
-      occurredAt: '2026-06-12T08:02:00.000Z',
+      occurredAt: new Date(now).toISOString(),
       title: '同步源“日语精选”需要关注',
       summary: '版权受限 1 首',
     })

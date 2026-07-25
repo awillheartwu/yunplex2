@@ -32,6 +32,7 @@ function buildConfig(downloadDir: string): AppConfig {
       downloadTaskRetentionDays: 30,
       activityRetentionDays: 30,
       forceFullCompare: false,
+      reconcileOnPlexDrift: true,
       fullCompareAfterSkips: 5,
       fullCompareAfterDays: 7,
       autoDownloadAlbum: true,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  SONG_STATUS_BUCKETS,
   isFailedSongStatus,
+  isAttentionSongStatus,
   isIgnoredSongStatus,
   runResultItems,
   songMatchesStatusBucket,
@@ -18,7 +20,9 @@ describe('task status semantics', () => {
     expect(songStatusPresentation('downloading').tone).toBe('running')
   })
 
-  it('classifies ignored and failed states without overlap', () => {
+  it('classifies attention and failed states without overlap', () => {
+    expect(isAttentionSongStatus('ignored_failure')).toBe(true)
+    expect(isAttentionSongStatus('copyright_restricted')).toBe(true)
     expect(isIgnoredSongStatus('ignored_failure')).toBe(true)
     expect(isIgnoredSongStatus('copyright_restricted')).toBe(true)
     expect(isFailedSongStatus('failed_download')).toBe(true)
@@ -35,6 +39,11 @@ describe('task status semantics', () => {
     expect(songMatchesStatusBucket('copyright_restricted', 'ignored')).toBe(true)
     expect(songMatchesStatusBucket('ignored_failure', 'ignored')).toBe(true)
     expect(songMatchesStatusBucket('copyright_restricted', 'failure')).toBe(false)
+  })
+
+  it('presents continuous failures as paused retries, not user ignores', () => {
+    expect(songStatusPresentation('ignored_failure').label).toBe('已暂停重试')
+    expect(SONG_STATUS_BUCKETS.find(bucket => bucket.key === 'ignored')?.label).toBe('需关注')
   })
 
   it('counts bucket totals for song filter badges', () => {
@@ -57,7 +66,7 @@ describe('task status semantics', () => {
     }).map(item => [item.label, item.count, item.tone])).toEqual([
       ['成功', 1, 'success'],
       ['已存在', 42, 'existing'],
-      ['已忽略', 1, 'ignored'],
+      ['需关注', 1, 'ignored'],
       ['已移除', 1, 'warning'],
       ['失败', 0, 'failure'],
     ])

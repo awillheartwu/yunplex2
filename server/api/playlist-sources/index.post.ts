@@ -33,14 +33,13 @@ export default defineEventHandler(async (event) => {
       artist: body.artist,
       coverUrl: body.coverUrl,
     })
+    let autoSyncRunId: string | null = null
     // Auto-sync album if enabled
     if (body.type === 'album' && cfg.sync.autoDownloadAlbum) {
       const syncService = getSyncServiceInstance()
       const state = syncService.getState()
       if (!state.isRunning && !isRepairRunning()) {
-        syncService.runSyncForSource(source.id, { forceFull: true, trigger: 'system' }).catch((err: unknown) => {
-          console.error('[YunPlex2] auto album sync failed:', err instanceof Error ? err.message : String(err))
-        })
+        autoSyncRunId = syncService.startSyncForSource(source.id, { forceFull: true, trigger: 'system' }).runId
       }
     }
     recordActivityEvent({
@@ -52,11 +51,11 @@ export default defineEventHandler(async (event) => {
       summary: body.type === 'album'
         ? `已加入专辑源，后续可从运行记录追踪自动补全与同步。`
         : `已加入同步列表，后续可继续配置 Plex 歌单与同步策略。`,
-      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, type: source.type },
-      link: '/sync-sources',
+      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, type: source.type, ...(autoSyncRunId ? { jobId: autoSyncRunId } : {}) },
+      link: autoSyncRunId ? `/task-center/runs/${autoSyncRunId}` : '/sync-sources',
       groupKey: `source:${source.id}`,
     })
-    return success(source, body.type === 'album' ? '专辑源添加成功' : '歌单源添加成功')
+    return success({ ...source, ...(autoSyncRunId ? { runId: autoSyncRunId } : {}) }, body.type === 'album' ? '专辑源添加成功' : '歌单源添加成功')
   } catch (err) {
     const msg = err instanceof Error ? err.message : '创建失败'
     return fail(msg)

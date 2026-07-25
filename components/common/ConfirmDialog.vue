@@ -27,13 +27,15 @@
           <p class="mb-6 text-sm leading-6 text-muted">{{ message }}</p>
         </slot>
         <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-          <button v-if="showCancel" class="btn btn-secondary btn-sm" @click="onCancel">取消</button>
+          <button v-if="showCancel" class="btn btn-secondary btn-sm" :disabled="busy" @click="onCancel">取消</button>
           <button
             class="btn"
             :class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
+            :disabled="busy || confirmDisabled"
+            :aria-busy="busy"
             @click="onConfirm"
           >
-            {{ confirmLabel }}
+            {{ busy ? '处理中…' : confirmLabel }}
           </button>
         </div>
       </div>
@@ -42,21 +44,25 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   visible: boolean
   title: string
   message?: string
   confirmLabel?: string
   variant?: 'danger' | 'primary'
   showCancel?: boolean
+  busy?: boolean
+  confirmDisabled?: boolean
 }>(), {
   message: '',
   confirmLabel: '确认',
   variant: 'primary',
   showCancel: true,
+  busy: false,
+  confirmDisabled: false,
 })
 
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
-function onConfirm() { emit('confirm') }
-function onCancel() { emit('cancel') }
+function onConfirm() { if (!props.busy && !props.confirmDisabled) emit('confirm') }
+function onCancel() { if (!props.busy) emit('cancel') }
 </script>

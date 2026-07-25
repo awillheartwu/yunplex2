@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join, normalize, relative, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import type { AppConfig } from '../config/types'
 
 function trimTrailingSeparators(value: string): string {
@@ -33,6 +33,21 @@ export function mapPlexPathToLocal(plexPath: string | null | undefined, cfg: App
 
   const suffix = relative(plexPrefix, normalizedPath)
   return suffix ? join(downloadDir, suffix) : downloadDir
+}
+
+/** Map an application-visible media path to the path exposed to Plex. */
+export function mapLocalPathToPlex(localPath: string | null | undefined, cfg: AppConfig): string | null {
+  const normalizedPath = normalizeExistingLocalPath(localPath)
+  const downloadDir = normalizePathPrefix(cfg.download.dir)
+  const plexPrefix = normalizePathPrefix(cfg.download.plexLibraryPathPrefix)
+
+  if (!normalizedPath || !downloadDir) return null
+  if (!plexPrefix) return normalizedPath
+  if (normalizedPath === downloadDir) return plexPrefix
+
+  const suffix = relative(downloadDir, normalizedPath)
+  if (!suffix || suffix === '..' || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)) return null
+  return normalize(join(plexPrefix, suffix))
 }
 
 export function resolveAccessibleLocalPath(pathLike: string | null | undefined, cfg: AppConfig): string | null {

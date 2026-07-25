@@ -10,6 +10,8 @@ export type SongStatus =
   | 'success'
   | 'skipped_existing'
   | 'removed'
+  | 'extra_skipped'
+  | 'match_pending_review'
   | 'failed_download'
   | 'failed_tags'
   | 'failed_plex_match'
@@ -23,6 +25,8 @@ export interface SongTask {
   id: string
   sourceId?: string
   neteaseSongId?: number
+  /** Occurrence index within the fetched target list; duplicate song IDs remain distinct. */
+  neteaseIndex?: number
   songName: string
   artist: string
   album: string
@@ -40,6 +44,9 @@ export interface SongTask {
     genre?: string
     label?: string
     releaseDate?: string
+    plexRatingKey?: string
+    plexPlaylistItemId?: number
+    matchTrace?: Record<string, unknown>
   }
   ops?: {
     download: 'ok' | 'failed' | 'skipped'

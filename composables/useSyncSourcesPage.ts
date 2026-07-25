@@ -3,7 +3,8 @@ import { useDragReorder } from '~~/composables/useDragReorder'
 import {
   formatSyncSourceRelativeTime,
   getCopyrightCount,
-  getIgnoredFailureCount,
+  getFailureCacheCount,
+  getIssueActionLabel,
   getIssueCount,
   getPlexTargetName,
   getPlexTargetHint,
@@ -16,6 +17,7 @@ import {
   getSyncResultLabel,
   getSyncResultTone,
 } from '~~/composables/useSyncSourcePresentation'
+import { formatFailureCacheClearedLabel } from '~~/lib/failure-cache-presentation'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 import { createLatestAsyncGuard, useDebounceFn, useRafThrottleFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
@@ -34,6 +36,7 @@ export function useSyncSourcesPage() {
   const togglingId = ref<string | null>(null)
   const forceFullId = ref<string | null>(null)
   const rebuildSyncId = ref<string | null>(null)
+  const redownloadSyncId = ref<string | null>(null)
   const repairingSourceId = ref<string | null>(null)
   const repairProgress = ref<Record<string, { processed: number; total: number }>>({})
 
@@ -116,7 +119,7 @@ export function useSyncSourcesPage() {
     if (enabledFilter.value) chips.push({ key: 'enabled', label: `状态：${enabledFilter.value === 'enabled' ? '已启用' : '已禁用'}` })
     if (statusFilter.value) chips.push({ key: 'status', label: `结果：${statusFilterOptions.find(option => option.value === statusFilter.value)?.label ?? statusFilter.value}` })
     if (subscribedFilter.value) chips.push({ key: 'subscribed', label: '特殊：已绑定目标' })
-    if (issueFilter.value) chips.push({ key: 'issue', label: `特殊：${issueFilter.value === 'ignored' ? '有忽略' : '版权受限'}` })
+    if (issueFilter.value) chips.push({ key: 'issue', label: `特殊：${issueFilter.value === 'ignored' ? '有失败缓存' : '版权受限'}` })
     return chips
   })
 
@@ -240,7 +243,7 @@ export function useSyncSourcesPage() {
     const latest = new Date(Math.max(...times))
     return formatRelative(latest.toISOString())
   })
-  const totalIgnored = computed(() => allSources.value.reduce((sum, s) => sum + sourceIgnoredCount(s), 0))
+  const totalFailureCache = computed(() => allSources.value.reduce((sum, s) => sum + sourceFailureCacheCount(s), 0))
   const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + sourceCopyrightCount(s), 0))
   const advancedFilterLabel = computed(() => advancedFilterCount.value > 0 ? '筛选' : '高级筛选')
 
@@ -314,6 +317,19 @@ export function useSyncSourcesPage() {
 
   const confirmDelete = ref<PlaylistSource | null>(null)
   const confirmRebuild = ref<PlaylistSource | null>(null)
+  const confirmRedownload = ref<PlaylistSource | null>(null)
+  const redownloadPreview = ref<{
+    total: number
+    managed: number
+    missing: number
+    protectedExternal: number
+    protectedManual: number
+    eligible: number
+    snapshotAvailable: boolean
+  } | null>(null)
+  const redownloadPreviewLoading = ref(false)
+  const redownloadPreviewError = ref('')
+  const takeOverExternal = ref(false)
   const confirmBatchDelete = ref(false)
 
   function openAddPlaylist() { showAdd.value = true }
@@ -418,8 +434,8 @@ export function useSyncSourcesPage() {
     return url.includes('?') ? `${url}&param=80y80` : `${url}?param=80y80`
   }
 
-  function sourceIgnoredCount(source: PlaylistSource): number {
-    return getIgnoredFailureCount(source)
+  function sourceFailureCacheCount(source: PlaylistSource): number {
+    return getFailureCacheCount(source)
   }
 
   function sourceCopyrightCount(source: PlaylistSource): number {
@@ -432,6 +448,10 @@ export function useSyncSourcesPage() {
 
   function sourceIssueSummary(source: PlaylistSource): string {
     return getIssueSummaryLabel(source)
+  }
+
+  function sourceIssueActionLabel(source: PlaylistSource): string {
+    return getIssueActionLabel(source)
   }
 
   function sourceHoverOrigin(source: PlaylistSource): string {
@@ -511,13 +531,17 @@ export function useSyncSourcesPage() {
     }, 90)
   }
 
-  async function clearIgnored(s: PlaylistSource) {
+  async function clearIssueCache(s: PlaylistSource) {
+    const counts = {
+      continuousFailure: sourceFailureCacheCount(s),
+      copyrightRestricted: sourceCopyrightCount(s),
+    }
     try {
       await api.put(`/playlist-sources/${s.id}`, { ignoredFailureIds: null, copyrightRestrictedIds: null })
       await refreshSources()
-      feedback.success('忽略记录已清除')
+      feedback.success(formatFailureCacheClearedLabel(counts))
     } catch (err) {
-      feedback.error('清除忽略记录失败', err instanceof Error ? err.message : '请稍后重试')
+      feedback.error('清除失败缓存与版权受限记录失败', err instanceof Error ? err.message : '请稍后重试')
     }
   }
 
@@ -577,11 +601,36 @@ export function useSyncSourcesPage() {
     syncingSourceId.value !== null
     || forceFullId.value !== null
     || rebuildSyncId.value !== null
+    || redownloadSyncId.value !== null
     || repairingSourceId.value !== null,
   )
 
   function openRebuildConfirm(source: PlaylistSource) {
     confirmRebuild.value = source
+  }
+
+  async function openRedownloadConfirm(source: PlaylistSource) {
+    if (source.type !== 'playlist') return
+    confirmRedownload.value = source
+    redownloadPreview.value = null
+    redownloadPreviewError.value = ''
+    takeOverExternal.value = false
+    redownloadPreviewLoading.value = true
+    try {
+      redownloadPreview.value = await api.get(`/playlist-sources/${source.id}/redownload-preview`)
+    } catch (err) {
+      redownloadPreviewError.value = err instanceof Error ? err.message : '无法读取重新下载范围'
+    } finally {
+      redownloadPreviewLoading.value = false
+    }
+  }
+
+  function closeRedownloadConfirm() {
+    if (redownloadSyncId.value) return
+    confirmRedownload.value = null
+    redownloadPreview.value = null
+    redownloadPreviewError.value = ''
+    takeOverExternal.value = false
   }
 
   async function syncSource(s: PlaylistSource, forceFull = false) {
@@ -612,6 +661,25 @@ export function useSyncSourcesPage() {
     } catch (err) {
       rebuildSyncId.value = null
       feedback.error('触发重建失败', err instanceof Error ? err.message : '请稍后重试')
+    }
+  }
+
+  async function handleRedownloadSync() {
+    const source = confirmRedownload.value
+    if (!source || redownloadPreviewLoading.value || redownloadPreviewError.value) return
+    redownloadSyncId.value = source.id
+    try {
+      await api.post(`/playlist-sources/${source.id}/sync`, {
+        forceFull: true,
+        redownloadAll: true,
+        takeOverExternal: takeOverExternal.value,
+      })
+      feedback.success('重新下载全部音频并同步已触发', sourceDisplayName(source))
+      confirmRedownload.value = null
+    } catch (err) {
+      feedback.error('触发重新下载失败', err instanceof Error ? err.message : '请稍后重试')
+    } finally {
+      redownloadSyncId.value = null
     }
   }
 
@@ -682,10 +750,10 @@ export function useSyncSourcesPage() {
     repairingSourceId.value = s.id
     try {
       await api.post(`/playlist-sources/${s.id}/repair`)
-      feedback.success('补全任务已触发', sourceDisplayName(s))
+      feedback.success('媒体修复任务已触发', sourceDisplayName(s))
     } catch (err) {
       repairingSourceId.value = null
-      feedback.error('触发补全失败', err instanceof Error ? err.message : '请稍后重试')
+      feedback.error('触发媒体修复失败', err instanceof Error ? err.message : '请稍后重试')
     }
   }
 
@@ -742,22 +810,22 @@ export function useSyncSourcesPage() {
 
   return {
     advancedFilterCount, advancedFilterLabel, albumSourceCount, allSources, allVisibleSelected, applyDraftFilters, applySourceFilters, batchDeleting,
-    batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer, clearIgnored,
-    clearSelection, clearSourceFilters, confirmBatchDelete, confirmDelete, confirmRebuild, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
+    batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer, clearIssueCache,
+    clearSelection, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
     draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget, enabledCount, enabledFilter, expandedId,
     expandedLoading, expandedSongs, fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative,
-    globalSyncState, handleBatchDelete, handleDelete, handleRebuildSync, hoverCard, hoverHideTimer, isAnySyncing, issueFilter,
+    globalSyncState, handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, hoverHideTimer, isAnySyncing, issueFilter,
     lastSyncTime, loading, moreMenuId, onAlbumCreated, onDragEnd, onDragLeave, onDragOver, onDragStart,
     onDrop, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved, onSourceSearchInput, onSourceTabChange,
-    openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, playlistSourceCount, plexTargetHint, plexTargetName, prepareDraftFilters,
-    pruneSelectionToVisible, queryString, rebuildActionLabel, rebuildSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress,
+    openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, playlistSourceCount, plexTargetHint, plexTargetName, prepareDraftFilters,
+    pruneSelectionToVisible, queryString, rebuildActionLabel, rebuildSyncId, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress,
     repairSource, resetDraftFilters, restoreSourceFiltersFromRoute, runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedHasAlbum, selectedHasDisabledPlaylist,
     selectedSourceIds, selectedSources, setSourceType, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction, showSourceHover,
-    someVisibleSelected, songStatusDot, sourceActiveCount, sourceCanClear, sourceCopyrightCount, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
-    sourceFilters, sourceHoverOrigin, sourceIgnoredCount, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs,
+    someVisibleSelected, songStatusDot, sourceActiveCount, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
+    sourceFilters, sourceHoverOrigin, sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs,
     sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
-    syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver,
+    syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver, takeOverExternal,
     tableShellWidth, toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright,
-    totalIgnored, totalSourceCount, triggerSourceSync, updateTableShellWidth,
+    totalFailureCache, totalSourceCount, triggerSourceSync, updateTableShellWidth,
   }
 }

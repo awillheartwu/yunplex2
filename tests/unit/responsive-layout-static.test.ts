@@ -171,10 +171,17 @@ describe('responsive layout sizing', () => {
 
   it('uses mobile-specific layouts for dense system and job detail rows', () => {
     const stats = readProjectFile('components/system/SystemDataStats.vue')
+    const monitor = readProjectFile('components/system/SystemMonitorPanel.vue')
+    const systemInfo = readProjectFile('components/system/SystemInfoPanel.vue')
     const jobDetail = readProjectFile('components/jobs/JobDetail.vue')
 
     expect(stats).toContain('system-table-row__identity')
     expect(stats).toContain('.system-table-row__meta {\n    display: flex;')
+    expect(stats).toContain('.system-data-group--matching')
+    expect(monitor.indexOf('<SystemDataStats')).toBeLessThan(monitor.indexOf('<SystemInfoPanel'))
+    expect(monitor).not.toContain('lg:grid-cols-[minmax(18rem')
+    expect(systemInfo).toContain('class="system-runtime"')
+    expect(systemInfo).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
     expect(jobDetail).toContain('run-detail__song-group-name')
     expect(jobDetail).toContain('flex:1 1 calc(100% - 7rem)')
     expect(jobDetail).toContain('padding-left:3.05rem')

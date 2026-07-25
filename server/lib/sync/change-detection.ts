@@ -25,6 +25,8 @@ export interface ChangeDetectionInput {
   currentIdOrder: number[]
   /** Previous track ID snapshot JSON string */
   trackIdSnapshot: string | null | undefined
+  /** Plex playlist changed after the last recorded Plex sync */
+  plexDriftDetected?: boolean
 }
 
 export interface ChangeDetectionResult {
@@ -36,6 +38,7 @@ export interface ChangeDetectionResult {
   canIncremental: boolean
   needFullCompare: boolean
   skipEntirely: boolean
+  plexDriftDetected: boolean
   addedIds: number[]
   removedIds: number[]
   oldSnapshot: number[]
@@ -47,7 +50,7 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
   const {
     isAlbum, trackUpdateTime, lastTrackUpdateTime, manualForce, dryRun,
     consecutiveSkips, fullCompareAfterSkips, fullCompareAfterDays, lastFullCompareAt,
-    currentIdOrder, trackIdSnapshot,
+    currentIdOrder, trackIdSnapshot, plexDriftDetected = false,
   } = input
 
   const neteaseChanged = !trackUpdateTime || trackUpdateTime !== lastTrackUpdateTime
@@ -65,28 +68,37 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
   let oldSnapshot: number[] = []
   try { if (trackIdSnapshot) oldSnapshot = JSON.parse(trackIdSnapshot) } catch { /* ignore */ }
 
-  const addedIds = currentIdOrder.filter(id => !oldSnapshot.includes(id))
-  const removedIds = oldSnapshot.filter(id => !currentIdOrder.includes(id))
-  const orderChanged = oldSnapshot.length > 0 && JSON.stringify(currentIdOrder) !== JSON.stringify(oldSnapshot)
-  const isPureAddition = addedIds.length > 0 && removedIds.length === 0 && !orderChanged
-  const isPureDeletion = addedIds.length === 0 && removedIds.length > 0 && !orderChanged
-  const isPureReorder = addedIds.length === 0 && removedIds.length === 0 && orderChanged
+  const oldIds = new Set(oldSnapshot)
+  const currentIds = new Set(currentIdOrder)
+  const addedIds = currentIdOrder.filter(id => !oldIds.has(id))
+  const removedIds = oldSnapshot.filter(id => !currentIds.has(id))
+
+  // Compare only the IDs shared by both snapshots. Comparing the complete
+  // arrays makes every insertion/deletion look like a reorder and renders the
+  // pure-addition/deletion branches unreachable.
+  const previousSharedOrder = oldSnapshot.filter(id => currentIds.has(id))
+  const currentSharedOrder = currentIdOrder.filter(id => oldIds.has(id))
+  const sharedOrderChanged = oldSnapshot.length > 0
+    && JSON.stringify(previousSharedOrder) !== JSON.stringify(currentSharedOrder)
+  const isPureAddition = addedIds.length > 0 && removedIds.length === 0 && !sharedOrderChanged
+  const isPureDeletion = addedIds.length === 0 && removedIds.length > 0 && !sharedOrderChanged
+  const isPureReorder = addedIds.length === 0 && removedIds.length === 0 && sharedOrderChanged
   const canIncremental = isPureAddition || isPureDeletion || isPureReorder
 
   const changedMsg = neteaseChanged ? '网易云已变' : '未变化'
   const diffMsg = canIncremental
     ? (isPureAddition ? `+${addedIds.length}首` : isPureDeletion ? `-${removedIds.length}首` : '重排')
-    : (addedIds.length || removedIds.length ? `+${addedIds.length}/-${removedIds.length}${orderChanged ? '/重排' : ''}` : '')
+    : (addedIds.length || removedIds.length ? `+${addedIds.length}/-${removedIds.length}${sharedOrderChanged ? '/重排' : ''}` : '')
 
   // Decision: full vs incremental shortcut (albums always full)
   // Skip entirely if Netease unchanged (albums never skip)
-  const skipEntirely = !isAlbum && !neteaseChanged && !manualForce && !autoForce && !dryRun
-  const needFullCompare = !skipEntirely && (isAlbum || manualForce || autoForce || dryRun || !canIncremental || oldSnapshot.length === 0)
+  const skipEntirely = !isAlbum && !neteaseChanged && !plexDriftDetected && !manualForce && !autoForce && !dryRun
+  const needFullCompare = !skipEntirely && (isAlbum || manualForce || autoForce || plexDriftDetected || dryRun || !canIncremental || oldSnapshot.length === 0)
 
   return {
     neteaseChanged, autoForce,
     isPureAddition, isPureDeletion, isPureReorder, canIncremental,
-    needFullCompare, skipEntirely,
+    needFullCompare, skipEntirely, plexDriftDetected,
     addedIds, removedIds, oldSnapshot,
     changedMsg, diffMsg,
   }

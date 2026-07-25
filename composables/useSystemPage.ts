@@ -2,6 +2,7 @@ import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
 import { resolveLegacyActivityRedirect } from '~~/lib/activity-navigation'
 import { useDebounceFn, useIntervalFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
+import { buildSystemDataTableRows } from '~~/lib/system-data-catalog'
 
 type SystemTab = 'monitor' | 'maintenance'
 type Tone = 'ok' | 'warning' | 'error' | 'idle'
@@ -51,25 +52,6 @@ export interface SystemHealthItem {
 }
 
 const MAX_POINTS = 60
-
-const tableDescs: Record<string, string> = {
-  config: '系统配置',
-  logs: '同步日志',
-  task_runs: '统一运行记录',
-  failure_records: '异常生命周期',
-  playlist_sources: '歌单源',
-  download_tasks: '下载队列',
-  song_lookup: 'Plex 匹配缓存',
-  sync_state: '同步运行时状态',
-}
-
-const tableLinks: Record<string, string> = {
-  logs: '/activity?tab=logs',
-  task_runs: '/task-center?tab=runs',
-  failure_records: '/task-center?tab=failures',
-  playlist_sources: '/sync-sources',
-  download_tasks: '/manual-download?view=queue',
-}
 
 function historyChart(data: { time: string; value: number }[], unit: string, color: string, lightColor: string) {
   const hasData = data.length > 0
@@ -213,17 +195,7 @@ export function useSystemPage() {
   const cleanupPreviewError = ref('')
   const showRunCleanupConfirm = ref(false)
 
-  const tableRows = computed(() => Object.entries(stats.value?.dbStats || {})
-    .filter(([name]) => tableDescs[name])
-    .map(([name, count]) => {
-      const href = tableLinks[name]
-      return {
-        name,
-        count,
-        desc: tableDescs[name] ?? '',
-        ...(href ? { href } : {}),
-      }
-    }))
+  const tableRows = computed(() => buildSystemDataTableRows(stats.value?.dbStats || {}))
 
   const cpuChartOption = computed(() => historyChart(cpuHistory.value, 'CPU %', '#818cf8', 'rgba(129,140,248,0.25)'))
   const memChartOption = computed(() => historyChart(memHistory.value, 'RSS MB', '#22c55e', 'rgba(34,197,94,0.2)'))

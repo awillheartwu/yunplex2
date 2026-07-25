@@ -7,13 +7,13 @@ export interface NeteaseSong {
   no: number
   dt: number
   disc: string
-  artists: { name: string }[]
+  artists: { id?: number; name: string }[]
   album: {
     id: number
     name: string
     picUrl: string
     publishTime: number
-    artist?: { name: string }
+    artist?: { id?: number; name: string }
   }
   sync?: boolean
   playlistItemID?: number
@@ -69,6 +69,8 @@ export async function fetchPlaylistSongs(
   songs: NeteaseSong[]
   trackUpdateTime: number | null
   trackIds: { id: number }[]
+  /** Complete playlist membership before syncLimit is applied. */
+  allTrackIds: { id: number }[]
   playlistName: string | null
   playlist: {
     name: string
@@ -81,6 +83,9 @@ export async function fetchPlaylistSongs(
 }> {
   const url = `https://music.163.com/api/v1/playlist/detail?id=${playlistId}`
   const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`获取网易云歌单失败（HTTP ${res.status}）`)
+  }
   const body = (await res.json()) as {
     playlist?: {
       name?: string
@@ -92,6 +97,9 @@ export async function fetchPlaylistSongs(
       trackUpdateTime?: number
       updateTime?: number
     }
+  }
+  if (!body.playlist || !Array.isArray(body.playlist.trackIds)) {
+    throw new Error('网易云歌单响应不完整：缺少 playlist.trackIds，已中止同步以防误删')
   }
   const allIds = body.playlist?.trackIds ?? []
   const trackUpdateTime = body.playlist?.trackUpdateTime ?? null
@@ -109,12 +117,12 @@ export async function fetchPlaylistSongs(
   const slicedIds = limit && limit > 0 ? allIds.slice(0, limit) : allIds
 
   if (slicedIds.length === 0) {
-    return { songs: [], trackUpdateTime, trackIds: slicedIds, playlistName, playlist }
+    return { songs: [], trackUpdateTime, trackIds: slicedIds, allTrackIds: allIds, playlistName, playlist }
   }
 
   // Batch song_detail — API rejects too many IDs at once (safe limit: ~500)
   const BATCH_SIZE = 400
-  const allSongs: NeteaseSong[] = []
+  const songsById = new Map<number, NeteaseSong>()
 
   for (let offset = 0; offset < slicedIds.length; offset += BATCH_SIZE) {
     const batch = slicedIds.slice(offset, offset + BATCH_SIZE)
@@ -126,7 +134,9 @@ export async function fetchPlaylistSongs(
     ])
 
     const data = (v3Res as any).body as { songs?: RawSong[] } | undefined
-    const oldData = await oldRes.json() as { songs?: { album?: { publishTime?: number } }[] } | undefined
+    const oldData = oldRes.ok
+      ? await oldRes.json().catch(() => undefined) as { songs?: Array<{ id?: number; album?: { publishTime?: number } }> } | undefined
+      : undefined
 
     if (data?.songs) {
       for (const s of data.songs) {
@@ -136,12 +146,19 @@ export async function fetchPlaylistSongs(
           const match = oldData.songs.find((os: any) => os?.id === s.id)
           if (match?.album?.publishTime) song.album.publishTime = match.album.publishTime
         }
-        allSongs.push(song)
+        songsById.set(song.id, song)
       }
     }
   }
 
-  return { songs: allSongs, trackUpdateTime, trackIds: slicedIds, playlistName, playlist }
+  // The detail endpoint may reorder or omit rows. Reconstruct the authoritative
+  // playlist order from trackIds and preserve duplicate occurrences. Missing
+  // IDs remain visible to the sync service through trackIds for deletion safety.
+  const orderedSongs = slicedIds.flatMap(track => {
+    const song = songsById.get(track.id)
+    return song ? [song] : []
+  })
+  return { songs: orderedSongs, trackUpdateTime, trackIds: slicedIds, allTrackIds: allIds, playlistName, playlist }
 }
 
 interface RawSong {
@@ -151,13 +168,13 @@ interface RawSong {
   dt?: number
   cd?: string
   publishTime?: number
-  ar?: { name: string }[]
+  ar?: { id?: number; name: string }[]
   al?: {
     id: number
     name: string
     picUrl: string
     publishTime?: number
-    artist?: { name: string }
+    artist?: { id?: number; name: string }
   }
 }
 

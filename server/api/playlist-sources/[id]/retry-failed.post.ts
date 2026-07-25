@@ -3,6 +3,12 @@ import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/insta
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { appendLog } from '../../../lib/log/store'
+import {
+  countCopyrightRestrictedEntries,
+  countFailureCacheEntries,
+  failureCacheTotal,
+  formatFailureCacheRetryLabel,
+} from '~~/lib/failure-cache-presentation'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -16,15 +22,13 @@ export default defineEventHandler(async (event) => {
   if (isRepairRunning()) return fail('补全任务运行中，请等待完成')
 
   // Count how many cached failures before clearing
-  const restrictedCount = source.copyrightRestrictedIds
-    ? JSON.parse(source.copyrightRestrictedIds).length
-    : 0
-  const ignoredCount = source.ignoredFailureIds
-    ? Object.keys(JSON.parse(source.ignoredFailureIds)).length
-    : 0
-  const clearedCount = restrictedCount + ignoredCount
+  const counts = {
+    continuousFailure: countFailureCacheEntries(source.ignoredFailureIds),
+    copyrightRestricted: countCopyrightRestrictedEntries(source.copyrightRestrictedIds),
+  }
+  const clearedCount = failureCacheTotal(counts)
 
-  if (clearedCount === 0) return fail('该歌单源没有失败缓存的歌曲')
+  if (clearedCount === 0) return fail('该同步源没有失败缓存或版权受限记录')
 
   // Clear all failure caches
   updateSource(source.id, {
@@ -37,16 +41,20 @@ export default defineEventHandler(async (event) => {
   const dataDir = (useRuntimeConfig() as any).dataDir as string
   appendLog(dataDir, {
     level: 'info',
-    message: `[批量重试] 已清空 ${clearedCount} 首失败缓存（版权受限 ${restrictedCount} + 已忽略 ${ignoredCount}），触发增量同步: ${source.name}`,
+    message: `[批量重试] ${formatFailureCacheRetryLabel(counts)}：${source.name}`,
     stage: 'download',
   }, cfg.sync.logRetentionDays ?? 30)
 
-  // Trigger incremental sync (fire-and-forget)
-  syncService.runSyncForSource(source.id, { trigger: 'retry' }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[YunPlex2] retry-failed sync failed:', msg)
-    appendLog(dataDir, { level: 'error', message: `[批量重试] 同步触发失败: ${source.name}`, detail: msg, stage: 'download' }, cfg.sync.logRetentionDays ?? 30)
-  })
+  // Clearing failure memory must be followed by a real comparison even when
+  // the Netease playlist timestamp itself has not changed.
+  const { runId } = syncService.startSyncForSource(source.id, { trigger: 'retry', forceFull: true })
 
-  return success({ triggered: true, sourceId: id, clearedCount }, `已清空 ${clearedCount} 首失败缓存，增量同步已触发`)
+  return success({
+    triggered: true,
+    sourceId: id,
+    clearedCount,
+    continuousFailureCount: counts.continuousFailure,
+    copyrightRestrictedCount: counts.copyrightRestricted,
+    runId,
+  }, formatFailureCacheRetryLabel(counts))
 })

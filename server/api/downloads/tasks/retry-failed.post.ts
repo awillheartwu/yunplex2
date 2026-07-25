@@ -24,7 +24,7 @@ export default defineEventHandler(async () => {
     stage: 'download',
   }, retentionDays)
 
-  processAll((task, onProgress) => downloadSingleSong(task.songId, {
+  processAll((task, onProgress, signal) => downloadSingleSong(task.songId, {
     quality: task.quality || cfg.netease.quality,
     cookie: cfg.netease.cookie,
     downloadDir: cfg.download.dir,
@@ -39,7 +39,7 @@ export default defineEventHandler(async () => {
     downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
     downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
     downloadMode: 'full',
-  }, onProgress), undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch((err: unknown) => {
+  }, onProgress, signal), undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     appendLog(dataDir, {
       level: 'error',

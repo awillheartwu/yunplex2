@@ -137,8 +137,9 @@ export function useSyncStatus() {
     sharedError.value = null
 
     try {
-      await api.post('/sync/trigger', { dryRun })
+      const result = await api.post<{ triggered: boolean; runId: string }>('/sync/trigger', { dryRun })
       if (!sseConnected.value) startPollingShared(2000)
+      return result
     } catch (err) {
       sharedError.value = err instanceof Error ? err.message : '触发同步失败'
       throw err

@@ -47,7 +47,23 @@ pnpm install
 pnpm dev
 ```
 
-开发服务器默认运行在 `http://localhost:3000`。
+开发服务器默认运行在 `http://localhost:3001`。
+
+### 同步稳定性诊断
+
+诊断单个歌单源时，可连续执行同步并比较 Plex 的歌曲顺序与
+`playlistItemID`。命令默认预览，不修改 Plex；只有显式传入 `--apply`
+才会执行真实同步：
+
+```bash
+npm run diagnose:sync-source -- --source <歌单源 ID> --runs 2
+npm run diagnose:sync-source -- --source <歌单源 ID> --runs 2 --apply
+```
+
+输出中的 `identityFingerprint` 检查歌曲与顺序，`occurrenceFingerprint`
+还会检查 Plex 歌单项身份，可识别“删除后重新加入同一首歌”。需要逐项
+查看歌曲时增加 `--verbose`；也可使用 `--force-full`、`--rebuild-match`
+或 `--data-dir <目录>`。运行真实诊断前请停止开发服务器，避免并发同步。
 
 ### 构建生产版本
 
@@ -107,9 +123,12 @@ volumes:
 | 配置项 | 说明 |
 |--------|------|
 | 下载目录 | 歌曲文件的存储根目录 |
+| Plex 音乐库路径前缀 | 同一文件在 Plex 运行环境中的路径根，仅用于路径换算；不会上传或复制文件 |
 | 下载歌词 | 是否下载 .lrc 歌词文件 |
 | 写入元数据 | 是否写入 ID3/FLAC 标签 |
 | 嵌入封面 | 是否在音频文件中嵌入封面图 |
+
+> 如果 Plex 运行在另一台主机，下载目录必须通过 SMB/NFS/容器卷等方式与 Plex 的音乐库共享同一份文件，或由独立流程负责复制。Plex API 扫描只会索引 Plex 主机已经可见的文件。
 
 ### 同步策略
 
@@ -118,6 +137,10 @@ volumes:
 | 同步间隔 | 自动同步间隔（分钟），建议 30-60 |
 | 歌曲上限 | 每次同步处理的歌曲数量 |
 | 启用自动同步 | 开关 |
+| 高置信元数据自动绑定 | 两侧无可用 MB recording 时，以标题、完整艺人、专辑、音轨号和时长全字段一致建立绑定；默认关闭 |
+| 元数据时长允许误差 | 高置信绑定的最大时长差，默认 2 秒 |
+
+MusicBrainz 返回多个相近 recording 时，同一“元数据时长允许误差”也用于 recording 消歧。系统会先排除 Instrumental、Live、Remix、Demo 等版本不兼容候选，再要求最近时长候选唯一且至少领先第二名 500 ms；证据不足时仍进入匹配审核，不会自动删除 Plex 旧条目。
 
 ## API 接口
 

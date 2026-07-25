@@ -92,6 +92,7 @@ describe('run timeline', () => {
     })
     expect(timeline.find(item => item.id === 'run-1:ignored')).toMatchObject({
       title: '跳过 1 首需要关注的歌曲',
+      description: '包含版权受限，或达到连续失败阈值后已暂停自动重试的歌曲',
       tone: 'ignored',
     })
     expect(timeline.find(item => item.id === 'run-1:success')?.details[0]?.title).toBe('成功歌曲')

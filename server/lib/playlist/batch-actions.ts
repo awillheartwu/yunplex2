@@ -9,12 +9,13 @@ export interface PlaylistSourceBatchResult {
   action: PlaylistSourceBatchAction
   count: number
   ids: string[]
+  runId?: string
 }
 
 export interface PlaylistSourceBatchDeps {
   isSyncRunning?: () => boolean
   isRepairRunning?: () => boolean
-  runSync?: (ids: string[]) => void
+  runSync?: (ids: string[]) => { runId: string } | void
   recordActivity?: typeof recordActivityEvent
 }
 
@@ -44,6 +45,7 @@ function recordBatchActivity(
   action: PlaylistSourceBatchAction,
   sources: PlaylistSource[],
   recordActivity: typeof recordActivityEvent,
+  runId?: string,
 ) {
   const names = sources.map(sourceName).slice(0, 3)
   const suffix = sources.length > names.length ? ` 等 ${sources.length} 个来源` : ''
@@ -61,8 +63,8 @@ function recordBatchActivity(
     actor: 'user',
     title: actionLabel[action],
     summary: `${actionLabel[action]}：${names.join('、')}${suffix}。`,
-    context: { action, sourceIds: sources.map(source => source.id), sourceNames: sources.map(sourceName) },
-    link: '/sync-sources',
+    context: { action, sourceIds: sources.map(source => source.id), sourceNames: sources.map(sourceName), ...(runId ? { jobId: runId } : {}) },
+    link: runId ? `/task-center/runs/${runId}` : '/sync-sources',
     groupKey: `source:batch:${action}`,
   })
 }
@@ -91,9 +93,9 @@ export function applyPlaylistSourceBatchAction(
     if (disabled) throw new Error('批量同步仅支持已启用的歌单来源')
     if (deps.isSyncRunning?.()) throw new Error('同步任务已在运行中，请等待当前任务完成')
     if (deps.isRepairRunning?.()) throw new Error('补全任务运行中，请等待完成')
-    deps.runSync?.(ids)
-    recordBatchActivity(actionInput, sources, recordActivity)
-    return { action: actionInput, count: ids.length, ids }
+    const started = deps.runSync?.(ids)
+    recordBatchActivity(actionInput, sources, recordActivity, started?.runId)
+    return { action: actionInput, count: ids.length, ids, ...(started?.runId ? { runId: started.runId } : {}) }
   }
 
   if (actionInput === 'delete') {

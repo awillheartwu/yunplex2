@@ -42,13 +42,19 @@ export interface SyncStrategyConfig {
   downloadTaskRetentionDays: number
   activityRetentionDays: number
   forceFullCompare: boolean
+  reconcileOnPlexDrift: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
   autoDownloadAlbum: boolean
   skipPlexPlaylist: boolean
   skipRemoveExtraTracks: boolean
+  extraTrackRemovalPolicy: ExtraTrackRemovalPolicy
+  enableHighConfidenceMetadataBinding: boolean
+  metadataDurationToleranceSec: number
   maxFailureAttempts: number
 }
+
+export type ExtraTrackRemovalPolicy = 'strict' | 'balanced' | 'exact'
 
 export type MultiArtistFormat = 'feat' | 'ft' | 'featuring' | 'ampersand' | 'slash' | 'comma' | 'with' | 'and' | 'plus'
 
@@ -119,7 +125,64 @@ export interface AppConfig {
 export type ConfigSection = keyof AppConfig
 
 export interface ConnectionTestResult {
-  section: 'netease' | 'plex'
+  section: 'netease' | 'plex' | 'download'
   success: boolean
   message: string
+}
+
+export type StorageVisibilityStatus = 'verified' | 'warning'
+
+export type StorageVisibilityCode =
+  | 'shared_storage_verified'
+  | 'remote_storage_unverified'
+  | 'mapping_only_unverified'
+  | 'missing_path_prefix'
+  | 'section_prefix_mismatch'
+  | 'section_location_unavailable'
+  | 'plex_inspection_unavailable'
+  | 'path_mapping_invalid'
+
+export interface PlexMusicSectionInfo {
+  key: string
+  title: string
+  locations: string[]
+}
+
+export interface StorageMappingSample {
+  relativePath: string
+  localPath: string
+  plexPath: string | null
+  roundTripLocalPath: string | null
+  roundTripMatches: boolean
+}
+
+export interface StorageVisibilityCheck {
+  key: 'mapping' | 'section' | 'publication'
+  label: string
+  status: 'pass' | 'warning'
+  detail: string
+}
+
+/**
+ * Storage visibility is intentionally a warning-level diagnostic. A valid path
+ * substitution proves naming equivalence only; it cannot upload a file or prove
+ * that a different Plex host is backed by the same physical storage.
+ */
+export interface StorageVisibilityDiagnostic {
+  status: StorageVisibilityStatus
+  code: StorageVisibilityCode
+  summary: string
+  action: string
+  publicationVerified: boolean
+  mappingValid: boolean
+  serverScope: 'local' | 'remote' | 'unknown'
+  downloadDir: string
+  plexPathPrefix: string | null
+  sectionName: string
+  sectionKey: string | null
+  sectionLocations: string[]
+  prefixMatchesSection: boolean | null
+  inspectionError?: string
+  sample: StorageMappingSample
+  checks: StorageVisibilityCheck[]
 }

@@ -39,6 +39,27 @@ export function deleteSongLookups(songIds: number[]): number {
   return tx(uniqueIds)
 }
 
+/**
+ * Clear only performance-cache rows that have not been promoted to a durable
+ * identity. Used by "rebuild matching" after the live validation pass so a
+ * valid legacy path can migrate before its cache row disappears.
+ */
+export function deleteUnboundSongLookups(songIds: number[]): number {
+  const uniqueIds = [...new Set(songIds)].filter(Number.isFinite)
+  if (uniqueIds.length === 0) return 0
+  const placeholders = uniqueIds.map(() => '?').join(', ')
+  const result = getDb().prepare(`
+    DELETE FROM song_lookup
+    WHERE netease_song_id IN (${placeholders})
+      AND NOT EXISTS (
+        SELECT 1 FROM song_identity_bindings binding
+        WHERE binding.netease_song_id = song_lookup.netease_song_id
+          AND binding.status = 'active'
+      )
+  `).run(...uniqueIds)
+  return result.changes
+}
+
 export function getSongLookupRatingKeys(songIds: number[]): Map<number, string> {
   const uniqueIds = [...new Set(songIds)].filter((id) => Number.isFinite(id))
   const result = new Map<number, string>()

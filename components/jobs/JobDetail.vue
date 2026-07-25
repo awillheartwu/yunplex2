@@ -18,7 +18,7 @@
           <StatusBadge :status="badgeStatus" :label="runStatusLabel(job.status)" />
           <span v-if="job.dryRun" class="run-detail__preview">预览运行</span>
         </div>
-        <h2>{{ job.summary || typeIdentity.description }}</h2>
+        <h2>{{ runSummaryLabel(job.summary, typeIdentity.description) }}</h2>
         <p>{{ typeIdentity.description }}</p>
         <div class="run-detail__hero-meta">
           <span><AppIcon name="calendar" :size="13" />{{ formatTime(job.startedAt) }}</span>
@@ -186,6 +186,7 @@ import { sseSubscribe } from '~~/composables/sse'
 import {
   formatRunDuration,
   runBadgeStatus,
+  runSummaryLabel,
   runStatusLabel,
   runTriggerLabel,
   runTypeIdentity,

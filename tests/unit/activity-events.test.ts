@@ -1,13 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closeDb, initDb } from '../../server/lib/db'
 import { listActivityEvents, recordActivityEvent } from '../../server/lib/activity/store'
 
 let tempPath: string | null = null
 
 afterEach(() => {
+  vi.useRealTimers()
   closeDb()
   if (tempPath) {
     rmSync(tempPath, { recursive: true, force: true })
@@ -76,6 +77,9 @@ describe('activity event store', () => {
   })
 
   it('filters activity events by local date range inclusively', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-26T00:00:00.000Z'))
+
     tempPath = mkdtempSync(join(tmpdir(), 'yunplex-activity-date-test-'))
     initDb(tempPath)
 

@@ -12,7 +12,7 @@
 这意味着：
 
 - 即使 Plex 歌单被手工修改，只要网易云没变化，本轮仍可跳过
-- Plex 中“多余歌曲是否保留”由 `skipRemoveExtraTracks` 控制，但不会反向触发同步
+- Plex 中“多余歌曲是否保留”先由 `skipRemoveExtraTracks` 总开关控制；允许清理时，再由 `extraTrackRemovalPolicy` 决定严格保护、连续观察或立即精确对齐
 
 ## 决策链
 
@@ -88,6 +88,16 @@ flowchart TD
 - 强制 full compare
 - 禁用纯重排捷径
 - 正常更新 `trackIdSnapshot`、`lastFullCompareAt`、`lastTrackUpdateTime`
+
+## 多余歌单项清理
+
+清理只移除 Plex 歌单 occurrence，不会删除 Plex 音乐库中的媒体文件。无论选择哪种策略，待审核候选、目标身份不完整、空目标未经二次确认，以及插入或重排失败都会阻止删除。
+
+- `strict`：只删除可追溯到既有全局身份、且对应网易云歌曲已经不在目标中的旧项；未知历史项持续保留。
+- `balanced`（默认）：目标歌曲全部通过路径、MusicBrainz recording 或人工绑定验证后，对具有稳定 Plex 路径的未知旧项进行连续观察；第二个不同 run 仍存在时才授权删除。同一 run 重试不会重复计数，目标不完整或中途消失会重置连续次数。
+- `exact`：目标歌曲全部建立强身份后，在本轮直接移除不属于目标顺序的多余 occurrence。
+
+连续观察保存在 `playlist_extra_observations`，身份优先使用规范化 Plex 文件路径，`ratingKey` 仅作为无法取得路径时的诊断回退；平衡模式不会依赖回退键自动删除。
 
 ## 缓存完整性要求
 

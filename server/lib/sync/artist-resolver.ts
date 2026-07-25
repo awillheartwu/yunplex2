@@ -48,6 +48,7 @@ type CacheStatus = 'success' | 'empty' | 'failed' | 'disabled'
 // ── Config ──
 
 let manualAliases: Record<string, string> = {}
+let manualAliasesFingerprint = ''
 let enableMB = true
 let mbMinScore = 90
 let mbTimeout = 2000
@@ -58,12 +59,17 @@ export function configureResolver(opts: {
   mbMinScore?: number
   mbTimeout?: number
 }) {
+  const nextAliases = opts.manualAliases ?? manualAliases
+  const nextAliasesFingerprint = JSON.stringify(Object.entries(nextAliases).sort(([a], [b]) => a.localeCompare(b)))
   const changed =
-    (opts.manualAliases && opts.manualAliases !== manualAliases) ||
+    nextAliasesFingerprint !== manualAliasesFingerprint ||
     (opts.enableMB !== undefined && opts.enableMB !== enableMB) ||
     (opts.mbMinScore !== undefined && opts.mbMinScore !== mbMinScore)
 
-  if (opts.manualAliases) manualAliases = opts.manualAliases
+  if (opts.manualAliases) {
+    manualAliases = opts.manualAliases
+    manualAliasesFingerprint = nextAliasesFingerprint
+  }
   if (opts.enableMB !== undefined) enableMB = opts.enableMB
   if (opts.mbMinScore !== undefined) mbMinScore = opts.mbMinScore
   if (opts.mbTimeout !== undefined) mbTimeout = opts.mbTimeout

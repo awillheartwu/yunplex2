@@ -25,7 +25,7 @@ describe('plex match failure diagnostics', () => {
     expect(describePlexMatchFailure(cause, cfg)).toContain('/Users/wuhaoli/projects/test')
   })
 
-  it('classifies single-song misses with a local file as indexing or metadata problems', () => {
+  it('classifies every exact local-path miss as a Plex visibility/publication problem', () => {
     const cause = inferPlexMatchFailureCause(
       {
         ratingKey: null,
@@ -37,6 +37,6 @@ describe('plex match failure diagnostics', () => {
       { downloadedSongs: 3, failedDownloadedSongs: 1 },
     )
 
-    expect(cause).toBe('not_indexed_or_metadata_mismatch')
+    expect(cause).toBe('library_visibility')
   })
 })

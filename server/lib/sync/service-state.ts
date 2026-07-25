@@ -18,6 +18,8 @@ export interface SyncRunOptions {
   sourceIds?: string[]
   forceFull?: boolean
   rebuildMatch?: boolean
+  redownloadAll?: boolean
+  takeOverExternal?: boolean
   trigger?: 'user' | 'schedule' | 'system' | 'retry'
 }
 

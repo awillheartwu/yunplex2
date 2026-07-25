@@ -21,14 +21,14 @@
           <StatusBadge :status="badgeStatus" :label="runStatusLabel(job.status)" size="sm" />
           <span v-if="job.dryRun" class="job-card__preview">预览</span>
         </div>
-        <p class="text-sm text-muted mb-2">{{ job.summary }}</p>
+        <p class="text-sm text-muted mb-2">{{ runSummaryLabel(job.summary) }}</p>
         <div class="flex items-center gap-x-3 gap-y-0.5 text-2xs flex-wrap" style="color:var(--text-tertiary)">
           <span>{{ formatDuration(job.durationMs) }}</span>
           <span style="color:var(--text-tertiary)">·</span>
           <span>{{ job.totalSongs }} 首已处理</span>
           <span v-if="job.successSongs > 0" class="text-success">{{ job.successSongs }} 已成功</span>
           <span v-if="job.skippedSongs > 0" class="text-existing">{{ job.skippedSongs }} 已存在</span>
-          <span v-if="job.warnings > 0" class="text-ignored">{{ job.warnings }} 已忽略</span>
+          <span v-if="job.warnings > 0" class="text-ignored">{{ job.warnings }} 需关注</span>
           <span v-if="job.removedSongs > 0" class="text-warning">{{ job.removedSongs }} 已移除</span>
           <span v-if="job.failedSongs > 0" class="text-danger">{{ job.failedSongs }} 下载失败</span>
         </div>
@@ -47,6 +47,7 @@
 import type { TaskRunSummary } from '~~/server/lib/job/types'
 import {
   runBadgeStatus,
+  runSummaryLabel,
   runStatusLabel,
   runTypeIdentity,
 } from '~~/lib/run-presentation'

@@ -45,13 +45,16 @@
           </p>
         </div>
       </article>
-      <article class="section-card sync-summary-card">
+      <article
+        class="section-card sync-summary-card"
+        :aria-label="`失败缓存：${totalFailureCache} 首。达到连续失败阈值后已暂停自动重试的歌曲`"
+      >
         <div class="sync-summary-card__icon sync-summary-card__icon--ignored">
           <AppIcon name="warn" :size="18" />
         </div>
         <div>
-          <p class="sync-summary-card__label">忽略歌曲</p>
-          <p class="sync-summary-card__value" :class="totalIgnored > 0 ? 'text-ignored' : 'text-muted-deep'">{{ totalIgnored }}</p>
+          <p class="sync-summary-card__label" title="达到连续失败阈值并暂停自动重试的歌曲">失败缓存</p>
+          <p class="sync-summary-card__value" :class="totalFailureCache > 0 ? 'text-ignored' : 'text-muted-deep'">{{ totalFailureCache }}</p>
         </div>
       </article>
       <article class="section-card sync-summary-card">
@@ -109,7 +112,7 @@
           <p class="filter-sheet-group__label">特殊条件</p>
           <div class="filter-sheet-group__controls">
             <FilterChip :active="draftSubscribedFilter === 'subscribed'" @click="draftSubscribedFilter = draftSubscribedFilter === 'subscribed' ? '' : 'subscribed'">已绑定目标</FilterChip>
-            <FilterChip :active="draftIssueFilter === 'ignored'" @click="draftIssueFilter = draftIssueFilter === 'ignored' ? '' : 'ignored'">有忽略</FilterChip>
+            <FilterChip :active="draftIssueFilter === 'ignored'" @click="draftIssueFilter = draftIssueFilter === 'ignored' ? '' : 'ignored'">有失败缓存</FilterChip>
             <FilterChip :active="draftIssueFilter === 'copyright'" @click="draftIssueFilter = draftIssueFilter === 'copyright' ? '' : 'copyright'">版权受限</FilterChip>
           </div>
         </div>
@@ -212,7 +215,7 @@
               <th>歌单 / 来源</th>
               <th>Plex 名称</th>
               <th class="text-right">歌曲数</th>
-              <th class="text-right">忽略</th>
+              <th class="text-right" scope="col" title="连续失败缓存与版权受限歌曲" aria-label="连续失败缓存与版权受限歌曲">失败缓存 / 版权</th>
               <th>{{ filterType === 'album' ? '下载信息' : '同步信息' }}</th>
               <th class="sync-table__actions-col">操作</th>
             </tr>
@@ -302,9 +305,10 @@
                     <button
                       v-if="sourceIssueCount(s) > 0"
                       class="sync-table__issue-link"
-                      :title="`忽略 ${sourceIgnoredCount(s)} 首，版权受限 ${sourceCopyrightCount(s)} 首，点击清除忽略记录`"
-                      :aria-label="`当前有 ${sourceIssueSummary(s)}，点击清除忽略记录`"
-                      @click.stop="clearIgnored(s)"
+                      type="button"
+                      :title="sourceIssueActionLabel(s)"
+                      :aria-label="sourceIssueActionLabel(s)"
+                      @click.stop="clearIssueCache(s)"
                     >
                       <span class="sync-table__issue-value sync-table__issue-value--active">{{ sourceIssueCount(s) }}</span>
                       <span class="sync-table__issue-unit">{{ sourceIssueSummary(s) }}</span>
@@ -318,7 +322,7 @@
                   <div class="sync-table__result">
                     <span class="sync-result-dot" :class="syncResultDotClass(s)" />
                     <span class="sync-table__result-label" :class="syncResultTextClass(s)">
-                      {{ repairingSourceId === s.id ? '补全中' : syncResultLabel(s) }}
+                      {{ repairingSourceId === s.id ? '修复中' : syncResultLabel(s) }}
                     </span>
                   </div>
                   <p class="sync-table__result-meta">
@@ -357,8 +361,8 @@
                       v-if="showInlineRepairAction"
                       class="icon-button sync-row-actions__icon"
                       type="button"
-                      aria-label="补词/图"
-                      title="补词/图"
+                      aria-label="修复标签、歌词和封面"
+                      title="修复标签、歌词和封面"
                       :disabled="isAnySyncing"
                       @click="repairSource(s)"
                     >
@@ -409,6 +413,15 @@
                           <AppIcon name="repair" :size="12" />
                           <span>{{ rebuildActionLabel(s) }}</span>
                         </button>
+                        <button
+                          v-if="s.type === 'playlist'"
+                          class="sync-row-menu__item sync-row-menu__item--warning"
+                          :disabled="isAnySyncing"
+                          @click="openRedownloadConfirm(s); moreMenuId = null"
+                        >
+                          <AppIcon name="download" :size="12" />
+                          <span>重新下载全部音频并同步</span>
+                        </button>
                         <button class="sync-row-menu__item" type="button" @click="toggleExpand(s.id); moreMenuId = null">
                           <AppIcon name="chevronRight" :size="12" />
                           <span>{{ expandedId === s.id ? '收起歌曲明细' : '展开歌曲明细' }}</span>
@@ -422,7 +435,7 @@
                         >
                           <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
                           <AppIcon v-else name="music" :size="12" />
-                          <span>补词/图</span>
+                          <span>修复标签、词图</span>
                         </button>
                         <button class="sync-row-menu__item sync-row-menu__item--danger" type="button" @click="confirmDelete = s; moreMenuId = null">
                           <AppIcon name="trash" :size="12" />
@@ -523,7 +536,7 @@
             <span class="sync-pill" :class="sourceStateClass(s)">{{ sourceStateLabel(s) }}</span>
             <span class="sync-mobile-card__result">
               <span class="sync-result-dot" :class="syncResultDotClass(s)" />
-              <span class="sync-table__result-label" :class="syncResultTextClass(s)">{{ repairingSourceId === s.id ? '补全中' : syncResultLabel(s) }}</span>
+              <span class="sync-table__result-label" :class="syncResultTextClass(s)">{{ repairingSourceId === s.id ? '修复中' : syncResultLabel(s) }}</span>
             </span>
             <span class="sync-mobile-card__time">{{ s.lastSyncedAt ? formatRelative(s.lastSyncedAt) : '未同步' }}</span>
           </div>
@@ -538,11 +551,14 @@
               <span class="sync-mobile-card__stat-value">{{ s.trackCount }} 首</span>
             </div>
             <div class="sync-mobile-card__stat">
-              <span class="sync-mobile-card__stat-label">忽略</span>
+              <span class="sync-mobile-card__stat-label">失败缓存 / 版权</span>
               <button
                 class="sync-mobile-card__issue"
+                type="button"
                 :disabled="sourceIssueCount(s) === 0"
-                @click.stop="sourceIssueCount(s) > 0 && clearIgnored(s)"
+                :title="sourceIssueActionLabel(s)"
+                :aria-label="sourceIssueActionLabel(s)"
+                @click.stop="sourceIssueCount(s) > 0 && clearIssueCache(s)"
               >
                 {{ sourceIssueCount(s) }} 首
               </button>
@@ -589,6 +605,15 @@
                   <span>{{ rebuildActionLabel(s) }}</span>
                 </button>
                 <button
+                  v-if="s.type === 'playlist'"
+                  class="sync-row-menu__item sync-row-menu__item--warning"
+                  :disabled="isAnySyncing"
+                  @click="openRedownloadConfirm(s); moreMenuId = null"
+                >
+                  <AppIcon name="download" :size="12" />
+                  <span>重新下载全部音频并同步</span>
+                </button>
+                <button
                   class="sync-row-menu__item"
                   :class="repairingSourceId === s.id ? 'sync-row-menu__item--active' : ''"
                   :disabled="isAnySyncing"
@@ -596,7 +621,7 @@
                 >
                   <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
                   <AppIcon v-else name="music" :size="12" />
-                  <span>补词/图</span>
+                  <span>修复标签、词图</span>
                 </button>
                 <button class="sync-row-menu__item sync-row-menu__item--danger" type="button" @click="confirmDelete = s; moreMenuId = null">
                   <AppIcon name="trash" :size="12" />
@@ -651,8 +676,8 @@
       </div>
       <div class="sync-hover-card__stats">
         <span>{{ hoverCard.source.trackCount }} 首</span>
-        <span>{{ sourceIssueCount(hoverCard.source) > 0 ? sourceIssueSummary(hoverCard.source) : '无忽略' }}</span>
-        <span>{{ repairingSourceId === hoverCard.source.id ? '补全中' : syncResultLabel(hoverCard.source) }}</span>
+        <span>{{ sourceIssueSummary(hoverCard.source) }}</span>
+        <span>{{ repairingSourceId === hoverCard.source.id ? '修复中' : syncResultLabel(hoverCard.source) }}</span>
       </div>
       <p class="sync-hover-card__footer">
         {{ hoverCard.source.lastSyncedAt
@@ -701,8 +726,8 @@
             </div>
             <div class="sync-hover-card__stats">
               <span>{{ mobilePreviewSource.trackCount }} 首</span>
-              <span>{{ sourceIssueCount(mobilePreviewSource) > 0 ? sourceIssueSummary(mobilePreviewSource) : '无忽略' }}</span>
-              <span>{{ repairingSourceId === mobilePreviewSource.id ? '补全中' : syncResultLabel(mobilePreviewSource) }}</span>
+              <span>{{ sourceIssueSummary(mobilePreviewSource) }}</span>
+              <span>{{ repairingSourceId === mobilePreviewSource.id ? '修复中' : syncResultLabel(mobilePreviewSource) }}</span>
             </div>
             <p class="sync-hover-card__footer">
               {{ mobilePreviewSource.lastSyncedAt
@@ -774,6 +799,48 @@
       @confirm="handleRebuildSync"
       @cancel="confirmRebuild = null"
     />
+    <ConfirmDialog
+      :visible="!!confirmRedownload"
+      title="重新下载全部音频并同步"
+      message=""
+      confirm-label="确认重新下载"
+      variant="danger"
+      :busy="redownloadSyncId === confirmRedownload?.id"
+      :confirm-disabled="redownloadPreviewLoading || !!redownloadPreviewError || !redownloadPreview?.snapshotAvailable"
+      @confirm="handleRedownloadSync"
+      @cancel="closeRedownloadConfirm"
+    >
+      <div class="mb-6 space-y-4 text-sm leading-6 text-muted">
+        <p>
+          将处理「{{ confirmRedownload ? sourceDisplayName(confirmRedownload) : '' }}」当前同步范围内的歌曲。新音频通过格式校验并完成写标后才会原子替换；单曲失败时保留旧文件和 Plex 条目。
+        </p>
+        <div v-if="redownloadPreviewLoading" class="rounded-xl border p-3" aria-live="polite">
+          正在检查本地文件归属…
+        </div>
+        <div v-else-if="redownloadPreviewError" class="rounded-xl border p-3 text-danger" role="alert">
+          {{ redownloadPreviewError }}
+        </div>
+        <dl v-else-if="redownloadPreview" class="grid grid-cols-2 gap-2 rounded-xl border p-3">
+          <div><dt class="text-muted-deep">当前范围</dt><dd class="font-semibold text-primary">{{ redownloadPreview.total }} 首</dd></div>
+          <div><dt class="text-muted-deep">默认处理</dt><dd class="font-semibold text-primary">{{ redownloadPreview.eligible }} 首</dd></div>
+          <div><dt class="text-muted-deep">YunPlex 文件</dt><dd>{{ redownloadPreview.managed }} 首</dd></div>
+          <div><dt class="text-muted-deep">缺失/未下载</dt><dd>{{ redownloadPreview.missing }} 首</dd></div>
+          <div><dt class="text-muted-deep">保护外部文件</dt><dd>{{ redownloadPreview.protectedExternal }} 首</dd></div>
+          <div><dt class="text-muted-deep">保护人工绑定</dt><dd>{{ redownloadPreview.protectedManual }} 首</dd></div>
+        </dl>
+        <label
+          v-if="redownloadPreview?.protectedExternal"
+          class="flex cursor-pointer items-start gap-3 rounded-xl border p-3"
+        >
+          <input v-model="takeOverExternal" class="mt-1" type="checkbox">
+          <span>
+            <strong class="block text-primary">接管并替换外部文件</strong>
+            <span class="text-muted-deep">这会把非 YunPlex 下载的 {{ redownloadPreview.protectedExternal }} 首文件纳入管理并覆盖原文件。人工绑定仍不会被覆盖。</span>
+          </span>
+        </label>
+        <p class="text-danger">此操作会产生大量网络流量和磁盘写入，且不会清空既有匹配身份。</p>
+      </div>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -787,19 +854,19 @@ import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
 
 const {
   advancedFilterCount, advancedFilterLabel, allSources, allVisibleSelected, applyDraftFilters, batchDeleting, batchLoading, batchToggling,
-  canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearIgnored, clearSourceFilters, confirmBatchDelete, confirmDelete, confirmRebuild,
+  canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearIssueCache, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload,
   clearHoverHideTimer, desktopActionDensity, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget,
   enabledCount, expandedId, expandedLoading, expandedSongs, filteredSources, filterType, forceFullId, formatRelative,
-  handleBatchDelete, handleDelete, handleRebuildSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
+  handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
   onAlbumCreated, onDragEnd, onDragLeave, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved,
-  onSourceSearchInput, onSourceTabChange, openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, plexTargetHint, plexTargetName,
-  prepareDraftFilters, rebuildActionLabel, refreshSources, removeSourceFilter, repairingSourceId, repairProgress, repairSource, resetDraftFilters,
+  onSourceSearchInput, onSourceTabChange, openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, plexTargetHint, plexTargetName,
+  prepareDraftFilters, rebuildActionLabel, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress, repairSource, resetDraftFilters,
   runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedSourceIds, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction,
-  showSourceHover, someVisibleSelected, songStatusDot, sourceCanClear, sourceCopyrightCount, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
-  sourceHoverOrigin, sourceIgnoredCount, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
+  showSourceHover, someVisibleSelected, songStatusDot, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
+  sourceHoverOrigin, sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
   sourceStateClass, sourceStateLabel, statusFilterOptions, syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, tableShellRef,
-  toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright, totalIgnored,
-  totalSourceCount,
+  toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright, totalFailureCache,
+  takeOverExternal, totalSourceCount,
 } = useSyncSourcesPage()
 
 const mobilePreviewSource = ref<PlaylistSource | null>(null)

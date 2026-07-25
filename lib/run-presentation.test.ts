@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   runBadgeStatus,
+  runSummaryLabel,
   runStatusLabel,
   runTypeIdentity,
 } from './run-presentation'
@@ -32,5 +33,10 @@ describe('run presentation', () => {
     expect(runBadgeStatus('running')).toBe('running')
     expect(runBadgeStatus('failed')).toBe('error')
     expect(runBadgeStatus('cancelled')).toBe('idle')
+  })
+
+  it('presents immutable legacy summaries with current failure-cache semantics', () => {
+    expect(runSummaryLabel('10 个源，失败 3 首，266 首已忽略')).toBe('10 个源，失败 3 首，266 首需关注')
+    expect(runSummaryLabel('', '同步任务')).toBe('同步任务')
   })
 })

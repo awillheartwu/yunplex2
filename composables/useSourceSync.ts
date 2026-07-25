@@ -19,7 +19,12 @@ export function useSourceSync() {
 
   const fallbackClear = useTimeoutFn(clearSyncing, 30000)
 
-  async function syncSource(sourceId: string, body?: { forceFull?: boolean; rebuildMatch?: boolean }) {
+  async function syncSource(sourceId: string, body?: {
+    forceFull?: boolean
+    rebuildMatch?: boolean
+    redownloadAll?: boolean
+    takeOverExternal?: boolean
+  }) {
     error.value = null
     syncingSourceId.value = sourceId
     // Fallback: clear after 30s if SSE doesn't fire

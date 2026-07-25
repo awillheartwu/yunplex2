@@ -120,8 +120,12 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   }
 
   // ── 3. Processor ──
-  const processor = async (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => {
-    return downloadSingleSong(task.songId, config, onProgress)
+  const processor = async (
+    task: DownloadTask,
+    onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
+    signal: AbortSignal,
+  ) => {
+    return downloadSingleSong(task.songId, config, onProgress, signal)
   }
 
   // ── 4. Fire-and-forget processing ──

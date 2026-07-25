@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../netease'
 import { downloadSong, buildDownloadPath, checkAncillaryFiles } from '../tag-writer'
 import type { SongOps } from '../tag-writer'
+import { validateLocalAudioFile } from '../media-validation'
 import { createSplitArtists } from '../sync/artist-utils'
 import type { DownloadMode } from './types'
 import type { MultiArtistFormat } from '../config/types'
@@ -41,22 +42,31 @@ export async function downloadSingleSong(
   songId: number,
   config: SingleSongConfig,
   onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
-): Promise<{ filePath: string; fileType: string; ops: SongOps }> {
+  signal?: AbortSignal,
+): Promise<{
+  filePath: string
+  fileType: string
+  ops: SongOps
+  audioOperation: 'downloaded' | 'redownloaded' | 'reused'
+}> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
 
   // 1. Fetch song detail
   const song = await fetchSongDetail(songId, config.cookie)
+  signal?.throwIfAborted()
 
   const existingAudioPath = config.audioPath
     && !relative(config.downloadDir, config.audioPath).startsWith('..')
     && existsSync(config.audioPath)
     ? config.audioPath
     : null
+  const existingAudioIsValid = !existingAudioPath || validateLocalAudioFile(existingAudioPath).valid
 
   let url: string | undefined
   let fileType = existingAudioPath ? inferFileTypeFromPath(existingAudioPath) : ''
-  if (!fileType) {
+  if (mode === 'replace' || !fileType || !existingAudioIsValid) {
     const songUrl = await getSongUrl(song.id, config.quality, config.cookie)
+    signal?.throwIfAborted()
     url = songUrl.url
     fileType = songUrl.type
   }
@@ -65,9 +75,11 @@ export async function downloadSingleSong(
   const lyricData = config.downloadLyrics
     ? await fetchLyric(song.id, config.cookie, config.lyricOrder, config.downloadTranslatedLyric)
     : undefined
+  signal?.throwIfAborted()
 
   // 3. Fetch album detail for richer metadata
   const albumDetail = await fetchAlbumDetail(song.album.id, config.cookie)
+  signal?.throwIfAborted()
 
   // 4. Parse artists
   const splitArtists = createSplitArtists(config.multiArtistFormat as MultiArtistFormat)
@@ -77,7 +89,14 @@ export async function downloadSingleSong(
   let targetPath: string
   let relativePath: string
 
-  if (config.audioPath) {
+  const shouldReuseAudioPath = Boolean(config.audioPath)
+    && (
+      mode === 'replace'
+        ? inferFileTypeFromPath(config.audioPath!) === fileType
+        : (!existingAudioPath || existingAudioIsValid || inferFileTypeFromPath(config.audioPath!) === fileType)
+    )
+
+  if (shouldReuseAudioPath && config.audioPath) {
     targetPath = config.audioPath
     relativePath = relative(config.downloadDir, config.audioPath)
     if (relativePath.startsWith('..')) {
@@ -104,7 +123,7 @@ export async function downloadSingleSong(
     relativePath = buildDownloadPath(config.pathFormat, pathVars, fileType)
     targetPath = join(config.downloadDir, relativePath)
   }
-  const audioExists = existsSync(targetPath)
+  const audioExists = existsSync(targetPath) && validateLocalAudioFile(targetPath).valid
 
   // 6. Determine what to skip based on mode and file existence
   let skipAudio = false
@@ -112,7 +131,7 @@ export async function downloadSingleSong(
   let skipAlbumCover = false
   let skipArtistImage = false
 
-  if (audioExists) {
+  if (audioExists && mode !== 'replace') {
     skipAudio = true // never re-download audio
 
     if (mode === 'missing') {
@@ -157,7 +176,7 @@ export async function downloadSingleSong(
   }
 
   // 8. Download + tag (pass undefined url when skipping audio)
-  const result = await downloadSong(
+  const downloadArgs = [
     skipAudio ? undefined : url,
     songMeta,
     fileType,
@@ -175,7 +194,10 @@ export async function downloadSingleSong(
     },
     relativePath,
     onProgress,
-  )
+  ] as const
+  const result = signal
+    ? await downloadSong(...downloadArgs, signal)
+    : await downloadSong(...downloadArgs)
 
   // 9. Cache file path for future lookups
   if (result.ops.download !== 'failed') {
@@ -184,7 +206,14 @@ export async function downloadSingleSong(
     } catch { /* non-critical */ }
   }
 
-  return { filePath: result.filePath, fileType, ops: result.ops }
+  return {
+    filePath: result.filePath,
+    fileType,
+    ops: result.ops,
+    audioOperation: result.ops.download === 'ok'
+      ? mode === 'replace' ? 'redownloaded' : 'downloaded'
+      : 'reused',
+  }
 }
 
 function inferFileTypeFromPath(filePath: string): string {

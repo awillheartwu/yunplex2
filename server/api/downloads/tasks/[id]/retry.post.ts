@@ -30,6 +30,7 @@ export default defineEventHandler(async (event) => {
   const processor = async (
     t: typeof task,
     onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
+    signal: AbortSignal,
   ) => {
     return downloadSingleSong(t.songId, {
       quality: t.quality || cfg.netease.quality,
@@ -46,12 +47,12 @@ export default defineEventHandler(async (event) => {
       downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
       downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
     downloadMode: 'full',
-    }, onProgress)
+    }, onProgress, signal)
   }
 
-  processAll(async (t, onProgress) => {
+  processAll(async (t, onProgress, signal) => {
     try {
-      const result = await processor(t, onProgress)
+      const result = await processor(t, onProgress, signal)
       appendLog(dataDir, {
         level: 'info',
         message: `[重试] 下载成功: ${t.songName} - ${t.artist} → ${result.filePath}`,

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   formatSyncSourceRelativeTime,
   getCopyrightCount,
-  getIgnoredFailureCount,
+  getFailureCacheCount,
+  getIssueActionLabel,
   getIssueCount,
   getIssueSummaryLabel,
   getPlexTargetName,
@@ -19,14 +20,14 @@ describe('sync source presentation helpers', () => {
     vi.useRealTimers()
   })
 
-  it('splits ignored and copyright counts safely', () => {
+  it('splits continuous-failure cache and copyright counts safely', () => {
     const source = {
       copyrightRestrictedIds: '["1","2"]',
       ignoredFailureIds: '{"task-1":true,"task-2":true,"task-3":true}',
     }
 
     expect(getCopyrightCount(source)).toBe(2)
-    expect(getIgnoredFailureCount(source)).toBe(3)
+    expect(getFailureCacheCount(source)).toBe(3)
     expect(getIssueCount(source)).toBe(5)
   })
 
@@ -37,7 +38,7 @@ describe('sync source presentation helpers', () => {
     }
 
     expect(getCopyrightCount(source)).toBe(0)
-    expect(getIgnoredFailureCount(source)).toBe(0)
+    expect(getFailureCacheCount(source)).toBe(0)
     expect(getIssueCount(source)).toBe(0)
   })
 
@@ -68,12 +69,17 @@ describe('sync source presentation helpers', () => {
     expect(getIssueSummaryLabel({
       copyrightRestrictedIds: '["1"]',
       ignoredFailureIds: '{"task-1":true,"task-2":true}',
-    })).toBe('忽略 2 · 版权 1')
+    })).toBe('失败缓存 2 · 版权受限 1')
+
+    expect(getIssueActionLabel({
+      copyrightRestrictedIds: '["1"]',
+      ignoredFailureIds: '{"task-1":true,"task-2":true}',
+    })).toBe('当前记录：失败缓存 2 · 版权受限 1。点击清除这些记录；下次同步将重新尝试对应歌曲')
 
     expect(getIssueSummaryLabel({
       copyrightRestrictedIds: '[]',
       ignoredFailureIds: '',
-    })).toBe('无')
+    })).toBe('无失败缓存或版权受限')
   })
 
   it('formats relative time against now', () => {
