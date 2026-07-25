@@ -2,7 +2,7 @@ import type { JobStep, JobStepContext, SongTask, TaskRun } from '~~/server/lib/j
 import { runStatusLabel, runTriggerLabel, runTypeLabel } from '~~/lib/run-presentation'
 import {
   isFailedSongStatus,
-  isIgnoredSongStatus,
+  isAttentionSongStatus,
   songStatusPresentation,
   type TaskSemanticTone,
 } from '~~/lib/task-status'
@@ -289,7 +289,7 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
 
   const outcomeTime = lastKnownTime(run)
   const existingSongs = run.songs.filter(song => song.status === 'skipped_existing')
-  const ignoredSongs = run.songs.filter(song => isIgnoredSongStatus(song.status))
+  const attentionSongs = run.songs.filter(song => isAttentionSongStatus(song.status))
   const failedSongs = run.songs.filter(song => isFailedSongStatus(song.status))
   const successSongs = run.songs.filter(song => song.status === 'success')
   const removedSongs = run.songs.filter(song => song.status === 'removed')
@@ -311,11 +311,11 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
     items.push(resultItem(
       `${run.id}:ignored`,
       `跳过 ${run.warnings} 首需要关注的歌曲`,
-      '包含版权受限或已按失败策略忽略的歌曲',
+      '包含版权受限，或达到连续失败阈值后已暂停自动重试的歌曲',
       'ignored',
       'ignored',
       outcomeTime,
-      ignoredSongs,
+      attentionSongs,
       sourceNameById,
       shouldShowSongSource,
     ))

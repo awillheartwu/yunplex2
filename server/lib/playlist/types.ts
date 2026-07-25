@@ -26,10 +26,21 @@ export interface PlaylistSource {
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
+  /** Latest Plex contents fetched, whether or not the run converged. */
+  lastObservedPlexFingerprint: string | null
+  /** Plex contents read back after the application's own successful mutation. */
+  lastAppliedPlexFingerprint: string | null
+  /** Latest NetEase snapshot fetched, including partial/failed reconciliation runs. */
+  lastObservedNeteaseCursor: string | null
+  /** Latest NetEase snapshot that completed identity comparison. Not a convergence marker. */
+  lastComparedNeteaseCursor: string | null
+  lastObservedAt: string | null
+  lastComparedAt: string | null
   skipPlexPlaylist: boolean
   skipRemoveExtraTracks: boolean
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
+  requiresMatchReconcile: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -61,10 +72,17 @@ export interface PlaylistSourceRow {
   last_full_compare_at: string | null
   plex_updated_at: number | null
   track_id_snapshot: string | null
+  last_observed_plex_fingerprint: string | null
+  last_applied_plex_fingerprint: string | null
+  last_observed_netease_cursor: string | null
+  last_compared_netease_cursor: string | null
+  last_observed_at: string | null
+  last_compared_at: string | null
   skip_plex_playlist: number
   skip_remove_extra_tracks: number
   copyright_restricted_ids: string | null
   ignored_failure_ids: string | null
+  requires_match_reconcile: number
   sort_order: number
   created_at: string
   updated_at: string
@@ -97,10 +115,17 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     lastFullCompareAt: row.last_full_compare_at,
     plexUpdatedAt: row.plex_updated_at,
     trackIdSnapshot: row.track_id_snapshot,
+    lastObservedPlexFingerprint: row.last_observed_plex_fingerprint,
+    lastAppliedPlexFingerprint: row.last_applied_plex_fingerprint,
+    lastObservedNeteaseCursor: row.last_observed_netease_cursor,
+    lastComparedNeteaseCursor: row.last_compared_netease_cursor,
+    lastObservedAt: row.last_observed_at,
+    lastComparedAt: row.last_compared_at,
     skipPlexPlaylist: row.skip_plex_playlist === 1,
     skipRemoveExtraTracks: row.skip_remove_extra_tracks === 1,
     copyrightRestrictedIds: row.copyright_restricted_ids,
     ignoredFailureIds: row.ignored_failure_ids,
+    requiresMatchReconcile: row.requires_match_reconcile === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -11,10 +11,7 @@ export default defineEventHandler(async (event) => {
       isSyncRunning: () => syncService.getState().isRunning,
       isRepairRunning,
       runSync: (ids) => {
-        syncService.runSync({ sourceIds: ids }).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err)
-          console.error('[YunPlex2] batch source sync failed:', msg)
-        })
+        return syncService.startSync({ sourceIds: ids, trigger: 'user' })
       },
     })
 

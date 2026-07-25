@@ -55,4 +55,62 @@ describe('RunBuilder source/song indexing', () => {
     expect(run.getSong('source-1', 101)?.status).toBe('success')
     expect(run.getSong('source-1', 202)?.status).toBe('failed_download')
   })
+
+  it('counts protected extra Plex tracks as warnings instead of removed songs', () => {
+    const run = new RunBuilder(false)
+    run.addSongs('source-1', [
+      { songName: 'Extra', artist: 'Artist', album: 'Album', status: 'removed' },
+      { songName: 'Protected Extra', artist: 'Artist', album: 'Album', status: 'extra_skipped' },
+    ])
+
+    const finished = run.finish('partial', 'done')
+
+    expect(finished.removedSongs).toBe(1)
+    expect(finished.warnings).toBe(1)
+  })
+
+  it('keeps duplicate occurrences of the same Netease song independently addressable', () => {
+    const run = new RunBuilder(false)
+    const ids = run.addSongs('source-1', [
+      { songName: 'Duplicate', artist: 'Artist', album: 'Album', status: 'pending', neteaseSongId: 101, neteaseIndex: 0 },
+      { songName: 'Duplicate', artist: 'Artist', album: 'Album', status: 'pending', neteaseSongId: 101, neteaseIndex: 1 },
+    ])
+
+    expect(run.findSongIds('source-1', 101)).toEqual(ids)
+    expect(run.findSongIdByIndex('source-1', 0)).toBe(ids[0])
+    expect(run.findSongIdByIndex('source-1', 1)).toBe(ids[1])
+
+    run.updateSong(ids[0]!, { status: 'skipped_existing', phase: 'done' })
+    run.updateSong(ids[1]!, { status: 'success', phase: 'done' })
+    expect(run.getSongByIndex('source-1', 0)?.status).toBe('skipped_existing')
+    expect(run.getSongByIndex('source-1', 1)?.status).toBe('success')
+  })
+
+  it('does not double-count a pending target and its protected Plex candidate', () => {
+    const run = new RunBuilder(false)
+    run.addSongs('source-1', [{
+      songName: 'Target',
+      artist: 'Artist',
+      album: 'Album',
+      status: 'match_pending_review',
+      neteaseSongId: 101,
+      neteaseIndex: 0,
+    }])
+    const extraId = run.addExtraSong('source-1', {
+      songName: 'Candidate',
+      artist: 'Plex Artist',
+      album: 'Plex Album',
+      playlistItemId: 500,
+      ratingKey: '900',
+    })
+    run.updateSong(extraId, {
+      metadata: {
+        matchTrace: { relatedNeteaseSongId: 101, decision: 'preserved' },
+      },
+    })
+
+    const finished = run.finish('partial', 'done')
+    expect(finished.totalSongs).toBe(1)
+    expect(finished.warnings).toBe(1)
+  })
 })

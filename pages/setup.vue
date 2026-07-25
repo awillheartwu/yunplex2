@@ -127,7 +127,7 @@
           <span class="setup-panel__icon"><AppIcon name="source" :size="20" /></span>
           <div>
             <h2 class="setup-panel__title">连接 Plex</h2>
-            <p class="setup-copy">用于确认音乐库、触发扫描，并把下载结果写入你的媒体库。</p>
+            <p class="setup-copy">用于确认音乐库、触发扫描和同步歌单。Plex API 不负责上传音频文件，下载目录必须对 Plex 可见。</p>
           </div>
         </div>
         <div class="setup-grid">
@@ -177,6 +177,7 @@
         <div>
           <label class="setup-label" for="plex-prefix">Plex 音乐库路径前缀</label>
           <input id="plex-prefix" v-model="config.download.plexLibraryPathPrefix" class="form-input font-mono" :disabled="isChecking('download')" placeholder="可选，例如 /music">
+          <p class="setup-path-note"><strong>这里只换算路径，不会传输文件。</strong>如果 Plex 在另一台主机，下载目录必须是 Plex 扫描目录的共享挂载，或另有复制流程。</p>
         </div>
         <p v-if="checks.download.message" class="setup-check" :class="'setup-check--' + checks.download.status" role="status">
           {{ checks.download.message }}
@@ -503,6 +504,17 @@ function canOpenStep(key: StepKey): boolean {
   font-size: 0.85rem;
   font-weight: 650;
   color: var(--text-primary);
+}
+
+.setup-path-note {
+  margin: 0.5rem 0 0;
+  color: var(--text-muted-deep);
+  font-size: 0.74rem;
+  line-height: 1.55;
+}
+
+.setup-path-note strong {
+  color: var(--text-secondary);
 }
 
 .setup-textarea {

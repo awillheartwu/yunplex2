@@ -60,11 +60,11 @@
             </select>
           </FormField>
           <div class="pt-1 flex items-center gap-4">
-            <button class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
+            <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
               {{ testing === 'netease' ? '测试中...' : '测试网易云连接' }}
             </button>
-            <span v-if="testResult['netease']" class="inline-flex items-center gap-1 text-sm" :class="testResult['netease'].ok ? 'text-success' : 'text-danger'">
-              <AppIcon :name="testResult['netease'].ok ? 'check' : 'x'" :size="14" />
+            <span v-if="testResult['netease']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['netease'])" role="status" aria-live="polite">
+              <AppIcon :name="testResultIcon(testResult['netease'])" :size="14" />
               {{ testResult['netease'].msg }}
             </span>
           </div>
@@ -84,12 +84,13 @@
             <input v-model="form.plex.section" type="text" placeholder="音乐" class="form-input" />
           </FormField>
           <div class="pt-1 flex items-center gap-4">
-            <button class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button>
-            <span v-if="testResult['plex']" class="inline-flex items-center gap-1 text-sm" :class="testResult['plex'].ok ? 'text-success' : 'text-danger'">
-              <AppIcon :name="testResult['plex'].ok ? 'check' : 'x'" :size="14" />
+            <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button>
+            <span v-if="testResult['plex']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['plex'])" role="status" aria-live="polite">
+              <AppIcon :name="testResultIcon(testResult['plex'])" :size="14" />
               {{ testResult['plex'].msg }}
             </span>
           </div>
+          <StorageVisibilityDiagnostic v-if="storageDiagnostic" :diagnostic="storageDiagnostic" />
         </ConfigSection>
       </template>
 
@@ -101,9 +102,23 @@
         <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
           <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
         </FormField>
-        <FormField label="Plex 音乐库路径前缀" hint="如果 Plex 运行在容器中，这里填写 Plex 容器内部看到的音乐目录前缀。命中后会替换为上方下载目录进行本地文件定位。">
+        <FormField label="Plex 音乐库路径前缀" hint="填写 Plex 在自己的运行环境中看到的音乐根目录。它用于同一文件的双向路径换算。">
           <input v-model="form.download.plexLibraryPathPrefix" type="text" placeholder="/music" class="form-input" />
         </FormField>
+        <div class="path-mapping-disclosure" role="note">
+          <AppIcon name="info" :size="15" />
+          <p><strong>路径映射不会传输文件。</strong>它只把本地路径换算成 Plex 路径；若 Plex 在另一台主机，下载目录必须是同一共享挂载，或另有明确的复制/发布流程。</p>
+        </div>
+        <div class="pt-1 flex items-center gap-4">
+          <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'download'" @click="testConnection('download')">
+            {{ testing === 'download' ? '测试中...' : '测试下载路径' }}
+          </button>
+          <span v-if="testResult['download']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['download'])" role="status" aria-live="polite">
+            <AppIcon :name="testResultIcon(testResult['download'])" :size="14" />
+            {{ testResult['download'].msg }}
+          </span>
+        </div>
+        <StorageVisibilityDiagnostic v-if="storageDiagnostic" :diagnostic="storageDiagnostic" />
         <div class="space-y-3">
           <ToggleField v-model="form.download.downloadLyrics" label="下载歌词" hint="下载 .lrc 歌词文件与歌曲放在一起" />
           <ToggleField v-model="form.download.embedMetadata" label="写入元数据标签" hint="将歌曲名、艺术家、专辑等信息写入 ID3/FLAC 标签" />
@@ -187,14 +202,78 @@
           <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
         <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
+        <ToggleField v-model="form.sync.reconcileOnPlexDrift" label="自动修复 Plex 侧漂移" hint="网易云未变化但 Plex 歌单被手动改动时，自动进入全量对齐" />
+        <div class="metadata-binding-policy" :class="{ 'metadata-binding-policy--enabled': form.sync.enableHighConfidenceMetadataBinding }">
+          <ToggleField
+            v-model="form.sync.enableHighConfidenceMetadataBinding"
+            label="高置信元数据自动绑定"
+            hint="仅在两侧都没有可用 MusicBrainz recording 时启用；标题、完整艺人、专辑、音轨号和时长必须全部一致。"
+          />
+          <div v-if="form.sync.enableHighConfidenceMetadataBinding" class="metadata-binding-policy__details">
+            <FormField
+              label="时长允许误差（秒）"
+              hint="用于容忍编码或容器造成的轻微时长差异；建议 2 秒，最大 30 秒。"
+            >
+              <input
+                v-model.number="form.sync.metadataDurationToleranceSec"
+                type="number"
+                min="0"
+                max="30"
+                step="1"
+                class="form-input"
+                aria-describedby="metadata-binding-safety-note"
+              />
+            </FormField>
+            <p id="metadata-binding-safety-note" class="metadata-binding-policy__note" role="note">
+              <AppIcon name="shield" :size="15" />
+              <span>不会覆盖冲突的 MB recording；任一字段缺失或不一致仍进入匹配审核。</span>
+            </p>
+          </div>
+        </div>
         <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
             <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" /></FormField>
-            <FormField label="失败忽略阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后，自动忽略该歌曲，不再重试。单个歌单源可点清除按钮重置"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
+            <FormField label="连续失败缓存阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后加入失败缓存并暂停自动重试；清除失败缓存后可再次尝试"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
           </div>
         </template>
         <ToggleField v-model="form.sync.skipRemoveExtraTracks" label="不删除 Plex 多余歌曲" hint="同步时只添加和重排，不删除 Plex 中网易云已移除的歌曲。单个歌单源可覆盖此设置" />
+        <fieldset v-if="!form.sync.skipRemoveExtraTracks" class="removal-policy" aria-describedby="removal-policy-help">
+          <legend class="removal-policy__legend">多余歌曲清理策略</legend>
+          <p id="removal-policy-help" class="removal-policy__help">
+            这里只移除 Plex 歌单中的条目，不会删除音乐库文件。待审核候选、目标不完整和写入失败始终受保护。
+          </p>
+          <div class="removal-policy__options">
+            <label
+              v-for="option in extraTrackRemovalPolicyOptions"
+              :key="option.value"
+              class="removal-policy__option"
+              :class="{ 'removal-policy__option--selected': form.sync.extraTrackRemovalPolicy === option.value }"
+            >
+              <input
+                v-model="form.sync.extraTrackRemovalPolicy"
+                type="radio"
+                name="extra-track-removal-policy"
+                :value="option.value"
+              >
+              <span class="removal-policy__content">
+                <span class="removal-policy__title-row">
+                  <strong>{{ option.label }}</strong>
+                  <span v-if="option.recommended" class="removal-policy__badge">推荐</span>
+                </span>
+                <span class="removal-policy__description">{{ option.description }}</span>
+              </span>
+            </label>
+          </div>
+          <div
+            v-if="form.sync.extraTrackRemovalPolicy === 'exact'"
+            class="removal-policy__warning"
+            role="status"
+          >
+            <AppIcon name="warn" :size="15" />
+            <span>精确对齐会在单次完整同步中立即移除未知旧条目。适合完全由网易云维护的 Plex 歌单。</span>
+          </div>
+        </fieldset>
       </ConfigSection>
 
       <!-- Album Sync -->
@@ -395,13 +474,34 @@
 </template>
 
 <script setup lang="ts">
-import type { AppConfig } from '~~/server/lib/config/types'
+import type { AppConfig, StorageVisibilityDiagnostic as StorageVisibilityDiagnosticType } from '~~/server/lib/config/types'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { PATH_PRESETS } from '~~/server/lib/config/types'
 import { useConfigImport } from '~~/composables/useConfigImport'
 import { useFeedback } from '~~/composables/useFeedback'
 
 const pathPresets = PATH_PRESETS
+
+const extraTrackRemovalPolicyOptions = [
+  {
+    value: 'strict',
+    label: '严格保护',
+    description: '仅删除已有强身份的旧条目；无法审计身份的历史条目持续保留。',
+    recommended: false,
+  },
+  {
+    value: 'balanced',
+    label: '平衡清理',
+    description: '完整目标下连续两轮确认仍为多余项后自动移除，兼顾安全与自动收敛。',
+    recommended: true,
+  },
+  {
+    value: 'exact',
+    label: '精确对齐',
+    description: '完整目标确认后立即移除所有多余歌单项，最快保持两端完全一致。',
+    recommended: false,
+  },
+] as const
 
 const pathVarHelp = [
   { key: 'artist', desc: '专辑艺人，如 Don Toliver' },
@@ -465,13 +565,39 @@ const showReinitializeConfirm = ref(false)
 const form = ref<AppConfig | null>(null)
 const savedConfig = ref<AppConfig | null>(null)
 const testing = ref<string | null>(null)
-const testResult = ref<Record<string, { ok: boolean; msg: string }>>({})
+type TestResultTone = 'success' | 'warning' | 'error'
+interface TestResultState { tone: TestResultTone; msg: string }
+interface ConnectionTestPayload {
+  mappedPrefix?: string
+  storageVisibility?: StorageVisibilityDiagnosticType
+}
+const testResult = ref<Record<string, TestResultState | undefined>>({})
+const storageDiagnostic = ref<StorageVisibilityDiagnosticType | null>(null)
 const changingPassword = ref(false)
 const reinitializing = ref(false)
 const passwordForm = ref({
   current: '',
   next: '',
   confirm: '',
+})
+
+const storageConfigFingerprint = computed(() => JSON.stringify({
+  server: form.value?.plex.server ?? '',
+  port: form.value?.plex.port ?? 0,
+  token: form.value?.plex.token ?? '',
+  section: form.value?.plex.section ?? '',
+  downloadDir: form.value?.download.dir ?? '',
+  plexPathPrefix: form.value?.download.plexLibraryPathPrefix ?? '',
+}))
+
+watch(storageConfigFingerprint, (current, previous) => {
+  if (!previous || current === previous) return
+  storageDiagnostic.value = null
+  testResult.value = {
+    ...testResult.value,
+    plex: undefined,
+    download: undefined,
+  }
 })
 
 // ── Tab navigation ──
@@ -538,10 +664,16 @@ async function handleSave() {
       previous.download.dir !== updated.download.dir ||
       previous.download.plexLibraryPathPrefix !== updated.download.plexLibraryPathPrefix
     )
+    const matchingPolicyChanged = !!previous && (
+      previous.sync.enableHighConfidenceMetadataBinding !== updated.sync.enableHighConfidenceMetadataBinding ||
+      previous.sync.metadataDurationToleranceSec !== updated.sync.metadataDurationToleranceSec
+    )
     showConfigFeedback(
       'success',
       '配置已保存',
-      pathChanged ? '路径配置已变更，建议对受影响的同步源执行“重建匹配并同步”。' : undefined,
+      pathChanged || matchingPolicyChanged
+        ? '匹配相关配置已变更，建议对受影响的同步源执行“重建匹配并同步”。'
+        : undefined,
     )
   } catch (err) {
     showConfigFeedback('error', '配置保存失败', err instanceof Error ? err.message : '保存失败')
@@ -564,18 +696,42 @@ async function handleReset() {
   }
 }
 
-async function testConnection(section: 'netease' | 'plex') {
+async function testConnection(section: 'netease' | 'plex' | 'download') {
   if (!form.value) return
   testing.value = section
-  testResult.value = { ...testResult.value, [section]: undefined as unknown as { ok: boolean; msg: string } }
+  testResult.value = { ...testResult.value, [section]: undefined }
   try {
-    await api.post('/config/test-connection', { section, config: form.value })
-    testResult.value = { ...testResult.value, [section]: { ok: true, msg: '连接正常' } }
+    const result = await api.post<ConnectionTestPayload>('/config/test-connection', { section, config: form.value })
+    if (result.storageVisibility) storageDiagnostic.value = result.storageVisibility
+    const warning = result.storageVisibility?.status === 'warning'
+    testResult.value = {
+      ...testResult.value,
+      [section]: {
+        tone: warning ? 'warning' : 'success',
+        msg: section === 'download'
+          ? (warning ? '目录可写，文件发布待确认' : '目录可写，文件发布已验证')
+          : section === 'plex' && warning
+            ? '连接正常，文件发布待确认'
+            : '连接正常',
+      },
+    }
   } catch (err) {
-    testResult.value = { ...testResult.value, [section]: { ok: false, msg: err instanceof Error ? err.message : '连接失败' } }
+    testResult.value = { ...testResult.value, [section]: { tone: 'error', msg: err instanceof Error ? err.message : '连接失败' } }
   } finally {
     testing.value = null
   }
+}
+
+function testResultClass(result: TestResultState | undefined): string {
+  if (result?.tone === 'success') return 'text-success'
+  if (result?.tone === 'warning') return 'text-warning'
+  return 'text-danger'
+}
+
+function testResultIcon(result: TestResultState | undefined): string {
+  if (result?.tone === 'success') return 'check'
+  if (result?.tone === 'warning') return 'warn'
+  return 'x'
 }
 
 async function handleChangePassword() {
@@ -627,6 +783,42 @@ onMounted(loadConfig)
 </script>
 
 <style scoped>
+.metadata-binding-policy {
+  margin-top: .75rem;
+  padding: .9rem 1rem;
+  border: 1px solid var(--border-primary);
+  border-radius: .75rem;
+  background: var(--bg-app);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.metadata-binding-policy--enabled {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-primary));
+  background: color-mix(in srgb, var(--accent-muted) 18%, var(--bg-app));
+}
+.metadata-binding-policy__details {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  align-items: end;
+  gap: 1rem;
+  margin-top: .75rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border-primary);
+}
+.metadata-binding-policy__note {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .5rem;
+  color: var(--text-muted-deep);
+  font-size: .72rem;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .metadata-binding-policy__details { grid-template-columns: 1fr; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .metadata-binding-policy { transition: none; }
+}
 .config-header-actions {
   display: flex;
   align-items: center;
@@ -642,7 +834,159 @@ onMounted(loadConfig)
   flex-wrap: wrap;
 }
 
+.path-mapping-disclosure {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.path-mapping-disclosure > .app-icon {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
+  color: var(--accent);
+}
+
+.path-mapping-disclosure p {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.path-mapping-disclosure strong {
+  color: var(--text-primary);
+}
+
+.removal-policy {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.removal-policy__legend {
+  padding: 0 0.3rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.removal-policy__help {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.removal-policy__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.removal-policy__option {
+  display: flex;
+  min-height: 7.25rem;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.removal-policy__option:hover {
+  border-color: var(--border-secondary);
+}
+
+.removal-policy__option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.removal-policy__option--selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.removal-policy__option input {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  accent-color: var(--accent);
+}
+
+.removal-policy__content,
+.removal-policy__title-row {
+  display: flex;
+}
+
+.removal-policy__content {
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.removal-policy__title-row {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.removal-policy__badge {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.removal-policy__description {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.removal-policy__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border-primary));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  color: var(--warning);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.removal-policy__warning > .app-icon {
+  flex: 0 0 auto;
+  margin-top: 0.12rem;
+}
+
 @media (max-width: 767px) {
+  .removal-policy__options {
+    grid-template-columns: 1fr;
+  }
+
+  .removal-policy__option {
+    min-height: 0;
+  }
+
   .config-header-actions {
     width: 100%;
     justify-content: center;

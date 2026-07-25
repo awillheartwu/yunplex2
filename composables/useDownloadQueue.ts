@@ -6,6 +6,8 @@ const PAGE_SIZE = 30
 
 interface DownloadQueueOptions {
   includeHistory?: boolean
+  liveRunId?: Ref<string | null | undefined>
+  liveLimit?: number
 }
 
 /**
@@ -15,10 +17,15 @@ interface DownloadQueueOptions {
 export function useDownloadQueue(options: DownloadQueueOptions = {}) {
   const api = useApi()
   const includeHistory = options.includeHistory ?? true
+  const liveRunId = options.liveRunId
+  const liveLimit = options.liveLimit ?? 12
+  const resolvedLiveRunId = computed(() => liveRunId?.value || null)
 
   const queueStatus = ref<QueueStatus>({ pending: 0, downloading: 0, tagging: 0, done: 0, failed: 0, total: 0 })
   const activeTasks = ref<DownloadTask[]>([])
+  const liveTasks = ref<DownloadTask[]>([])
   const loading = ref(false)
+  const error = ref('')
 
   // Failed
   const failedTasks = ref<DownloadTask[]>([])
@@ -58,19 +65,29 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
 
   async function fetchAll() {
     loading.value = true
+    error.value = ''
     try {
       const dp = dateParams(historySearch.value || undefined)
+      const liveRequest = liveRunId
+        ? api.get<{ items: DownloadTask[] }>('/downloads/tasks', {
+            status: resolvedLiveRunId.value ? 'pending,downloading,tagging,done' : 'pending,downloading,tagging',
+            limit: String(liveLimit),
+            ...(resolvedLiveRunId.value ? { runId: resolvedLiveRunId.value } : {}),
+          })
+        : Promise.resolve(null)
       const historyRequest = includeHistory
         ? api.get<{ items: DownloadTask[]; total: number; earliestDate: string | null }>('/downloads/history', { limit: String(PAGE_SIZE), offset: '0', ...dp })
         : Promise.resolve(null)
-      const [status, active, failed, history] = await Promise.all([
+      const [status, active, failed, history, live] = await Promise.all([
         api.get<QueueStatus>('/downloads/queue-status'),
         api.get<{ items: DownloadTask[] }>('/downloads/tasks', { status: 'pending,downloading,tagging', limit: '50' }),
         api.get<{ items: DownloadTask[]; total: number }>('/downloads/tasks', { status: 'failed', limit: String(PAGE_SIZE), offset: '0' }),
         historyRequest,
+        liveRequest,
       ])
       queueStatus.value = status
       activeTasks.value = active.items
+      liveTasks.value = live?.items || active.items
       failedTasks.value = failed.items
       failedTotal.value = failed.total
       failedOffset.value = 0
@@ -80,7 +97,9 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
         historyEarliestDate.value = history.earliestDate ?? null
         historyOffset.value = 0
       }
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '下载队列加载失败'
+    } finally {
       loading.value = false
     }
   }
@@ -168,6 +187,12 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
     else startPolling()
   })
 
+  if (liveRunId) {
+    watch(resolvedLiveRunId, () => {
+      void fetchAll()
+    })
+  }
+
   onUnmounted(() => {
     stopPolling()
     cancelThrottledFetch()
@@ -175,7 +200,7 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
   })
 
   return {
-    queueStatus, activeTasks, loading,
+    queueStatus, activeTasks, liveTasks, loading, error,
     failedTasks, failedTotal, failedHasMore, failedLoadingMore, loadMoreFailed,
     historyItems, historyEarliestDate, historyTotal, historyHasMore, historyLoadingMore, loadMoreHistory,
     retrying, retryingOne, retryOne, retryAll, clearAll, clearQueue, deleteOne,

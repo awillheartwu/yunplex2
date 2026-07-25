@@ -16,6 +16,8 @@ import { randomUUID } from 'node:crypto'
 import { buildDownloadPath } from '../../../lib/tag-writer'
 import { createSplitArtists } from '../../../lib/sync/artist-utils'
 import { resolveAccessibleLocalPath } from '../../../lib/sync/path-map'
+import { findExistingLocalSongPath } from '../../../lib/sync/local-file-discovery'
+import { getSectionKey, initPlexClient, refreshLibrary } from '../../../lib/plex-client'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -64,10 +66,10 @@ export default defineEventHandler(async (event) => {
       finishedAt: null,
       status: 'running',
       durationMs: 0,
-      summary: `补全辅助文件: ${source.name}`,
+      summary: `修复本地标签与辅助文件: ${source.name}`,
       source: '网易云音乐',
       sourceIds: [source.id],
-      target: '本地磁盘',
+      target: '本地磁盘与 Plex',
       totalSongs,
       successSongs: 0,
       failedSongs: 0,
@@ -76,7 +78,7 @@ export default defineEventHandler(async (event) => {
       warnings: 0,
       dryRun: false,
       steps: [{
-        id: 'repair-1', type: 'repair', title: `补全辅助文件: ${source.name}`,
+        id: 'repair-1', type: 'repair', title: `修复本地标签与辅助文件: ${source.name}`,
         status: 'running', startedAt: now, finishedAt: null, durationMs: 0,
         message: `共 ${totalSongs} 首`, children: [],
       }],
@@ -85,15 +87,15 @@ export default defineEventHandler(async (event) => {
     }
     saveSyncRun(job, 'user')
 
-    appendLog(dataDir, { level: 'info', message: `[补全] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
+    appendLog(dataDir, { level: 'info', message: `[修复] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
     emitEvent({ type: 'stage-change', data: { stage: 'repair', sourceId: id, jobId }, timestamp: now })
     recordActivityEvent({
       domain: 'user',
       type: 'repair_triggered',
       severity: 'info',
       actor: 'user',
-      title: `触发“${source.neteasePlaylistName || source.name}”补全`,
-      summary: `将为 ${totalSongs} 首歌曲补齐歌词、封面或其他辅助文件。`,
+      title: `触发“${source.neteasePlaylistName || source.name}”媒体修复`,
+      summary: `将重写 ${totalSongs} 首本地歌曲的标准标签，补齐辅助文件，并请求 Plex 刷新。`,
       context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, totalSongs },
       link: `/task-center/runs/${jobId}`,
       groupKey: `job:${jobId}`,
@@ -109,6 +111,7 @@ export default defineEventHandler(async (event) => {
     let succeeded = 0
     let alreadyExisted = 0
     let skipped = 0
+    let metadataRepaired = 0
 
     for (const song of songs) {
       try {
@@ -119,29 +122,33 @@ export default defineEventHandler(async (event) => {
           const songDetail = await import('../../../lib/netease').then((m) => m.fetchSongDetail(song.id, cfg.netease.cookie))
           const splitArtists = createSplitArtists(cfg.other?.multiArtistFormat ?? 'ampersand')
           const [albumArtist] = splitArtists(songDetail.artists)
-          const pathVars = {
-            artist: albumArtist,
-            album: songDetail.album.name,
-            title: songDetail.name,
-            year: songDetail.album.publishTime > 0 ? dayjs(songDetail.album.publishTime).format('YYYY') : '',
-            track: String(songDetail.no),
-            'track:02d': String(songDetail.no).padStart(2, '0'),
-          }
-          const computedPath = join(cfg.download.dir, buildDownloadPath(
-            cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-            pathVars, 'mp3',
-          ))
-
-          const resolvedComputedPath = resolveAccessibleLocalPath(computedPath, cfg)
-          if (resolvedComputedPath) {
-            audioPath = resolvedComputedPath
+          const discoveredPath = findExistingLocalSongPath(songDetail, cfg)
+          if (discoveredPath) {
+            audioPath = discoveredPath
           } else {
-            // Fallback: song_lookup cache
-            const db = getDb()
-            const cached = db.prepare('SELECT file_path FROM song_lookup WHERE netease_song_id = ?').get(song.id) as { file_path: string | null } | undefined
-            const resolvedCachedPath = resolveAccessibleLocalPath(cached?.file_path, cfg)
-            if (resolvedCachedPath) {
-              audioPath = resolvedCachedPath
+            const pathVars = {
+              artist: albumArtist,
+              album: songDetail.album.name,
+              title: songDetail.name,
+              year: songDetail.album.publishTime > 0 ? dayjs(songDetail.album.publishTime).format('YYYY') : '',
+              track: String(songDetail.no),
+              'track:02d': String(songDetail.no).padStart(2, '0'),
+            }
+            const computedPath = join(cfg.download.dir, buildDownloadPath(
+              cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+              pathVars, 'mp3',
+            ))
+            const resolvedComputedPath = resolveAccessibleLocalPath(computedPath, cfg)
+            if (resolvedComputedPath) {
+              audioPath = resolvedComputedPath
+            } else {
+              // Fallback: song_lookup cache
+              const db = getDb()
+              const cached = db.prepare('SELECT file_path FROM song_lookup WHERE netease_song_id = ?').get(song.id) as { file_path: string | null } | undefined
+              const resolvedCachedPath = resolveAccessibleLocalPath(cached?.file_path, cfg)
+              if (resolvedCachedPath) {
+                audioPath = resolvedCachedPath
+              }
             }
           }
         } catch { /* can't resolve — skip */ }
@@ -158,7 +165,7 @@ export default defineEventHandler(async (event) => {
           pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
           multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
           downloadLyrics: cfg.download.downloadLyrics,
-          embedMetadata: false,
+          embedMetadata: true,
           embedCover: false,
           saveAlbumCover: cfg.download.saveAlbumCover ?? false,
           saveArtistImage: cfg.download.saveArtistImage ?? false,
@@ -169,7 +176,8 @@ export default defineEventHandler(async (event) => {
           audioPath,
         })
         // Distinguish actual writes from pure skips
-        if (result.ops.lyric === 'ok' || result.ops.cover === 'ok') {
+        if (result.ops.tags === 'ok') metadataRepaired++
+        if (result.ops.tags === 'ok' || result.ops.lyric === 'ok' || result.ops.cover === 'ok') {
           succeeded++
         } else {
           alreadyExisted++
@@ -183,12 +191,28 @@ export default defineEventHandler(async (event) => {
         job.successSongs = succeeded
         job.skippedSongs = skipped + alreadyExisted
         saveSyncRun(job)
-        appendLog(dataDir, { level: 'info', message: `[补全] ${source.name}: 已处理 ${processed}/${totalSongs} 首，写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
+        appendLog(dataDir, { level: 'info', message: `[修复] ${source.name}: 已处理 ${processed}/${totalSongs} 首，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
         emitEvent({
           type: 'repair-progress',
-          data: { jobId, sourceId: id, processed, totalSongs, succeeded, skipped },
+          data: { jobId, sourceId: id, processed, totalSongs, succeeded, skipped, metadataRepaired },
           timestamp: new Date().toISOString(),
         })
+      }
+    }
+
+    let plexRefreshRequested = false
+    if (metadataRepaired > 0) {
+      try {
+        await initPlexClient(cfg.plex)
+        const sectionKey = await getSectionKey(cfg.plex.section)
+        if (!sectionKey) throw new Error(`未找到 Plex 音乐库「${cfg.plex.section}」`)
+        await refreshLibrary(sectionKey)
+        plexRefreshRequested = true
+        appendLog(dataDir, { level: 'info', message: `[修复] 已请求 Plex 刷新媒体库，等待识别更新后的标签`, stage: 'refreshing_plex' }, retentionDays)
+      } catch (err) {
+        job.warnings++
+        const detail = err instanceof Error ? err.message : String(err)
+        appendLog(dataDir, { level: 'warn', message: `[修复] Plex 刷新请求失败`, detail, stage: 'refreshing_plex' }, retentionDays)
       }
     }
 
@@ -200,30 +224,30 @@ export default defineEventHandler(async (event) => {
     job.skippedSongs = skipped + alreadyExisted
     job.failedSongs = 0
     job.durationMs = Date.now() - new Date(now).getTime()
-    job.summary = `补全完成: ${source.name}，写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`
+    job.summary = `媒体修复完成: ${source.name}，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`
     if (job.steps[0]) {
       job.steps[0].status = 'success'
       job.steps[0].finishedAt = endTime
       job.steps[0].durationMs = job.durationMs
-      job.steps[0].message = `写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`
+      job.steps[0].message = `修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`
     }
     saveSyncRun(job)
     updateSource(source.id, { lastStatus: job.status, lastSyncedAt: endTime })
 
-    appendLog(dataDir, { level: 'info', message: `[补全] 完成: ${source.name}，写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
+    appendLog(dataDir, { level: 'info', message: `[修复] 完成: ${source.name}，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`, stage: 'download' }, retentionDays)
     recordActivityEvent({
       domain: 'sync',
       type: 'repair_completed',
       severity: job.status === 'success' ? 'success' : 'warning',
-      title: `补全“${source.neteasePlaylistName || source.name}”已完成`,
-      summary: `写入 ${succeeded}，已存在 ${alreadyExisted}，跳过 ${skipped}`,
-      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, succeeded, alreadyExisted, skipped },
+      title: `媒体修复“${source.neteasePlaylistName || source.name}”已完成`,
+      summary: `修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`,
+      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, succeeded, alreadyExisted, skipped, metadataRepaired, plexRefreshRequested },
       link: `/task-center/runs/${jobId}`,
       groupKey: `job:${jobId}`,
     })
     emitEvent({
       type: 'repair-progress',
-      data: { jobId, sourceId: id, processed: totalSongs, totalSongs, succeeded, skipped, finished: true },
+      data: { jobId, sourceId: id, processed: totalSongs, totalSongs, succeeded, skipped, metadataRepaired, plexRefreshRequested, finished: true },
       timestamp: endTime,
     })
     setRepairRunning(false)
@@ -234,16 +258,16 @@ export default defineEventHandler(async (event) => {
     job.status = 'failed'
     job.finishedAt = new Date().toISOString()
     job.durationMs = Date.now() - new Date(now).getTime()
-    job.summary = `补全异常中断: ${source.name}`
+    job.summary = `媒体修复异常中断: ${source.name}`
     saveSyncRun(job)
     updateSource(source.id, { lastStatus: 'failed', lastError: msg })
     setRepairRunning(false)
-    appendLog(dataDir, { level: 'error', message: `[补全] 异常中断: ${source.name}`, detail: msg, stage: 'download' }, retentionDays)
+    appendLog(dataDir, { level: 'error', message: `[修复] 异常中断: ${source.name}`, detail: msg, stage: 'download' }, retentionDays)
     recordActivityEvent({
       domain: 'sync',
       type: 'repair_failed',
       severity: 'error',
-      title: `补全“${source.neteasePlaylistName || source.name}”异常中断`,
+      title: `媒体修复“${source.neteasePlaylistName || source.name}”异常中断`,
       summary: msg,
       context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId },
       link: `/task-center/runs/${jobId}`,

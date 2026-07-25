@@ -38,7 +38,11 @@ export default defineEventHandler(async (event) => {
   }, retentionDays)
 
   // Build processor
-  const processor = async (t: { songId: number; songName: string; artist: string; quality?: string | null }, onProgress: (pct: number) => void) => {
+  const processor = async (
+    t: { songId: number; songName: string; artist: string; quality?: string | null },
+    onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
+    signal: AbortSignal,
+  ) => {
     return downloadSingleSong(t.songId, {
       quality: (t.quality || cfg.netease.quality) as string,
       cookie: cfg.netease.cookie,
@@ -54,12 +58,12 @@ export default defineEventHandler(async (event) => {
       downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
       downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
       downloadMode: 'full',
-    }, onProgress)
+    }, onProgress, signal)
   }
 
-  processAll(async (t, onProgress) => {
+  processAll(async (t, onProgress, signal) => {
     try {
-      const r = await processor(t, onProgress)
+      const r = await processor(t, onProgress, signal)
       appendLog(dataDir, {
         level: 'info',
         message: `[批量重试] 下载成功: ${t.songName} - ${t.artist} → ${r.filePath}`,

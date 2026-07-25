@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapPlexPathToLocal, normalizePathPrefix } from './path-map'
+import { mapLocalPathToPlex, mapPlexPathToLocal, normalizePathPrefix } from './path-map'
 import type { AppConfig } from '../config/types'
 
 const cfg: AppConfig = {
@@ -27,6 +27,7 @@ const cfg: AppConfig = {
     downloadTaskRetentionDays: 30,
     activityRetentionDays: 30,
     forceFullCompare: false,
+    reconcileOnPlexDrift: true,
     fullCompareAfterSkips: 5,
     fullCompareAfterDays: 7,
     autoDownloadAlbum: false,
@@ -61,5 +62,14 @@ describe('path mapping', () => {
   it('returns null when plex path does not match configured prefix', () => {
     const mapped = mapPlexPathToLocal('/other/Jay/Album/01.mp3', cfg)
     expect(mapped).toBeNull()
+  })
+
+  it('maps a local download path back to the Plex library path', () => {
+    const mapped = mapLocalPathToPlex('/app/downloads/music/Jay/Album/01.mp3', cfg)
+    expect(mapped).toBe('/music/Jay/Album/01.mp3')
+  })
+
+  it('refuses to map paths outside the configured download root', () => {
+    expect(mapLocalPathToPlex('/tmp/Jay/Album/01.mp3', cfg)).toBeNull()
   })
 })

@@ -4,15 +4,19 @@ import {
   getRecentlyAddedTracks,
   searchTrack,
   searchTracksByArtists,
+  searchTracksByAlbum,
   searchTracksByTitle,
+  findTracksByFilePath,
+  type PlexTrack,
 } from '../plex-client'
 import {
+  mapLocalPathToPlex,
   normalizeExistingLocalPath,
   resolveAccessibleLocalPath,
 } from './path-map'
 import { resolveSongArtistCandidateNames } from './song-artist-candidates'
 
-export type PlexMatchStrategy = 'direct_search' | 'path_lookup' | 'recent_path_lookup'
+export type PlexMatchStrategy = 'direct_search' | 'path_lookup' | 'album_path_lookup' | 'recent_path_lookup'
 export type PlexMatchFailureCause = 'library_visibility' | 'not_indexed_or_metadata_mismatch' | 'unknown'
 
 export interface PlexMatchAttemptTrace {
@@ -48,40 +52,56 @@ export async function matchTrackInPlexWithRetry(
       await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
 
-    const direct = await searchTrack(sectionKey, song.name, candidates, song.album.name)
-    if (direct) {
-      traces.push({
-        attempt,
-        artistCandidates: candidates.length,
-        titleCandidates: 0,
-        pathCandidates: 0,
-        matchedBy: 'direct_search',
-      })
-      return {
-        ratingKey: direct.ratingKey,
-        matchedBy: 'direct_search',
-        attempts: attempt + 1,
-        localFilePath: normalizedExpectedPath,
-        traces,
-      }
-    }
-
     if (normalizedExpectedPath) {
-      const [titleMatches, artistMatches] = await Promise.all([
+      const expectedPlexPath = mapLocalPathToPlex(normalizedExpectedPath, cfg)
+      if (expectedPlexPath) {
+        const exactPathMatches = await findTracksByFilePath(sectionKey, expectedPlexPath)
+        const exactPathMatch = exactPathMatches.find(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg))
+        if (exactPathMatch) {
+          traces.push({
+            attempt,
+            artistCandidates: candidates.length,
+            titleCandidates: 0,
+            pathCandidates: exactPathMatches.length,
+            matchedBy: 'path_lookup',
+          })
+          return {
+            ratingKey: exactPathMatch.ratingKey,
+            matchedBy: 'path_lookup',
+            attempts: attempt + 1,
+            localFilePath: normalizedExpectedPath,
+            traces,
+          }
+        }
+      }
+
+      // A concrete local file is an identity claim: only the Plex item whose
+      // media path maps back to that exact file may satisfy it. Metadata-only
+      // matches frequently point at an older copy and must never outrank the
+      // newly indexed file.
+      const [direct, titleMatches, artistMatches, albumMatches] = await Promise.all([
+        searchTrack(sectionKey, song.name, candidates, song.album.name),
         searchTracksByTitle(sectionKey, song.name),
         searchTracksByArtists(sectionKey, candidates),
+        searchTracksByAlbum(sectionKey, song.album.name),
       ])
       const seen = new Set<string>()
-      const pathCandidates = [...titleMatches, ...artistMatches].filter((track) => {
+      const pathCandidates = [
+        ...(direct ? [direct] : []),
+        ...titleMatches,
+        ...artistMatches,
+      ].filter((track) => {
         if (seen.has(track.ratingKey)) return false
         seen.add(track.ratingKey)
         return true
       })
-      const pathMatch = pathCandidates.find((track) => {
-        const candidatePath = track.Media?.[0]?.Part?.[0]?.file
-        const resolvedPath = resolveAccessibleLocalPath(candidatePath, cfg)
-        return resolvedPath === normalizedExpectedPath
+      const albumPathCandidates = albumMatches.filter((track) => {
+        if (seen.has(track.ratingKey)) return false
+        seen.add(track.ratingKey)
+        return true
       })
+      const pathMatch = pathCandidates.find(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg))
+      const albumPathMatch = albumPathCandidates.find(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg))
 
       if (pathMatch) {
         traces.push({
@@ -99,20 +119,32 @@ export async function matchTrackInPlexWithRetry(
           traces,
         }
       }
+      if (albumPathMatch) {
+        traces.push({
+          attempt,
+          artistCandidates: candidates.length,
+          titleCandidates: titleMatches.length,
+          pathCandidates: pathCandidates.length + albumPathCandidates.length,
+          matchedBy: 'album_path_lookup',
+        })
+        return {
+          ratingKey: albumPathMatch.ratingKey,
+          matchedBy: 'album_path_lookup',
+          attempts: attempt + 1,
+          localFilePath: normalizedExpectedPath,
+          traces,
+        }
+      }
 
       const recentTracks = await getRecentlyAddedTracks(sectionKey, 100)
-      const recentPathMatch = recentTracks.find((track) => {
-        const candidatePath = track.Media?.[0]?.Part?.[0]?.file
-        const resolvedPath = resolveAccessibleLocalPath(candidatePath, cfg)
-        return resolvedPath === normalizedExpectedPath
-      })
+      const recentPathMatch = recentTracks.find(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg))
 
       if (recentPathMatch) {
         traces.push({
           attempt,
           artistCandidates: candidates.length,
           titleCandidates: titleMatches.length,
-          pathCandidates: pathCandidates.length + recentTracks.length,
+          pathCandidates: pathCandidates.length + albumPathCandidates.length + recentTracks.length,
           matchedBy: 'recent_path_lookup',
         })
         return {
@@ -128,10 +160,28 @@ export async function matchTrackInPlexWithRetry(
         attempt,
         artistCandidates: candidates.length,
         titleCandidates: titleMatches.length,
-        pathCandidates: pathCandidates.length + recentTracks.length,
+        pathCandidates: pathCandidates.length + albumPathCandidates.length + recentTracks.length,
         matchedBy: null,
       })
       continue
+    }
+
+    const direct = await searchTrack(sectionKey, song.name, candidates, song.album.name)
+    if (direct) {
+      traces.push({
+        attempt,
+        artistCandidates: candidates.length,
+        titleCandidates: 0,
+        pathCandidates: 0,
+        matchedBy: 'direct_search',
+      })
+      return {
+        ratingKey: direct.ratingKey,
+        matchedBy: 'direct_search',
+        attempts: attempt + 1,
+        localFilePath: null,
+        traces,
+      }
     }
 
     traces.push({
@@ -152,18 +202,26 @@ export async function matchTrackInPlexWithRetry(
   }
 }
 
+function trackMapsToLocalPath(track: PlexTrack, expectedLocalPath: string, cfg: AppConfig): boolean {
+  return (track.Media ?? []).some(media => (media.Part ?? []).some(part => {
+    const resolvedPath = resolveAccessibleLocalPath(part.file, cfg)
+    return resolvedPath !== null && normalizeExistingLocalPath(resolvedPath) === expectedLocalPath
+  }))
+}
+
 export function inferPlexMatchFailureCause(
   result: PlexMatchResult,
-  context: {
+  _context: {
     downloadedSongs: number
     failedDownloadedSongs: number
   },
 ): PlexMatchFailureCause {
   if (result.ratingKey) return 'unknown'
-  if (result.localFilePath && context.downloadedSongs > 0 && context.failedDownloadedSongs === context.downloadedSongs) {
-    return 'library_visibility'
-  }
-  if (result.localFilePath) return 'not_indexed_or_metadata_mismatch'
+  // Once a concrete local media identity exists, failure means Plex never
+  // exposed that exact mapped path. Metadata candidates are intentionally not
+  // accepted as substitutes, so the actionable problem is visibility/indexing
+  // or path publication rather than title similarity.
+  if (result.localFilePath) return 'library_visibility'
   return 'unknown'
 }
 

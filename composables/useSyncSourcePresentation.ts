@@ -1,4 +1,10 @@
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
+import {
+  countCopyrightRestrictedEntries,
+  countFailureCacheEntries,
+  formatFailureCacheActionLabel,
+  formatFailureCacheSummary,
+} from '~~/lib/failure-cache-presentation'
 
 export function getSourceDisplayName(source: Pick<PlaylistSource, 'name'>): string {
   return source.name || '(待获取)'
@@ -26,37 +32,29 @@ export function getPlexTargetHint(source: Pick<PlaylistSource, 'plexPlaylistName
 }
 
 export function getCopyrightCount(source: Pick<PlaylistSource, 'copyrightRestrictedIds'>): number {
-  if (!source.copyrightRestrictedIds) return 0
-  try {
-    const parsed = JSON.parse(source.copyrightRestrictedIds)
-    return Array.isArray(parsed) ? parsed.length : 0
-  } catch {
-    return 0
-  }
+  return countCopyrightRestrictedEntries(source.copyrightRestrictedIds)
 }
 
-export function getIgnoredFailureCount(source: Pick<PlaylistSource, 'ignoredFailureIds'>): number {
-  if (!source.ignoredFailureIds) return 0
-  try {
-    const parsed = JSON.parse(source.ignoredFailureIds)
-    return parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0
-  } catch {
-    return 0
-  }
+export function getFailureCacheCount(source: Pick<PlaylistSource, 'ignoredFailureIds'>): number {
+  return countFailureCacheEntries(source.ignoredFailureIds)
 }
 
 export function getIssueCount(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): number {
-  return getCopyrightCount(source) + getIgnoredFailureCount(source)
+  return getCopyrightCount(source) + getFailureCacheCount(source)
 }
 
 export function getIssueSummaryLabel(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): string {
-  const ignored = getIgnoredFailureCount(source)
-  const copyright = getCopyrightCount(source)
+  return formatFailureCacheSummary({
+    continuousFailure: getFailureCacheCount(source),
+    copyrightRestricted: getCopyrightCount(source),
+  })
+}
 
-  if (ignored === 0 && copyright === 0) return '无'
-  if (ignored > 0 && copyright > 0) return `忽略 ${ignored} · 版权 ${copyright}`
-  if (ignored > 0) return `忽略 ${ignored}`
-  return `版权 ${copyright}`
+export function getIssueActionLabel(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): string {
+  return formatFailureCacheActionLabel({
+    continuousFailure: getFailureCacheCount(source),
+    copyrightRestricted: getCopyrightCount(source),
+  })
 }
 
 export function getSourceStateLabel(source: Pick<PlaylistSource, 'type' | 'enabled'>): string {

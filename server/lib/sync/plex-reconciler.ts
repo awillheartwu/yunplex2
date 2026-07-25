@@ -3,6 +3,7 @@ import type { NeteaseSong } from '../netease'
 import type { RunBuilder } from '../run/builder'
 import type { PlaylistSource } from '../playlist/types'
 import type { TrackResolution } from './types'
+import type { ExtraTrack } from './lookup'
 import {
   initPlexClient,
   findPlaylist,
@@ -22,7 +23,7 @@ interface PlexPlaylist {
 
 export interface ReconcileResult {
   resolutions: TrackResolution[]
-  extraTracks: Array<{ playlistItemId: number; title: string; artist: string; album: string }>
+  extraTracks: ExtraTrack[]
   plexPlaylist: PlexPlaylist
   sectionKey: string
 }
@@ -79,6 +80,7 @@ export async function reconcileSource(
     sectionKey,
     cfg,
     dryRun,
+    { sourceId: source.id, runId: job.getId() },
   )
 
   const newCount = resolutions.filter((r) =>
@@ -100,6 +102,8 @@ export async function reconcileSource(
   }
   const parts = [`待下载 ${newCount} 首${existingCount > 0 ? `，已存在 ${existingCount} 首` : ''}`]
   if (extraTracks.length > 0) parts.push(`${extraTracks.length} 首待清理`)
+  const pendingReviewCount = resolutions.filter((r) => r.resolution === 'needs_review').length
+  if (pendingReviewCount > 0) parts.push(`${pendingReviewCount} 首待审核`)
   if (unavailableCount > 0) parts.push(`${unavailableCount} 首不可用`)
   job.finishStep(
     job.startStep(

@@ -120,9 +120,16 @@ export function updateSource(id: string, partial: Partial<{
   skipRemoveExtraTracks: boolean
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
+  requiresMatchReconcile: boolean
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
+  lastObservedPlexFingerprint: string | null
+  lastAppliedPlexFingerprint: string | null
+  lastObservedNeteaseCursor: string | null
+  lastComparedNeteaseCursor: string | null
+  lastObservedAt: string | null
+  lastComparedAt: string | null
   sortOrder: number
 }>): PlaylistSource | null {
   const db = getDb()
@@ -150,9 +157,16 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(partial.skipRemoveExtraTracks ? 1 : 0) }
   if (partial.copyrightRestrictedIds !== undefined) { sets.push('copyright_restricted_ids = ?'); vals.push(partial.copyrightRestrictedIds) }
   if (partial.ignoredFailureIds !== undefined) { sets.push('ignored_failure_ids = ?'); vals.push(partial.ignoredFailureIds) }
+  if (partial.requiresMatchReconcile !== undefined) { sets.push('requires_match_reconcile = ?'); vals.push(partial.requiresMatchReconcile ? 1 : 0) }
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
   if (partial.plexUpdatedAt !== undefined) { sets.push('plex_updated_at = ?'); vals.push(partial.plexUpdatedAt) }
   if (partial.trackIdSnapshot !== undefined) { sets.push('track_id_snapshot = ?'); vals.push(partial.trackIdSnapshot) }
+  if (partial.lastObservedPlexFingerprint !== undefined) { sets.push('last_observed_plex_fingerprint = ?'); vals.push(partial.lastObservedPlexFingerprint) }
+  if (partial.lastAppliedPlexFingerprint !== undefined) { sets.push('last_applied_plex_fingerprint = ?'); vals.push(partial.lastAppliedPlexFingerprint) }
+  if (partial.lastObservedNeteaseCursor !== undefined) { sets.push('last_observed_netease_cursor = ?'); vals.push(partial.lastObservedNeteaseCursor) }
+  if (partial.lastComparedNeteaseCursor !== undefined) { sets.push('last_compared_netease_cursor = ?'); vals.push(partial.lastComparedNeteaseCursor) }
+  if (partial.lastObservedAt !== undefined) { sets.push('last_observed_at = ?'); vals.push(partial.lastObservedAt) }
+  if (partial.lastComparedAt !== undefined) { sets.push('last_compared_at = ?'); vals.push(partial.lastComparedAt) }
   if (partial.sortOrder !== undefined) { sets.push('sort_order = ?'); vals.push(partial.sortOrder) }
   if (partial.lastTrackUpdateTime !== undefined) { sets.push('last_track_update_time = ?'); vals.push(partial.lastTrackUpdateTime) }
 
@@ -164,6 +178,67 @@ export function updateSource(id: string, partial: Partial<{
 
   db.prepare(`UPDATE playlist_sources SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
   return getSource(id)
+}
+
+export interface SourceSyncObservation {
+  neteaseCursor?: string | null
+  plexFingerprint?: string | null
+  observedAt?: string
+}
+
+/** Records source state fetched from upstream without implying reconciliation success. */
+export function recordSourceObservation(id: string, observation: SourceSyncObservation): PlaylistSource | null {
+  const observedAt = observation.observedAt ?? new Date().toISOString()
+  return updateSource(id, {
+    ...(observation.neteaseCursor !== undefined
+      ? { lastObservedNeteaseCursor: observation.neteaseCursor }
+      : {}),
+    ...(observation.plexFingerprint !== undefined
+      ? { lastObservedPlexFingerprint: observation.plexFingerprint }
+      : {}),
+    lastObservedAt: observedAt,
+  })
+}
+
+export interface SourceSyncComparison {
+  neteaseCursor: string
+  plexFingerprint?: string | null
+  comparedAt?: string
+}
+
+/**
+ * Records that identity comparison ran for an observed target snapshot. This
+ * deliberately does not update `trackIdSnapshot`, which remains the converged
+ * baseline used by legacy incremental diff logic.
+ */
+export function recordSourceComparison(id: string, comparison: SourceSyncComparison): PlaylistSource | null {
+  const comparedAt = comparison.comparedAt ?? new Date().toISOString()
+  return updateSource(id, {
+    lastObservedNeteaseCursor: comparison.neteaseCursor,
+    lastComparedNeteaseCursor: comparison.neteaseCursor,
+    ...(comparison.plexFingerprint !== undefined
+      ? { lastObservedPlexFingerprint: comparison.plexFingerprint }
+      : {}),
+    lastObservedAt: comparedAt,
+    lastComparedAt: comparedAt,
+  })
+}
+
+/**
+ * Persists only a Plex state that was read back after our mutation completed.
+ * Setting observed and applied together makes the next observation recognizable
+ * as our own write instead of external drift.
+ */
+export function recordAppliedPlexPlaylistFingerprint(
+  id: string,
+  fingerprint: string,
+  appliedAt = new Date().toISOString(),
+): PlaylistSource | null {
+  return updateSource(id, {
+    lastObservedPlexFingerprint: fingerprint,
+    lastAppliedPlexFingerprint: fingerprint,
+    lastObservedAt: appliedAt,
+  })
 }
 
 export function reorderSources(orderedIds: string[]): void {

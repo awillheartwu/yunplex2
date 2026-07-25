@@ -1,4 +1,4 @@
-import type { AppConfig, AudioQuality, LyricOrder, MultiArtistFormat } from './types'
+import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat } from './types'
 import { DEFAULT_CONFIG } from './defaults'
 
 export class ConfigValidationError extends Error {
@@ -38,6 +38,12 @@ const LYRIC_ORDERS = new Set<LyricOrder>([
   'separate',
 ])
 
+const EXTRA_TRACK_REMOVAL_POLICIES = new Set<ExtraTrackRemovalPolicy>([
+  'strict',
+  'balanced',
+  'exact',
+])
+
 const TOP_LEVEL_KEYS = new Set(['netease', 'plex', 'download', 'sync', 'other'])
 
 const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
@@ -65,11 +71,15 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'downloadTaskRetentionDays',
     'activityRetentionDays',
     'forceFullCompare',
+    'reconcileOnPlexDrift',
     'fullCompareAfterSkips',
     'fullCompareAfterDays',
     'autoDownloadAlbum',
     'skipPlexPlaylist',
     'skipRemoveExtraTracks',
+    'extraTrackRemovalPolicy',
+    'enableHighConfidenceMetadataBinding',
+    'metadataDurationToleranceSec',
     'maxFailureAttempts',
   ]),
   other: new Set([
@@ -161,12 +171,16 @@ export function validateFullConfig(input: unknown): AppConfig {
       downloadTaskRetentionDays: readInteger(candidate.sync.downloadTaskRetentionDays, '下载队列保留天数', 0, 365),
       activityRetentionDays: readInteger(candidate.sync.activityRetentionDays, '内部事件保留天数', 0, 365),
       forceFullCompare: readBoolean(candidate.sync.forceFullCompare, '始终全量对比'),
+      reconcileOnPlexDrift: readBoolean(candidate.sync.reconcileOnPlexDrift, 'Plex 漂移自动修复'),
       fullCompareAfterSkips: readInteger(candidate.sync.fullCompareAfterSkips, '连续跳过上限', 0, 100),
       fullCompareAfterDays: readInteger(candidate.sync.fullCompareAfterDays, '全量对比间隔', 0, 365),
       autoDownloadAlbum: readBoolean(candidate.sync.autoDownloadAlbum, '添加专辑后自动下载'),
       skipPlexPlaylist: readBoolean(candidate.sync.skipPlexPlaylist, '默认不入 Plex 歌单'),
       skipRemoveExtraTracks: readBoolean(candidate.sync.skipRemoveExtraTracks, '不删除 Plex 多余歌曲'),
-      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '失败忽略阈值', 1, 20),
+      extraTrackRemovalPolicy: readEnum(candidate.sync.extraTrackRemovalPolicy, EXTRA_TRACK_REMOVAL_POLICIES, '多余歌曲清理策略'),
+      enableHighConfidenceMetadataBinding: readBoolean(candidate.sync.enableHighConfidenceMetadataBinding, '启用高置信元数据自动绑定'),
+      metadataDurationToleranceSec: readInteger(candidate.sync.metadataDurationToleranceSec, '高置信元数据时长误差', 0, 30),
+      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '连续失败缓存阈值', 1, 20),
     },
     other: {
       multiArtistFormat: readEnum(candidate.other.multiArtistFormat, MULTI_ARTIST_FORMATS, '多歌手格式'),
@@ -218,11 +232,27 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
       downloadTaskRetentionDays: coerceInteger(get(source, 'sync', 'downloadTaskRetentionDays'), DEFAULT_CONFIG.sync.downloadTaskRetentionDays, 0, 365),
       activityRetentionDays: coerceInteger(get(source, 'sync', 'activityRetentionDays'), DEFAULT_CONFIG.sync.activityRetentionDays, 0, 365),
       forceFullCompare: coerceBoolean(get(source, 'sync', 'forceFullCompare'), DEFAULT_CONFIG.sync.forceFullCompare),
+      reconcileOnPlexDrift: coerceBoolean(get(source, 'sync', 'reconcileOnPlexDrift'), DEFAULT_CONFIG.sync.reconcileOnPlexDrift),
       fullCompareAfterSkips: coerceInteger(get(source, 'sync', 'fullCompareAfterSkips'), DEFAULT_CONFIG.sync.fullCompareAfterSkips, 0, 100),
       fullCompareAfterDays: coerceInteger(get(source, 'sync', 'fullCompareAfterDays'), DEFAULT_CONFIG.sync.fullCompareAfterDays, 0, 365),
       autoDownloadAlbum: coerceBoolean(get(source, 'sync', 'autoDownloadAlbum'), DEFAULT_CONFIG.sync.autoDownloadAlbum),
       skipPlexPlaylist: coerceBoolean(get(source, 'sync', 'skipPlexPlaylist'), DEFAULT_CONFIG.sync.skipPlexPlaylist),
       skipRemoveExtraTracks: coerceBoolean(get(source, 'sync', 'skipRemoveExtraTracks'), DEFAULT_CONFIG.sync.skipRemoveExtraTracks),
+      extraTrackRemovalPolicy: coerceEnum(
+        get(source, 'sync', 'extraTrackRemovalPolicy'),
+        EXTRA_TRACK_REMOVAL_POLICIES,
+        DEFAULT_CONFIG.sync.extraTrackRemovalPolicy,
+      ),
+      enableHighConfidenceMetadataBinding: coerceBoolean(
+        get(source, 'sync', 'enableHighConfidenceMetadataBinding'),
+        DEFAULT_CONFIG.sync.enableHighConfidenceMetadataBinding,
+      ),
+      metadataDurationToleranceSec: coerceInteger(
+        get(source, 'sync', 'metadataDurationToleranceSec'),
+        DEFAULT_CONFIG.sync.metadataDurationToleranceSec,
+        0,
+        30,
+      ),
       maxFailureAttempts: coerceInteger(get(source, 'sync', 'maxFailureAttempts'), DEFAULT_CONFIG.sync.maxFailureAttempts, 1, 20),
     },
     other: {

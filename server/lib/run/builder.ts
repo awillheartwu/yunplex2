@@ -9,8 +9,10 @@ export class RunBuilder {
   private job: SyncJob
   private activeSteps: Map<string, JobStep> = new Map()
   private songMap: Map<string, SongTask> = new Map()
-  private sourceSongMap: Map<string, string> = new Map()
+  private sourceSongMap: Map<string, string[]> = new Map()
+  private sourceSongIndexMap: Map<string, string> = new Map()
   private sourceRemovedSongMap: Map<string, string> = new Map()
+  private sourceRemovedItemMap: Map<string, string> = new Map()
   private flatSteps: JobStep[] = []
   private stepGroups: Map<string, JobStep[]> = new Map()
 
@@ -49,13 +51,15 @@ export class RunBuilder {
     this.job.sourceIds = [...new Set(sourceIds.filter(Boolean))]
   }
 
-  addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus; neteaseSongId?: number }[]): void {
+  addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus; neteaseSongId?: number; neteaseIndex?: number }[]): string[] {
+    const ids: string[] = []
     this.job.totalSongs += songs.length
     for (const s of songs) {
       const st: SongTask = {
         id: uid(),
         sourceId,
         neteaseSongId: s.neteaseSongId,
+        neteaseIndex: s.neteaseIndex,
         songName: s.songName,
         artist: s.artist,
         album: s.album,
@@ -63,13 +67,54 @@ export class RunBuilder {
         phase: s.status === 'skipped_existing' ? 'done' : 'download',
       }
       this.songMap.set(st.id, st)
+      ids.push(st.id)
       if (typeof st.neteaseSongId === 'number') {
-        this.sourceSongMap.set(this.makeSourceSongKey(sourceId, st.neteaseSongId), st.id)
-      } else if (st.status === 'removed') {
+        const key = this.makeSourceSongKey(sourceId, st.neteaseSongId)
+        const occurrences = this.sourceSongMap.get(key) ?? []
+        occurrences.push(st.id)
+        this.sourceSongMap.set(key, occurrences)
+        if (typeof st.neteaseIndex === 'number') {
+          this.sourceSongIndexMap.set(this.makeSourceSongIndexKey(sourceId, st.neteaseIndex), st.id)
+        }
+      } else if (st.status === 'removed' || st.status === 'extra_skipped') {
         this.sourceRemovedSongMap.set(this.makeRemovedSongKey(sourceId, st.songName, st.artist, st.album), st.id)
       }
       this.job.songs.push(st)
     }
+    return ids
+  }
+
+  /**
+   * Register one concrete extra Plex playlist occurrence. Unlike the legacy
+   * title/artist/album lookup this remains unambiguous for duplicate tracks.
+   */
+  addExtraSong(sourceId: string, song: {
+    songName: string
+    artist: string
+    album: string
+    playlistItemId: number
+    ratingKey: string
+    status?: Extract<SongStatus, 'removed' | 'extra_skipped'>
+  }): string {
+    const id = uid()
+    const task: SongTask = {
+      id,
+      sourceId,
+      songName: song.songName,
+      artist: song.artist,
+      album: song.album,
+      status: song.status ?? 'extra_skipped',
+      phase: 'done',
+      metadata: {
+        plexRatingKey: song.ratingKey,
+        plexPlaylistItemId: song.playlistItemId,
+      },
+    }
+    this.songMap.set(id, task)
+    this.sourceRemovedItemMap.set(this.makeRemovedItemKey(sourceId, song.playlistItemId), id)
+    this.sourceRemovedSongMap.set(this.makeRemovedSongKey(sourceId, song.songName, song.artist, song.album), id)
+    this.job.songs.push(task)
+    return id
   }
 
   // Step lifecycle
@@ -153,7 +198,15 @@ export class RunBuilder {
   }
 
   findSongId(sourceId: string, neteaseSongId: number): string | undefined {
-    return this.sourceSongMap.get(this.makeSourceSongKey(sourceId, neteaseSongId))
+    return this.findSongIds(sourceId, neteaseSongId)[0]
+  }
+
+  findSongIds(sourceId: string, neteaseSongId: number): string[] {
+    return [...(this.sourceSongMap.get(this.makeSourceSongKey(sourceId, neteaseSongId)) ?? [])]
+  }
+
+  findSongIdByIndex(sourceId: string, neteaseIndex: number): string | undefined {
+    return this.sourceSongIndexMap.get(this.makeSourceSongIndexKey(sourceId, neteaseIndex))
   }
 
   getSong(sourceId: string, neteaseSongId: number): SongTask | undefined {
@@ -161,8 +214,17 @@ export class RunBuilder {
     return id ? this.songMap.get(id) : undefined
   }
 
+  getSongByIndex(sourceId: string, neteaseIndex: number): SongTask | undefined {
+    const id = this.findSongIdByIndex(sourceId, neteaseIndex)
+    return id ? this.songMap.get(id) : undefined
+  }
+
   findRemovedSongId(sourceId: string, songName: string, artist: string, album: string): string | undefined {
     return this.sourceRemovedSongMap.get(this.makeRemovedSongKey(sourceId, songName, artist, album))
+  }
+
+  findRemovedSongIdByPlaylistItemId(sourceId: string, playlistItemId: number): string | undefined {
+    return this.sourceRemovedItemMap.get(this.makeRemovedItemKey(sourceId, playlistItemId))
   }
 
   // Finalize
@@ -185,9 +247,7 @@ export class RunBuilder {
     ).length
     this.job.skippedSongs = this.job.songs.filter((s) => s.status === 'skipped_existing').length
     this.job.removedSongs = this.job.songs.filter((s) => s.status === 'removed').length
-    this.job.warnings = this.job.songs.filter((s) =>
-      ['copyright_restricted', 'ignored_failure'].includes(s.status),
-    ).length
+    this.job.warnings = countDistinctWarningIssues(this.job.songs)
 
     return this.job
   }
@@ -210,7 +270,37 @@ export class RunBuilder {
     return `${sourceId}:${neteaseSongId}`
   }
 
+  private makeSourceSongIndexKey(sourceId: string, neteaseIndex: number): string {
+    return `${sourceId}:target-index:${neteaseIndex}`
+  }
+
   private makeRemovedSongKey(sourceId: string, songName: string, artist: string, album: string): string {
     return `${sourceId}:${songName}:${artist}:${album}`
   }
+
+
+  private makeRemovedItemKey(sourceId: string, playlistItemId: number): string {
+    return `${sourceId}:plex-item:${playlistItemId}`
+  }
+}
+
+function countDistinctWarningIssues(songs: readonly SongTask[]): number {
+  const keys = new Set<string>()
+  for (const song of songs) {
+    if (!['copyright_restricted', 'ignored_failure', 'extra_skipped', 'match_pending_review'].includes(song.status)) continue
+    const trace = song.metadata?.matchTrace
+    const relatedNeteaseSongId = typeof trace?.relatedNeteaseSongId === 'number'
+      ? trace.relatedNeteaseSongId
+      : undefined
+    if (relatedNeteaseSongId !== undefined) {
+      keys.add(`target:${song.sourceId ?? ''}:${relatedNeteaseSongId}`)
+    } else if (typeof song.neteaseSongId === 'number') {
+      keys.add(`target:${song.sourceId ?? ''}:${song.neteaseSongId}`)
+    } else if (typeof song.metadata?.plexPlaylistItemId === 'number') {
+      keys.add(`plex-item:${song.sourceId ?? ''}:${song.metadata.plexPlaylistItemId}`)
+    } else {
+      keys.add(`task:${song.id}`)
+    }
+  }
+  return keys.size
 }

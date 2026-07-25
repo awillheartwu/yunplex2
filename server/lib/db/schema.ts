@@ -144,6 +144,12 @@ export function createSchema(db: Database.Database): void {
       last_full_compare_at    TEXT,
       plex_updated_at         INTEGER,
       track_id_snapshot       TEXT,
+      last_observed_plex_fingerprint TEXT,
+      last_applied_plex_fingerprint TEXT,
+      last_observed_netease_cursor TEXT,
+      last_compared_netease_cursor TEXT,
+      last_observed_at        TEXT,
+      last_compared_at        TEXT,
       netease_playlist_name   TEXT NOT NULL DEFAULT '',
       sort_order              INTEGER NOT NULL DEFAULT 0,
       type                    TEXT NOT NULL DEFAULT 'playlist',
@@ -152,6 +158,7 @@ export function createSchema(db: Database.Database): void {
       skip_plex_playlist      INTEGER NOT NULL DEFAULT 0,
       copyright_restricted_ids TEXT,
       ignored_failure_ids     TEXT,
+      requires_match_reconcile INTEGER NOT NULL DEFAULT 0,
       created_at              TEXT NOT NULL,
       updated_at              TEXT NOT NULL
     );
@@ -166,6 +173,177 @@ export function createSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_song_lookup_rating_key ON song_lookup(plex_rating_key);
+
+    -- Durable provenance for files written or adopted by YunPlex. Unlike the
+    -- download queue this table is not retention-pruned, so path identity can
+    -- be recovered after old task history is cleaned up.
+    CREATE TABLE IF NOT EXISTS local_media_assets (
+      netease_song_id INTEGER PRIMARY KEY,
+      file_path TEXT NOT NULL,
+      provenance TEXT NOT NULL CHECK(provenance IN ('download_task','legacy_download_task','computed','manual')),
+      ownership TEXT NOT NULL DEFAULT 'external' CHECK(ownership IN ('managed','external')),
+      source_task_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','missing','replaced')),
+      file_size INTEGER,
+      file_mtime_ms INTEGER,
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_verified_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_local_media_assets_path ON local_media_assets(file_path);
+    CREATE INDEX IF NOT EXISTS idx_local_media_assets_status ON local_media_assets(status);
+
+    -- song_lookup is deliberately only a lookup-performance cache.  The tables
+    -- below own the durable identity and human-review decisions used by sync.
+    CREATE TABLE IF NOT EXISTS song_identity_bindings (
+      netease_song_id INTEGER PRIMARY KEY,
+      plex_section_key TEXT NOT NULL DEFAULT '',
+      plex_file_path TEXT NOT NULL,
+      plex_relative_path TEXT NOT NULL DEFAULT '',
+      plex_rating_key TEXT,
+      mb_recording_id TEXT,
+      binding_method TEXT NOT NULL CHECK(binding_method IN ('path','mb_recording','metadata','manual','migrated')),
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_verified_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_path ON song_identity_bindings(plex_file_path);
+    CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_rating_key ON song_identity_bindings(plex_rating_key);
+    CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_recording ON song_identity_bindings(mb_recording_id);
+
+    CREATE TABLE IF NOT EXISTS song_match_reviews (
+      id TEXT PRIMARY KEY,
+      netease_song_id INTEGER NOT NULL,
+      source_id TEXT,
+      run_id TEXT,
+      candidate_plex_file_path TEXT,
+      candidate_plex_rating_key TEXT,
+      candidate_mb_recording_id TEXT,
+      candidate_key TEXT NOT NULL DEFAULT '',
+      evidence_type TEXT NOT NULL DEFAULT 'historical' CHECK(evidence_type IN ('path','mb_recording','metadata','historical','manual','migration')),
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','unbound','superseded')),
+      decision TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_queue ON song_match_reviews(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_song ON song_match_reviews(netease_song_id, status);
+    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_source ON song_match_reviews(source_id, status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS song_match_review_occurrences (
+      review_id TEXT NOT NULL REFERENCES song_match_reviews(id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL DEFAULT '',
+      run_id TEXT NOT NULL DEFAULT '',
+      observed_at TEXT NOT NULL,
+      PRIMARY KEY (review_id, source_id, run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_song_match_review_occurrences_source
+      ON song_match_review_occurrences(source_id, review_id);
+
+    CREATE TABLE IF NOT EXISTS playlist_source_track_occurrences (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL REFERENCES playlist_sources(id) ON DELETE CASCADE,
+      netease_song_id INTEGER NOT NULL,
+      occurrence INTEGER NOT NULL,
+      position INTEGER NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      artists_json TEXT NOT NULL DEFAULT '[]',
+      album_id INTEGER,
+      album_name TEXT NOT NULL DEFAULT '',
+      cover_url TEXT NOT NULL DEFAULT '',
+      track_number INTEGER,
+      disc_number INTEGER,
+      duration_ms INTEGER,
+      metadata_complete INTEGER NOT NULL DEFAULT 0,
+      membership_status TEXT NOT NULL DEFAULT 'current'
+        CHECK(membership_status IN ('current','removed')),
+      removal_reason TEXT
+        CHECK(removal_reason IS NULL OR removal_reason IN ('netease_removed','sync_limit_excluded')),
+      last_song_status TEXT,
+      last_run_id TEXT,
+      match_trace_json TEXT,
+      last_error_json TEXT,
+      alignment_status TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(alignment_status IN ('aligned','pending','missing','unknown')),
+      aligned_plex_rating_key TEXT,
+      aligned_plex_relative_path TEXT,
+      aligned_binding_updated_at TEXT,
+      aligned_at TEXT,
+      first_observed_at TEXT NOT NULL,
+      last_observed_at TEXT NOT NULL,
+      removed_at TEXT,
+      UNIQUE(source_id, netease_song_id, occurrence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_playlist_track_occurrences_order
+      ON playlist_source_track_occurrences(source_id, membership_status, position);
+    CREATE INDEX IF NOT EXISTS idx_playlist_track_occurrences_song
+      ON playlist_source_track_occurrences(netease_song_id, membership_status);
+
+    CREATE TABLE IF NOT EXISTS song_identity_events (
+      id TEXT PRIMARY KEY,
+      netease_song_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      actor_type TEXT NOT NULL CHECK(actor_type IN ('system','admin')),
+      source_id TEXT,
+      run_id TEXT,
+      review_id TEXT,
+      previous_binding_json TEXT,
+      next_binding_json TEXT,
+      evidence_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_song_identity_events_song
+      ON song_identity_events(netease_song_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_song_identity_events_source
+      ON song_identity_events(source_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_song_identity_events_type
+      ON song_identity_events(event_type, actor_type, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS playlist_extra_observations (
+      source_id TEXT NOT NULL,
+      plex_playlist_rating_key TEXT NOT NULL,
+      identity_key TEXT NOT NULL,
+      plex_rating_key TEXT NOT NULL,
+      plex_file_path TEXT,
+      consecutive_observations INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'observing' CHECK(status IN ('observing','absent','removed')),
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      last_run_id TEXT NOT NULL,
+      removed_at TEXT,
+      removed_run_id TEXT,
+      PRIMARY KEY (source_id, plex_playlist_rating_key, identity_key),
+      FOREIGN KEY (source_id) REFERENCES playlist_sources(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_playlist_extra_observations_status
+      ON playlist_extra_observations(source_id, plex_playlist_rating_key, status);
+
+    CREATE TABLE IF NOT EXISTS musicbrainz_recording_cache (
+      lookup_key TEXT PRIMARY KEY,
+      resolved_json TEXT NOT NULL,
+      last_status TEXT NOT NULL CHECK(last_status IN ('success','ambiguous','empty','failed','disabled')),
+      score INTEGER,
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS musicbrainz_id_mapping_cache (
+      input_mbid TEXT PRIMARY KEY,
+      resolved_json TEXT NOT NULL,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('recording','release_track','unknown')),
+      status TEXT NOT NULL CHECK(status IN ('success','ambiguous','empty','failed')),
+      recording_id TEXT,
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_musicbrainz_id_mapping_recording
+      ON musicbrainz_id_mapping_cache(recording_id);
 
     CREATE TABLE IF NOT EXISTS activity_events (
       id           TEXT PRIMARY KEY,

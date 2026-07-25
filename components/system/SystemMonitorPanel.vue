@@ -10,15 +10,19 @@
     />
     <SystemKpiGrid :cards="kpiCards" />
     <SystemCharts :cpu-chart-option="cpuChartOption" :mem-chart-option="memChartOption" :last-stats-label="lastStatsLabel" />
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <SystemInfoPanel :info="info" :stats="stats" :dependency-checked-label="dependencyCheckedLabel" :format-uptime="formatUptime" />
-      <SystemDataStats :rows="tableRows" />
-    </div>
+    <SystemDataStats :rows="tableRows" />
+    <SystemInfoPanel
+      :info="info"
+      :stats="stats"
+      :dependency-checked-label="dependencyCheckedLabel"
+      :format-uptime="formatUptime"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { SystemHealthItem, SystemInfo, SystemKpiCard, SystemStats } from '~~/composables/useSystemPage'
+import type { SystemDataTableRow } from '~~/lib/system-data-catalog'
 
 defineProps<{
   cpuChartOption: Record<string, unknown>
@@ -32,7 +36,7 @@ defineProps<{
   memChartOption: Record<string, unknown>
   overallTone: 'ok' | 'warning' | 'error' | 'idle'
   stats: SystemStats | null
-  tableRows: Array<{ name: string; count: number; desc: string; href?: string }>
+  tableRows: SystemDataTableRow[]
 }>()
 
 defineEmits<{

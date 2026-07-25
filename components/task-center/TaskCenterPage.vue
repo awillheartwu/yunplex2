@@ -12,82 +12,122 @@
     />
 
     <main>
-      <section v-if="activeTab === 'overview'" class="space-y-5">
-        <article v-if="syncState?.isRunning" class="section-card task-live-card">
-          <div class="task-live-card__top">
-            <div>
-              <div class="task-live-card__eyebrow">
-                <span class="task-live-card__pulse" />
-                当前同步
+      <section v-if="activeTab === 'overview'" class="task-overview">
+        <div class="task-overview__summary">
+          <article v-if="syncState?.isRunning" class="section-card task-live-card">
+            <div class="task-live-card__top">
+              <div class="task-live-card__heading">
+                <div class="task-live-card__eyebrow">
+                  <span class="task-live-card__pulse" />
+                  当前同步
+                </div>
+                <h3>{{ liveTitle }}</h3>
+                <p>{{ liveDescription }}</p>
               </div>
-              <h3>{{ liveTitle }}</h3>
-              <p>{{ liveDescription }}</p>
+              <div class="task-live-card__progress">
+                <strong>{{ livePercent }}%</strong>
+                <span>整体进度</span>
+              </div>
             </div>
-            <div class="task-live-card__percent">{{ livePercent }}%</div>
-          </div>
-          <div class="task-live-card__bar" aria-label="任务进度">
-            <div :style="{ width: `${livePercent}%` }" />
-          </div>
-          <dl class="task-live-card__facts">
-            <div>
-              <dt>当前步骤</dt>
-              <dd>{{ stageLabel }}</dd>
+            <div
+              class="task-live-card__bar"
+              role="progressbar"
+              aria-label="同步整体进度"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="livePercent"
+            >
+              <div :style="{ width: `${livePercent}%` }" />
             </div>
-            <div>
-              <dt>当前项目</dt>
-              <dd>{{ syncState.currentSong || syncState.currentSourceName || '正在准备' }}</dd>
-            </div>
-            <div>
-              <dt>已运行</dt>
-              <dd>{{ elapsedLabel }}</dd>
-            </div>
-            <div>
-              <dt>本轮异常</dt>
-              <dd :class="{ 'text-danger': (syncState.failures?.length || 0) > 0 }">{{ syncState.failures?.length || 0 }}</dd>
-            </div>
-          </dl>
-          <div class="task-live-card__actions">
-            <button class="btn btn-danger" type="button" @click="handleCancelSync">取消同步</button>
-            <NuxtLink v-if="primaryActiveRun" :to="`/task-center/runs/${primaryActiveRun.id}`" class="btn btn-secondary">查看详情</NuxtLink>
-          </div>
-        </article>
 
-        <article v-else class="section-card task-idle-card">
-          <div class="task-idle-card__status">
-            <span class="task-idle-card__status-dot" />
-            系统空闲
-          </div>
-          <template v-if="latestRun">
-            <div class="task-idle-card__main">
-              <div>
-                <p class="task-idle-card__eyebrow">最近一次运行</p>
-                <h3>{{ latestRun.summary || runTypeLabel(latestRun.type) }}</h3>
-                <p>{{ runTypeLabel(latestRun.type) }} · {{ formatTime(latestRun.startedAt) }} · {{ formatRunDuration(latestRun.durationMs) }}</p>
+            <ol class="task-stage-rail" aria-label="同步步骤">
+              <li
+                v-for="stage in overviewStageItems"
+                :key="stage.key"
+                :class="`is-${stage.state}`"
+                :aria-current="stage.state === 'current' ? 'step' : undefined"
+              >
+                <span class="task-stage-rail__marker">
+                  <AppIcon v-if="stage.state === 'complete'" name="check" :size="11" />
+                  <span v-else />
+                </span>
+                <span>{{ stage.label }}</span>
+              </li>
+            </ol>
+
+            <div class="task-live-card__footer">
+              <dl class="task-live-card__facts">
+                <div>
+                  <dt>当前项目</dt>
+                  <dd :title="syncState.currentSong || syncState.currentSourceName || '正在准备'">
+                    {{ syncState.currentSong || syncState.currentSourceName || '正在准备' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>已运行</dt>
+                  <dd>{{ elapsedLabel }}</dd>
+                </div>
+                <div>
+                  <dt>本轮异常</dt>
+                  <dd :class="{ 'text-danger': (syncState.failures?.length || 0) > 0 }">{{ syncState.failures?.length || 0 }}</dd>
+                </div>
+              </dl>
+              <div class="task-live-card__actions">
+                <NuxtLink v-if="primaryActiveRun" :to="`/task-center/runs/${primaryActiveRun.id}`" class="btn btn-secondary btn-sm">查看详情</NuxtLink>
+                <button class="btn btn-danger btn-sm" type="button" @click="handleCancelSync">取消同步</button>
               </div>
-              <StatusBadge :status="runBadgeStatus(latestRun.status)" />
             </div>
-            <div class="task-idle-card__stats">
-              <span><strong>{{ latestRun.totalSongs }}</strong> 项</span>
-              <span><strong class="text-success">{{ latestRun.successSongs }}</strong> 成功</span>
-              <span v-if="latestRun.skippedSongs > 0" class="text-existing"><strong>{{ latestRun.skippedSongs }}</strong> 已存在</span>
-              <span v-if="latestRun.warnings > 0" class="text-ignored"><strong>{{ latestRun.warnings }}</strong> 已忽略</span>
-              <span v-if="latestRun.removedSongs > 0" class="text-warning"><strong>{{ latestRun.removedSongs }}</strong> 已移除</span>
-              <span v-if="latestRun.failedSongs > 0"><strong class="text-danger">{{ latestRun.failedSongs }}</strong> 失败</span>
+          </article>
+
+          <article v-else class="section-card task-idle-card">
+            <div class="task-idle-card__status">
+              <span class="task-idle-card__status-dot" />
+              系统空闲
             </div>
-          </template>
-          <div v-else class="task-idle-card__empty">
-            <h3>还没有运行记录</h3>
-            <p>触发同步或手动下载后，这里会显示最近结果。</p>
-          </div>
-          <div class="task-idle-card__actions">
-            <button class="btn btn-primary" type="button" :disabled="syncLoading" @click="handleTriggerSync">
-              <AppIcon :name="syncLoading ? 'loader' : 'sync'" :size="15" :class="{ 'animate-spin': syncLoading }" />
-              {{ syncLoading ? '启动中' : '立即同步' }}
+            <template v-if="latestRun">
+              <div class="task-idle-card__main">
+                <div>
+                  <p class="task-idle-card__eyebrow">最近一次运行</p>
+                  <h3>{{ runSummaryLabel(latestRun.summary, runTypeLabel(latestRun.type)) }}</h3>
+                  <p>{{ runTypeLabel(latestRun.type) }} · {{ formatTime(latestRun.startedAt) }} · {{ formatRunDuration(latestRun.durationMs) }}</p>
+                </div>
+                <StatusBadge :status="runBadgeStatus(latestRun.status)" />
+              </div>
+              <div class="task-idle-card__stats">
+                <span><strong>{{ latestRun.totalSongs }}</strong> 项</span>
+                <span><strong class="text-success">{{ latestRun.successSongs }}</strong> 成功</span>
+                <span v-if="latestRun.skippedSongs > 0" class="text-existing"><strong>{{ latestRun.skippedSongs }}</strong> 已存在</span>
+                <span v-if="latestRun.warnings > 0" class="text-ignored"><strong>{{ latestRun.warnings }}</strong> 需关注</span>
+                <span v-if="latestRun.removedSongs > 0" class="text-warning"><strong>{{ latestRun.removedSongs }}</strong> 已移除</span>
+                <span v-if="latestRun.failedSongs > 0"><strong class="text-danger">{{ latestRun.failedSongs }}</strong> 失败</span>
+              </div>
+            </template>
+            <div v-else class="task-idle-card__empty">
+              <h3>还没有运行记录</h3>
+              <p>触发同步或手动下载后，这里会显示最近结果。</p>
+            </div>
+            <div class="task-idle-card__actions">
+              <button class="btn btn-primary btn-sm" type="button" :disabled="syncLoading" @click="handleTriggerSync">
+                <AppIcon :name="syncLoading ? 'loader' : 'sync'" :size="15" :class="{ 'animate-spin': syncLoading }" />
+                {{ syncLoading ? '启动中' : '立即同步' }}
+              </button>
+              <NuxtLink v-if="latestRun" :to="`/task-center/runs/${latestRun.id}`" class="btn btn-secondary btn-sm">查看详情</NuxtLink>
+            </div>
+            <p v-if="syncError" class="task-idle-card__error">{{ syncError }}</p>
+          </article>
+
+          <section class="section-card issue-summary" :class="{ 'has-issues': openFailureTotal > 0 }">
+            <div>
+              <p class="issue-summary__eyebrow">需要处理</p>
+              <strong class="issue-summary__count">{{ openFailureTotal }}</strong>
+              <h3>{{ openFailureTotal > 0 ? '个问题等待处理' : '暂无待处理问题' }}</h3>
+              <p>{{ openFailureTotal > 0 ? '失败项会在成功重试后自动关闭，也可以暂时忽略。' : '最近的运行没有留下未解决异常。' }}</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" type="button" @click="switchTab('failures')">
+              {{ openFailureTotal > 0 ? '处理问题' : '查看记录' }}
             </button>
-            <NuxtLink v-if="latestRun" :to="`/task-center/runs/${latestRun.id}`" class="btn btn-secondary">查看详情</NuxtLink>
-          </div>
-          <p v-if="syncError" class="task-idle-card__error">{{ syncError }}</p>
-        </article>
+          </section>
+        </div>
 
         <section v-if="secondaryActiveRuns.length > 0" class="section-card compact-runs">
           <div class="compact-runs__header">
@@ -99,22 +139,21 @@
           </div>
           <NuxtLink v-for="run in secondaryActiveRuns" :key="run.id" :to="`/task-center/runs/${run.id}`" class="compact-run">
             <RunTypeBadge :type="run.type" compact size="sm" />
-            <span>{{ run.summary }}</span>
+            <span>{{ runSummaryLabel(run.summary) }}</span>
             <small>{{ formatElapsed(run.startedAt) }}</small>
             <AppIcon name="chevronRight" :size="13" />
           </NuxtLink>
         </section>
 
-        <section class="section-card issue-summary">
-          <div>
-            <p class="issue-summary__eyebrow">需要处理</p>
-            <h3>{{ openFailureTotal > 0 ? `${openFailureTotal} 个问题等待处理` : '暂无待处理问题' }}</h3>
-            <p>{{ openFailureTotal > 0 ? '失败项会在成功重试后自动关闭，也可以暂时忽略。' : '最近的运行没有留下未解决异常。' }}</p>
-          </div>
-          <button class="btn btn-secondary" type="button" @click="switchTab('failures')">
-            {{ openFailureTotal > 0 ? '处理问题' : '查看异常记录' }}
-          </button>
-        </section>
+        <DownloadQueuePanel
+          :status="downloadQueue.queueStatus.value"
+          :live-tasks="downloadQueue.liveTasks.value"
+          :loading="downloadQueue.loading.value"
+          :error="downloadQueue.error.value"
+          :sync-state="syncState"
+          :active-run="primaryActiveRun"
+          @refresh="downloadQueue.fetchAll()"
+        />
       </section>
 
       <section v-else-if="activeTab === 'runs'" class="space-y-4">
@@ -193,7 +232,7 @@
         <div v-else class="run-groups">
           <section v-for="group in groupedRuns" :key="group.key" class="run-group">
             <h3>{{ group.label }}</h3>
-            <div class="space-y-3">
+            <div class="run-group__list">
               <RunCard v-for="run in group.items" :key="run.id" :run="run" />
             </div>
           </section>
@@ -339,17 +378,19 @@
 
 <script setup lang="ts">
 import { useTaskCenterPage } from '~~/composables/useTaskCenterPage'
+import { runSummaryLabel } from '~~/lib/run-presentation'
 
 const {
   activeTab, applyFailureDraftFilters, applyRunDraftFilters, batchIgnore, batchReopen, batchRetry, clearFailureFilters, clearRunFilters,
   draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType, draftRunDateFilter, draftRunSource, draftRunStatus, draftRunType,
-  elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
+  downloadQueue, elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed, formatRunDuration,
   failureStatusTabs, failureTypeFilters, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
-  livePercent, liveTitle, onFailureSearch, onRunSearch, onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, prepareRunDraftFilters,
-  primaryActiveRun, removeFailureFilter, removeRunFilter, reopenFailure, resetFailureDraftFilters, resetRunDraftFilters, retryFailure, runAdvancedFilterCount,
+  livePercent, liveTitle, onFailureSearch, onRunSearch, onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, prepareRunDraftFilters,
+  primaryActiveRun, removeFailureFilter, removeRunFilter, reopenFailure, resetFailureDraftFilters, resetRunDraftFilters,
+  retryFailure, runAdvancedFilterCount,
   runAdvancedFilterLabel, runBadgeStatus, runCanClear, runFilterChips, runs, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
-  semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, sourceOptionLabel, sourceOptions, stageLabel, switchTab,
+  semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, sourceOptionLabel, sourceOptions, switchTab,
   syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
 } = useTaskCenterPage()
 </script>

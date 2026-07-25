@@ -67,7 +67,7 @@
   position: absolute;
   right: 0;
   z-index: 20;
-  min-width: 11.5rem;
+  min-width: 15rem;
   padding: 0.4rem;
   border-radius: 0.9rem;
   border: 1px solid var(--border-primary);
@@ -91,6 +91,7 @@
   padding: 0.65rem 0.7rem;
   border-radius: 0.7rem;
   font-size: 0.78rem;
+  white-space: nowrap;
   color: var(--text-secondary);
   transition: background 150ms ease, color 150ms ease;
 }
@@ -106,6 +107,10 @@
 
 .sync-row-menu__item--danger {
   color: var(--danger);
+}
+
+.sync-row-menu__item--warning {
+  color: var(--warning);
 }
 
 .sync-expanded-panel {

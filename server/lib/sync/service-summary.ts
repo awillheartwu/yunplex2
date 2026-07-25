@@ -6,14 +6,29 @@ export function buildSyncRunSummary(params: {
   sourceCount: number
   dryRun: boolean
   rebuildMatch: boolean
+  redownloadAll?: boolean
 }): string {
-  const { job, sourceCount, dryRun, rebuildMatch } = params
-  const summaryPrefix = rebuildMatch ? '重建缓存后全量同步' : dryRun ? '[预览]' : ''
+  const { job, sourceCount, dryRun, rebuildMatch, redownloadAll } = params
+  const summaryPrefix = redownloadAll ? '重新下载全部音频并同步' : rebuildMatch ? '重建缓存后全量同步' : dryRun ? '[预览]' : ''
   if (dryRun) return `${summaryPrefix} ${sourceCount} 个歌单源`.trim()
-  if (job.failedSongs > 0 || job.warnings > 0) {
-    return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，成功 ${job.successSongs} 首${job.failedSongs > 0 ? `，失败 ${job.failedSongs} 首` : ''}${job.warnings > 0 ? `，${job.warnings} 首已忽略` : ''}`
+  if (redownloadAll) {
+    const counts = [
+      job.successSongs > 0 ? `重新下载 ${job.successSongs} 首` : '',
+      job.skippedSongs > 0 ? `保护或保留 ${job.skippedSongs} 首` : '',
+      job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
+      job.warnings > 0 ? `${job.warnings} 首需关注` : '',
+    ].filter(Boolean)
+    return `${summaryPrefix}：${sourceCount} 个源，${counts.length > 0 ? counts.join('，') : '没有可处理歌曲'}`
   }
-  return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，共同步 ${job.totalSongs} 首歌曲`
+  const counts = [
+    job.successSongs > 0 ? `新增 ${job.successSongs} 首` : '',
+    job.skippedSongs > 0 ? `已存在 ${job.skippedSongs} 首` : '',
+    job.removedSongs > 0 ? `移除 ${job.removedSongs} 首` : '',
+    job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
+    job.warnings > 0 ? `${job.warnings} 首需关注` : '',
+  ].filter(Boolean)
+  const detail = counts.length > 0 ? counts.join('，') : `无需变更（目标 ${job.totalSongs} 首）`
+  return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，${detail}`
 }
 
 export function recordSyncRunCompletion(job: SyncJob, summary: string): void {
@@ -23,7 +38,15 @@ export function recordSyncRunCompletion(job: SyncJob, summary: string): void {
     severity: job.status === 'success' ? 'success' : job.status === 'partial' ? 'warning' : 'error',
     title: `本轮同步${job.status === 'success' ? '完成' : job.status === 'partial' ? '部分完成' : '失败'}`,
     summary,
-    context: { jobId: job.id, successSongs: job.successSongs, failedSongs: job.failedSongs, totalSongs: job.totalSongs },
+    context: {
+      jobId: job.id,
+      successSongs: job.successSongs,
+      existingSongs: job.skippedSongs,
+      removedSongs: job.removedSongs,
+      failedSongs: job.failedSongs,
+      warningSongs: job.warnings,
+      totalSongs: job.totalSongs,
+    },
     link: `/task-center/runs/${job.id}`,
     groupKey: `job:${job.id}`,
   })

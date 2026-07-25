@@ -7,7 +7,7 @@ import { listActivityEvents } from '../activity/store'
 import { clearSyncWorker, setSyncWorker } from '../sync/instance'
 import { DEFAULT_CONFIG } from './defaults'
 import { applyConfigUpdate } from './apply'
-import { resolveConnectionTestConfig } from './connection-test'
+import { resolveConnectionTestConfig, testDownloadPathConfig } from './connection-test'
 import { readConfig, writeConfig } from './store'
 
 const tempDirs: string[] = []
@@ -45,6 +45,52 @@ describe('settings config validation and migration', () => {
     expect(() => writeConfig({ sync: { downloadConcurrency: 99 } })).toThrow('下载并发数必须在 1-10 之间')
     expect(() => writeConfig({ download: { dir: '   ' } })).toThrow('下载目录不能为空')
     expect(() => writeConfig({ other: { pathFormat: '{artist}/{album}' } })).toThrow('存储路径格式必须包含 {title} 或 {track} 变量')
+    expect(() => writeConfig({ sync: { extraTrackRemovalPolicy: 'reckless' } })).toThrow('多余歌曲清理策略不是有效选项')
+  })
+
+  it('migrates old configs to the balanced extra-track removal policy', () => {
+    setupDb()
+    writeConfigToDb({
+      ...DEFAULT_CONFIG,
+      sync: Object.fromEntries(
+        Object.entries(DEFAULT_CONFIG.sync).filter(([key]) => key !== 'extraTrackRemovalPolicy'),
+      ),
+    } as any)
+
+    expect(readConfig().sync.extraTrackRemovalPolicy).toBe('balanced')
+  })
+
+  it('migrates high-confidence metadata binding to a safe disabled default', () => {
+    setupDb()
+    const legacy = structuredClone(DEFAULT_CONFIG) as any
+    delete legacy.sync.enableHighConfidenceMetadataBinding
+    delete legacy.sync.metadataDurationToleranceSec
+    writeConfigToDb(legacy)
+
+    const migrated = readConfig()
+
+    expect(migrated.sync.enableHighConfidenceMetadataBinding).toBe(false)
+    expect(migrated.sync.metadataDurationToleranceSec).toBe(2)
+  })
+
+  it('validates and persists high-confidence metadata binding settings', () => {
+    setupDb()
+
+    writeConfig({ sync: { enableHighConfidenceMetadataBinding: true, metadataDurationToleranceSec: 3 } })
+    expect(readConfig().sync).toMatchObject({
+      enableHighConfidenceMetadataBinding: true,
+      metadataDurationToleranceSec: 3,
+    })
+    expect(() => writeConfig({ sync: { metadataDurationToleranceSec: 31 } })).toThrow('高置信元数据时长误差必须在 0-30 之间')
+  })
+
+  it('persists every supported extra-track removal policy', () => {
+    setupDb()
+
+    for (const policy of ['strict', 'balanced', 'exact'] as const) {
+      writeConfig({ sync: { extraTrackRemovalPolicy: policy } })
+      expect(readConfig().sync.extraTrackRemovalPolicy).toBe(policy)
+    }
   })
 
   it('migrates existing dirty database config once, then writes back a legal full config', () => {
@@ -122,5 +168,35 @@ describe('settings config validation and migration', () => {
     expect(candidate.plex.server).toBe('candidate-plex')
     expect(readConfig().netease.cookie).toBe('saved-cookie')
     expect(readConfig().plex.server).toBe('saved-plex')
+  })
+
+  it('validates download path preflight and reports Plex prefix mapping', () => {
+    const dir = createTempDataDir()
+    const result = testDownloadPathConfig({
+      ...DEFAULT_CONFIG,
+      download: {
+        ...DEFAULT_CONFIG.download,
+        dir,
+        plexLibraryPathPrefix: '/music',
+      },
+    })
+
+    expect(result).toMatchObject({
+      section: 'download',
+      success: true,
+      writable: true,
+      downloadDir: dir,
+      mappedPrefix: `/music/... -> ${dir}/...`,
+    })
+  })
+
+  it('fails download path preflight when the directory does not exist', () => {
+    expect(() => testDownloadPathConfig({
+      ...DEFAULT_CONFIG,
+      download: {
+        ...DEFAULT_CONFIG.download,
+        dir: join(tmpdir(), 'reyunplex-missing-download-dir'),
+      },
+    })).toThrow()
   })
 })

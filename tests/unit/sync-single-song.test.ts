@@ -50,12 +50,16 @@ vi.mock('../../server/lib/db', () => ({
 vi.mock('../../server/lib/sync/lookup', () => ({
   upsertLookup: vi.fn(),
 }))
+vi.mock('../../server/lib/media-validation', () => ({
+  validateLocalAudioFile: vi.fn(() => ({ valid: true })),
+}))
 
 import { downloadSingleSong } from '../../server/lib/download/single-song'
 import type { SingleSongConfig } from '../../server/lib/download/single-song'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../../server/lib/netease'
 import { downloadSong } from '../../server/lib/tag-writer'
 import { existsSync } from 'node:fs'
+import { validateLocalAudioFile } from '../../server/lib/media-validation'
 
 const mockConfig: SingleSongConfig = {
   quality: 'lossless',
@@ -119,6 +123,7 @@ describe('downloadSingleSong', () => {
       ops: { download: 'ok', lyric: 'ok', tags: 'ok', cover: 'skipped' },
     })
     vi.mocked(existsSync).mockReturnValue(false)
+    vi.mocked(validateLocalAudioFile).mockReturnValue({ valid: true })
   })
 
   it('calls the full download pipeline in order', async () => {
@@ -241,6 +246,51 @@ describe('downloadSingleSong', () => {
     )
   })
 
+  it('always fetches and replaces existing audio in replace mode', async () => {
+    const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
+    vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
+
+    const result = await downloadSingleSong(123456, {
+      ...mockConfig,
+      audioPath: overridePath,
+      downloadMode: 'replace',
+    })
+
+    expect(getSongUrl).toHaveBeenCalledWith(123456, 'lossless', 'test-cookie')
+    expect(result.audioOperation).toBe('redownloaded')
+    expect(downloadSong).toHaveBeenCalledWith(
+      'https://example.com/song.flac',
+      expect.any(Object),
+      'flac',
+      expect.any(String),
+      expect.objectContaining({ writeLyrics: true }),
+      'Old Artist/Old Album (2020)/Test Song.flac',
+      undefined,
+    )
+  })
+
+  it('does not write a changed audio format into the old extension', async () => {
+    const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
+    vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
+    vi.mocked(getSongUrl).mockResolvedValue({ url: 'https://example.com/song.mp3', type: 'mp3' })
+
+    await downloadSingleSong(123456, {
+      ...mockConfig,
+      audioPath: overridePath,
+      downloadMode: 'replace',
+    })
+
+    expect(downloadSong).toHaveBeenCalledWith(
+      'https://example.com/song.mp3',
+      expect.any(Object),
+      'mp3',
+      expect.any(String),
+      expect.any(Object),
+      'Artist A/Test Album (2023)/Test Song.mp3',
+      undefined,
+    )
+  })
+
   it('uses audioPath override for ancillary file location', async () => {
     const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
     vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
@@ -276,6 +326,29 @@ describe('downloadSingleSong', () => {
     expect(getSongUrl).not.toHaveBeenCalled()
     expect(downloadSong).toHaveBeenCalledWith(
       undefined,
+      expect.any(Object),
+      'flac',
+      expect.any(String),
+      expect.any(Object),
+      'Old Artist/Old Album (2020)/Test Song.flac',
+      undefined,
+    )
+  })
+
+  it('re-downloads an invalid existing audioPath instead of treating it as complete', async () => {
+    const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
+    vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
+    vi.mocked(validateLocalAudioFile).mockReturnValue({ valid: false, reason: 'FLAC 文件头无效' })
+
+    await downloadSingleSong(123456, {
+      ...mockConfig,
+      audioPath: overridePath,
+      downloadMode: 'missing',
+    })
+
+    expect(getSongUrl).toHaveBeenCalledWith(123456, 'lossless', 'test-cookie')
+    expect(downloadSong).toHaveBeenCalledWith(
+      'https://example.com/song.flac',
       expect.any(Object),
       'flac',
       expect.any(String),

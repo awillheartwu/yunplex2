@@ -12,11 +12,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ dryRun?: boolean; forceFull?: boolean }>(event)
   const dryRun = body?.dryRun ?? false
 
-  // Fire and forget — frontend polls /api/sync/status for progress
-  syncService.runSync({ dryRun, forceFull: body?.forceFull, trigger: 'user' }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[YunPlex2] sync trigger failed:', msg)
-  })
+  const { runId } = syncService.startSync({ dryRun, forceFull: body?.forceFull, trigger: 'user' })
 
   const label = dryRun ? '预览同步' : body?.forceFull ? '全量同步' : '同步'
   recordActivityEvent({
@@ -26,9 +22,9 @@ export default defineEventHandler(async (event) => {
     actor: 'user',
     title: `${label}已触发`,
     summary: dryRun ? '系统将按当前配置生成本轮变更预览。' : '本轮进度和结果将记录到运行详情中。',
-    context: { dryRun, forceFull: body?.forceFull ?? false },
-    link: '/task-center?tab=runs',
+    context: { dryRun, forceFull: body?.forceFull ?? false, jobId: runId },
+    link: `/task-center/runs/${runId}`,
     groupKey: 'sync:manual-trigger',
   })
-  return success({ triggered: true }, `${label}已触发`)
+  return success({ triggered: true, runId }, `${label}已触发`)
 })

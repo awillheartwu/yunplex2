@@ -139,16 +139,21 @@ describe('playlist source batch actions', () => {
     setupDb()
     insertSource({ id: 'playlist-1' })
     insertSource({ id: 'playlist-2' })
-    const runSync = vi.fn()
+    const runSync = vi.fn(() => ({ runId: 'run-1' }))
+    const recordActivity = vi.fn()
 
     const result = applyPlaylistSourceBatchAction('sync', ['playlist-1', 'playlist-2'], {
       isSyncRunning: () => false,
       isRepairRunning: () => false,
       runSync,
-      recordActivity: vi.fn(),
+      recordActivity,
     })
 
-    expect(result).toEqual({ action: 'sync', count: 2, ids: ['playlist-1', 'playlist-2'] })
+    expect(result).toEqual({ action: 'sync', count: 2, ids: ['playlist-1', 'playlist-2'], runId: 'run-1' })
     expect(runSync).toHaveBeenCalledWith(['playlist-1', 'playlist-2'])
+    expect(recordActivity).toHaveBeenCalledWith(expect.objectContaining({
+      link: '/task-center/runs/run-1',
+      context: expect.objectContaining({ jobId: 'run-1' }),
+    }))
   })
 })

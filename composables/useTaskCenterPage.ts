@@ -28,6 +28,7 @@ export function useTaskCenterPage() {
     activities: 'runs',
     'sync-history': 'runs',
     'download-history': 'runs',
+    downloads: 'overview',
     failures: 'failures',
   }
   const requestedTab = String(route.query.tab || 'overview')
@@ -40,6 +41,8 @@ export function useTaskCenterPage() {
   const latestRun = ref<TaskRunSummary | null>(null)
   const activeRunItems = ref<TaskRunSummary[]>([])
   const primaryActiveRun = computed(() => activeRunItems.value.find(run => run.type === 'sync' || run.type === 'repair') || activeRunItems.value[0] || null)
+  const primaryActiveRunId = computed(() => primaryActiveRun.value?.id || null)
+  const downloadQueue = useDownloadQueue({ includeHistory: false, liveRunId: primaryActiveRunId, liveLimit: 12 })
   const secondaryActiveRuns = computed(() => activeRunItems.value.filter(run => run.id !== primaryActiveRun.value?.id))
   const openFailureTotal = ref(0)
   const taskCenterTabs = computed(() => tabs.map(tab => ({
@@ -73,13 +76,54 @@ export function useTaskCenterPage() {
     fetching_playlist: 8, comparing: 22, downloading: 56, processing_tags: 68,
     refreshing_plex: 82, updating_plex_playlist: 92, reorder: 98, repair: 50,
   }
+  const stageRanges: Record<string, readonly [number, number]> = {
+    fetching_playlist: [4, 8],
+    comparing: [8, 22],
+    downloading: [22, 56],
+    processing_tags: [56, 68],
+    refreshing_plex: [68, 82],
+    updating_plex_playlist: [82, 92],
+    reorder: [92, 99],
+    repair: [4, 99],
+  }
+  const syncStageSequence = [
+    { key: 'fetching_playlist', label: '读取歌单' },
+    { key: 'comparing', label: '分析差异' },
+    { key: 'downloading', label: '下载歌曲' },
+    { key: 'processing_tags', label: '写入标签' },
+    { key: 'refreshing_plex', label: '刷新 Plex' },
+    { key: 'updating_plex_playlist', label: '更新歌单' },
+    { key: 'reorder', label: '校准顺序' },
+  ] as const
   const stageLabel = computed(() => stageLabels[syncState.value?.currentStage || ''] || '准备运行')
   const liveDescription = computed(() => stageDescriptions[syncState.value?.currentStage || ''] || '任务正在推进。')
   const liveTitle = computed(() => syncState.value?.currentSourceName ? `${stageLabel.value} · ${syncState.value.currentSourceName}` : stageLabel.value)
   const livePercent = computed(() => {
     const progress = syncState.value?.progress
-    if (progress?.total) return Math.min(99, Math.round((progress.current / progress.total) * 100))
-    return stageWeights[syncState.value?.currentStage || ''] || 4
+    const currentStage = syncState.value?.currentStage || ''
+    const range = stageRanges[currentStage]
+    if (progress?.total && range) {
+      const ratio = Math.max(0, Math.min(1, progress.current / progress.total))
+      return Math.min(99, Math.round(range[0] + (range[1] - range[0]) * ratio))
+    }
+    return stageWeights[currentStage] || 4
+  })
+  const overviewStageItems = computed(() => {
+    const currentStage = syncState.value?.currentStage || ''
+    if (currentStage === 'repair') {
+      return [{ key: 'repair', label: stageLabels.repair, state: 'current' as const }]
+    }
+    const currentIndex = syncStageSequence.findIndex(stage => stage.key === currentStage)
+    return syncStageSequence.map((stage, index) => ({
+      ...stage,
+      state: currentIndex < 0
+        ? 'upcoming' as const
+        : index < currentIndex
+          ? 'complete' as const
+          : index === currentIndex
+            ? 'current' as const
+            : 'upcoming' as const,
+    }))
   })
   const elapsedLabel = computed(() => formatElapsed(syncState.value?.startedAt || ''))
 
@@ -172,7 +216,7 @@ export function useTaskCenterPage() {
     { label: 'Plex 匹配失败', value: 'failed_plex_match' },
     { label: 'Plex 更新失败', value: 'failed_plex_insert' },
     { label: '版权受限', value: 'copyright_restricted' },
-    { label: '重复失败', value: 'ignored_failure' },
+    { label: '连续失败', value: 'ignored_failure' },
   ]
   type FailureFilterChipKey = 'search' | 'type' | 'kind' | 'source' | 'date'
   const draftFailureType = ref<TaskRunType | ''>('')
@@ -378,12 +422,7 @@ export function useTaskCenterPage() {
     return status === 'success' ? 'ok' : status === 'failed' ? 'error' : status === 'partial' ? 'warning' : status === 'running' ? 'running' : 'idle'
   }
   function failureKindLabel(kind: string) {
-    const labels: Record<string, string> = {
-      failed_download: '下载失败', failed_tags: '元数据失败',
-      failed_plex_match: 'Plex 匹配失败', failed_plex_insert: 'Plex 更新失败',
-      copyright_restricted: '版权受限', ignored_failure: '重复失败',
-    }
-    return labels[kind] || kind
+    return failureKindFilters.find(item => item.value === kind)?.label || kind
   }
   function failureKindTone(kind: string): TaskSemanticTone {
     if (kind === 'copyright_restricted' || kind === 'ignored_failure') return 'ignored'
@@ -405,7 +444,7 @@ export function useTaskCenterPage() {
       failed_plex_match: 'Plex 未在重试窗口内识别到已下载文件。',
       failed_plex_insert: 'Plex 已识别歌曲，但未能完成歌单更新。',
       copyright_restricted: '网易云未提供可下载音源，本次已按版权限制跳过。',
-      ignored_failure: '连续失败达到忽略阈值，系统已暂停自动重试。',
+      ignored_failure: '连续失败达到缓存阈值，系统已暂停自动重试。清除对应歌曲的失败缓存后可再次尝试。',
     }
     return fallbacks[record.failureKind] || '未提供具体失败原因'
   }
@@ -458,6 +497,7 @@ export function useTaskCenterPage() {
     }
     void router.replace({ query: {
       ...route.query,
+      tab: activeTab.value === 'overview' ? undefined : activeTab.value,
       runType: runs.filter.value.type || undefined,
       runStatus: runs.filter.value.status || undefined,
       runFrom: runs.filter.value.from || undefined,
@@ -487,12 +527,12 @@ export function useTaskCenterPage() {
     activeRunItems, activeTab, applyFailureDraftFilters, applyFailureFilters, applyRunDraftFilters, applyRunFilters, batchIgnore, batchReopen,
     batchRetry, cancelSync, clearFailureFilters, clearRunFilters, draftFailureDateFilter, draftFailureFrom, draftFailureKind, draftFailureSource,
     draftFailureTo, draftFailureType, draftRunDateFilter, draftRunFrom, draftRunSource, draftRunStatus, draftRunTo, draftRunType,
-    elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
+    downloadQueue, elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
     formatElapsed, formatRunDuration, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure,
     isRetryable, latestRun, liveDescription, livePercent, liveTitle, localDateKey, onFailureSearch, onRunSearch,
-    onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, prepareRunDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter, removeRunFilter,
+    onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, prepareRunDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter, removeRunFilter,
     reopenFailure, requestedTab, resetFailureDraftFilters, resetRunDraftFilters, retryFailure, runActiveFilterCount, runAdvancedFilterCount, runAdvancedFilterLabel,
     runBadgeStatus, runCanClear, runFilterChips, runs, runSearchDebounce, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
     semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, showMutationResult, sourceLabel, sourceOptionLabel, sourceOptions,
