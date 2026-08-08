@@ -18,7 +18,11 @@ export interface DownloadBatchInput {
   type: 'playlist' | 'album' | 'songs'
   neteaseId?: number
   songIds?: number[]
-  config: SingleSongConfig & { cookie: string }
+  config: SingleSongConfig & {
+    artistAliases?: Record<string, string>
+    applyAliasToAlbum?: boolean
+    downloadConcurrency?: number
+  }
 }
 
 export interface DownloadBatchResult {
@@ -37,8 +41,8 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   const { config } = input
 
   setArtistAliases(
-    (config as unknown as Record<string, unknown>).artistAliases as Record<string, string> ?? {},
-    (config as unknown as Record<string, unknown>).applyAliasToAlbum as boolean ?? false,
+    config.artistAliases ?? {},
+    config.applyAliasToAlbum ?? false,
   )
 
   // ── 1. Fetch songs from Netease ──
@@ -129,7 +133,7 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   }
 
   // ── 4. Fire-and-forget processing ──
-  const concurrency = (config as unknown as Record<string, unknown>).downloadConcurrency as number ?? 3
+  const concurrency = config.downloadConcurrency ?? 3
   processAll(processor, batchId, concurrency)
     .then((failed) => {
       syncManualDownloadRun(batchId)

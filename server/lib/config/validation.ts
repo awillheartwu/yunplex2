@@ -1,5 +1,8 @@
 import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat } from './types'
 import { DEFAULT_CONFIG } from './defaults'
+import { deepMerge } from './merge'
+
+export { deepMerge } from './merge'
 
 export class ConfigValidationError extends Error {
   constructor(message: string) {
@@ -104,28 +107,6 @@ export function cloneConfig(config: AppConfig = DEFAULT_CONFIG): AppConfig {
 
 export function isPlainRecord(value: unknown): value is PlainRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-export function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>, path = ''): T {
-  const result = { ...base }
-  for (const key of Object.keys(partial) as (keyof T)[]) {
-    const v = partial[key]
-    const childPath = path ? `${path}.${String(key)}` : String(key)
-    if (v !== undefined && v !== null && isPlainRecord(v)) {
-      if (childPath === 'other.artistAliases') {
-        ;(result as PlainRecord)[key as string] = { ...v }
-      } else {
-        ;(result as PlainRecord)[key as string] = deepMerge(
-          (base[key] as PlainRecord) || {},
-          v as PlainRecord,
-          childPath,
-        )
-      }
-    } else if (v !== undefined) {
-      ;(result as PlainRecord)[key as string] = v
-    }
-  }
-  return result
 }
 
 export function mergeAndValidateConfig(current: AppConfig, patch: unknown): AppConfig {

@@ -43,6 +43,7 @@ import {
 import { validateCachedTargetOrder } from './reorder-cache'
 import { recordActivityEvent } from '../activity/store'
 import { getFailureMemoryEntry, inferFailurePhase, parseFailureMemory, recordFailure, removeFailures, serializeFailureMemory, shouldSkipSongDueToFailure } from './failure-memory'
+import { parsePersistedIntegerIds, serializePersistedIntegerIds } from '~~/lib/persisted-integer-ids'
 import { describePlexMatchFailure, inferPlexMatchFailureCause } from './plex-match'
 import { classifyDownloadTaskFailure, shouldAttemptPlexRetryForResolution } from './download-diagnostics'
 import { resolveAccessibleLocalPath } from './path-map'
@@ -508,9 +509,20 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           // but it must never remove a desired song from reconciliation. If it
           // disappeared here, an existing Plex occurrence could be classified
           // as extra and deleted simply because a previous download failed.
-          const knownRestricted: number[] = source.copyrightRestrictedIds
-            ? JSON.parse(source.copyrightRestrictedIds)
-            : []
+          const parsedRestricted = parsePersistedIntegerIds(source.copyrightRestrictedIds)
+          const knownRestricted = parsedRestricted.ids
+          if (parsedRestricted.issues.length > 0) {
+            log(
+              'warn',
+              `歌单源「${source.name || source.neteasePlaylistName}」的版权受限缓存包含损坏数据，已保留有效歌曲 ID 并忽略无效内容`,
+              `copyrightRestrictedIds: ${parsedRestricted.issues.join(', ')}`,
+            )
+            if (!dryRun) {
+              updateSource(source.id, {
+                copyrightRestrictedIds: serializePersistedIntegerIds(knownRestricted),
+              })
+            }
+          }
           const failureMemory = parseFailureMemory(source.ignoredFailureIds)
           const maxFailures = cfg.sync.maxFailureAttempts
 

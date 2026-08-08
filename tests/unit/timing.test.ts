@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
   createDebouncedFunction,
   createIntervalFunction,
@@ -26,6 +26,13 @@ describe('timing helpers', () => {
     vi.advanceTimersByTime(1)
     expect(fn).toHaveBeenCalledTimes(1)
     expect(fn).toHaveBeenCalledWith('second')
+  })
+
+  it('preserves callback argument types and order', () => {
+    const fn = vi.fn((_name: string, _count: number) => undefined)
+    const debounced = createDebouncedFunction(fn)
+
+    expectTypeOf(debounced.run).toEqualTypeOf<(name: string, count: number) => void>()
   })
 
   it('cancels a pending debounced call', () => {

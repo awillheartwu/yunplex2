@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
 
   // Log
   const cfg = readConfig()
-  const dataDir = (useRuntimeConfig() as any).dataDir as string
+  const dataDir = useRuntimeConfig(event).dataDir
   appendLog(dataDir, {
     level: 'info',
     message: `[批量重试] ${formatFailureCacheRetryLabel(counts)}：${source.name}`,

@@ -15,6 +15,7 @@ import {
 import { classifyDownloadFailure } from '../../../lib/sync/download-diagnostics'
 import { isTagWriteError } from '../../../lib/tag-writer'
 import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
+import { parsePersistedIntegerIds, serializePersistedIntegerIds } from '~~/lib/persisted-integer-ids'
 
 function refreshRunStats(run: NonNullable<ReturnType<typeof getSyncRun>>): void {
   run.failedSongs = run.songs.filter((song) =>
@@ -52,16 +53,26 @@ export default defineEventHandler(async (event) => {
   if (isRepairRunning()) return fail('补全任务运行中，请等待完成')
 
   const neteaseId = song.neteaseSongId
-  let restrictedIds: number[] = source.copyrightRestrictedIds
-    ? JSON.parse(source.copyrightRestrictedIds)
-    : []
+  const cfg = readConfig()
+  const dataDir = useRuntimeConfig(event).dataDir
+  const retentionDays = cfg.sync.logRetentionDays ?? 30
+  const parsedRestricted = parsePersistedIntegerIds(source.copyrightRestrictedIds)
+  let restrictedIds = parsedRestricted.ids
+  if (parsedRestricted.issues.length > 0) {
+    appendLog(dataDir, {
+      level: 'warn',
+      message: `[重试] ${source.name} 的版权受限缓存包含损坏数据，已自动修复`,
+      detail: `copyrightRestrictedIds: ${parsedRestricted.issues.join(', ')}`,
+      stage: 'download',
+    }, retentionDays)
+  }
   const failureMemory = parseFailureMemory(source.ignoredFailureIds)
 
   restrictedIds = restrictedIds.filter((id) => id !== neteaseId)
   const nextFailureMemory = removeFailures(failureMemory, [neteaseId])
 
   updateSource(source.id, {
-    copyrightRestrictedIds: restrictedIds.length > 0 ? JSON.stringify(restrictedIds) : null,
+    copyrightRestrictedIds: serializePersistedIntegerIds(restrictedIds),
     ignoredFailureIds: serializeFailureMemory(nextFailureMemory),
   })
 
@@ -70,10 +81,7 @@ export default defineEventHandler(async (event) => {
   delete song.error
   saveSyncRun(run)
 
-  const cfg = readConfig()
   setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
-  const dataDir = useRuntimeConfig(event).dataDir
-  const retentionDays = cfg.sync.logRetentionDays ?? 30
   appendLog(dataDir, { level: 'info', message: `[重试] 开始下载: ${song.songName} - ${song.artist}`, stage: 'download' }, retentionDays)
 
   downloadSingleSong(neteaseId, {
@@ -152,14 +160,25 @@ export default defineEventHandler(async (event) => {
 
     const currentSource = getSource(song.sourceId!)
     if (currentSource) {
-      const restricted: number[] = currentSource.copyrightRestrictedIds
-        ? JSON.parse(currentSource.copyrightRestrictedIds)
-        : []
+      const currentRestricted = parsePersistedIntegerIds(currentSource.copyrightRestrictedIds)
+      const restricted = currentRestricted.ids
       const memory = parseFailureMemory(currentSource.ignoredFailureIds)
+
+      if (currentRestricted.issues.length > 0) {
+        appendLog(dataDir, {
+          level: 'warn',
+          message: `[重试] ${currentSource.name} 的版权受限缓存包含损坏数据，已自动修复`,
+          detail: `copyrightRestrictedIds: ${currentRestricted.issues.join(', ')}`,
+          stage: diagnosis.phase,
+        }, retentionDays)
+        updateSource(currentSource.id, {
+          copyrightRestrictedIds: serializePersistedIntegerIds(restricted),
+        })
+      }
 
       if (diagnosis.status === 'copyright_restricted') {
         if (!restricted.includes(neteaseId)) restricted.push(neteaseId)
-        updateSource(currentSource.id, { copyrightRestrictedIds: JSON.stringify(restricted) })
+        updateSource(currentSource.id, { copyrightRestrictedIds: serializePersistedIntegerIds(restricted) })
       } else {
         updateSource(currentSource.id, {
           ignoredFailureIds: serializeFailureMemory(recordFailure(memory, neteaseId, {

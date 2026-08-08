@@ -1,6 +1,8 @@
-export function createDebouncedFunction<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+type VoidCallback<Args extends unknown[]> = (...args: Args) => void
+
+export function createDebouncedFunction<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   let timer: ReturnType<typeof setTimeout> | null = null
-  let pendingArgs: Parameters<T> | null = null
+  let pendingArgs: Args | null = null
 
   const cancel = () => {
     if (timer) clearTimeout(timer)
@@ -17,7 +19,7 @@ export function createDebouncedFunction<T extends (...args: any[]) => void>(fn: 
     fn(...args)
   }
 
-  const run = (...args: Parameters<T>) => {
+  const run = (...args: Args) => {
     if (timer) clearTimeout(timer)
     pendingArgs = args
     timer = setTimeout(() => {
@@ -28,16 +30,16 @@ export function createDebouncedFunction<T extends (...args: any[]) => void>(fn: 
   return { run, cancel, flush }
 }
 
-export function useDebounceFn<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+export function useDebounceFn<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   const debounced = createDebouncedFunction(fn, waitMs)
   onUnmounted(debounced.cancel)
   return debounced
 }
 
-export function createThrottledFunction<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+export function createThrottledFunction<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   let timer: ReturnType<typeof setTimeout> | null = null
   let lastRun = Number.NEGATIVE_INFINITY
-  let pendingArgs: Parameters<T> | null = null
+  let pendingArgs: Args | null = null
 
   const cancel = () => {
     if (timer) clearTimeout(timer)
@@ -53,7 +55,7 @@ export function createThrottledFunction<T extends (...args: any[]) => void>(fn: 
     fn(...args)
   }
 
-  const run = (...args: Parameters<T>) => {
+  const run = (...args: Args) => {
     const now = Date.now()
     const remaining = waitMs - (now - lastRun)
     pendingArgs = args
@@ -76,16 +78,16 @@ export function createThrottledFunction<T extends (...args: any[]) => void>(fn: 
   return { run, cancel, flush }
 }
 
-export function useThrottleFn<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+export function useThrottleFn<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   const throttled = createThrottledFunction(fn, waitMs)
   onUnmounted(throttled.cancel)
   return throttled
 }
 
-export function createRafThrottledFunction<T extends (...args: any[]) => void>(fn: T) {
+export function createRafThrottledFunction<Args extends unknown[]>(fn: VoidCallback<Args>) {
   let frame: ReturnType<typeof setTimeout> | number | null = null
   let frameMode: 'raf' | 'timeout' | null = null
-  let pendingArgs: Parameters<T> | null = null
+  let pendingArgs: Args | null = null
 
   const cancel = () => {
     if (frame !== null) {
@@ -110,7 +112,7 @@ export function createRafThrottledFunction<T extends (...args: any[]) => void>(f
     fn(...args)
   }
 
-  const run = (...args: Parameters<T>) => {
+  const run = (...args: Args) => {
     pendingArgs = args
     if (frame !== null) return
 
@@ -135,7 +137,7 @@ export function createRafThrottledFunction<T extends (...args: any[]) => void>(f
   return { run, cancel, flush }
 }
 
-export function useRafThrottleFn<T extends (...args: any[]) => void>(fn: T) {
+export function useRafThrottleFn<Args extends unknown[]>(fn: VoidCallback<Args>) {
   const throttled = createRafThrottledFunction(fn)
   onUnmounted(throttled.cancel)
   return throttled
@@ -164,9 +166,9 @@ export function useLatestAsyncGuard() {
   return guard
 }
 
-export function createTimeoutFunction<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+export function createTimeoutFunction<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   let timer: ReturnType<typeof setTimeout> | null = null
-  let pendingArgs: Parameters<T> | null = null
+  let pendingArgs: Args | null = null
 
   const cancel = () => {
     if (timer) clearTimeout(timer)
@@ -174,7 +176,7 @@ export function createTimeoutFunction<T extends (...args: any[]) => void>(fn: T,
     pendingArgs = null
   }
 
-  const schedule = (...args: Parameters<T>) => {
+  const schedule = (...args: Args) => {
     cancel()
     pendingArgs = args
     timer = setTimeout(() => {
@@ -188,7 +190,7 @@ export function createTimeoutFunction<T extends (...args: any[]) => void>(fn: T,
   return { schedule, cancel }
 }
 
-export function useTimeoutFn<T extends (...args: any[]) => void>(fn: T, waitMs = 300) {
+export function useTimeoutFn<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
   const timeout = createTimeoutFunction(fn, waitMs)
   onUnmounted(timeout.cancel)
   return timeout

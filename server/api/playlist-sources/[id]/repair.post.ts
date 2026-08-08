@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
   const totalSongs = songs.length
   const jobId = randomUUID().slice(0, 12)
   const now = new Date().toISOString()
-  const dataDir = (useRuntimeConfig() as any).dataDir as string
+  const dataDir = useRuntimeConfig(event).dataDir
   const retentionDays = cfg.sync.logRetentionDays ?? 30
 
   // Create repair job (wrapped in try — release lock if this fails)

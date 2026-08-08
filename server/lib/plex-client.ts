@@ -106,8 +106,15 @@ export function getPlexTrackRecordingId(track: PlexTrack): string | null {
 function stripTitle(s: string): string {
   return stripPunct(s)
 }
- 
-let client: any = null
+
+interface PlexClient {
+  query(path: string): Promise<Record<string, unknown>>
+  postQuery(path: string): Promise<Record<string, unknown>>
+  putQuery(path: string): Promise<Record<string, unknown>>
+  deleteQuery(path: string): Promise<Record<string, unknown>>
+}
+
+let client: PlexClient | null = null
 let machineId = ''
 let clientFingerprint = ''
 
@@ -235,14 +242,14 @@ export function createPlexClient(config: PlexConfig) {
       platformVersion: '37.0',
       device: 'Windows',
     },
-  })
+  }) as PlexClient
   return client
 }
 
 export async function initPlexClient(config: PlexConfig): Promise<string> {
-  createPlexClient(config)
-   
-  const res = await client.query('/')
+  const initializedClient = createPlexClient(config)
+
+  const res = await initializedClient.query('/')
   const nextMachineId = (res as { MediaContainer?: { machineIdentifier?: string } }).MediaContainer
     ?.machineIdentifier ?? ''
   if (machineId && nextMachineId && machineId !== nextMachineId) invalidateAllSectionPathIndexes()

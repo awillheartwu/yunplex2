@@ -55,7 +55,7 @@ export default ts.config(
     rules: {
       'vue/multi-word-component-names': 'off',
       'vue/return-in-computed-property': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
@@ -68,6 +68,14 @@ export default ts.config(
     files: ['**/*.vue'],
     languageOptions: {
       parserOptions: { parser: '@typescript-eslint/parser' },
+    },
+  },
+  {
+    // Test doubles sometimes need to stand in for large third-party objects.
+    // Production code remains protected by the error-level rule above.
+    files: ['**/*.test.ts', 'tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   prettierConfig,
