@@ -275,39 +275,133 @@ export async function applyFullReorder(
   return result
 }
 
-/** Compute LCS of two arrays, returning the set of items in the common subsequence */
+/**
+ * Compute an LCS of two arrays, returning the set of items in the common
+ * subsequence.
+ *
+ * Hirschberg's divide-and-conquer reconstruction keeps only two DP rows at a
+ * time. The running time remains O(m * n), while auxiliary space is O(n)
+ * instead of materializing an O(m * n) JavaScript array-of-arrays. The second
+ * argument is the target playlist order in the production call path, so this
+ * bounds memory by the configured playlist size.
+ */
 export function computeLCS(a: number[], b: number[]): Set<number> {
-  const m = a.length
-  const n = b.length
+  const sequence: number[] = []
+  appendLCS(a, 0, a.length, b, 0, b.length, sequence)
+  return new Set(sequence)
+}
 
-  // Build LCS length table
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        dp[i]![j] = dp[i - 1]![j - 1]! + 1
-      } else {
-        dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!)
+function appendLCS(
+  a: number[],
+  aStart: number,
+  aEnd: number,
+  b: number[],
+  bStart: number,
+  bEnd: number,
+  output: number[],
+): void {
+  if (aStart >= aEnd || bStart >= bEnd) return
+
+  if (aEnd - aStart === 1) {
+    const value = a[aStart]!
+    // The previous full-table backtracking encountered the last matching
+    // occurrence first, so retain that deterministic choice for duplicates.
+    for (let j = bEnd - 1; j >= bStart; j--) {
+      if (b[j] === value) {
+        output.push(value)
+        return
       }
     }
+    return
   }
 
-  // Backtrack to find LCS items
-  const lcs = new Set<number>()
-  let i = m, j = n
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      lcs.add(a[i - 1]!)
-      i--
-      j--
-    } else if (dp[i - 1]![j]! >= dp[i]![j - 1]!) {
-      i--
-    } else {
-      j--
+  const aMiddle = aStart + Math.floor((aEnd - aStart) / 2)
+  const bMiddle = findLcsSplit(a, aStart, aMiddle, aEnd, b, bStart, bEnd)
+
+  appendLCS(a, aStart, aMiddle, b, bStart, bMiddle, output)
+  appendLCS(a, aMiddle, aEnd, b, bMiddle, bEnd, output)
+}
+
+function findLcsSplit(
+  a: number[],
+  aStart: number,
+  aMiddle: number,
+  aEnd: number,
+  b: number[],
+  bStart: number,
+  bEnd: number,
+): number {
+  const leftLengths = computePrefixLCSLengths(a, aStart, aMiddle, b, bStart, bEnd)
+  const rightLengths = computeSuffixLCSLengths(a, aMiddle, aEnd, b, bStart, bEnd)
+
+  let splitOffset = 0
+  let bestLength = -1
+  for (let offset = 0; offset <= bEnd - bStart; offset++) {
+    const length = leftLengths[offset]! + rightLengths[offset]!
+    // Prefer the rightmost equally good split. This mirrors the old DP
+    // backtracking rule, which moved upward when the two predecessor cells
+    // were tied.
+    if (length >= bestLength) {
+      bestLength = length
+      splitOffset = offset
     }
   }
 
-  return lcs
+  return bStart + splitOffset
+}
+
+function computePrefixLCSLengths(
+  a: number[],
+  aStart: number,
+  aEnd: number,
+  b: number[],
+  bStart: number,
+  bEnd: number,
+): Uint32Array {
+  const width = bEnd - bStart
+  let previous = new Uint32Array(width + 1)
+  let current = new Uint32Array(width + 1)
+
+  for (let i = aStart; i < aEnd; i++) {
+    for (let offset = 1; offset <= width; offset++) {
+      current[offset] = a[i] === b[bStart + offset - 1]
+        ? previous[offset - 1]! + 1
+        : Math.max(previous[offset]!, current[offset - 1]!)
+    }
+    const completed = previous
+    previous = current
+    current = completed
+    current.fill(0)
+  }
+
+  return previous
+}
+
+function computeSuffixLCSLengths(
+  a: number[],
+  aStart: number,
+  aEnd: number,
+  b: number[],
+  bStart: number,
+  bEnd: number,
+): Uint32Array {
+  const width = bEnd - bStart
+  let previous = new Uint32Array(width + 1)
+  let current = new Uint32Array(width + 1)
+
+  for (let i = aEnd - 1; i >= aStart; i--) {
+    for (let offset = width - 1; offset >= 0; offset--) {
+      current[offset] = a[i] === b[bStart + offset]
+        ? previous[offset + 1]! + 1
+        : Math.max(previous[offset]!, current[offset + 1]!)
+    }
+    const completed = previous
+    previous = current
+    current = completed
+    current.fill(0)
+  }
+
+  return previous
 }
 
 export function validatePlaylistOrder(

@@ -1,3 +1,5 @@
+import { parsePersistedIntegerIds } from './persisted-integer-ids'
+
 export interface FailureCacheCounts {
   continuousFailure: number
   copyrightRestricted: number
@@ -16,13 +18,7 @@ export function countFailureCacheEntries(serialized: string | null | undefined):
 }
 
 export function countCopyrightRestrictedEntries(serialized: string | null | undefined): number {
-  if (!serialized) return 0
-  try {
-    const parsed: unknown = JSON.parse(serialized)
-    return Array.isArray(parsed) ? parsed.length : 0
-  } catch {
-    return 0
-  }
+  return parsePersistedIntegerIds(serialized).ids.length
 }
 
 function normalizedCount(value: number): number {

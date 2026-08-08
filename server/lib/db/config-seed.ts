@@ -3,28 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { AppConfig } from '../config/types'
 import { DEFAULT_CONFIG } from '../config/defaults'
-
-function deepMerge<T extends Record<string, any>>(base: T, partial: Partial<T>, path = ''): T {
-  const result = { ...base }
-  for (const key of Object.keys(partial) as (keyof T)[]) {
-    const v = partial[key]
-    const childPath = path ? `${path}.${String(key)}` : String(key)
-    if (v !== undefined && v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      if (childPath === 'other.artistAliases') {
-        ;(result as Record<string, unknown>)[key as string] = { ...(v as Record<string, unknown>) }
-      } else {
-        ;(result as Record<string, unknown>)[key as string] = deepMerge(
-          (base[key] as Record<string, unknown>) || {},
-          v as Record<string, unknown>,
-          childPath,
-        )
-      }
-    } else if (v !== undefined) {
-      ;(result as Record<string, unknown>)[key as string] = v
-    }
-  }
-  return result
-}
+import { deepMerge } from '../config/merge'
 
 export function seedConfig(d: Database.Database, dataDir: string): void {
   const row = d.prepare('SELECT COUNT(*) as cnt FROM config').get() as { cnt: number }
@@ -36,7 +15,7 @@ export function seedConfig(d: Database.Database, dataDir: string): void {
   if (process.env.YUNPLEX2_CONFIG) {
     try {
       const envConfig = JSON.parse(process.env.YUNPLEX2_CONFIG)
-      seeded = deepMerge(DEFAULT_CONFIG, envConfig as Record<string, any>) as AppConfig
+      seeded = deepMerge(DEFAULT_CONFIG, envConfig as Partial<AppConfig>)
       console.log('[YunPlex2] 配置已从 YUNPLEX2_CONFIG 环境变量注入')
     } catch {
       console.warn('[YunPlex2] YUNPLEX2_CONFIG 解析失败，跳过')
@@ -70,7 +49,7 @@ export function seedConfig(d: Database.Database, dataDir: string): void {
   }
 
   if (envUsed) {
-    seeded = deepMerge(seeded ?? DEFAULT_CONFIG, envPatch as Record<string, any>) as AppConfig
+    seeded = deepMerge(seeded ?? DEFAULT_CONFIG, envPatch as Partial<AppConfig>)
     console.log('[YunPlex2] 配置已从独立环境变量注入')
   }
 
@@ -80,7 +59,7 @@ export function seedConfig(d: Database.Database, dataDir: string): void {
     if (existsSync(seedFile)) {
       try {
         const fileConfig = JSON.parse(readFileSync(seedFile, 'utf-8'))
-        seeded = deepMerge(DEFAULT_CONFIG, fileConfig as Record<string, any>) as AppConfig
+        seeded = deepMerge(DEFAULT_CONFIG, fileConfig as Partial<AppConfig>)
         console.log('[YunPlex2] 配置已从 seed.json 文件注入')
       } catch {
         console.warn('[YunPlex2] seed.json 解析失败，跳过')

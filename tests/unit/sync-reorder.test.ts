@@ -148,8 +148,12 @@ describe('computeLCS', () => {
 
   it('handles reversed arrays (LCS length 1)', () => {
     const result = computeLCS([1, 2, 3], [3, 2, 1])
-    // Any single element is the LCS — the algorithm picks one based on DP backtracking
-    expect(result.size).toBe(1)
+    // Preserve the original full-table backtracking preference on ties.
+    expect(result).toEqual(new Set([1]))
+  })
+
+  it('preserves the original tie-breaking when multiple longer subsequences exist', () => {
+    expect(computeLCS([1, 2, 3], [2, 1, 3])).toEqual(new Set([1, 3]))
   })
 
   it('handles duplicate elements', () => {
@@ -167,6 +171,16 @@ describe('computeLCS', () => {
       expect(result.has(i)).toBe(true)
     }
   })
+
+  it('handles a large worst-case reorder within a bounded heap', () => {
+    const size = 5_000
+    const currentOrder = Array.from({ length: size }, (_, index) => index)
+    const targetOrder = currentOrder.toReversed()
+
+    const result = computeLCS(currentOrder, targetOrder)
+
+    expect(result).toEqual(new Set([0]))
+  }, 15_000)
 
   it('throws when Plex insert fails instead of silently reporting success', async () => {
     vi.mocked(insertTrackIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))

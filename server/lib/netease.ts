@@ -1,5 +1,49 @@
 import pkg from 'NeteaseCloudMusicApi'
+import type { LyricOrder } from './config/types'
+
 const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist } = pkg
+
+type NeteaseQualityLevel = Parameters<typeof song_url_v1>[0]['level']
+
+// The package models this request field as a nominal const enum, while the
+// upstream API also accepts the documented string values (including higher).
+function toNeteaseQualityLevel(level: string): NeteaseQualityLevel {
+  return level as NeteaseQualityLevel
+}
+
+interface NeteaseResponse<Body> {
+  body?: Body
+}
+
+interface SongDetailBody {
+  songs?: RawSong[]
+}
+
+interface LegacySongDetail {
+  id?: number
+  album?: { publishTime?: number }
+}
+
+interface UserPlaylistResponseItem {
+  id: number
+  name: string
+  trackCount: number
+  playCount: number
+  coverImgUrl?: string
+  creator?: { nickname?: string; userId?: number }
+  subscribed?: boolean
+}
+
+interface UserAlbumResponseItem {
+  id: number
+  name: string
+  size?: number
+  picUrl?: string
+  artists?: Array<{ name?: string }>
+  artist?: { name?: string }
+  publishTime?: number
+  subTime?: number
+}
 
 export interface NeteaseSong {
   id: number
@@ -133,9 +177,9 @@ export async function fetchPlaylistSongs(
       fetch(`http://music.163.com/api/song/detail/?id=&ids=[${ids}]`),
     ])
 
-    const data = (v3Res as any).body as { songs?: RawSong[] } | undefined
+    const data = (v3Res as NeteaseResponse<SongDetailBody>).body
     const oldData = oldRes.ok
-      ? await oldRes.json().catch(() => undefined) as { songs?: Array<{ id?: number; album?: { publishTime?: number } }> } | undefined
+      ? await oldRes.json().catch(() => undefined) as { songs?: LegacySongDetail[] } | undefined
       : undefined
 
     if (data?.songs) {
@@ -143,7 +187,7 @@ export async function fetchPlaylistSongs(
         const song = mapRawSong(s)
         // Fallback: old API often has publishTime when v3 doesn't
         if (!song.album.publishTime && oldData?.songs) {
-          const match = oldData.songs.find((os: any) => os?.id === s.id)
+          const match = oldData.songs.find(os => os.id === s.id)
           if (match?.album?.publishTime) song.album.publishTime = match.album.publishTime
         }
         songsById.set(song.id, song)
@@ -233,7 +277,7 @@ export function mapRawSong(raw: RawSong): NeteaseSong {
 /** Fetch a single song's detail by ID */
 export async function fetchSongDetail(songId: number, cookie: string): Promise<NeteaseSong> {
   const res = await song_detail({ ids: String(songId), cookie })
-  const data = (res as any).body as { songs?: RawSong[] } | undefined
+  const data = (res as NeteaseResponse<SongDetailBody>).body
   if (!data?.songs?.[0]) throw new Error(`无法获取歌曲 ${songId} 的详情`)
   return mapRawSong(data.songs[0])
 }
@@ -279,7 +323,7 @@ export async function fetchAlbumDetail(albumId: number, cookie: string): Promise
       subType: (a as { subType?: string }).subType ?? '',
       totalDiscs,
       type: (a as { type?: string }).type ?? '',
-      artistImgUrl: (a.artist as any)?.img1v1Url ?? (Array.isArray(a.artists) ? (a.artists[0] as any)?.img1v1Url ?? '' : ''),
+      artistImgUrl: a.artist?.img1v1Url ?? a.artists?.[0]?.img1v1Url ?? '',
       info: a.info,
     }
 
@@ -298,8 +342,8 @@ interface RawAlbum {
   description?: string
   genre?: string
   subType?: string
-  artist?: { name?: string }
-  artists?: { name?: string }[]
+  artist?: { name?: string; img1v1Url?: string }
+  artists?: Array<{ name?: string; img1v1Url?: string }>
   size?: number
   info?: { comment?: { threadId?: string } }
 }
@@ -315,11 +359,11 @@ export async function getSongUrl(
 ): Promise<{ url: string; type: string }> {
   const level = QUALITY_LEVELS[quality] || 'jymaster'
 
-  let res = await song_url_v1({ id: songId, level: level as any, cookie })
+  let res = await song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie })
   let data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
 
   if (!data || (data.type !== 'flac' && data.type !== 'mp3')) {
-    res = await song_url_v1({ id: songId, level: 'hires' as any, cookie })
+    res = await song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie })
     data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
   }
 
@@ -341,7 +385,7 @@ export interface LyricData {
 export async function fetchLyric(
   songId: number,
   cookie: string,
-  order: 'original_first' | 'translated_first' = 'original_first',
+  order: LyricOrder = 'original_first',
   includeTranslation = true,
 ): Promise<LyricData> {
   const res = await lyric_new({ id: songId, cookie })
@@ -350,7 +394,7 @@ export async function fetchLyric(
   const original = body?.lrc?.lyric ?? ''
   const translated = includeTranslation ? (body?.tlyric?.lyric ?? '') : ''
   const romaji = body?.romalrc?.lyric ?? ''
-  const separateFiles = (order as string) === 'separate'
+  const separateFiles = order === 'separate'
 
   const merged = separateFiles ? original : mergeLyrics(original, translated, order)
 
@@ -421,8 +465,8 @@ export async function fetchUserPlaylists(
   offset = 0,
 ): Promise<UserPlaylist[]> {
   const res = await user_playlist({ uid, limit, offset, cookie })
-  const body = (res as any).body as { playlist?: any[] }
-  return (body.playlist || []).map((p: any) => ({
+  const body = (res as NeteaseResponse<{ playlist?: UserPlaylistResponseItem[] }>).body
+  return (body?.playlist ?? []).map(p => ({
     id: p.id,
     name: p.name,
     trackCount: p.trackCount,
@@ -440,8 +484,8 @@ export async function fetchUserAlbums(
   offset = 0,
 ): Promise<UserAlbum[]> {
   const res = await album_sublist({ limit, offset, cookie })
-  const body = (res as any).body as { data?: any[]; count?: number; code?: number }
-  return (body.data || []).map((a: any) => ({
+  const body = (res as NeteaseResponse<{ data?: UserAlbumResponseItem[] }>).body
+  return (body?.data ?? []).map(a => ({
     id: a.id,
     name: a.name,
     size: a.size || 0,
@@ -457,8 +501,8 @@ export async function fetchAlbumSongs(
   cookie: string,
 ): Promise<NeteaseSong[]> {
   const res = await album({ id: albumId, cookie })
-  const body = (res as any).body as { album?: { name?: string }; songs?: RawSong[] }
-  return (body.songs || []).map(mapRawSong)
+  const body = (res as NeteaseResponse<SongDetailBody>).body
+  return (body?.songs ?? []).map(mapRawSong)
 }
 
 export async function fetchPlaylistName(playlistId: number): Promise<string | null> {

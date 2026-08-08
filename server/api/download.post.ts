@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
         artistAliases: cfg.other?.artistAliases ?? {},
         applyAliasToAlbum: cfg.other?.applyAliasToAlbum ?? false,
         downloadConcurrency: cfg.sync.downloadConcurrency || 3,
-      } as any,
+      },
     })
 
     return success({

@@ -303,11 +303,18 @@ function buildSongGroupStats(songs: SongTask[]): SongGroupStat[] {
 
 async function fetchSourceNames() {
   try {
-    const sources = await api.get<Array<{ id: string; name: string; type: string; trackCount: number; enabled: boolean }>>('/playlist-sources')
+    const sources = await api.get<Array<{
+      id: string
+      name: string
+      type: string
+      trackCount: number
+      enabled: boolean
+      subscribed: boolean
+    }>>('/playlist-sources')
     for (const s of sources) {
       sourceNameMap.value[s.id] = s.name
       sourceTypeMap.value[s.id] = s.type
-      sourceSubscribedMap.value[s.id] = (s as any).subscribed ?? false
+      sourceSubscribedMap.value[s.id] = s.subscribed ?? false
     }
     playlistTotalSongs.value = sources
       .filter(s => s.enabled)
