@@ -1,3 +1,5 @@
+
+
 # YunPlex2
 
 将网易云音乐歌单同步到 Plex 媒体服务器的 Web 管理工具。
@@ -53,7 +55,7 @@ pnpm dev
 
 ```bash
 pnpm build
-node .output/server/index.mjs
+pnpm start
 ```
 
 ## Docker 部署
