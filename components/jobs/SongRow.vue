@@ -80,12 +80,6 @@
           <p v-if="matchTrace?.deletionProtectionReason" class="text-2xs text-warning">{{ matchTrace.deletionProtectionReason }}</p>
         </template>
 
-        <template v-else-if="song.status === 'match_pending_review'">
-          <p class="text-2xs text-muted-deep">Plex 找到了可能对应的条目，但只具备弱元数据证据。系统已保留旧歌单项，等待人工确认。</p>
-          <p v-if="matchTrace?.message" class="text-2xs text-warning">{{ matchTrace.message }}</p>
-          <NuxtLink to="/match-reviews" class="text-2xs text-accent hover:underline">前往匹配审核</NuxtLink>
-        </template>
-
         <!-- Success / Failed — show ops + details -->
         <template v-else>
           <button
@@ -143,7 +137,6 @@
               <span class="text-muted font-mono text-right truncate max-w-[280px]">{{ matchTrace.identity.plexFilePath }}</span>
             </div>
             <p v-if="matchTrace.deletionProtectionReason" class="text-2xs text-warning">{{ matchTrace.deletionProtectionReason }}</p>
-            <NuxtLink v-if="matchTrace.candidate?.reviewId || matchTrace.decision === 'pending_review'" to="/match-reviews" class="text-2xs text-accent hover:underline">查看匹配审核与证据</NuxtLink>
           </div>
         </template>
         <ErrorPanel v-if="song.error" :error="song.error" />
@@ -175,17 +168,15 @@ const statusLabel = computed(() => statusPresentation.value.label)
 type Trace = {
   source?: string; message?: string; decision?: string; deletionProtectionReason?: string
   identity?: { method?: string; plexFilePath?: string }
-  candidate?: { reviewId?: string }
 }
 const matchTrace = computed(() => props.song.metadata?.matchTrace as Trace | undefined)
 const matchTraceLabel = computed(() => {
   const trace = matchTrace.value
   if (!trace) return ''
   const methods: Record<string, string> = {
-    manual: '人工确认的全局绑定', path: '映射后精确路径', mb_recording: '同一 MusicBrainz recording', migrated: '已验证的历史路径绑定',
+    manual: '明确接管的 Plex 媒体', path: '托管文件精确路径',
   }
   if (trace.identity?.method) return methods[trace.identity.method] || trace.identity.method
-  if (trace.decision === 'pending_review') return '弱匹配候选，待人工审核'
   if (trace.decision === 'preserved') return '删除保护：保留旧项'
   return trace.message || trace.source || '历史数据未验证'
 })

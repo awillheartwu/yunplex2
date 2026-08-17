@@ -287,7 +287,7 @@ export class RunBuilder {
 function countDistinctWarningIssues(songs: readonly SongTask[]): number {
   const keys = new Set<string>()
   for (const song of songs) {
-    if (!['copyright_restricted', 'ignored_failure', 'extra_skipped', 'match_pending_review'].includes(song.status)) continue
+    if (!['copyright_restricted', 'ignored_failure', 'extra_skipped'].includes(song.status)) continue
     const trace = song.metadata?.matchTrace
     const relatedNeteaseSongId = typeof trace?.relatedNeteaseSongId === 'number'
       ? trace.relatedNeteaseSongId

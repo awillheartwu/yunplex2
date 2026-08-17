@@ -194,7 +194,7 @@ export function createSchema(db: Database.Database): void {
       plex_relative_path TEXT NOT NULL DEFAULT '',
       plex_rating_key TEXT,
       mb_recording_id TEXT,
-      binding_method TEXT NOT NULL CHECK(binding_method IN ('path','mb_recording','provider_guid','metadata','manual','migrated')),
+      binding_method TEXT NOT NULL CHECK(binding_method IN ('path','manual')),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
       evidence_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
@@ -203,37 +203,6 @@ export function createSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_path ON song_identity_bindings(plex_file_path);
     CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_rating_key ON song_identity_bindings(plex_rating_key);
-    CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_recording ON song_identity_bindings(mb_recording_id);
-
-    CREATE TABLE IF NOT EXISTS song_match_reviews (
-      id TEXT PRIMARY KEY,
-      netease_song_id INTEGER NOT NULL,
-      source_id TEXT,
-      run_id TEXT,
-      candidate_plex_file_path TEXT,
-      candidate_plex_rating_key TEXT,
-      candidate_mb_recording_id TEXT,
-      candidate_key TEXT NOT NULL DEFAULT '',
-      evidence_type TEXT NOT NULL DEFAULT 'historical' CHECK(evidence_type IN ('path','mb_recording','metadata','historical','manual','migration')),
-      evidence_json TEXT NOT NULL DEFAULT '{}',
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','unbound','superseded')),
-      decision TEXT,
-      created_at TEXT NOT NULL,
-      decided_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_queue ON song_match_reviews(status, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_song ON song_match_reviews(netease_song_id, status);
-    CREATE INDEX IF NOT EXISTS idx_song_match_reviews_source ON song_match_reviews(source_id, status, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS song_match_review_occurrences (
-      review_id TEXT NOT NULL REFERENCES song_match_reviews(id) ON DELETE CASCADE,
-      source_id TEXT NOT NULL DEFAULT '',
-      run_id TEXT NOT NULL DEFAULT '',
-      observed_at TEXT NOT NULL,
-      PRIMARY KEY (review_id, source_id, run_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_song_match_review_occurrences_source
-      ON song_match_review_occurrences(source_id, review_id);
 
     CREATE TABLE IF NOT EXISTS playlist_source_track_occurrences (
       id TEXT PRIMARY KEY,
@@ -274,26 +243,6 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_playlist_track_occurrences_song
       ON playlist_source_track_occurrences(netease_song_id, membership_status);
 
-    CREATE TABLE IF NOT EXISTS song_identity_events (
-      id TEXT PRIMARY KEY,
-      netease_song_id INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      actor_type TEXT NOT NULL CHECK(actor_type IN ('system','admin')),
-      source_id TEXT,
-      run_id TEXT,
-      review_id TEXT,
-      previous_binding_json TEXT,
-      next_binding_json TEXT,
-      evidence_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_song
-      ON song_identity_events(netease_song_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_source
-      ON song_identity_events(source_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_type
-      ON song_identity_events(event_type, actor_type, created_at DESC);
-
     CREATE TABLE IF NOT EXISTS playlist_extra_observations (
       source_id TEXT NOT NULL,
       plex_playlist_rating_key TEXT NOT NULL,
@@ -312,29 +261,6 @@ export function createSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_playlist_extra_observations_status
       ON playlist_extra_observations(source_id, plex_playlist_rating_key, status);
-
-    CREATE TABLE IF NOT EXISTS musicbrainz_recording_cache (
-      lookup_key TEXT PRIMARY KEY,
-      resolved_json TEXT NOT NULL,
-      last_status TEXT NOT NULL CHECK(last_status IN ('success','ambiguous','empty','failed','disabled')),
-      score INTEGER,
-      failure_count INTEGER NOT NULL DEFAULT 0,
-      last_attempt_at TEXT,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS musicbrainz_id_mapping_cache (
-      input_mbid TEXT PRIMARY KEY,
-      resolved_json TEXT NOT NULL,
-      entity_type TEXT NOT NULL CHECK(entity_type IN ('recording','release_track','unknown')),
-      status TEXT NOT NULL CHECK(status IN ('success','ambiguous','empty','failed')),
-      recording_id TEXT,
-      failure_count INTEGER NOT NULL DEFAULT 0,
-      last_attempt_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_musicbrainz_id_mapping_recording
-      ON musicbrainz_id_mapping_cache(recording_id);
 
     CREATE TABLE IF NOT EXISTS failure_records (
       id                TEXT PRIMARY KEY,

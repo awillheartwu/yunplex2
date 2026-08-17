@@ -1,66 +1,53 @@
 <template>
-  <main class="match-management-page space-y-5">
+  <main class="media-links-page space-y-5">
     <PageHeader
-      title="匹配管理"
-      description="查看每个歌单的目标身份、Plex 实际对齐状态与不可变决策历史。弱证据候选仍受删除保护。"
+      title="媒体复用"
+      description="系统只自动复用 YunPlex 托管文件；外部 Plex 媒体需要你明确接管一次。无法确认时会自动下载独立副本。"
     >
       <template #actions>
-        <button class="btn btn-secondary btn-sm" :disabled="refreshing" @click="refreshActive">
+        <button class="btn btn-secondary btn-sm" :disabled="refreshing" @click="refresh">
           <AppIcon :name="refreshing ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': refreshing }" />
-          {{ refreshing ? '刷新中' : '刷新当前视图' }}
+          {{ refreshing ? '刷新中' : '刷新' }}
         </button>
       </template>
     </PageHeader>
 
-    <nav class="management-tabs" aria-label="匹配管理视图">
-      <button
-        v-for="item in tabs"
-        :key="item.id"
-        class="management-tab"
-        :class="{ 'management-tab--active': tab === item.id }"
-        :aria-current="tab === item.id ? 'page' : undefined"
-        @click="setTab(item.id)"
-      >
-        <AppIcon :name="item.icon" :size="15" />
-        <span>{{ item.label }}</span>
-        <small>{{ item.description }}</small>
-      </button>
-    </nav>
+    <section class="reuse-rules" aria-label="自动复用规则">
+      <article>
+        <AppIcon name="checkCircle" :size="16" />
+        <div><strong>托管文件自动复用</strong><span>只认 Plex 返回的精确文件路径，不受刮削器元数据影响。</span></div>
+      </article>
+      <article>
+        <AppIcon name="link" :size="16" />
+        <div><strong>外部媒体明确接管</strong><span>搜索 Plex 后选择一次，后续按 ratingKey 与路径自动验证。</span></div>
+      </article>
+      <article>
+        <AppIcon name="download" :size="16" />
+        <div><strong>无法确认就下载</strong><span>不再用标题、艺人或 MusicBrainz 猜测身份。</span></div>
+      </article>
+    </section>
 
-    <KeepAlive :max="3">
-      <ReviewQueueTab v-if="tab === 'reviews'" :key="`reviews:${refreshKey}`" />
-      <OverviewTab
-        v-else-if="tab === 'overview'"
-        :key="`overview:${refreshKey}`"
-        :initial-source-id="sourceId"
-        @source-change="setSource"
-      />
-      <IdentityHistoryTab
-        v-else
-        :key="`history:${refreshKey}`"
-        :initial-source-id="sourceId"
-        @source-change="setSource"
-      />
-    </KeepAlive>
+    <OverviewTab
+      :key="refreshKey"
+      :initial-source-id="sourceId"
+      @source-change="setSource"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
-import {
-  type MatchManagementTab,
-  useMatchManagementRouteState,
-} from '~/composables/useMatchManagementRouteState'
-
-const tabs: Array<{ id: MatchManagementTab; label: string; description: string; icon: string }> = [
-  { id: 'reviews', label: '待审核', description: '处理证据不足的候选', icon: 'shield' },
-  { id: 'overview', label: '匹配总览', description: '按歌单检查全部目标', icon: 'list' },
-  { id: 'history', label: '决策历史', description: '追溯身份变化', icon: 'logs' },
-]
-const { tab, sourceId, setTab, setSource } = useMatchManagementRouteState()
+const route = useRoute()
+const router = useRouter()
+const sourceId = ref(typeof route.query.source === 'string' ? route.query.source : '')
 const refreshKey = ref(0)
 const refreshing = ref(false)
 
-async function refreshActive() {
+function setSource(value: string) {
+  sourceId.value = value
+  void router.replace({ query: { ...route.query, source: value || undefined } })
+}
+
+async function refresh() {
   refreshing.value = true
   refreshKey.value++
   await nextTick()
@@ -69,44 +56,19 @@ async function refreshActive() {
 </script>
 
 <style scoped>
-.match-management-page { max-width: 1440px; margin: 0 auto; }
-.management-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .65rem;
-  padding: .45rem;
+.media-links-page { width: 100%; min-width: 0; max-width: 1440px; margin: 0 auto; }
+.reuse-rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.reuse-rules article {
+  display: flex;
+  gap: .7rem;
+  padding: .9rem 1rem;
   border: 1px solid var(--border-primary);
-  border-radius: .8rem;
+  border-radius: .75rem;
   background: var(--bg-surface);
-}
-.management-tab {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: .1rem .55rem;
-  min-height: 3.7rem;
-  padding: .65rem .8rem;
-  border: 1px solid transparent;
-  border-radius: .62rem;
-  color: var(--text-muted);
-  text-align: left;
-  transition: 150ms ease;
-}
-.management-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.management-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.management-tab--active {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-primary));
-  background: color-mix(in srgb, var(--accent-muted) 55%, var(--bg-surface));
   color: var(--accent);
-  box-shadow: var(--shadow-sm);
 }
-.management-tab span { font-size: .82rem; font-weight: 700; }
-.management-tab small { grid-column: 2; font-size: .66rem; color: var(--text-muted-deep); }
-@media (max-width: 680px) {
-  .management-tabs { grid-template-columns: 1fr; }
-  .management-tab { min-height: 3.2rem; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .management-tab { transition: none; }
-}
+.reuse-rules div { display: grid; gap: .2rem; }
+.reuse-rules strong { color: var(--text-primary); font-size: .82rem; }
+.reuse-rules span { color: var(--text-muted); font-size: .72rem; line-height: 1.45; }
+@media (max-width: 900px) { .reuse-rules { grid-template-columns: 1fr; } }
 </style>

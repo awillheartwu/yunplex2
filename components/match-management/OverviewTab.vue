@@ -11,7 +11,7 @@
         </select>
       </label>
       <label>
-        <span>匹配状态</span>
+        <span>媒体状态</span>
         <select v-model="state" class="form-input" @change="applyFilters">
           <option value="">全部当前目标</option>
           <option v-for="option in stateOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
@@ -82,9 +82,9 @@
               >
             </th>
             <th>网易云目标</th>
-            <th>全局绑定</th>
+            <th>媒体关联</th>
             <th>Plex 对齐</th>
-            <th>证据与验证</th>
+            <th>来源与验证</th>
             <th><span class="sr-only">操作</span></th>
           </tr>
         </thead>
@@ -113,10 +113,7 @@
                     <strong>{{ item.target.title || `网易云歌曲 #${songId(item)}` }}</strong>
                     <span>{{ item.target.artists.join('、') || '未知艺人' }}</span>
                     <small>{{ item.target.albumName || `歌曲 ID ${songId(item)}` }}</small>
-                    <small v-if="item.target.metadataSource === 'review_evidence'" class="overview-metadata-source">
-                      来自历史审核证据
-                    </small>
-                    <small v-else-if="item.target.metadataSource === 'unknown'" class="overview-metadata-source overview-metadata-source--warning">
+                    <small v-if="item.target.metadataSource === 'unknown'" class="overview-metadata-source overview-metadata-source--warning">
                       目标元数据未刷新
                     </small>
                   </div>
@@ -143,7 +140,6 @@
                   {{ mediaOriginLabel(item) }}
                 </span>
                 <span>{{ item.binding?.lastVerifiedAt ? relativeTime(item.binding.lastVerifiedAt) : '从未验证' }}</span>
-                <small v-if="item.pendingReviewCount">{{ item.pendingReviewCount }} 个候选待审核</small>
               </td>
               <td class="overview-row-action" data-label="操作">
                 <div class="overview-row-buttons">
@@ -154,7 +150,7 @@
                     @click="searchPlex(item)"
                   >
                     <AppIcon name="search" :size="13" />
-                    重新匹配
+                    接管媒体
                   </button>
                   <button
                     class="btn btn-ghost btn-xs"
@@ -173,7 +169,6 @@
                   <dl>
                     <div><dt>网易云 ID</dt><dd>{{ songId(item) }}</dd></div>
                     <div><dt>歌单位置</dt><dd>{{ item.occurrence ? item.occurrence.position + 1 : '—' }}</dd></div>
-                    <div><dt>MusicBrainz recording</dt><dd class="path">{{ item.binding?.mbRecordingId || '无' }}</dd></div>
                     <div><dt>最后 run</dt><dd>{{ item.occurrence?.lastRunId || '无历史' }}</dd></div>
                     <div><dt>受影响歌单</dt><dd>{{ affectedLabel(item) }}</dd></div>
                     <div><dt>绑定版本</dt><dd class="path">{{ item.binding?.updatedAt || '无' }}</dd></div>
@@ -187,15 +182,10 @@
                   <div class="overview-detail-actions">
                     <button class="btn btn-secondary btn-sm" :disabled="acting" @click="searchPlex(item)">
                       <AppIcon name="search" :size="14" />
-                      {{ searchItemKey === itemKey(item) ? '重新搜索 Plex' : '搜索并重绑' }}
+                      {{ searchItemKey === itemKey(item) ? '重新搜索 Plex' : '搜索并接管' }}
                     </button>
                     <template v-if="item.binding?.status === 'active'">
-                      <button class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmUnbind(item, 'reevaluate')">
-                        解绑并重新评估
-                      </button>
-                      <button class="btn btn-ghost btn-sm text-danger" :disabled="acting" @click="confirmUnbind(item, 'exclude_current')">
-                        排除此文件
-                      </button>
+                      <button class="btn btn-ghost btn-sm text-danger" :disabled="acting" @click="confirmUnbind(item)">取消接管</button>
                     </template>
                   </div>
                   <div v-if="searchItemKey === itemKey(item)" class="overview-search-results">
@@ -230,8 +220,8 @@
       :visible="Boolean(pendingAction)"
       :title="pendingTitle"
       :message="pendingMessage"
-      :confirm-label="pendingAction?.kind === 'exclude_current' ? '排除并重匹配' : pendingAction?.kind === 'reevaluate' ? '解绑并重新评估' : '保存全局重绑'"
-      :variant="pendingAction?.kind === 'exclude_current' ? 'danger' : 'primary'"
+      :confirm-label="pendingAction?.kind === 'unbind' ? '取消接管' : '保存接管'"
+      :variant="pendingAction?.kind === 'unbind' ? 'danger' : 'primary'"
       :busy="acting"
       @confirm="executePendingAction"
       @cancel="pendingAction = null"
@@ -246,7 +236,7 @@ interface SourceOption { id: string; name: string; neteasePlaylistName: string; 
 interface PlexSearchTrack { ratingKey: string; title: string; artist: string; album: string; plexFilePath: string | null }
 type PendingAction =
   | { kind: 'rebind'; item: MatchOverviewItem; track: PlexSearchTrack }
-  | { kind: 'reevaluate' | 'exclude_current'; item: MatchOverviewItem }
+  | { kind: 'unbind'; item: MatchOverviewItem }
 
 const props = defineProps<{ initialSourceId?: string }>()
 const emit = defineEmits<{ sourceChange: [value: string] }>()
@@ -274,12 +264,11 @@ const pendingAction = ref<PendingAction | null>(null)
 const autoValidatedScopes = new Set<string>()
 
 const stateOptions: Array<{ value: MatchOverviewState; label: string }> = [
-  { value: 'matched', label: '已匹配' },
+  { value: 'matched', label: '已关联' },
   { value: 'pending_alignment', label: '待对齐' },
   { value: 'historical_unverified', label: '历史待验证' },
-  { value: 'pending_review', label: '待审核' },
-  { value: 'unmatched', label: '未匹配' },
-  { value: 'binding_stale', label: '绑定失效' },
+  { value: 'unmatched', label: '待下载或接管' },
+  { value: 'binding_stale', label: '关联失效' },
   { value: 'copyright_restricted', label: '版权受限' },
   { value: 'sync_failed', label: '同步失败' },
   { value: 'retry_paused', label: '暂停重试' },
@@ -288,19 +277,17 @@ const stateOptions: Array<{ value: MatchOverviewState; label: string }> = [
 const allSelected = computed(() => result.value.items.length > 0 && result.value.items.every(item => selected.value.has(songId(item))))
 const someSelected = computed(() => result.value.items.some(item => selected.value.has(songId(item))) && !allSelected.value)
 const pendingTitle = computed(() => pendingAction.value?.kind === 'rebind'
-  ? '确认全局重绑'
-  : pendingAction.value?.kind === 'exclude_current' ? '排除此 Plex 文件' : '解绑并重新评估')
+  ? '确认接管 Plex 媒体'
+  : '取消媒体接管')
 const pendingMessage = computed(() => {
   const action = pendingAction.value
   if (!action) return ''
   const item = action.item
   const impact = item.affectedSources.map(source => source.name).join('、') || '无当前歌单'
   if (action.kind === 'rebind') {
-    return `将歌曲“${item.target.title || songId(item)}”全局重绑到 Plex #${action.track.ratingKey}。受影响歌单（${item.affectedSources.length}）：${impact}。本操作不会立即修改 Plex，下一次同步才会对齐。`
+    return `将“${item.target.title || songId(item)}”明确接管为 Plex #${action.track.ratingKey}。受影响歌单（${item.affectedSources.length}）：${impact}。后续只按 ratingKey 与文件路径验证，不再猜测元数据。`
   }
-  return action.kind === 'exclude_current'
-    ? `当前文件将被记录为拒绝候选，不会再次被自动选中；${impact} 将标记为待对齐。`
-    : `系统会解除当前绑定并允许再次选择同一文件；${impact} 将标记为待对齐。`
+  return `将取消这条明确接管；${impact} 下次同步无法确认托管媒体时会下载独立副本。`
 })
 
 function songId(item: MatchOverviewItem) { return item.target.neteaseSongId }
@@ -312,7 +299,7 @@ function alignmentLabel(value: string) {
   return ({ aligned: 'Plex 已读回确认', pending: '等待下次同步', missing: 'Plex 未找到', unknown: '历史数据未验证' } as Record<string, string>)[value] ?? value
 }
 function evidenceLabel(value?: string) {
-  return ({ path: '精确路径', mb_recording: 'MusicBrainz recording', provider_guid: '来源 GUID', metadata: '历史元数据（已退役）', manual: '人工绑定', migrated: '自动迁移' } as Record<string, string>)[value ?? ''] ?? '无强证据'
+  return ({ path: '托管文件 · 精确路径', manual: '外部媒体 · 明确接管' } as Record<string, string>)[value ?? ''] ?? '尚未建立关联'
 }
 function mediaOriginLabel(item: MatchOverviewItem) {
   const media = item.localMedia
@@ -456,15 +443,15 @@ async function searchPlex(item: MatchOverviewItem) {
   searching.value = true
   searchResults.value = []
   try {
-    const data = await api.get<{ tracks: PlexSearchTrack[] }>('/match-reviews/plex-search', { title: item.target.title })
+    const data = await api.get<{ tracks: PlexSearchTrack[] }>('/match-management/plex-search', { title: item.target.title })
     searchResults.value = data.tracks
   } catch (value) { error.value = value instanceof Error ? value.message : '搜索 Plex 失败' } finally { searching.value = false }
 }
 function confirmRebind(item: MatchOverviewItem, track: PlexSearchTrack) {
   pendingAction.value = { kind: 'rebind', item, track }
 }
-function confirmUnbind(item: MatchOverviewItem, kind: 'reevaluate' | 'exclude_current') {
-  pendingAction.value = { kind, item }
+function confirmUnbind(item: MatchOverviewItem) {
+  pendingAction.value = { kind: 'unbind', item }
 }
 async function executePendingAction() {
   const action = pendingAction.value
@@ -482,11 +469,11 @@ async function executePendingAction() {
     } else {
       const data = await api.post<{ affectedSources: Array<{ id: string; name: string }> }>(`/match-management/bindings/${songId(action.item)}/unbind`, {
         expectedBindingUpdatedAt: action.item.binding!.updatedAt,
-        mode: action.kind,
+        mode: 'reevaluate',
         sourceId: sourceId.value === 'orphaned' ? undefined : sourceId.value,
       })
       affectedAfterMutation.value = data.affectedSources
-      notice.value = action.kind === 'exclude_current' ? '已排除当前文件并等待重新匹配。' : '已解绑并允许系统重新评估。'
+      notice.value = '已取消媒体接管；下次同步将按托管规则重新处理。'
     }
     pendingAction.value = null
     searchItemKey.value = ''
@@ -532,7 +519,7 @@ onMounted(async () => { await loadSources(); await load() })
 .path { max-width: 22rem; overflow-wrap: anywhere; font-family: var(--font-mono, monospace); }
 .state-pill { display: inline-flex !important; width: max-content; padding: .18rem .42rem; border-radius: .38rem; background: var(--bg-hover); color: var(--text-muted) !important; font-weight: 700; }
 .state-pill--matched { background: color-mix(in srgb, var(--success) 13%, transparent); color: var(--success) !important; }
-.state-pill--pending_alignment, .state-pill--pending_review { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning) !important; }
+.state-pill--pending_alignment { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning) !important; }
 .state-pill--historical_unverified { background: color-mix(in srgb, var(--text-muted-deep) 12%, transparent); color: var(--text-muted-deep) !important; }
 .state-pill--binding_stale, .state-pill--sync_failed { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger) !important; }
 .media-origin { display: inline-flex !important; width: max-content; padding: .13rem .36rem; border-radius: .32rem; background: var(--bg-hover); color: var(--text-muted-deep) !important; font-weight: 700; }

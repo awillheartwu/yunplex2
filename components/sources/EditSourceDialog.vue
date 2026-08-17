@@ -25,13 +25,6 @@
           </div>
           <p v-if="saveError" class="text-2xs text-danger">{{ saveError }}</p>
 
-          <SourceBooleanOverride
-            v-model="form.downloadWhenMediaMissing"
-            label="缺少已登记媒体时自动下载"
-            :global-value="globalSyncSettings.downloadWhenMediaMissing"
-            hint="没有有效资产时直接下载；人工绑定豁免，已有托管或外部资产继续复用"
-          />
-
           <!-- Album-only: skip Plex playlist -->
           <template v-if="source.type === 'album'">
             <SourceBooleanOverride
@@ -122,7 +115,6 @@ const plexError = ref('')
 const saveError = ref('')
 const globalSyncSettings = reactive({
   forceFullCompare: false,
-  downloadWhenMediaMissing: false,
   skipPlexPlaylist: false,
   skipRemoveExtraTracks: false,
 })
@@ -134,7 +126,6 @@ const form = reactive({
   enabled: true,
   autoCreatePlexPlaylist: true,
   forceFullCompare: null as boolean | null,
-  downloadWhenMediaMissing: null as boolean | null,
   skipRemoveExtraTracks: null as boolean | null,
   fullCompareAfterSkips: null as number | null,
   fullCompareAfterDays: null as number | null,
@@ -151,7 +142,6 @@ watch(() => props.source, (s) => {
   form.enabled = s.enabled
   form.autoCreatePlexPlaylist = s.autoCreatePlexPlaylist ?? true
   form.forceFullCompare = s.forceFullCompare
-  form.downloadWhenMediaMissing = s.downloadWhenMediaMissing
   form.skipRemoveExtraTracks = s.skipRemoveExtraTracks
   form.fullCompareAfterSkips = s.fullCompareAfterSkips
   form.fullCompareAfterDays = s.fullCompareAfterDays
@@ -173,7 +163,6 @@ async function fetchGlobalSettings() {
   try {
     const config = await api.get<AppConfig>('/config')
     globalSyncSettings.forceFullCompare = config.sync.forceFullCompare
-    globalSyncSettings.downloadWhenMediaMissing = config.sync.downloadWhenMediaMissing
     globalSyncSettings.skipPlexPlaylist = config.sync.skipPlexPlaylist
     globalSyncSettings.skipRemoveExtraTracks = config.sync.skipRemoveExtraTracks
   } catch {
@@ -199,7 +188,6 @@ async function handleSave() {
       enabled: form.enabled,
       autoCreatePlexPlaylist: form.autoCreatePlexPlaylist,
       forceFullCompare: form.forceFullCompare,
-      downloadWhenMediaMissing: form.downloadWhenMediaMissing,
       skipRemoveExtraTracks: form.skipRemoveExtraTracks,
       fullCompareAfterSkips: form.fullCompareAfterSkips,
       fullCompareAfterDays: form.fullCompareAfterDays,

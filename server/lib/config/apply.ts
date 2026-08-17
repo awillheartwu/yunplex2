@@ -1,17 +1,12 @@
 import type { AppConfig } from './types'
 import { readConfig, writeConfig } from './store'
 import { getSyncWorker } from '../sync/instance'
-import { markInheritedMissingMediaSourcesForReconcile } from '../playlist/store'
 
 export function applyConfigUpdate(
   patch: unknown,
 ): { updated: AppConfig; changedKeys: string[] } {
   const previous = readConfig()
   const updated = writeConfig(patch)
-
-  if (!previous.sync.downloadWhenMediaMissing && updated.sync.downloadWhenMediaMissing) {
-    markInheritedMissingMediaSourcesForReconcile()
-  }
 
   const worker = getSyncWorker()
   if (worker) {

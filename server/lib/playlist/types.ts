@@ -20,7 +20,6 @@ export interface PlaylistSource {
   trackCount: number
   lastTrackUpdateTime: number | null
   forceFullCompare: boolean | null
-  downloadWhenMediaMissing: boolean | null
   consecutiveSkips: number
   fullCompareAfterSkips: number | null
   fullCompareAfterDays: number | null
@@ -111,7 +110,6 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     trackCount: row.track_count,
     lastTrackUpdateTime: row.last_track_update_time,
     forceFullCompare: row.force_full_compare === null ? null : row.force_full_compare === 1,
-    downloadWhenMediaMissing: row.download_when_media_missing === null ? null : row.download_when_media_missing === 1,
     consecutiveSkips: row.consecutive_skips,
     fullCompareAfterSkips: row.full_compare_after_skips,
     fullCompareAfterDays: row.full_compare_after_days,

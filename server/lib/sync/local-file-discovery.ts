@@ -27,6 +27,7 @@ function buildPathVars(song: NeteaseSong, cfg: AppConfig) {
     year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
     track: String(song.no),
     'track:02d': String(song.no).padStart(2, '0'),
+    songId: String(song.id),
   }
 }
 

@@ -94,12 +94,11 @@ describe('responsive layout sizing', () => {
     expect(dashboard).toContain('min-block-size: 0')
   })
 
-  it('keeps review and run lists dense across wide and compact layouts', () => {
-    const reviews = readProjectFile('components/match-management/ReviewQueueTab.vue')
+  it('keeps media reuse and run lists dense across wide and compact layouts', () => {
+    const mediaReuse = readProjectFile('components/match-management/OverviewTab.vue')
     const runCard = readProjectFile('components/task-center/RunCard.vue')
 
-    expect(reviews).toContain('.match-reviews-page { width: 100%; min-width: 0; }')
-    expect(reviews).not.toContain('.match-reviews-page { max-width: 1180px')
+    expect(mediaReuse).toContain('min-width: 0')
     expect(runCard).toContain('run-card__source-column')
     expect(runCard).toContain('run-card__column-label')
     expect(runCard).toContain('grid-template-columns:auto minmax(17rem,1.15fr) minmax(24rem,1.5fr)')

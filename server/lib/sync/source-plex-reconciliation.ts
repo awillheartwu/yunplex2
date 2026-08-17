@@ -23,7 +23,6 @@ import {
   type BindingVersionSnapshot,
 } from './identity-coordinator'
 import {
-  getReplacedSongIdentityIdsByRatingKeys,
   getSongIdentityBindingByRatingKey,
   type BindingInput,
 } from './identity-store'
@@ -78,9 +77,7 @@ interface ReconcilePlexPlaylistInput {
   emptyTargetConfirmed: boolean
   skipRemoveExtra: boolean
   retryUnresolvedSnapshot: boolean
-  missingMediaPolicyEnabled: boolean
   needsPlexRefresh: boolean
-  downloadTargetCount: number
   splitArtists: (artists: { name: string }[]) => [string, string]
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
@@ -101,7 +98,6 @@ export async function reconcilePlexPlaylist(
   const {
     source,
     resolutions,
-    extraTracks,
     extraTaskIds,
     config,
     job,
@@ -114,9 +110,7 @@ export async function reconcilePlexPlaylist(
     emptyTargetConfirmed,
     skipRemoveExtra,
     retryUnresolvedSnapshot,
-    missingMediaPolicyEnabled,
     needsPlexRefresh,
-    downloadTargetCount,
     splitArtists,
     isCancellationRequested,
     throwIfCancelled,
@@ -161,7 +155,7 @@ export async function reconcilePlexPlaylist(
       effectiveFilePath,
       retryUnresolvedSnapshot ? 0 : config.sync.plexScanRetries,
       config.sync.plexScanRetryDelaySec * 1000,
-      { pathOnly: missingMediaPolicyEnabled },
+      { pathOnly: true },
     )
     if (!result.ratingKey) {
       plexMatchResults.set(resolution.song.id, result)
@@ -198,7 +192,6 @@ export async function reconcilePlexPlaylist(
         plexSectionKey: sectionKey,
         plexFilePath: indexedPlexPath,
         plexRatingKey: result.ratingKey,
-        mbRecordingId: null,
         bindingMethod: 'path',
         status: 'active',
         evidence: {
@@ -243,10 +236,7 @@ export async function reconcilePlexPlaylist(
     const result = plexMatchResults.get(resolution.song.id)
     if (!result) continue
 
-    const cause = inferPlexMatchFailureCause(result, {
-      downloadedSongs: downloadTargetCount,
-      failedDownloadedSongs: failedPlexRetrySongIds.length,
-    })
+    const cause = inferPlexMatchFailureCause(result)
     const songId = findResolutionTaskId(job, source.id, resolution)
     if (!songId) continue
     const currentSong = getResolutionTask(job, source.id, resolution)
@@ -283,9 +273,6 @@ export async function reconcilePlexPlaylist(
     ),
   }))
   const currentOccurrences = listPlaylistSourceTrackOccurrences(source.id)
-  const historicalReplacementSongIds = getReplacedSongIdentityIdsByRatingKeys(
-    currentItems.map(item => item.ratingKey),
-  )
   const occurrencesByPreviousRatingKey = new Map<string, typeof currentOccurrences>()
   for (const occurrence of currentOccurrences) {
     if (!occurrence.alignedPlexRatingKey) continue
@@ -312,15 +299,7 @@ export async function reconcilePlexPlaylist(
       return [{ neteaseSongId: previous.neteaseSongId, plexRatingKey: item.ratingKey }]
     }
 
-    const historicalSongId = historicalReplacementSongIds.get(item.ratingKey)
-    const historicalReplacement = historicalSongId && resolutions.find(resolution =>
-      resolution.song.id === historicalSongId
-      && resolution.plexRatingKey
-      && resolution.plexRatingKey !== item.ratingKey,
-    )
-    return historicalSongId && historicalReplacement
-      ? [{ neteaseSongId: historicalSongId, plexRatingKey: item.ratingKey }]
-      : []
+    return []
   })
 
   const reconciliationTargets = resolutions.map(resolution => ({
@@ -382,7 +361,6 @@ export async function reconcilePlexPlaylist(
       }
     }
     if (!extraSongId || decision.action !== 'preserve') continue
-    const relatedExtra = extraTracks.find(extra => extra.playlistItemId === decision.playlistItemId)
     job.updateSong(extraSongId, {
       status: 'extra_skipped',
       phase: 'done',
@@ -392,8 +370,6 @@ export async function reconcilePlexPlaylist(
         matchTrace: {
           decision: 'preserved',
           deletionProtectionReason: decision.reason,
-          relatedNeteaseSongId: relatedExtra?.relatedNeteaseSongId,
-          reviewId: relatedExtra?.relatedReviewId,
         },
       },
     })

@@ -73,7 +73,6 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'jobRetentionFailedDays',
     'downloadTaskRetentionDays',
     'forceFullCompare',
-    'downloadWhenMediaMissing',
     'reconcileOnPlexDrift',
     'fullCompareAfterSkips',
     'fullCompareAfterDays',
@@ -92,8 +91,6 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'applyAliasToAlbum',
     'pathFormat',
     'fontScale',
-    'enableMusicBrainzResolver',
-    'musicBrainzMinScore',
   ]),
 }
 
@@ -149,7 +146,6 @@ export function validateFullConfig(input: unknown): AppConfig {
       jobRetentionFailedDays: readInteger(candidate.sync.jobRetentionFailedDays, '失败运行保留天数', 1, 365),
       downloadTaskRetentionDays: readInteger(candidate.sync.downloadTaskRetentionDays, '下载队列保留天数', 0, 365),
       forceFullCompare: readBoolean(candidate.sync.forceFullCompare, '始终全量对比'),
-      downloadWhenMediaMissing: readBoolean(candidate.sync.downloadWhenMediaMissing, '缺少已登记媒体时自动下载'),
       reconcileOnPlexDrift: readBoolean(candidate.sync.reconcileOnPlexDrift, 'Plex 漂移自动修复'),
       fullCompareAfterSkips: readInteger(candidate.sync.fullCompareAfterSkips, '连续跳过上限', 0, 100),
       fullCompareAfterDays: readInteger(candidate.sync.fullCompareAfterDays, '全量对比间隔', 0, 365),
@@ -168,8 +164,6 @@ export function validateFullConfig(input: unknown): AppConfig {
       applyAliasToAlbum: readBoolean(candidate.other.applyAliasToAlbum, '别名替换应用到专辑艺人'),
       pathFormat: readPathFormat(candidate.other.pathFormat),
       fontScale: readNumber(candidate.other.fontScale, '字体缩放', 0.8, 1.5),
-      enableMusicBrainzResolver: readBoolean(candidate.other.enableMusicBrainzResolver, '启用 MusicBrainz 解析'),
-      musicBrainzMinScore: readInteger(candidate.other.musicBrainzMinScore, 'MusicBrainz 最低匹配分数', 0, 100),
     },
   }
 }
@@ -208,7 +202,6 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
       jobRetentionFailedDays: coerceInteger(get(source, 'sync', 'jobRetentionFailedDays'), DEFAULT_CONFIG.sync.jobRetentionFailedDays, 1, 365),
       downloadTaskRetentionDays: coerceInteger(get(source, 'sync', 'downloadTaskRetentionDays'), DEFAULT_CONFIG.sync.downloadTaskRetentionDays, 0, 365),
       forceFullCompare: coerceBoolean(get(source, 'sync', 'forceFullCompare'), DEFAULT_CONFIG.sync.forceFullCompare),
-      downloadWhenMediaMissing: coerceBoolean(get(source, 'sync', 'downloadWhenMediaMissing'), DEFAULT_CONFIG.sync.downloadWhenMediaMissing),
       reconcileOnPlexDrift: coerceBoolean(get(source, 'sync', 'reconcileOnPlexDrift'), DEFAULT_CONFIG.sync.reconcileOnPlexDrift),
       fullCompareAfterSkips: coerceInteger(get(source, 'sync', 'fullCompareAfterSkips'), DEFAULT_CONFIG.sync.fullCompareAfterSkips, 0, 100),
       fullCompareAfterDays: coerceInteger(get(source, 'sync', 'fullCompareAfterDays'), DEFAULT_CONFIG.sync.fullCompareAfterDays, 0, 365),
@@ -231,8 +224,6 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
       applyAliasToAlbum: coerceBoolean(get(source, 'other', 'applyAliasToAlbum'), DEFAULT_CONFIG.other.applyAliasToAlbum),
       pathFormat: coercePathFormat(get(source, 'other', 'pathFormat'), DEFAULT_CONFIG.other.pathFormat),
       fontScale: coerceNumber(get(source, 'other', 'fontScale'), DEFAULT_CONFIG.other.fontScale, 0.8, 1.5),
-      enableMusicBrainzResolver: coerceBoolean(get(source, 'other', 'enableMusicBrainzResolver'), DEFAULT_CONFIG.other.enableMusicBrainzResolver),
-      musicBrainzMinScore: coerceInteger(get(source, 'other', 'musicBrainzMinScore'), DEFAULT_CONFIG.other.musicBrainzMinScore, 0, 100),
     },
   }
 

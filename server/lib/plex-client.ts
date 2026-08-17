@@ -1,7 +1,6 @@
 import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
-import { stripPunct, s2t, t2s, normalizeForSearch, titleIdentityDescriptorsCompatible } from './sync/matchers'
-import { isArtistNameMatch } from './sync/artist-match'
+import { s2t, t2s, normalizeForSearch } from './sync/matchers'
 import { foldPlexPath, normalizePlexPath } from './sync/identity-normalization'
 
 export interface PlexTrack {
@@ -22,90 +21,6 @@ export interface PlexTrack {
       file?: string
     }>
   }>
-}
-
-export interface PlexTrackMusicBrainzIdentity {
-  explicitRecordingId: string | null
-  untypedIds: string[]
-  rawGuids: string[]
-}
-
-export interface PlexTrackNeteaseIdentity {
-  provider: 'wangyiyun'
-  artistId: number
-  albumId: number
-  discNumber: number | null
-  trackNumber: number
-  rawGuid: string
-}
-
-const MUSICBRAINZ_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const EXPLICIT_RECORDING_PATTERNS = [
-  new RegExp(`(?:https?://)?musicbrainz\\.org/recording/(${MUSICBRAINZ_UUID})(?:[/?#]|$)`, 'i'),
-  new RegExp(`(?:mbid|musicbrainz)://recording/(${MUSICBRAINZ_UUID})(?:[/?#]|$)`, 'i'),
-]
-const UNTYPED_MBID_PATTERN = new RegExp(`^mbid://(${MUSICBRAINZ_UUID})(?:[/?#]|$)`, 'i')
-
-/** Parse Plex GUIDs without assuming that a generic mbid:// UUID is a recording. */
-export function getPlexTrackMusicBrainzIdentity(track: PlexTrack): PlexTrackMusicBrainzIdentity {
-  const rawGuids = getPlexGuidValues(track)
-  const untypedIds = new Set<string>()
-  let explicitRecordingId: string | null = null
-
-  for (const guid of rawGuids) {
-    for (const pattern of EXPLICIT_RECORDING_PATTERNS) {
-      const match = guid.match(pattern)
-      if (match?.[1]) {
-        explicitRecordingId ??= match[1].toLowerCase()
-        break
-      }
-    }
-    const untyped = guid.match(UNTYPED_MBID_PATTERN)?.[1]
-    if (untyped) untypedIds.add(untyped.toLowerCase())
-  }
-
-  return { explicitRecordingId, untypedIds: [...untypedIds], rawGuids }
-}
-
-function getPlexGuidValues(track: PlexTrack): string[] {
-  const values = [
-    track.guid,
-    ...(Array.isArray(track.Guid) ? track.Guid.map(guid => guid.id) : [track.Guid?.id]),
-  ].filter((value): value is string => Boolean(value?.trim()))
-  return [...new Set(values.map(value => value.trim()))]
-}
-
-/** Parse the typed identity emitted by the Plex WangYiYun metadata agent. */
-export function getPlexTrackNeteaseIdentity(track: PlexTrack): PlexTrackNeteaseIdentity | null {
-  const pattern = /^com\.plexapp\.agents\.wangyiyun:\/\/(\d+)\/(\d+)\/(-?\d+)\/(\d+)(?:[/?#]|$)/i
-  for (const rawGuid of getPlexGuidValues(track)) {
-    const match = rawGuid.match(pattern)
-    if (!match) continue
-    const artistId = Number(match[1])
-    const albumId = Number(match[2])
-    const rawDiscNumber = Number(match[3])
-    const trackNumber = Number(match[4])
-    if (![artistId, albumId, rawDiscNumber, trackNumber].every(Number.isSafeInteger)) continue
-    if (artistId <= 0 || albumId <= 0 || trackNumber <= 0) continue
-    return {
-      provider: 'wangyiyun',
-      artistId,
-      albumId,
-      discNumber: rawDiscNumber > 0 ? rawDiscNumber : null,
-      trackNumber,
-      rawGuid,
-    }
-  }
-  return null
-}
-
-export function getPlexTrackRecordingId(track: PlexTrack): string | null {
-  return getPlexTrackMusicBrainzIdentity(track).explicitRecordingId
-}
-
-/** Strip punctuation, spaces, and special chars for fuzzy title comparison */
-function stripTitle(s: string): string {
-  return stripPunct(s)
 }
 
 interface PlexClient {
@@ -441,63 +356,6 @@ export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Pro
   return extractMetadata(res).slice(0, size)
 }
 
-export async function searchTrack(
-  sectionKey: string,
-  songName: string,
-  artistCandidates: string[],
-  album: string,
-): Promise<PlexTrack | null> {
-  return (await searchTrackCandidates(sectionKey, songName, artistCandidates, album)).match
-}
-
-export interface PlexTrackSearchCandidates {
-  match: PlexTrack | null
-  candidates: PlexTrack[]
-}
-
-export async function searchTrackCandidates(
-  sectionKey: string,
-  songName: string,
-  artistCandidates: string[],
-  album: string,
-): Promise<PlexTrackSearchCandidates> {
-  if (!client) throw new Error('Plex client not initialized')
-
-  const coreTitle = songName
-    .replace(/\s*\([^)]*\)\s*/g, ' ')
-    .replace(/\s*\[[^\]]*\]\s*/g, ' ')
-    .trim()
-
-  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, ' ').replace(/\s+/g, ' ').trim()
-  const searchTitle = normalizeForSearch(songName)
-  const candidatesByKey = new Map<string, PlexTrack>()
-
-  // ── Strategy A: search by every artist candidate (most reliable) ──
-  for (const candidate of artistCandidates) {
-    const artistRes = await client.query(
-      `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(candidate)}`,
-    )
-    const artistTracks = extractMetadata(artistRes)
-    for (const track of artistTracks) candidatesByKey.set(track.ratingKey, track)
-  }
-
-  // ── Strategy B: title-based search with candidate artist matching ──
-  const titles = [...new Set([songName, coreTitle, cleanTitle, searchTitle].filter(Boolean))]
-  for (const t of titles) {
-    const res = await client.query(
-      `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(t)}`,
-    )
-    for (const track of extractMetadata(res)) candidatesByKey.set(track.ratingKey, track)
-  }
-
-  const candidates = [...candidatesByKey.values()]
-    .sort((left, right) => left.ratingKey.localeCompare(right.ratingKey))
-  return {
-    match: findMatch(candidates, songName, coreTitle, cleanTitle, artistCandidates, album),
-    candidates,
-  }
-}
-
 export async function searchTracksByTitle(sectionKey: string, songName: string): Promise<PlexTrack[]> {
   if (!client) throw new Error('Plex client not initialized')
 
@@ -528,52 +386,6 @@ export async function searchTracksByTitle(sectionKey: string, songName: string):
   return matches
 }
 
-export async function searchTracksByArtists(sectionKey: string, artistCandidates: string[]): Promise<PlexTrack[]> {
-  if (!client) throw new Error('Plex client not initialized')
-
-  const seen = new Set<string>()
-  const matches: PlexTrack[] = []
-
-  for (const artist of [...new Set(artistCandidates.map((value) => value.trim()).filter(Boolean))]) {
-    const res = await client.query(
-      `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(artist)}`,
-    )
-    for (const track of extractMetadata(res)) {
-      if (seen.has(track.ratingKey)) continue
-      seen.add(track.ratingKey)
-      matches.push(track)
-    }
-  }
-
-  return matches
-}
-
-export async function searchTracksByAlbum(sectionKey: string, album: string): Promise<PlexTrack[]> {
-  if (!client) throw new Error('Plex client not initialized')
-
-  const albumNames = [...new Set([
-    album,
-    normalizeForSearch(album),
-    s2t(album),
-    t2s(album),
-  ].map((value) => value.trim()).filter(Boolean))]
-  const seen = new Set<string>()
-  const matches: PlexTrack[] = []
-
-  for (const albumName of albumNames) {
-    const res = await client.query(
-      `/library/sections/${sectionKey}/all?type=10&album.title=${encodeURIComponent(albumName)}`,
-    )
-    for (const track of extractMetadata(res)) {
-      if (seen.has(track.ratingKey)) continue
-      seen.add(track.ratingKey)
-      matches.push(track)
-    }
-  }
-
-  return matches
-}
-
 /** Resolve every Plex library candidate sharing the same normalized media path. */
 export async function findTracksByFilePath(sectionKey: string, filePath: string): Promise<PlexTrack[]> {
   if (!client || !filePath) return []
@@ -584,7 +396,7 @@ export async function findTracksByFilePath(sectionKey: string, filePath: string)
     if (exact) return [...exact]
     const folded = index.folded.get(foldPlexPath(normalized))
     // Case folding is a fallback only. A case-sensitive Plex library may
-    // legitimately contain both variants, so ambiguity must remain review-only.
+    // legitimately contain both variants, so ambiguity must stop automatic reuse.
     if (!folded || folded.exactPaths.size !== 1 || folded.tracks.length !== 1) return []
     return [...folded.tracks]
   }
@@ -600,73 +412,6 @@ function extractMetadata(res: Record<string, unknown>): PlexTrack[] {
   const raw = (res as { MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack } }).MediaContainer?.Metadata
   if (!raw) return []
   return Array.isArray(raw) ? raw : [raw]
-}
-
-function findMatch(
-  results: PlexTrack[],
-  songName: string,
-  coreTitle: string,
-  cleanTitle: string,
-  artistCandidates: string[],
-  album: string,
-): PlexTrack | null {
-  if (!results.length) return null
-
-  // 1) Exact triple match — title + any candidate artist + album
-  const exact = results.filter(
-    (item) =>
-      titleVariantsMatch(item.title, songName) &&
-      artistCandidates.some((c) => item.grandparentTitle.toLowerCase() === c.toLowerCase()) &&
-      titleVariantsMatch(item.parentTitle, album),
-  )
-  if (exact.length === 1) return exact[0]!
-  if (exact.length > 1) return null
-
-  // 2) Relaxed: stripped title + candidate artist match
-  const songStripped = buildTitleMatchVariants(coreTitle)
-  const relaxed = results.filter((item) => {
-    const pt = buildTitleMatchVariants(item.title)
-    const titleMatch = titleIdentityDescriptorsCompatible(item.title, songName)
-      && pt.some((variant) => songStripped.includes(variant))
-    const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, c))
-    return titleMatch && artistMatch
-  })
-  if (relaxed.length === 1) return relaxed[0]!
-  if (relaxed.length > 1) return null
-
-  // 3) s2t conversion: try simplified→traditional for each candidate
-  const tCoreTitle = s2t(coreTitle)
-  const needS2t = artistCandidates.some((c) => {
-    const tc = s2t(c)
-    return tc !== c || tCoreTitle !== coreTitle
-  })
-  if (needS2t) {
-    const tStripped = buildTitleMatchVariants(tCoreTitle)
-    const s2tMatch = results.filter((item) => {
-      const pt = buildTitleMatchVariants(item.title)
-      const titleMatch = titleIdentityDescriptorsCompatible(item.title, songName)
-        && pt.some((variant) => tStripped.includes(variant))
-      const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, s2t(c)))
-      return titleMatch && artistMatch
-    })
-    if (s2tMatch.length === 1) return s2tMatch[0]!
-  }
-
-  return null
-}
-
-export function buildTitleMatchVariants(input: string): string[] {
-  const variants = [input, s2t(input), t2s(input)]
-    .map((value) => stripTitle(normalizeForSearch(value)))
-    .filter(Boolean)
-  return [...new Set(variants)]
-}
-
-export function titleVariantsMatch(left: string, right: string): boolean {
-  if (!titleIdentityDescriptorsCompatible(left, right)) return false
-  const leftVariants = buildTitleMatchVariants(left)
-  const rightVariants = buildTitleMatchVariants(right)
-  return leftVariants.some((leftVariant) => rightVariants.some((rightVariant) => leftVariant === rightVariant))
 }
 
 export async function insertTrackIntoPlaylist(

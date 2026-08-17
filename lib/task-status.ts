@@ -22,7 +22,6 @@ const SONG_STATUS_PRESENTATION: Record<SongStatus, SongStatusPresentation> = {
   skipped_existing: { label: '已存在', tone: 'existing', icon: 'existing' },
   removed: { label: '已移除', tone: 'warning', icon: 'minusCircle' },
   extra_skipped: { label: '保留未删', tone: 'warning', icon: 'warn' },
-  match_pending_review: { label: '待审核', tone: 'warning', icon: 'warn' },
   failed_download: { label: '下载失败', tone: 'failure', icon: 'failure' },
   failed_tags: { label: '标签失败', tone: 'failure', icon: 'failure' },
   failed_plex_match: { label: 'Plex 匹配失败', tone: 'warning', icon: 'warn' },
@@ -82,7 +81,7 @@ export function songMatchesStatusBucket(status: SongStatus, bucket: SongStatusBu
   if (bucket === 'failure') return isFailedSongStatus(status)
   if (bucket === 'existing') return status === 'skipped_existing'
   if (bucket === 'removed') return status === 'removed'
-  if (bucket === 'warning') return status === 'extra_skipped' || status === 'match_pending_review'
+  if (bucket === 'warning') return status === 'extra_skipped'
   if (bucket === 'ignored') return isAttentionSongStatus(status)
   return false
 }

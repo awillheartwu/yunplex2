@@ -73,7 +73,7 @@ onMounted(loadSidebarState)
 const navItems = [
   { icon: 'dashboard', label: '仪表盘', path: '/' },
   { icon: 'source', label: '同步源', path: '/sync-sources' },
-  { icon: 'shield', label: '匹配管理', path: '/match-reviews' },
+  { icon: 'link', label: '媒体复用', path: '/match-reviews' },
   { icon: 'download', label: '手动下载', path: '/manual-download' },
   { icon: 'activity', label: '任务中心', path: '/task-center' },
   { icon: 'settings', label: '设置', path: '/config' },

@@ -11,7 +11,6 @@ export type SongStatus =
   | 'skipped_existing'
   | 'removed'
   | 'extra_skipped'
-  | 'match_pending_review'
   | 'failed_download'
   | 'failed_tags'
   | 'failed_plex_match'

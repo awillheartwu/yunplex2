@@ -116,7 +116,7 @@ describe('database migrations', () => {
     expect(index?.name).toBe('idx_download_tasks_active_idempotency')
   })
 
-  it('repairs the mixed legacy artist cache schema even when its historical migration was already marked applied', () => {
+  it('drops the retired artist resolution cache', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))
     legacyDb.exec(`
@@ -133,13 +133,11 @@ describe('database migrations', () => {
     legacyDb.close()
 
     initDb(dir)
-    const columns = getDb().prepare("PRAGMA table_info('artist_resolution_cache')").all() as Array<{ name: string; pk: number }>
-    expect(columns.find(column => column.name === 'normalized_name')?.pk).toBe(1)
-    expect(columns.map(column => column.name)).toContain('original_name')
-    expect(getDb().prepare('SELECT original_name FROM artist_resolution_cache').get()).toEqual({ original_name: '夏日入侵企画' })
+    expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artist_resolution_cache'").get())
+      .toBeUndefined()
   })
 
-  it('repairs legacy identity and review tables even when the database version is already ahead', () => {
+  it('keeps safe path bindings and retires review tables even when the database version is already ahead', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))
     legacyDb.exec(`
@@ -189,33 +187,14 @@ describe('database migrations', () => {
     initDb(dir)
 
     const bindingColumns = getDb().prepare("PRAGMA table_info('song_identity_bindings')").all() as Array<{ name: string }>
-    const reviewColumns = getDb().prepare("PRAGMA table_info('song_match_reviews')").all() as Array<{ name: string }>
     expect(bindingColumns.map(column => column.name)).toContain('plex_relative_path')
-    expect(reviewColumns.map(column => column.name)).toEqual(expect.arrayContaining(['candidate_key', 'evidence_type']))
-    expect(getDb().prepare('SELECT plex_relative_path FROM song_identity_bindings WHERE netease_song_id = 1').get())
-      .toEqual({ plex_relative_path: 'Artist/Album/A.flac' })
-
-    const reviews = getDb().prepare(`
-      SELECT id, candidate_key, evidence_type, status FROM song_match_reviews ORDER BY id
-    `).all() as Array<{ id: string; candidate_key: string; evidence_type: string; status: string }>
-    expect(new Set(reviews.map(review => review.candidate_key)).size).toBe(1)
-    expect(reviews.every(review => review.candidate_key.length === 64)).toBe(true)
-    expect(reviews.every(review => review.evidence_type === 'metadata')).toBe(true)
-    expect(reviews.filter(review => review.status === 'pending')).toHaveLength(1)
-    expect(reviews.filter(review => review.status === 'superseded')).toHaveLength(1)
-
-    const kept = reviews.find(review => review.status === 'pending')!
-    const occurrences = getDb().prepare(`
-      SELECT source_id, run_id FROM song_match_review_occurrences
-      WHERE review_id = ? ORDER BY source_id
-    `).all(kept.id)
-    expect(occurrences).toEqual([
-      { source_id: 'source-a', run_id: 'run-a' },
-      { source_id: 'source-b', run_id: 'run-b' },
-    ])
+    expect(getDb().prepare('SELECT binding_method FROM song_identity_bindings WHERE netease_song_id = 1').get())
+      .toEqual({ binding_method: 'path' })
+    expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'song_match_reviews'").get())
+      .toBeUndefined()
   })
 
-  it('upgrades the MusicBrainz recording cache status constraint without losing rows', () => {
+  it('drops the retired MusicBrainz recording cache', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))
     legacyDb.exec(`
@@ -238,15 +217,11 @@ describe('database migrations', () => {
 
     initDb(dir)
 
-    expect(getDb().prepare('SELECT lookup_key, last_status FROM musicbrainz_recording_cache').all())
-      .toEqual([{ lookup_key: 'existing', last_status: 'success' }])
-    expect(() => getDb().prepare(`
-      INSERT INTO musicbrainz_recording_cache VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run('ambiguous', '{"status":"ambiguous"}', 'ambiguous', 95, 0, null, '2026-07-13T00:00:00.000Z'))
-      .not.toThrow()
+    expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'musicbrainz_recording_cache'").get())
+      .toBeUndefined()
   })
 
-  it('creates the typed MusicBrainz ID mapping cache even when user_version is already ahead', () => {
+  it('does not recreate the retired MusicBrainz ID mapping cache', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))
     legacyDb.exec('PRAGMA user_version = 999;')
@@ -258,22 +233,10 @@ describe('database migrations', () => {
       SELECT name FROM sqlite_master
       WHERE type = 'table' AND name = 'musicbrainz_id_mapping_cache'
     `).get()
-    expect(table).toEqual({ name: 'musicbrainz_id_mapping_cache' })
-    expect(() => getDb().prepare(`
-      INSERT INTO musicbrainz_id_mapping_cache (
-        input_mbid, resolved_json, entity_type, status, recording_id,
-        failure_count, last_attempt_at, updated_at
-      ) VALUES (?, ?, 'release_track', 'success', ?, 0, ?, ?)
-    `).run(
-      '8220c472-146e-4a9e-a71e-fd8beb603e14',
-      '{"status":"success"}',
-      '1cdb1f16-31e5-4765-af6e-c3c02386dcc4',
-      '2026-07-14T00:00:00.000Z',
-      '2026-07-14T00:00:00.000Z',
-    )).not.toThrow()
+    expect(table).toBeUndefined()
   })
 
-  it('adds the metadata binding method without losing established identities', () => {
+  it('keeps path bindings and rejects retired metadata bindings', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))
     legacyDb.exec(`
@@ -308,7 +271,7 @@ describe('database migrations', () => {
     `).run(
       2, '12', '/volume1/music/new.flac', 'new.flac', '11', null,
       'metadata', 'active', '{}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', null,
-    )).not.toThrow()
+    )).toThrow()
   })
 
   it('classifies historical local media ownership without trusting computed paths', () => {

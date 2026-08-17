@@ -3,7 +3,7 @@ import { fail, success } from '../../lib/response'
 import { queryMatchOverview } from '../../lib/sync/match-management-store'
 
 const STATES = new Set<MatchOverviewState>([
-  'matched', 'pending_alignment', 'historical_unverified', 'pending_review', 'unmatched', 'binding_stale',
+  'matched', 'pending_alignment', 'historical_unverified', 'unmatched', 'binding_stale',
   'copyright_restricted', 'sync_failed', 'retry_paused', 'removed',
 ])
 

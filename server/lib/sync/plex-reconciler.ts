@@ -47,7 +47,7 @@ export async function reconcileSource(
   _log: (level: string, msg: string) => void,
   skipPlexPlaylist = false,
   dryRun = false,
-  options: { downloadWhenMediaMissing?: boolean } = {},
+  options: { automaticMediaFallback?: boolean } = {},
 ): Promise<ReconcileResult> {
   await initPlexClient(cfg.plex)
 
@@ -109,19 +109,13 @@ export async function reconcileSource(
   }
   const parts = [`待下载 ${newCount} 首${existingCount > 0 ? `，已存在 ${existingCount} 首` : ''}`]
   if (extraTracks.length > 0) parts.push(`${extraTracks.length} 首待清理`)
-  const pendingReviewCount = resolutions.filter((r) => r.resolution === 'needs_review').length
-  if (pendingReviewCount > 0) parts.push(`${pendingReviewCount} 首待审核`)
   if (unavailableCount > 0) parts.push(`${unavailableCount} 首不可用`)
   const manualExempt = policyCounts.get('manual_exempt') ?? 0
   const reusedManaged = policyCounts.get('reuse_managed') ?? 0
-  const reusedExternal = policyCounts.get('reuse_external') ?? 0
-  const registeredExternal = policyCounts.get('register_external') ?? 0
   const plannedDownloads = (policyCounts.get('download_missing') ?? 0)
     + (policyCounts.get('redownload_replaced') ?? 0)
   if (manualExempt > 0) parts.push(`人工豁免 ${manualExempt} 首`)
   if (reusedManaged > 0) parts.push(`复用托管 ${reusedManaged} 首`)
-  if (reusedExternal > 0) parts.push(`复用外部 ${reusedExternal} 首`)
-  if (registeredExternal > 0) parts.push(`${dryRun ? '将登记' : '已登记'}外部 ${registeredExternal} 首`)
   if (plannedDownloads > 0) parts.push(`${dryRun ? '计划下载' : '策略下载'} ${plannedDownloads} 首`)
   job.finishStep(
     job.startStep(

@@ -156,6 +156,10 @@ describe('plex retry matcher', () => {
   })
 
   it('prefers an exact file path over an older metadata-only match', async () => {
+    findTracksByFilePath.mockResolvedValue([{
+      ratingKey: 'rk-exact',
+      Media: [{ Part: [{ file: '/downloads/夏日入侵企画/砳 (2017)/01 - 人生浪费指南.flac' }] }],
+    }])
     searchTrack.mockResolvedValue({
       ratingKey: 'rk-old',
       title: '人生浪费指南',

@@ -77,7 +77,6 @@ export default defineEventHandler(async (event) => {
         plexFilePath: binding.plexFilePath,
         plexRelativePath: binding.plexRelativePath,
         plexRatingKey: track.ratingKey,
-        mbRecordingId: binding.mbRecordingId,
         bindingMethod: binding.bindingMethod,
         status: 'active',
         evidence: { ...binding.evidence, validation: ratingRecovered ? 'path_recovered' : 'rating_key_verified' },

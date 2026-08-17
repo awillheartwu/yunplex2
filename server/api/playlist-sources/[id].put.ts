@@ -1,7 +1,5 @@
 import { success, fail } from '../../lib/response'
 import { getSource, updateSource } from '../../lib/playlist/store'
-import { readConfig } from '../../lib/config/store'
-import { enablesMissingMediaPolicy } from '../../lib/sync/effective-settings'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -18,7 +16,6 @@ export default defineEventHandler(async (event) => {
     syncLimit?: number | null
     autoCreatePlexPlaylist?: boolean
     forceFullCompare?: boolean | null
-    downloadWhenMediaMissing?: boolean | null
     fullCompareAfterSkips?: number | null
     fullCompareAfterDays?: number | null
     skipPlexPlaylist?: boolean | null
@@ -28,8 +25,6 @@ export default defineEventHandler(async (event) => {
     ignoredFailureIds?: string | null
   }>(event)
 
-  const globalDownloadWhenMissing = readConfig().sync.downloadWhenMediaMissing
-
   const updated = updateSource(id, {
     name: body.name,
     enabled: body.enabled,
@@ -38,7 +33,6 @@ export default defineEventHandler(async (event) => {
     syncLimit: body.syncLimit,
     autoCreatePlexPlaylist: body.autoCreatePlexPlaylist,
     forceFullCompare: body.forceFullCompare,
-    downloadWhenMediaMissing: body.downloadWhenMediaMissing,
     fullCompareAfterSkips: body.fullCompareAfterSkips,
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,
@@ -46,13 +40,6 @@ export default defineEventHandler(async (event) => {
     neteasePlaylistName: body.neteasePlaylistName,
     copyrightRestrictedIds: body.copyrightRestrictedIds,
     ignoredFailureIds: body.ignoredFailureIds,
-    requiresMatchReconcile: enablesMissingMediaPolicy(
-      existing.downloadWhenMediaMissing,
-      body.downloadWhenMediaMissing,
-      globalDownloadWhenMissing,
-    )
-      ? true
-      : undefined,
   })
 
   return success(updated, '歌单源更新成功')

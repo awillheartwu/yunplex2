@@ -68,7 +68,6 @@ export async function finalizeSourceConvergence(
   ).length
   const restrictedCount = sourceSongs.filter(song => song.status === 'copyright_restricted').length
   const ignoredCount = sourceSongs.filter(song => song.status === 'ignored_failure').length
-  const pendingReviewCount = sourceSongs.filter(song => song.status === 'match_pending_review').length
   const preservedExtraCount = sourceSongs.filter(song => song.status === 'extra_skipped').length
 
   let sourceStatus: PlaylistSource['lastStatus'] = 'success'
@@ -76,7 +75,6 @@ export async function finalizeSourceConvergence(
     sourceStatus = 'failed'
   } else if (
     failCount > 0
-    || pendingReviewCount > 0
     || restrictedCount > 0
     || ignoredCount > 0
     || (!skipRemoveExtra && preservedExtraCount > 0)
@@ -113,7 +111,6 @@ export async function finalizeSourceConvergence(
             failCount > 0 ? `${failCount} 首失败` : '',
             restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '',
             ignoredCount > 0 ? `${ignoredCount} 首已暂停重试` : '',
-            pendingReviewCount > 0 ? `${pendingReviewCount} 首候选待审核` : '',
             !skipRemoveExtra && preservedExtraCount > 0 ? `${preservedExtraCount} 首保留待确认` : '',
           ].filter(Boolean).join('，'),
       lastJobId: job.getId(),
@@ -177,7 +174,6 @@ export async function finalizeSourceConvergence(
   if (failCount > 0) parts.push(`${failCount} 失败`)
   if (restrictedCount > 0) parts.push(`${restrictedCount} 版权受限`)
   if (ignoredCount > 0) parts.push(`${ignoredCount} 已暂停重试`)
-  if (pendingReviewCount > 0) parts.push(`${pendingReviewCount} 候选待审核`)
   if (!skipRemoveExtra && preservedExtraCount > 0) parts.push(`${preservedExtraCount} 保留待确认`)
 
   const summary = parts.join('，')

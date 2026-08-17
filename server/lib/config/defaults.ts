@@ -27,7 +27,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     plexScanRetries: 5,
     plexScanRetryDelaySec: 15,
     forceFullCompare: false,
-    downloadWhenMediaMissing: false,
     reconcileOnPlexDrift: true,
     fullCompareAfterSkips: 5,
     fullCompareAfterDays: 7,
@@ -49,9 +48,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     downloadRomajiLyric: false,
     artistAliases: {},
     applyAliasToAlbum: false,
-    pathFormat: '{artist}/{album}/{title}',
+    pathFormat: '{artist}/{album}/{title} [netease-{songId}]',
     fontScale: 1.0,
-    enableMusicBrainzResolver: true,
-    musicBrainzMinScore: 90,
   },
 }

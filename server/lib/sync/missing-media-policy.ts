@@ -10,9 +10,7 @@ import {
 export type MissingMediaDisposition =
   | 'manual_exempt'
   | 'reuse_managed'
-  | 'reuse_external'
   | 'register_managed'
-  | 'register_external'
   | 'download_missing'
   | 'redownload_replaced'
 
@@ -49,12 +47,12 @@ export function planMissingMedia(
         || Boolean(inspection.filePath && validateLocalAudioFile(inspection.filePath).valid)
       if (audioValid) {
         const managed = inspection.state === 'active_managed'
-        plans.set(song.id, plan(
-          song.id,
-          managed ? 'reuse_managed' : 'reuse_external',
-          inspection,
-          managed ? '复用已验证的 YunPlex 托管媒体' : '复用已验证的外部媒体',
-        ))
+        plans.set(song.id, managed
+          ? plan(song.id, 'reuse_managed', inspection, '复用已验证的 YunPlex 托管媒体')
+          : {
+              ...plan(song.id, 'download_missing', inspection, '外部媒体未被明确接管，将下载独立托管副本'),
+              ...(inspection.filePath ? { protectedAudioPath: inspection.filePath } : {}),
+            })
       } else {
         const managed = inspection.state === 'active_managed'
         plans.set(song.id, {
@@ -90,7 +88,10 @@ export function planMissingMedia(
         })
         continue
       }
-      plans.set(song.id, plan(song.id, 'register_external', inspection, '将登记现有文件为外部资产后复用'))
+      plans.set(song.id, {
+        ...plan(song.id, 'download_missing', inspection, '未登记外部文件不会自动复用，将下载独立托管副本'),
+        ...(inspection.filePath ? { protectedAudioPath: inspection.filePath } : {}),
+      })
       continue
     }
 
@@ -115,7 +116,7 @@ export function hasMissingMediaPolicyWork(
 ): boolean {
   const plans = planMissingMedia(songs, cfg, { validateAudio: false })
   return [...plans.values()].some(item =>
-    !['manual_exempt', 'reuse_managed', 'reuse_external'].includes(item.disposition),
+    !['manual_exempt', 'reuse_managed'].includes(item.disposition),
   )
 }
 

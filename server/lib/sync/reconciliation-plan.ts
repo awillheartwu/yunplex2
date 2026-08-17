@@ -113,14 +113,6 @@ export function buildReconciliationPlan(input: {
       continue
     }
 
-    const isPendingCandidate = input.targets.some(target =>
-      target.matchTrace?.candidate?.ratingKey === item.ratingKey,
-    )
-    if (isPendingCandidate) {
-      removalDecisions.push(preserve(item, '该 Plex 歌单项是待审核候选，已禁止删除'))
-      continue
-    }
-
     if (expectedTargetSongIds.length === 0 && !input.allowEmptyRemoval) {
       removalDecisions.push(preserve(item, '空目标尚未经连续两次观察确认，本轮禁止删除'))
       continue
@@ -254,7 +246,7 @@ export function findExtraPlaylistOccurrences(
 
 function isStrongTargetIdentity(trace: MatchTrace | undefined): boolean {
   if (!trace?.identity || trace.identity.bindingStatus !== 'active') return false
-  return ['path', 'mb_recording', 'provider_guid', 'metadata', 'manual', 'migrated'].includes(trace.identity.method)
+  return trace.identity.method === 'path' || trace.identity.method === 'manual'
 }
 
 function countKeys(keys: readonly string[]): Map<string, number> {

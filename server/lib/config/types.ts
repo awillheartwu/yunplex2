@@ -41,7 +41,6 @@ export interface SyncStrategyConfig {
   jobRetentionFailedDays: number
   downloadTaskRetentionDays: number
   forceFullCompare: boolean
-  downloadWhenMediaMissing: boolean
   reconcileOnPlexDrift: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
@@ -89,14 +88,14 @@ export function formatTrackArtist(names: string[], format: MultiArtistFormat): s
 export type LyricOrder = 'original_first' | 'translated_first' | 'separate'
 
 export const PATH_PRESETS: { value: string; label: string }[] = [
-  { value: '{artist}/{album} ({year})/{title}', label: '歌手/专辑 (年份)/歌名' },
-  { value: '{artist}/{album} ({year})/{artist} - {title}', label: '歌手/专辑 (年份)/歌手 - 歌名' },
-  { value: '{artist}/{album} ({year})/{track:02d} - {artist} - {title}', label: '歌手/专辑 (年份)/曲目 - 歌手 - 歌名' },
-  { value: '{artist}/{album} ({year})/{track:02d} - {title}', label: '歌手/专辑 (年份)/曲目 - 歌名' },
-  { value: '{artist}/{album} ({year})/{track:02d}. {title}', label: '歌手/专辑 (年份)/曲目. 歌名' },
-  { value: '{artist}/{album}/{title}', label: '歌手/专辑/歌名 (无年份)' },
-  { value: '{artist} - {album} ({year})/{track:02d} - {title}', label: '歌手 - 专辑 (年份)/曲目 - 歌名' },
-  { value: '{artist}/{year} - {album}/{track:02d}. {title}', label: '歌手/年份 - 专辑/曲目. 歌名' },
+  { value: '{artist}/{album} ({year})/{title} [netease-{songId}]', label: '歌手/专辑 (年份)/歌名' },
+  { value: '{artist}/{album} ({year})/{artist} - {title} [netease-{songId}]', label: '歌手/专辑 (年份)/歌手 - 歌名' },
+  { value: '{artist}/{album} ({year})/{track:02d} - {artist} - {title} [netease-{songId}]', label: '歌手/专辑 (年份)/曲目 - 歌手 - 歌名' },
+  { value: '{artist}/{album} ({year})/{track:02d} - {title} [netease-{songId}]', label: '歌手/专辑 (年份)/曲目 - 歌名' },
+  { value: '{artist}/{album} ({year})/{track:02d}. {title} [netease-{songId}]', label: '歌手/专辑 (年份)/曲目. 歌名' },
+  { value: '{artist}/{album}/{title} [netease-{songId}]', label: '歌手/专辑/歌名 (无年份)' },
+  { value: '{artist} - {album} ({year})/{track:02d} - {title} [netease-{songId}]', label: '歌手 - 专辑 (年份)/曲目 - 歌名' },
+  { value: '{artist}/{year} - {album}/{track:02d}. {title} [netease-{songId}]', label: '歌手/年份 - 专辑/曲目. 歌名' },
 ]
 
 export interface OtherConfig {
@@ -108,8 +107,6 @@ export interface OtherConfig {
   applyAliasToAlbum: boolean
   pathFormat: string
   fontScale: number
-  enableMusicBrainzResolver: boolean
-  musicBrainzMinScore: number
 }
 
 export interface AppConfig {
