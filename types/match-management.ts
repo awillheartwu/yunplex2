@@ -8,7 +8,6 @@ export type MatchOverviewState =
   | 'matched'
   | 'pending_alignment'
   | 'historical_unverified'
-  | 'pending_review'
   | 'unmatched'
   | 'binding_stale'
   | 'copyright_restricted'
@@ -53,33 +52,9 @@ export interface MatchOverviewTarget {
   artists: string[]
   albumName: string
   coverUrl: string
-  metadataSource: 'occurrence' | 'review_evidence' | 'unknown'
+  metadataSource: 'occurrence' | 'unknown'
 }
 
-export type SongIdentityEventType =
-  | 'auto_bind'
-  | 'auto_migrate'
-  | 'invalidate'
-  | 'manual_accept'
-  | 'manual_reject'
-  | 'manual_rebind'
-  | 'manual_reevaluate'
-  | 'manual_exclude'
-  | 'migration_snapshot'
-
-export interface SongIdentityEvent {
-  id: string
-  neteaseSongId: number
-  eventType: SongIdentityEventType
-  actorType: 'system' | 'admin'
-  sourceId: string | null
-  runId: string | null
-  reviewId: string | null
-  previousBinding: SongIdentityBinding | null
-  nextBinding: SongIdentityBinding | null
-  evidence: Record<string, unknown>
-  createdAt: string
-}
 
 export interface MatchOverviewItem {
   target: MatchOverviewTarget
@@ -94,7 +69,6 @@ export interface MatchOverviewItem {
     lastVerifiedAt: string | null
   } | null
   state: MatchOverviewState
-  pendingReviewCount: number
   affectedSources: Array<{ id: string; name: string }>
 }
 
@@ -106,12 +80,6 @@ export interface MatchOverviewPage {
   staleAfterMinutes: number
 }
 
-export interface SongIdentityEventPage {
-  items: SongIdentityEvent[]
-  total: number
-  page: number
-  pageSize: number
-}
 
 export interface IdentityMutationImpact {
   neteaseSongId: number

@@ -1,17 +1,11 @@
 import type { NeteaseSong } from '../netease'
 import { getTrackByRatingKey } from '../plex-client'
-import { anyCandidateMatches, normalizeArtistName } from './artist-match'
-import { albumsMatchConservatively, titlesMatchConservatively } from './matchers'
-import { resolveSongArtistCandidateNames } from './song-artist-candidates'
 import { plexPathsExactlyEqual } from './identity-normalization'
 
 export interface CachedRatingKeyValidationIssue {
   songId: number
   ratingKey?: string
-  reason: 'missing_cache' | 'missing_plex_track' | 'metadata_mismatch' | 'identity_path_mismatch'
-  titleMatched?: boolean
-  artistMatched?: boolean
-  albumMatched?: boolean
+  reason: 'missing_cache' | 'missing_plex_track' | 'identity_path_mismatch'
 }
 
 export interface CachedTargetOrderValidation {
@@ -42,42 +36,18 @@ export async function validateCachedTargetOrder(
     }
 
     const bindingPath = bindingPaths.get(song.id)
-    if (bindingPath) {
-      const actualPaths = track.Media?.flatMap(media =>
-        media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [],
-      ) ?? []
-      if (actualPaths.some(actualPath => plexPathsExactlyEqual(actualPath, bindingPath))) {
-        targetOrder.push(ratingKey)
-        continue
-      }
-      issues.push({ songId: song.id, ratingKey, reason: 'identity_path_mismatch' })
+    if (!bindingPath) {
+      issues.push({ songId: song.id, ratingKey, reason: 'missing_cache' })
       continue
     }
-
-    const artistNames = await resolveSongArtistCandidateNames(song.artists)
-    const artistCandidates = artistNames.map((name) => ({
-      name,
-      normalizedName: normalizeArtistName(name),
-      source: 'original' as const,
-      confidence: 100,
-    }))
-    const titleMatched = titlesMatchConservatively(track.title, song.name)
-    const artistMatched = anyCandidateMatches(track.grandparentTitle, artistCandidates)
-    const albumMatched = albumsMatchConservatively(track.parentTitle, song.album.name)
-
-    if (!titleMatched || !artistMatched || !albumMatched) {
-      issues.push({
-        songId: song.id,
-        ratingKey,
-        reason: 'metadata_mismatch',
-        titleMatched,
-        artistMatched,
-        albumMatched,
-      })
+    const actualPaths = track.Media?.flatMap(media =>
+      media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [],
+    ) ?? []
+    if (actualPaths.some(actualPath => plexPathsExactlyEqual(actualPath, bindingPath))) {
+      targetOrder.push(ratingKey)
       continue
     }
-
-    targetOrder.push(ratingKey)
+    issues.push({ songId: song.id, ratingKey, reason: 'identity_path_mismatch' })
   }
 
   return {

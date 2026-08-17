@@ -2,7 +2,6 @@ import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
 import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache, setArtistAliases } from '../netease'
-import { configureResolver } from './artist-resolver'
 import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
 import { cleanupOldRuns, saveSyncRun } from '../run/store'
@@ -97,11 +96,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
       }
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
       setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
-      configureResolver({
-        manualAliases: cfg.other?.artistAliases ?? {},
-        enableMB: cfg.other?.enableMusicBrainzResolver ?? true,
-        mbMinScore: cfg.other?.musicBrainzMinScore ?? 90,
-      })
       const splitArtists = createSplitArtists(multiFormat)
 
       // ── Validate ──
@@ -264,8 +258,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             && Boolean(source.plexPlaylistRatingKey)
             && (plexObservationKind === 'external_change' || legacyTimestampDrift)
             && (currentSnapshotAlreadyCompared || legacyTimestampDrift)
-          const missingMediaPolicyEnabled = effectiveSettings.downloadWhenMediaMissing
-            && mode !== 'redownload_managed'
+          const missingMediaPolicyEnabled = mode !== 'redownload_managed'
           const missingMediaWorkDetected = missingMediaPolicyEnabled
             && hasMissingMediaPolicyWork(yunSongs, cfg)
           const det = detectChanges({
@@ -375,17 +368,23 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               songName: `网易云歌曲 #${missingSongId}`,
               artist: '详情未返回',
               album: '未知专辑',
-              status: 'match_pending_review',
+              status: 'failed_download',
               neteaseSongId: missingSongId,
             }])
             if (taskSongId) {
               job.updateSong(taskSongId, {
-                phase: 'done',
+                phase: 'download',
+                error: {
+                  title: '网易云未返回歌曲详情',
+                  message: '无法获取目标歌曲信息，本轮保持 Plex 歌单不变',
+                  stage: 'download',
+                  songName: `网易云歌曲 #${missingSongId}`,
+                },
                 metadata: {
                   matchTrace: {
-                    source: 'pending_review',
+                    source: 'download_required',
                     decision: 'preserved',
-                    deletionProtectionReason: '网易云 song_detail 未返回该 trackId，无法安全判断身份',
+                    deletionProtectionReason: '网易云 song_detail 未返回该 trackId，本轮目标不完整',
                   },
                 },
               })
@@ -423,7 +422,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
             skipPlexPL,
             dryRun,
-            { downloadWhenMediaMissing: missingMediaPolicyEnabled },
+            { automaticMediaFallback: missingMediaPolicyEnabled },
           )
           throwIfCancelled()
           const bindingVersionSnapshot = captureBindingVersions(currentIdOrder)
@@ -461,8 +460,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             }
             if (r.resolution === 'matched_plex_playlist' || r.resolution === 'found_in_plex_library') {
               job.updateSong(songId, { status: 'skipped_existing', phase: 'done' })
-            } else if (r.resolution === 'needs_review') {
-              job.updateSong(songId, { status: 'match_pending_review', phase: 'plex_match' })
             } else if (r.resolution === 'unavailable') {
               job.updateSong(songId, { status: 'failed_download', phase: 'download', error: { title: '歌曲不可用', message: '网易云无下载链接', stage: 'download', songName: r.song.name, artist: splitArtists(r.song.artists)[0] } })
             } else if (r.resolution === 'copyright_restricted') {
@@ -498,15 +495,13 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
                   matchTrace: {
                     decision: 'preserved',
                     deletionProtectionReason: xt.protectionReason,
-                    relatedNeteaseSongId: xt.relatedNeteaseSongId,
-                    reviewId: xt.relatedReviewId,
                   },
                 },
               })
             }
           }
 
-          const { needsPlexRefresh, downloadTargetCount } = await applySourceDownloads({
+          const { needsPlexRefresh } = await applySourceDownloads({
             source,
             resolutions,
             config: cfg,
@@ -539,9 +534,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               emptyTargetConfirmed,
               skipRemoveExtra,
               retryUnresolvedSnapshot,
-              missingMediaPolicyEnabled,
               needsPlexRefresh,
-              downloadTargetCount,
               splitArtists,
               isCancellationRequested: () => cancelRequested,
               throwIfCancelled,

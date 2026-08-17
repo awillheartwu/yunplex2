@@ -28,18 +28,12 @@ const GROUP_LABELS: Record<SystemDataGroup, string> = {
  * supplies human descriptions; unknown future tables are still shown.
  */
 const TABLE_CATALOG: Record<string, CatalogEntry> = {
-  song_identity_bindings: { desc: '全局歌曲身份绑定', group: 'matching' },
-  song_identity_events: { desc: '不可变身份决策历史', group: 'matching', href: '/match-reviews?tab=history' },
-  song_match_reviews: { desc: '匹配审核与决策', group: 'matching', href: '/match-reviews' },
-  song_match_review_occurrences: { desc: '审核候选出现记录', group: 'matching', href: '/match-reviews' },
-  local_media_assets: { desc: '本地媒体身份资产', group: 'matching' },
+  song_identity_bindings: { desc: '媒体关联', group: 'matching', href: '/match-reviews' },
+  local_media_assets: { desc: '本地媒体资产', group: 'matching' },
   playlist_extra_observations: { desc: 'Plex 多余曲目观察', group: 'matching' },
-  artist_resolution_cache: { desc: '艺人别名解析缓存', group: 'matching' },
-  musicbrainz_recording_cache: { desc: 'MusicBrainz 录音解析缓存', group: 'matching' },
-  musicbrainz_id_mapping_cache: { desc: 'MusicBrainz ID 映射缓存', group: 'matching' },
 
   playlist_sources: { desc: '歌单同步源', group: 'sync', href: '/sync-sources' },
-  playlist_source_track_occurrences: { desc: '歌单目标成员与对齐状态', group: 'sync', href: '/match-reviews?tab=overview' },
+  playlist_source_track_occurrences: { desc: '歌单目标成员与对齐状态', group: 'sync', href: '/match-reviews' },
   task_runs: { desc: '统一运行记录', group: 'sync', href: '/system?tab=runs' },
   task_run_sources: { desc: '运行与歌单源关联', group: 'sync', href: '/system?tab=runs' },
   sync_state: { desc: '同步运行时状态', group: 'sync' },

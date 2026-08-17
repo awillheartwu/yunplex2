@@ -48,7 +48,6 @@ describe('playlist source row mapping', () => {
 
     expect(rowToSource(row)).toMatchObject({
       coverUrl: 'https://example.com/cover.jpg',
-      downloadWhenMediaMissing: null,
     })
   })
 })

@@ -5,7 +5,6 @@ export type Resolution =
   | 'matched_plex_playlist'
   | 'found_in_plex_library'
   | 'found_on_disk'
-  | 'needs_review'
   | 'needs_download'
   | 'copyright_restricted'
   | 'ignored_failure'
@@ -33,10 +32,8 @@ export type MatchTraceSource =
   | 'invalid_local_file'
   | 'download_required'
   | 'dedupe_conflict'
+  | 'identity_conflict'
   | 'identity_binding'
-  | 'pending_review'
-  | 'mb_recording_migration'
-  | 'provider_identity'
   | 'media_policy'
 
 export interface MatchTrace {
@@ -50,19 +47,12 @@ export interface MatchTrace {
   conflictReason?: string
   message?: string
   identity?: {
-    method: 'path' | 'mb_recording' | 'provider_guid' | 'metadata' | 'manual' | 'migrated'
+    method: 'path' | 'manual'
     plexFilePath: string
-    mbRecordingId?: string | null
     bindingStatus?: 'active' | 'stale' | 'unbound'
-  }
-  candidate?: {
-    plexFilePath?: string | null
-    ratingKey?: string | null
-    mbRecordingId?: string | null
-    reviewId?: string
   }
   /** Structured, source-specific proof retained for run-detail auditability. */
   evidence?: Record<string, unknown>
-  decision?: 'bound' | 'migrated' | 'pending_review' | 'preserved' | 'removed'
+  decision?: 'bound' | 'preserved' | 'removed'
   deletionProtectionReason?: string
 }

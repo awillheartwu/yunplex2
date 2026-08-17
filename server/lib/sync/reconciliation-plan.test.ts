@@ -217,50 +217,6 @@ describe('buildReconciliationPlan', () => {
     ])
   })
 
-  it('preserves an old occurrence when the replacement identity is weak', () => {
-    const plan = buildReconciliationPlan({
-      expectedTargetSongIds: [1],
-      targets: [{
-        neteaseSongId: 1,
-        plexRatingKey: 'replacement',
-        matchTrace: { source: 'plex_search', decision: 'pending_review' },
-      }],
-      currentItems: [{ ratingKey: 'old', playlistItemId: 10 }],
-      knownCurrentIdentities: [{ neteaseSongId: 1, plexRatingKey: 'old' }],
-    })
-
-    expect([...plan.authorizedRemovalItemIds]).toEqual([])
-  })
-
-  it('does not put a weak ratingKey into the target order', () => {
-    const plan = buildReconciliationPlan({
-      targets: [{
-        neteaseSongId: 1,
-        plexRatingKey: 'weak',
-        matchTrace: { source: 'plex_search', decision: 'pending_review' },
-      }],
-      currentItems: [{ ratingKey: 'weak', playlistItemId: 10 }],
-    })
-
-    expect(plan.targetOrder).toEqual([])
-    expect(plan.hasIncompleteTargetOrder).toBe(true)
-  })
-
-  it('protects a pending candidate before considering an obsolete binding for deletion', () => {
-    const plan = buildReconciliationPlan({
-      expectedTargetSongIds: [1],
-      targets: [{
-        neteaseSongId: 1,
-        matchTrace: { source: 'pending_review', candidate: { ratingKey: 'candidate' } },
-      }],
-      currentItems: [{ ratingKey: 'candidate', playlistItemId: 10 }],
-      knownCurrentIdentities: [{ neteaseSongId: 2, plexRatingKey: 'candidate' }],
-    })
-
-    expect([...plan.authorizedRemovalItemIds]).toEqual([])
-    expect(plan.removalDecisions[0]).toMatchObject({ action: 'preserve', playlistItemId: 10 })
-  })
-
   it('requires a confirmed empty snapshot before authorizing deletion', () => {
     const protectedPlan = buildReconciliationPlan({
       expectedTargetSongIds: [],

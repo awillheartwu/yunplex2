@@ -1,7 +1,27 @@
 import Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import { createHistoricalMigrations } from './migration-history'
 import { isIdempotentSchemaError, tableExists } from './introspection'
-import { buildMatchReviewCandidateKey, normalizePlexPath, normalizePlexRelativePath } from '../sync/identity-normalization'
+import { normalizePlexPath, normalizePlexRelativePath } from '../sync/identity-normalization'
+
+// Historical migration helper only. The runtime review subsystem is retired.
+function buildMatchReviewCandidateKey(input: {
+  neteaseSongId: number
+  candidatePlexFilePath?: string | null
+  candidatePlexRatingKey?: string | null
+  candidateMbRecordingId?: string | null
+  plexSectionRoot?: string | null
+}): string {
+  const path = input.candidatePlexFilePath
+    ? normalizePlexRelativePath(input.candidatePlexFilePath, input.plexSectionRoot)
+    : ''
+  const ratingKey = input.candidatePlexRatingKey?.trim() ?? ''
+  const recordingId = input.candidateMbRecordingId?.trim().toLowerCase() ?? ''
+  const identity = path ? ['path', path] : ratingKey ? ['rating_key', ratingKey] : ['mb_recording', recordingId]
+  return path || ratingKey || recordingId
+    ? createHash('sha256').update(JSON.stringify([input.neteaseSongId, ...identity])).digest('hex')
+    : ''
+}
 
 /**
  * Safe on every boot. Some installations can have an advanced user_version
@@ -159,14 +179,18 @@ export function ensureMusicBrainzIdMappingCache(d: Database.Database): void {
   `)
 }
 
-/** Expand binding evidence methods without discarding established identities. */
+/** Keep only managed exact-path and explicit-adoption identity methods. */
 export function ensureSongIdentityBindingMethods(d: Database.Database): void {
   if (!tableExists(d, 'song_identity_bindings')) return
   const table = d.prepare(`
     SELECT sql FROM sqlite_master
     WHERE type = 'table' AND name = 'song_identity_bindings'
   `).get() as { sql: string | null } | undefined
-  if (table?.sql?.includes("'provider_guid'")) return
+  if (table?.sql?.includes("IN ('path','manual')")) return
+
+  const relativePathExpression = tableHasColumn(d, 'song_identity_bindings', 'plex_relative_path')
+    ? 'plex_relative_path'
+    : "''"
 
   d.transaction(() => {
     d.prepare('DROP TABLE IF EXISTS song_identity_bindings_method_migration').run()
@@ -177,8 +201,7 @@ export function ensureSongIdentityBindingMethods(d: Database.Database): void {
         plex_file_path TEXT NOT NULL,
         plex_relative_path TEXT NOT NULL DEFAULT '',
         plex_rating_key TEXT,
-        mb_recording_id TEXT,
-        binding_method TEXT NOT NULL CHECK(binding_method IN ('path','mb_recording','provider_guid','metadata','manual','migrated')),
+        binding_method TEXT NOT NULL CHECK(binding_method IN ('path','manual')),
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
         evidence_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL,
@@ -187,18 +210,18 @@ export function ensureSongIdentityBindingMethods(d: Database.Database): void {
       );
       INSERT INTO song_identity_bindings_method_migration (
         netease_song_id, plex_section_key, plex_file_path, plex_relative_path,
-        plex_rating_key, mb_recording_id, binding_method, status, evidence_json,
+        plex_rating_key, binding_method, status, evidence_json,
         created_at, updated_at, last_verified_at
       ) SELECT
-        netease_song_id, plex_section_key, plex_file_path, plex_relative_path,
-        plex_rating_key, mb_recording_id, binding_method, status, evidence_json,
+        netease_song_id, plex_section_key, plex_file_path, ${relativePathExpression},
+        plex_rating_key, binding_method, status, evidence_json,
         created_at, updated_at, last_verified_at
-      FROM song_identity_bindings;
+      FROM song_identity_bindings
+      WHERE binding_method IN ('path', 'manual');
       DROP TABLE song_identity_bindings;
       ALTER TABLE song_identity_bindings_method_migration RENAME TO song_identity_bindings;
       CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_path ON song_identity_bindings(plex_file_path);
       CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_rating_key ON song_identity_bindings(plex_rating_key);
-      CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_recording ON song_identity_bindings(mb_recording_id);
       CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_relative_path
         ON song_identity_bindings(plex_section_key, plex_relative_path);
     `)
@@ -287,25 +310,6 @@ export function ensureMatchManagementSchema(d: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_playlist_track_occurrences_song
       ON playlist_source_track_occurrences(netease_song_id, membership_status);
 
-    CREATE TABLE IF NOT EXISTS song_identity_events (
-      id TEXT PRIMARY KEY,
-      netease_song_id INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      actor_type TEXT NOT NULL CHECK(actor_type IN ('system','admin')),
-      source_id TEXT,
-      run_id TEXT,
-      review_id TEXT,
-      previous_binding_json TEXT,
-      next_binding_json TEXT,
-      evidence_json TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_song
-      ON song_identity_events(netease_song_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_source
-      ON song_identity_events(source_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_song_identity_events_type
-      ON song_identity_events(event_type, actor_type, created_at DESC);
   `)
 
   // Local-only backfill. track_id_snapshot is the last successfully compared
@@ -395,37 +399,24 @@ export function ensureMatchManagementSchema(d: Database.Database): void {
     })
   }
 
-  // Existing bindings predate the append-only audit log. Add one immutable
-  // baseline event per binding so future history has a trustworthy origin.
-  d.exec(`
-    INSERT OR IGNORE INTO song_identity_events (
-      id, netease_song_id, event_type, actor_type,
-      previous_binding_json, next_binding_json, evidence_json, created_at
-    )
-    SELECT
-      'migration-binding-' || netease_song_id,
-      netease_song_id,
-      'migration_snapshot',
-      'system',
-      NULL,
-      json_object(
-        'neteaseSongId', netease_song_id,
-        'plexSectionKey', plex_section_key,
-        'plexFilePath', plex_file_path,
-        'plexRelativePath', plex_relative_path,
-        'plexRatingKey', plex_rating_key,
-        'mbRecordingId', mb_recording_id,
-        'bindingMethod', binding_method,
-        'status', status,
-        'evidence', json(evidence_json),
-        'createdAt', created_at,
-        'updatedAt', updated_at,
-        'lastVerifiedAt', last_verified_at
-      ),
-      json_object('migratedFrom', 'song_identity_bindings'),
-      created_at
-    FROM song_identity_bindings
-  `)
+}
+
+/** Remove the retired candidate/review/provider identity subsystem. */
+export function retireComplexMatchingData(d: Database.Database): void {
+  d.transaction(() => {
+    if (tableExists(d, 'song_identity_bindings')) {
+      d.prepare(`
+        DELETE FROM song_identity_bindings
+        WHERE binding_method NOT IN ('path', 'manual')
+      `).run()
+    }
+    d.prepare('DROP TABLE IF EXISTS song_match_review_occurrences').run()
+    d.prepare('DROP TABLE IF EXISTS song_match_reviews').run()
+    d.prepare('DROP TABLE IF EXISTS song_identity_events').run()
+    d.prepare('DROP TABLE IF EXISTS musicbrainz_id_mapping_cache').run()
+    d.prepare('DROP TABLE IF EXISTS musicbrainz_recording_cache').run()
+    d.prepare('DROP TABLE IF EXISTS artist_resolution_cache').run()
+  })()
 }
 
 function ensurePlaylistExtraObservationTable(d: Database.Database): void {
@@ -784,11 +775,8 @@ export function runMigrations(d: Database.Database): void {
   ensureDownloadTaskProcessingColumns(d)
   ensureAuthTables(d)
   repairArtistResolutionCache(d)
-  ensureSongIdentityReviewSchema(d)
   ensurePlaylistSourceSyncCursorColumns(d)
-  ensureMusicBrainzRecordingCacheStatuses(d)
   ensurePlaylistExtraObservationTable(d)
-  ensureMusicBrainzIdMappingCache(d)
   ensureSongIdentityBindingMethods(d)
   ensureMatchManagementSchema(d)
   ensureLocalMediaAssetOwnership(d)
@@ -796,4 +784,5 @@ export function runMigrations(d: Database.Database): void {
   ensureDownloadWhenMediaMissingOverride(d)
   retireActivityEvents(d)
   retireWeakMetadataBindingsAndLookupCache(d)
+  retireComplexMatchingData(d)
 }

@@ -12,9 +12,8 @@
 
 Plex 指纹变化会触发完整对齐，避免网易云未变时忽略用户在 Plex 中造成的漂移。
 
-来源启用 `downloadWhenMediaMissing` 时，快速跳过前还会执行轻量资产体检。所有资产健康时
-继续跳过；发现未登记、缺失或 replaced 资产时进入完整处理。`redownload_managed` 使用其
-独立替换策略，不受此开关影响。
+快速跳过前会执行轻量资产体检。所有资产健康时继续跳过；发现未登记、缺失或 replaced
+资产时进入完整处理。`redownload_managed` 使用独立替换策略。
 
 ## 纯重排
 
@@ -32,9 +31,9 @@ Plex 指纹变化会触发完整对齐，避免网易云未变时忽略用户在
 - `matched_plex_playlist`：强身份已经在目标歌单中。
 - `found_in_plex_library`：强身份存在于 Plex 库，等待加入歌单。
 - `found_on_disk`：正式本地媒体存在，等待 Plex 索引。
-- `needs_review`：有候选但证据不足。
-- `needs_download`：没有有效已登记媒体，或启用策略后需要建立托管副本。
+- `needs_download`：没有可验证的托管路径或明确接管，需要建立托管副本。
+- `unavailable`：同一托管路径对应多个 Plex 身份，必须先清理冲突。
 - `copyright_restricted`：网易云明确不可下载。
 - `ignored_failure`：达到下载失败暂停阈值。
 
-待审核与身份冲突项都属于目标未收敛状态，不能授权删除 Plex 旧条目。
+身份冲突与下载失败都属于目标未收敛状态，不能授权删除 Plex 旧条目。

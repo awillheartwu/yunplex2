@@ -65,7 +65,7 @@ describe('missing media policy', () => {
       .toBe('manual_exempt')
   })
 
-  it('reuses active managed and external assets globally by song id', () => {
+  it('reuses managed assets but downloads instead of implicitly adopting external files', () => {
     const { dir, config } = setup()
     const managed = join(dir, 'managed.flac')
     const external = join(dir, 'external.flac')
@@ -77,9 +77,9 @@ describe('missing media policy', () => {
     const plans = planMissingMedia([song(1), song(2), song(1)], config, { validateAudio: true })
 
     expect(plans.get(1)?.disposition).toBe('reuse_managed')
-    expect(plans.get(2)?.disposition).toBe('reuse_external')
+    expect(plans.get(2)?.disposition).toBe('download_missing')
     expect(plans.size).toBe(2)
-    expect(hasMissingMediaPolicyWork([song(1), song(2)], config)).toBe(false)
+    expect(hasMissingMediaPolicyWork([song(1), song(2)], config)).toBe(true)
   })
 
   it('downloads when only an automatic binding exists', () => {

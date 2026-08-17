@@ -1,8 +1,6 @@
 import { readConfigFromDb } from '../../../../lib/db'
 import { fail, success } from '../../../../lib/response'
 import {
-  getPlexTrackMusicBrainzIdentity,
-  getPlexTrackRecordingId,
   getSectionKey,
   getTrackByRatingKey,
   initPlexClient,
@@ -51,11 +49,10 @@ export default defineEventHandler(async (event) => {
           plexSectionRoot: cfg.download.plexLibraryPathPrefix,
           plexFilePath: normalizePlexPath(plexFilePath),
           plexRatingKey: track.ratingKey,
-          mbRecordingId: getPlexTrackRecordingId(track),
           evidence: {
             selectedBy: 'user',
             selectedRatingKey: track.ratingKey,
-            plexMusicBrainzIdentity: getPlexTrackMusicBrainzIdentity(track),
+            identityRule: 'explicit_adoption',
           },
         },
       })

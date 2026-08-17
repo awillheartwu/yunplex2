@@ -74,7 +74,7 @@ const song: NeteaseSong = {
 describe('local file discovery', () => {
   it('re-discovers an existing local file even when lookup cache is empty', () => {
     const root = mkdtempSync(join(tmpdir(), 'yunplex-local-discovery-'))
-    const filePath = join(root, '回春丹', '耳鬼出风 (2021)', '09 - 艾蜜莉.flac')
+    const filePath = join(root, '回春丹', '耳鬼出风 (2021)', '09 - 艾蜜莉 [netease-1888390721].flac')
     mkdirSync(join(root, '回春丹', '耳鬼出风 (2021)'), { recursive: true })
     writeFileSync(filePath, 'stub')
 

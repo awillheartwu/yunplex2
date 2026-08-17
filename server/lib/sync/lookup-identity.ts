@@ -5,8 +5,6 @@ export function bindResolvedIdentity(
   sectionKey: string,
   ratingKey: string,
   plexPath: string,
-  mbRecordingId: string | undefined,
-  method: 'path' | 'mb_recording' | 'provider_guid' | 'migrated',
   evidence: Record<string, unknown>,
 ): void {
   upsertVerifiedSongIdentityBinding({
@@ -14,8 +12,7 @@ export function bindResolvedIdentity(
     plexSectionKey: sectionKey,
     plexFilePath: plexPath,
     plexRatingKey: ratingKey,
-    mbRecordingId: mbRecordingId ?? null,
-    bindingMethod: method,
+    bindingMethod: 'path',
     status: 'active',
     evidence,
   })

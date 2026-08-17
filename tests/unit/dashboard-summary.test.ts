@@ -23,7 +23,6 @@ function makeSource(overrides: Partial<PlaylistSource> = {}): PlaylistSource {
     trackCount: 10,
     lastTrackUpdateTime: null,
     forceFullCompare: false,
-    downloadWhenMediaMissing: null,
     consecutiveSkips: 0,
     fullCompareAfterSkips: null,
     fullCompareAfterDays: null,

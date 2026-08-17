@@ -202,11 +202,6 @@
           <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
         <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
-        <ToggleField
-          v-model="form.sync.downloadWhenMediaMissing"
-          label="缺少已登记媒体时自动下载"
-          hint="开启后，来源歌曲没有可验证的已登记媒体时会直接下载，不再尝试用 Plex 元数据猜测。可能增加下载量和存储占用；保存后在下一次同步执行，单个来源可覆盖"
-        />
         <ToggleField v-model="form.sync.reconcileOnPlexDrift" label="自动修复 Plex 侧漂移" hint="网易云未变化但 Plex 歌单被手动改动时，自动进入全量对齐" />
         <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -219,7 +214,7 @@
         <fieldset v-if="!form.sync.skipRemoveExtraTracks" class="removal-policy" aria-describedby="removal-policy-help">
           <legend class="removal-policy__legend">多余歌曲清理策略</legend>
           <p id="removal-policy-help" class="removal-policy__help">
-            这里只移除 Plex 歌单中的条目，不会删除音乐库文件。待审核候选、目标不完整和写入失败始终受保护。
+            这里只移除 Plex 歌单中的条目，不会删除音乐库文件。目标不完整、身份冲突和写入失败始终受保护。
           </p>
           <div class="removal-policy__options">
             <label
@@ -296,12 +291,8 @@
 
         <div class="space-y-3">
           <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
-          <ToggleField v-model="form.other.enableMusicBrainzResolver" label="启用 MusicBrainz 艺人解析" hint="本地别名未命中时，尝试使用 MusicBrainz 查找英文名、罗马音和别名。" />
-          <FormField label="MusicBrainz 最低匹配分数" hint="0-100，分数越高越保守；建议保持 90。">
-            <input v-model.number="form.other.musicBrainzMinScore" type="number" min="0" max="100" class="form-input" :disabled="!form.other.enableMusicBrainzResolver" />
-          </FormField>
         </div>
-        <FormField label="艺人名替换映射" hint="替换影响 Plex 搜索、文件路径、ID3 标签等。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
+        <FormField label="艺人名替换映射" hint="替换影响文件路径和 ID3 标签。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
           <AliasEditor v-model="form.other.artistAliases" />
         </FormField>
 
@@ -487,6 +478,7 @@ const pathVarHelp = [
   { key: 'track', desc: '曲目编号，如 3' },
   { key: 'track:02d', desc: '曲目编号补零，如 03' },
   { key: 'title', desc: '歌曲名，如 Lose My Mind' },
+  { key: 'songId', desc: '网易云歌曲 ID，用于稳定识别托管文件' },
 ]
 
 const pathFormatMode = computed({

@@ -117,37 +117,6 @@ describe('source download convergence', () => {
 })
 
 describe('source finalization projection', () => {
-  it('derives partial status from pending review without counting it as a failed song', async () => {
-    const job = new RunBuilder(true)
-    const existing = resolution(1, 'matched_plex_playlist')
-    const review = resolution(2, 'needs_review')
-    const existingId = addRunSong(job, existing)
-    const reviewId = addRunSong(job, review)
-    job.updateSong(existingId, { status: 'skipped_existing', phase: 'done' })
-    job.updateSong(reviewId, { status: 'match_pending_review', phase: 'plex_match' })
-
-    const result = await finalizeSourceConvergence({
-      source,
-      job,
-      dryRun: true,
-      skipRemoveExtra: false,
-      authoritativeTrackCount: 2,
-      currentIdOrder: [1, 2],
-      trackUpdateTime: 100,
-      plexUpdatedAt: null,
-      plexPlaylist: null,
-      knownRestricted: [],
-      failureMemory: {},
-      log: () => undefined,
-    })
-
-    expect(result).toEqual({
-      status: 'partial',
-      failedSongs: 0,
-      summary: '0 新增成功，1 已存在，1 候选待审核',
-    })
-  })
-
   it('persists a successful convergence snapshot outside dry-run mode', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'reyunplex-source-finalization-'))
     initDb(dir)

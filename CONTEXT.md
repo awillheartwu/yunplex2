@@ -1,53 +1,40 @@
 # reYunPlex Domain Context
 
-reYunPlex mirrors NetEase playlist intent into local managed media and Plex playlists while preserving explicit identity evidence and safe reconciliation.
+reYunPlex mirrors NetEase playlist intent into local managed media and Plex playlists. Media identity must remain independent from Plex scraper metadata.
 
 ## Language
 
-**Playlist Source**:
-A persisted NetEase playlist or album whose ordered songs define one synchronization scope and its effective policy overrides.
+**Playlist Source**: A persisted NetEase playlist or album whose ordered songs define one synchronization scope.
 _Avoid_: Job, feed
 
-**Target Song**:
-One NetEase song occurrence in the current Playlist Source snapshot, including its source order and metadata.
+**Target Song**: One NetEase song occurrence in the current Playlist Source snapshot.
 _Avoid_: Item, row
 
-**Track Resolution**:
-The current outcome of resolving a Target Song to an existing Plex track, a local file, a required download, or an unavailable state.
-_Avoid_: Match result, lookup result
+**Track Resolution**: The current outcome: verified Plex media, local managed file, required download, or unavailable.
+_Avoid_: Metadata match, lookup result
 
-**Identity Binding**:
-The durable association between one NetEase song and its strongest known Plex identity evidence. A binding may be active, stale, or explicitly unbound.
-_Avoid_: Cache entry, metadata match
+**Media Link**: The durable association between one NetEase song and Plex. It is either a managed exact-path link (`path`) or explicit adoption (`manual`).
+_Avoid_: Metadata match, candidate, cache entry
 
-**Local Media Asset**:
-The recorded local audio file associated with a NetEase song, including whether reYunPlex manages it and whether file continuity remains valid.
+**Local Media Asset**: A recorded local audio file, including managed/external ownership and continuity state.
 _Avoid_: Download cache, local track
 
-**Match Review**:
-A durable request for human judgment when automatic evidence cannot safely establish an Identity Binding.
-_Avoid_: Warning, candidate popup
+**Explicit Adoption**: A user's one-time selection of an external Plex item. This is the only way external media becomes reusable.
+_Avoid_: Automatic match, review approval
 
-**Playlist Occurrence**:
-One concrete position of a Target Song or Plex track inside a particular Playlist Source or Plex playlist snapshot.
+**Playlist Occurrence**: One concrete `playlistItemID` and position inside a Plex playlist snapshot.
 _Avoid_: Song identity, track identity
 
-**Reconciliation Plan**:
-The ordered Plex target plus occurrence-specific mutation authorization derived after Track Resolution. Identity evidence alone never authorizes deletion.
+**Reconciliation Plan**: Ordered Plex target plus occurrence-specific mutation authorization after Track Resolution.
 _Avoid_: Diff, removal list
 
-**Source Convergence**:
-One complete attempt to bring a Playlist Source, its Local Media Assets, Identity Bindings, and Plex playlist into the state described by the current NetEase snapshot.
+**Source Convergence**: One attempt to bring a Playlist Source, Local Media Assets, Media Links, and Plex playlist to the current NetEase snapshot.
 _Avoid_: Source job, sync step
 
-## Flagged ambiguities
+## Invariants
 
-- “Match” can mean metadata similarity, an Identity Binding, or a Track Resolution. Use the precise term.
-- “Track” can mean a NetEase Target Song, a Plex library record, or a Playlist Occurrence. Name the system and role.
-- “Delete” must distinguish removing a Plex Playlist Occurrence from deleting a Local Media Asset; reconciliation only performs the former.
-
-## Example dialogue
-
-> Developer: This Playlist Source contains 80 Target Songs. Two Track Resolutions require Match Review, so can the Reconciliation Plan remove the old Plex entries?
->
-> Domain expert: No. Pending Match Reviews make the target incomplete. Preserve those Playlist Occurrences until strong Identity Bindings exist and Source Convergence can validate the Plex readback.
+- Plex title, artist, album, GUID and scraper-provided MusicBrainz data are presentation, never automatic identity.
+- A managed file is reused only when exactly one Plex item exposes its exact path.
+- External media is reused only after Explicit Adoption, then verified by ratingKey and exact path.
+- Unverified identity falls back to a new managed download; ambiguity never chooses the first result.
+- Reconciliation removes only concrete Plex Playlist Occurrences, never media files.

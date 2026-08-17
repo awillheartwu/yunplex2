@@ -1,7 +1,7 @@
 # ADR 0004: Durable Identity Convergence
 
 **Date:** 2026-08-09
-**Status:** Accepted
+**Status:** Superseded by ADR 0005
 
 ## Context
 

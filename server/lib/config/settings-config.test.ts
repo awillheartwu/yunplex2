@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, initDb, readRawConfigFromDb, writeConfigToDb } from '../db'
+import { initDb, readRawConfigFromDb, writeConfigToDb } from '../db'
 import { clearSyncWorker, setSyncWorker } from '../sync/instance'
 import { DEFAULT_CONFIG } from './defaults'
 import { applyConfigUpdate } from './apply'
@@ -57,18 +57,6 @@ describe('settings config validation and migration', () => {
     } as any)
 
     expect(readConfig().sync.extraTrackRemovalPolicy).toBe('balanced')
-  })
-
-  it('migrates the missing-media policy as disabled by default', () => {
-    setupDb()
-    writeConfigToDb({
-      ...DEFAULT_CONFIG,
-      sync: Object.fromEntries(
-        Object.entries(DEFAULT_CONFIG.sync).filter(([key]) => key !== 'downloadWhenMediaMissing'),
-      ),
-    } as any)
-
-    expect(readConfig().sync.downloadWhenMediaMissing).toBe(false)
   })
 
   it('removes retired metadata-binding settings from persisted legacy config', () => {
@@ -145,28 +133,6 @@ describe('settings config validation and migration', () => {
     expect(changedKeys).toEqual(['sync'])
     expect(update).toHaveBeenCalledTimes(1)
 
-  })
-
-  it('marks inherited sources for reconciliation when the global policy is enabled', () => {
-    setupDb()
-    const now = new Date().toISOString()
-    getDb().prepare(`
-      INSERT INTO playlist_sources (
-        id, netease_playlist_id, download_when_media_missing, created_at, updated_at
-      ) VALUES
-        ('inherits', 1, NULL, ?, ?),
-        ('disabled', 2, 0, ?, ?)
-    `).run(now, now, now, now)
-
-    applyConfigUpdate({ sync: { downloadWhenMediaMissing: true } })
-
-    expect(getDb().prepare(`
-      SELECT id, requires_match_reconcile
-      FROM playlist_sources ORDER BY id
-    `).all()).toEqual([
-      { id: 'disabled', requires_match_reconcile: 0 },
-      { id: 'inherits', requires_match_reconcile: 1 },
-    ])
   })
 
   it('resolves connection tests from candidate form config instead of saved config', () => {

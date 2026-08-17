@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import { parseJsonOr } from '../json'
 import { queryMatchOverviewReadModel } from './match-overview-store'
@@ -6,15 +5,11 @@ import type { NeteaseSong } from '../netease'
 import { normalizePlexPath } from './identity-normalization'
 import type {
   PlaylistSourceTrackOccurrence,
-  SongIdentityEvent,
-  SongIdentityEventType,
   TrackMembershipStatus,
 } from '../../../types/match-management'
-import type { SongIdentityBinding } from '../../../types/match-review'
 import type {
   MatchOverviewPage,
   MatchOverviewState,
-  SongIdentityEventPage,
 } from '../../../types/match-management'
 
 type OccurrenceRow = {
@@ -73,167 +68,6 @@ export interface PlaylistAlignmentValidationResult {
   aligned: number
   pending: number
   missing: number
-}
-
-type IdentityEventRow = {
-  id: string
-  netease_song_id: number
-  event_type: SongIdentityEventType
-  actor_type: 'system' | 'admin'
-  source_id: string | null
-  run_id: string | null
-  review_id: string | null
-  previous_binding_json: string | null
-  next_binding_json: string | null
-  evidence_json: string
-  created_at: string
-}
-
-export interface AppendSongIdentityEventInput {
-  neteaseSongId: number
-  eventType: SongIdentityEventType
-  actorType: 'system' | 'admin'
-  sourceId?: string | null
-  runId?: string | null
-  reviewId?: string | null
-  previousBinding?: SongIdentityBinding | null
-  nextBinding?: SongIdentityBinding | null
-  evidence?: Record<string, unknown>
-  createdAt?: string
-}
-
-function mapIdentityEvent(row: IdentityEventRow): SongIdentityEvent {
-  return {
-    id: row.id,
-    neteaseSongId: row.netease_song_id,
-    eventType: row.event_type,
-    actorType: row.actor_type,
-    sourceId: row.source_id,
-    runId: row.run_id,
-    reviewId: row.review_id,
-    previousBinding: parseJsonOr<SongIdentityBinding | null>(row.previous_binding_json, null),
-    nextBinding: parseJsonOr<SongIdentityBinding | null>(row.next_binding_json, null),
-    evidence: parseJsonOr<Record<string, unknown>>(row.evidence_json, {}),
-    createdAt: row.created_at,
-  }
-}
-
-export function appendSongIdentityEvent(input: AppendSongIdentityEventInput): SongIdentityEvent {
-  const id = randomUUID()
-  const createdAt = input.createdAt ?? new Date().toISOString()
-  getDb().prepare(`
-    INSERT INTO song_identity_events (
-      id, netease_song_id, event_type, actor_type, source_id, run_id, review_id,
-      previous_binding_json, next_binding_json, evidence_json, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    input.neteaseSongId,
-    input.eventType,
-    input.actorType,
-    input.sourceId ?? null,
-    input.runId ?? null,
-    input.reviewId ?? null,
-    input.previousBinding ? JSON.stringify(input.previousBinding) : null,
-    input.nextBinding ? JSON.stringify(input.nextBinding) : null,
-    JSON.stringify(input.evidence ?? {}),
-    createdAt,
-  )
-  const row = getDb().prepare('SELECT * FROM song_identity_events WHERE id = ?').get(id) as IdentityEventRow
-  return mapIdentityEvent(row)
-}
-
-export function listSongIdentityEvents(filters: {
-  neteaseSongId?: number
-  sourceId?: string
-  actorType?: 'system' | 'admin'
-  eventType?: SongIdentityEventType
-  from?: string
-  to?: string
-  limit?: number
-  offset?: number
-}): SongIdentityEvent[] {
-  const conditions: string[] = []
-  const values: unknown[] = []
-  if (filters.neteaseSongId !== undefined) {
-    conditions.push('netease_song_id = ?')
-    values.push(filters.neteaseSongId)
-  }
-  if (filters.sourceId) {
-    conditions.push('source_id = ?')
-    values.push(filters.sourceId)
-  }
-  if (filters.actorType) {
-    conditions.push('actor_type = ?')
-    values.push(filters.actorType)
-  }
-  if (filters.eventType) {
-    conditions.push('event_type = ?')
-    values.push(filters.eventType)
-  }
-  if (filters.from) {
-    conditions.push('created_at >= ?')
-    values.push(filters.from)
-  }
-  if (filters.to) {
-    conditions.push('created_at <= ?')
-    values.push(filters.to)
-  }
-  const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 100), 1), 500)
-  const offset = Math.max(Math.trunc(filters.offset ?? 0), 0)
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = getDb().prepare(`
-    SELECT * FROM song_identity_events
-    ${where}
-    ORDER BY created_at DESC, id DESC
-    LIMIT ? OFFSET ?
-  `).all(...values, limit, offset) as IdentityEventRow[]
-  return rows.map(mapIdentityEvent)
-}
-
-export function querySongIdentityEvents(filters: Parameters<typeof listSongIdentityEvents>[0] & {
-  page?: number
-  pageSize?: number
-}): SongIdentityEventPage {
-  const pageSize = Math.min(Math.max(Math.trunc(filters.pageSize ?? 25), 1), 100)
-  const requestedPage = Math.max(Math.trunc(filters.page ?? 1), 1)
-  const conditions: string[] = []
-  const values: unknown[] = []
-  if (filters.neteaseSongId !== undefined) {
-    conditions.push('netease_song_id = ?')
-    values.push(filters.neteaseSongId)
-  }
-  if (filters.sourceId) {
-    conditions.push('source_id = ?')
-    values.push(filters.sourceId)
-  }
-  if (filters.actorType) {
-    conditions.push('actor_type = ?')
-    values.push(filters.actorType)
-  }
-  if (filters.eventType) {
-    conditions.push('event_type = ?')
-    values.push(filters.eventType)
-  }
-  if (filters.from) {
-    conditions.push('created_at >= ?')
-    values.push(filters.from)
-  }
-  if (filters.to) {
-    conditions.push('created_at <= ?')
-    values.push(filters.to)
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const total = (getDb().prepare(`SELECT COUNT(*) AS count FROM song_identity_events ${where}`)
-    .get(...values) as { count: number }).count
-  const totalPages = Math.max(Math.ceil(total / pageSize), 1)
-  const page = Math.min(requestedPage, totalPages)
-  return {
-    items: listSongIdentityEvents({ ...filters, limit: pageSize, offset: (page - 1) * pageSize }),
-    total,
-    page,
-    pageSize,
-  }
 }
 
 function mapOccurrence(row: OccurrenceRow): PlaylistSourceTrackOccurrence {

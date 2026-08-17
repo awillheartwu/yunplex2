@@ -98,9 +98,11 @@ export function buildDownloadPath(
   ext: string,
 ): string {
   let rel = pathFormat
+  const hasSongIdToken = rel.includes('{songId}')
   for (const [key, value] of Object.entries(vars)) {
     rel = rel.replace(new RegExp(`\\{${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`, 'g'), value)
   }
+  if (vars.songId && !hasSongIdToken) rel += ` [netease-${vars.songId}]`
   // Clean empty placeholders like " ()" or double spaces
   rel = rel.replace(/\s*\(\s*\)/g, '').replace(/\s+/g, ' ').trim()
   // Sanitize each path segment

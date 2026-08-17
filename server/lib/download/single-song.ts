@@ -110,6 +110,7 @@ export async function downloadSingleSong(
         year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
         track: String(song.no),
         'track:02d': String(song.no).padStart(2, '0'),
+        songId: String(song.id),
       }, fileType)
       targetPath = join(config.downloadDir, relativePath)
     }
@@ -121,6 +122,7 @@ export async function downloadSingleSong(
       year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
       track: String(song.no),
       'track:02d': String(song.no).padStart(2, '0'),
+      songId: String(song.id),
     }
     relativePath = buildDownloadPath(config.pathFormat, pathVars, fileType)
     targetPath = join(config.downloadDir, relativePath)
