@@ -1,5 +1,4 @@
 import type { RunBuilder } from '../run/builder'
-import { recordActivityEvent } from '../activity/store'
 import { getPlaylistUpdatedAt } from '../plex-client'
 import { updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
@@ -40,8 +39,8 @@ interface FinalizeSourceConvergenceInput {
 /**
  * Commit the durable result of one Source Convergence.
  *
- * Run-song outcomes are the single input to status, failure memory and activity
- * summaries so those three projections cannot drift between callers.
+ * Run-song outcomes are the single input to status and failure memory so those
+ * durable results cannot drift between callers.
  */
 export async function finalizeSourceConvergence(
   input: FinalizeSourceConvergenceInput,
@@ -183,33 +182,5 @@ export async function finalizeSourceConvergence(
 
   const summary = parts.join('，')
   log('info', `歌单「${source.name || source.neteasePlaylistName}」: ${parts.join(', ')}`)
-  if (!dryRun) {
-    recordActivityEvent({
-      domain: 'sync',
-      type: sourceStatus === 'success'
-        ? 'source_sync_completed'
-        : sourceStatus === 'partial'
-          ? 'source_sync_partial'
-          : 'source_sync_failed',
-      severity: sourceStatus === 'success' ? 'success' : sourceStatus === 'partial' ? 'warning' : 'error',
-      title: `同步源“${source.name || source.neteasePlaylistName}”${sourceStatus === 'success' ? '完成' : sourceStatus === 'partial' ? '部分完成' : '失败'}`,
-      summary,
-      context: {
-        sourceId: source.id,
-        sourceName: source.name || source.neteasePlaylistName,
-        jobId: job.getId(),
-        successSongs: succCount,
-        existingSongs: existingCount,
-        failedSongs: failCount,
-        restrictedSongs: restrictedCount,
-        pausedRetrySongs: ignoredCount,
-        pendingReviewSongs: pendingReviewCount,
-        preservedExtraSongs: skipRemoveExtra ? 0 : preservedExtraCount,
-      },
-      link: `/task-center/runs/${job.getId()}`,
-      groupKey: `job:${job.getId()}:source:${source.id}`,
-    })
-  }
-
   return { status: sourceStatus, failedSongs: failCount, summary }
 }

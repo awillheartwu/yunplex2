@@ -1,5 +1,3 @@
-import type { ActivityDomain, ActivitySeverity } from '~~/server/lib/activity/types'
-
 export type DashboardTone = 'accent' | 'success' | 'warning' | 'danger' | 'neutral'
 
 export interface DashboardStatusItem {
@@ -32,21 +30,6 @@ export interface DashboardPendingItem {
   link: string
 }
 
-export interface DashboardActivityItem {
-  id: string
-  type: string
-  domain: ActivityDomain
-  severity: ActivitySeverity
-  title: string
-  subtitle: string
-  timestamp: string
-  icon: string
-  tone: DashboardTone
-  link: string
-  groupKey?: string | null
-  statusLabel?: string | null
-}
-
 export interface DashboardSourceHealthSummary {
   total: number
   normal: number
@@ -70,7 +53,6 @@ export interface DashboardSummary {
     points: DashboardTrendPoint[]
   }
   pendingItems: DashboardPendingItem[]
-  recentActivities: DashboardActivityItem[]
   sourceHealth: DashboardSourceHealthSummary
 }
 

@@ -15,18 +15,30 @@ function expectTemplateBindingExposed(page: string, scriptSetup: string, returnB
 }
 
 describe('task center page bindings', () => {
-  it('exposes filter option bindings used by the page template', () => {
+  it('exposes failure filter bindings used by the page template', () => {
     const page = readProjectFile('components/task-center/TaskCenterPage.vue')
     const composable = readProjectFile('composables/useTaskCenterPage.ts')
     const scriptSetup = page.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)?.[1] || ''
     const returnBlock = composable.match(/return\s+\{([\s\S]*?)\n\s+\}/)?.[1] || ''
 
-    expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'runTypeFilters')
-    expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'runStatusFilters')
     expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'failureTypeFilters')
     expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'failureKindFilters')
     expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'failureStatusTabs')
     expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'overviewStageItems')
+  })
+
+  it('moves the run list into the system workspace', () => {
+    const taskCenterPage = readProjectFile('components/task-center/TaskCenterPage.vue')
+    const taskCenter = readProjectFile('composables/useTaskCenterPage.ts')
+    const systemPage = readProjectFile('components/system/SystemPage.vue')
+    const runHistory = readProjectFile('composables/useRunHistory.ts')
+
+    expect(taskCenter).not.toContain("{ key: 'runs', label: '运行记录' }")
+    expect(taskCenterPage).not.toContain("activeTab === 'runs'")
+    expect(systemPage).toContain('<SystemRunRecordsPanel />')
+    expect(systemPage).toContain('<SystemMaintenancePanel')
+    expect(runHistory).toContain('typeFilters')
+    expect(runHistory).toContain('statusFilters')
   })
 
   it('shows the shared realtime download queue at the bottom of overview without a separate tab', () => {

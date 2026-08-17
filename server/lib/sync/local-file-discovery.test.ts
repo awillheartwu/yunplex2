@@ -30,7 +30,6 @@ function buildConfig(downloadDir: string): AppConfig {
       jobRetentionSuccessDays: 7,
       jobRetentionFailedDays: 90,
       downloadTaskRetentionDays: 30,
-      activityRetentionDays: 30,
       forceFullCompare: false,
       downloadWhenMediaMissing: false,
       reconcileOnPlexDrift: true,

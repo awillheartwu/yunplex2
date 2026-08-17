@@ -17,6 +17,7 @@ export interface HistoricalMigrationRepairs {
   ensureTaskRunSources: (d: Database.Database) => void
   migrateLegacyJobsToTaskRunsAndDrop: (d: Database.Database) => void
   repairArtistResolutionCache: (d: Database.Database) => void
+  retireActivityEvents: (d: Database.Database) => void
   retireWeakMetadataBindingsAndLookupCache: (d: Database.Database) => void
 }
 
@@ -42,6 +43,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
     ensureTaskRunSources,
     migrateLegacyJobsToTaskRunsAndDrop,
     repairArtistResolutionCache,
+    retireActivityEvents,
     retireWeakMetadataBindingsAndLookupCache,
   } = repairs
 
@@ -507,5 +509,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
   retireWeakMetadataBindingsAndLookupCache,
   /* v47: per-source missing-media download policy */
   ensureDownloadWhenMediaMissingOverride,
+  /* v48: remove the retired user-facing activity projection and its rows */
+  retireActivityEvents,
 ]
 }

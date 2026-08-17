@@ -336,25 +336,6 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_musicbrainz_id_mapping_recording
       ON musicbrainz_id_mapping_cache(recording_id);
 
-    CREATE TABLE IF NOT EXISTS activity_events (
-      id           TEXT PRIMARY KEY,
-      domain       TEXT NOT NULL CHECK(domain IN ('sync','download','plex','user')),
-      type         TEXT NOT NULL,
-      severity     TEXT NOT NULL CHECK(severity IN ('info','success','warning','error')),
-      occurred_at  TEXT NOT NULL,
-      actor        TEXT NOT NULL CHECK(actor IN ('system','user')),
-      title        TEXT NOT NULL,
-      summary      TEXT NOT NULL,
-      context      TEXT NOT NULL DEFAULT '{}',
-      link         TEXT,
-      group_key    TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_activity_events_occurred_at ON activity_events(occurred_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_domain ON activity_events(domain);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_severity ON activity_events(severity);
-    CREATE INDEX IF NOT EXISTS idx_activity_events_group_key ON activity_events(group_key);
-
     CREATE TABLE IF NOT EXISTS failure_records (
       id                TEXT PRIMARY KEY,
       fingerprint       TEXT NOT NULL UNIQUE,

@@ -28,12 +28,47 @@ describe('database migrations', () => {
 
     const version = getDb().prepare('PRAGMA user_version').get() as { user_version: number }
     const downloadColumns = getDb().prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
-    expect(version.user_version).toBe(46)
+    expect(version.user_version).toBe(47)
     expect(downloadColumns.map(column => column.name)).toEqual(expect.arrayContaining([
       'run_id',
       'idempotency_key',
       'lease_owner',
     ]))
+  })
+
+  it('drops the retired activity projection and all stored rows', () => {
+    const dir = createTempDataDir()
+    const legacyDb = new Database(join(dir, 'data.db'))
+    legacyDb.exec(`
+      CREATE TABLE activity_events (
+        id TEXT PRIMARY KEY,
+        domain TEXT NOT NULL,
+        type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        context TEXT NOT NULL DEFAULT '{}',
+        link TEXT,
+        group_key TEXT
+      );
+      INSERT INTO activity_events (
+        id, domain, type, severity, occurred_at, actor, title, summary
+      ) VALUES (
+        'event-1', 'sync', 'sync_completed', 'success',
+        '2026-08-01T00:00:00.000Z', 'system', '完成', '旧动态'
+      );
+      PRAGMA user_version = 46;
+    `)
+    legacyDb.close()
+
+    initDb(dir)
+
+    expect(getDb().prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'activity_events'
+    `).get()).toBeUndefined()
   })
 
   it('repairs an existing database whose version advanced before idempotency columns were added', () => {

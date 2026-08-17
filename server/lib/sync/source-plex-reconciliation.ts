@@ -3,7 +3,6 @@ import type { JobStepContext } from '../job/types'
 import type { SyncState } from '../log/types'
 import type { PlaylistSource } from '../playlist/types'
 import type { RunBuilder } from '../run/builder'
-import { recordActivityEvent } from '../activity/store'
 import {
   getPlaylistTracks,
   getTrackByRatingKey,
@@ -138,16 +137,6 @@ export async function reconcilePlexPlaylist(
   if (needsPlexRefresh && sectionKey) {
     await triggerRescan(sectionKey)
     throwIfCancelled()
-    recordActivityEvent({
-      domain: 'plex',
-      type: 'plex_library_refresh_requested',
-      severity: 'info',
-      title: '请求刷新 Plex 媒体库',
-      summary: `“${playlistName}”存在新歌或本地补齐内容，已请求 Plex 扫描。`,
-      context: { sourceId: source.id, sourceName: playlistName, jobId: job.getId(), sectionKey },
-      link: `/task-center/runs/${job.getId()}`,
-      groupKey: `job:${job.getId()}:source:${source.id}`,
-    })
   }
 
   log('info', '开始 Plex 查找重试')
@@ -528,21 +517,6 @@ export async function reconcilePlexPlaylist(
 
   throwIfCancelled()
   job.finishStep(reorderStep, 'success', 'Plex 歌单重排完成')
-  recordActivityEvent({
-    domain: 'plex',
-    type: 'plex_playlist_reordered',
-    severity: 'success',
-    title: 'Plex 歌单已重排',
-    summary: `“${playlistName}”已按最新顺序同步到 Plex。`,
-    context: {
-      sourceId: source.id,
-      sourceName: playlistName,
-      jobId: job.getId(),
-      ratingKey: plexPlaylist.ratingKey,
-    },
-    link: `/task-center/runs/${job.getId()}`,
-    groupKey: `job:${job.getId()}:source:${source.id}`,
-  })
 }
 
 /**

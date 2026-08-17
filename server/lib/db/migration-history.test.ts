@@ -22,6 +22,7 @@ function repairs(): HistoricalMigrationRepairs {
     ensureTaskRunSources: vi.fn(),
     migrateLegacyJobsToTaskRunsAndDrop: vi.fn(),
     repairArtistResolutionCache: vi.fn(),
+    retireActivityEvents: vi.fn(),
     retireWeakMetadataBindingsAndLookupCache: vi.fn(),
   }
 }
@@ -31,7 +32,7 @@ describe('historical migration registry', () => {
     const injected = repairs()
     const migrations = createHistoricalMigrations(injected)
 
-    expect(migrations).toHaveLength(46)
+    expect(migrations).toHaveLength(47)
     expect(migrations.slice(35)).toEqual([
       injected.ensureSongIdentityReviewSchema,
       injected.ensurePlaylistSourceSyncCursorColumns,
@@ -44,6 +45,7 @@ describe('historical migration registry', () => {
       injected.ensureNullableSourceSyncOverrides,
       injected.retireWeakMetadataBindingsAndLookupCache,
       injected.ensureDownloadWhenMediaMissingOverride,
+      injected.retireActivityEvents,
     ])
   })
 

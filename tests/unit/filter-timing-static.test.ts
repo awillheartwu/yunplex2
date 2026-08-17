@@ -36,26 +36,25 @@ describe('filter timing wiring', () => {
     expect(functionBody(sourcePage, 'onSourceSearchInput')).not.toContain('syncSourceFilterQuery()')
   })
 
-  it('debounces task center search without per-key route writes', () => {
+  it('debounces run history and task center failure searches without per-key route writes', () => {
+    const runHistory = readProjectFile('composables/useRunHistory.ts')
     const taskCenter = readProjectFile('composables/useTaskCenterPage.ts')
 
-    expect(taskCenter).toContain('runSearchDebounce.cancel(); syncRunQuery(); void runs.fetch()')
+    expect(runHistory).toContain('searchDebounce.cancel(); syncQuery(); void runs.fetch()')
     expect(taskCenter).toContain('failureSearchDebounce.cancel(); selectedFailures.value = new Set(); syncFailureQuery(); void failures.fetch()')
-    expect(functionBody(taskCenter, 'onRunSearch')).toContain('runSearchDebounce.run()')
-    expect(functionBody(taskCenter, 'onRunSearch')).not.toContain('syncRunQuery()')
+    expect(functionBody(runHistory, 'onSearch')).toContain('searchDebounce.run()')
+    expect(functionBody(runHistory, 'onSearch')).not.toContain('syncQuery()')
     expect(functionBody(taskCenter, 'onFailureSearch')).toContain('failureSearchDebounce.run()')
     expect(functionBody(taskCenter, 'onFailureSearch')).not.toContain('syncFailureQuery()')
   })
 
-  it('debounces activity search and batches realtime log writes', () => {
-    const activity = readProjectFile('components/activity/ActivityPage.vue')
+  it('batches system log writes through the shared SSE connection', () => {
+    const systemLogs = readProjectFile('composables/useSystemLogs.ts')
 
-    expect(activity).toContain('activitySearchDebounce.cancel()')
-    expect(functionBody(activity, 'onActivitySearch')).toContain('activitySearchDebounce.run()')
-    expect(functionBody(activity, 'onActivitySearch')).not.toContain('syncActivityFilterQuery()')
-    expect(activity).toContain('const pendingRealtimeLogs: LogEntry[] = []')
-    expect(activity).toContain('const realtimeLogBatch = useThrottleFn(flushRealtimeLogs, 80)')
-    expect(activity).toContain('enqueueRealtimeLog(data)')
+    expect(systemLogs).toContain('const pendingRealtimeLogs: LogEntry[] = []')
+    expect(systemLogs).toContain('const realtimeBatch = useThrottleFn(flushRealtimeLogs, 80)')
+    expect(systemLogs).toContain("sseSubscribe('log', enqueueRealtimeLog)")
+    expect(systemLogs).not.toContain('new EventSource')
   })
 
   it('raf-throttles layout invalidation paths', () => {

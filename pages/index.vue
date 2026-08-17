@@ -68,7 +68,6 @@
         </div>
 
         <DashboardPendingList class="dashboard-layout__pending" :items="summary.pendingItems" />
-        <DashboardActivityList class="dashboard-layout__activity" :items="summary.recentActivities" />
         <DashboardRecentPlexList class="dashboard-layout__recent" :items="recentPlexItems" />
 
         <DashboardSourceHealth class="dashboard-layout__health" :summary="summary.sourceHealth" />
@@ -148,7 +147,7 @@ async function handleSync() {
   try {
     await triggerSync('normal')
     await fetchDashboard()
-    feedback.success('同步已触发', '可在任务中心或动态页查看后续进度。')
+    feedback.success('同步已触发', '可在任务中心查看实时进度，在“系统与运行”查看结果。')
   } catch (err) {
     feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试')
   }
@@ -359,9 +358,8 @@ onUnmounted(() => {
 }
 
 .dashboard-layout__pending,
-.dashboard-layout__activity,
 .dashboard-layout__recent {
-  grid-column: span 4;
+  grid-column: span 6;
   min-block-size: 100%;
 }
 
@@ -397,24 +395,19 @@ onUnmounted(() => {
     grid-row: 2;
   }
 
-  .dashboard-layout__activity {
-    grid-column: 9 / span 4;
-    grid-row: 2;
-  }
-
   .dashboard-layout__pending {
-    grid-column: 1 / span 4;
+    grid-column: 1 / span 6;
     grid-row: 3;
   }
 
   .dashboard-layout__recent {
-    grid-column: 5 / span 4;
+    grid-column: 7 / span 6;
     grid-row: 3;
   }
 
   .dashboard-layout__health {
     grid-column: 9 / span 4;
-    grid-row: 3;
+    grid-row: 2;
     min-block-size: 100%;
   }
 }
@@ -433,7 +426,6 @@ onUnmounted(() => {
   .dashboard-layout__kpis,
   .dashboard-layout__trend,
   .dashboard-layout__pending,
-  .dashboard-layout__activity,
   .dashboard-layout__recent,
   .dashboard-layout__health {
     grid-column: auto;
@@ -441,7 +433,6 @@ onUnmounted(() => {
   }
 
   .dashboard-layout__pending,
-  .dashboard-layout__activity,
   .dashboard-layout__recent {
     min-block-size: auto;
   }

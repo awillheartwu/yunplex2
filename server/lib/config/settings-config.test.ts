@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, initDb, readRawConfigFromDb, writeConfigToDb } from '../db'
-import { listActivityEvents } from '../activity/store'
 import { clearSyncWorker, setSyncWorker } from '../sync/instance'
 import { DEFAULT_CONFIG } from './defaults'
 import { applyConfigUpdate } from './apply'
@@ -129,7 +128,7 @@ describe('settings config validation and migration', () => {
     expect(readRawConfigFromDb()).toEqual(migrated)
   })
 
-  it('applies config updates through worker hot reload and activity recording', () => {
+  it('applies config updates through worker hot reload', () => {
     setupDb()
     const update = vi.fn()
     setSyncWorker({
@@ -139,25 +138,13 @@ describe('settings config validation and migration', () => {
       isScheduled: vi.fn(() => false),
     } as any)
 
-    const { updated, changedKeys } = applyConfigUpdate(
-      { sync: { enabled: true, intervalMinutes: 45 } },
-      {
-        title: '导入系统配置',
-        type: 'config_imported',
-        summaryWhenChanged: (keys) => `本次导入更新了 ${keys.join('、')}`,
-        summaryWhenUnchanged: '导入内容与当前配置一致，运行中的调度器已重新检查。',
-        groupKey: 'config:import',
-      },
-    )
+    const { updated, changedKeys } = applyConfigUpdate({ sync: { enabled: true, intervalMinutes: 45 } })
 
     expect(updated.sync.enabled).toBe(true)
     expect(updated.sync.intervalMinutes).toBe(45)
     expect(changedKeys).toEqual(['sync'])
     expect(update).toHaveBeenCalledTimes(1)
 
-    const events = listActivityEvents({ limit: 10 }).items
-    expect(events[0]?.type).toBe('config_imported')
-    expect(events[0]?.summary).toBe('本次导入更新了 sync')
   })
 
   it('marks inherited sources for reconciliation when the global policy is enabled', () => {
@@ -171,16 +158,7 @@ describe('settings config validation and migration', () => {
         ('disabled', 2, 0, ?, ?)
     `).run(now, now, now, now)
 
-    applyConfigUpdate(
-      { sync: { downloadWhenMediaMissing: true } },
-      {
-        title: '更新系统配置',
-        type: 'config_updated',
-        summaryWhenChanged: keys => keys.join('、'),
-        summaryWhenUnchanged: '无变化',
-        groupKey: 'config:update',
-      },
-    )
+    applyConfigUpdate({ sync: { downloadWhenMediaMissing: true } })
 
     expect(getDb().prepare(`
       SELECT id, requires_match_reconcile

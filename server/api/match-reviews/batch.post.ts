@@ -1,6 +1,5 @@
 import { fail, success } from '../../lib/response'
 import { readConfigFromDb } from '../../lib/db'
-import { recordActivityEvent } from '../../lib/activity/store'
 import { getSectionKey, getTrackByRatingKey, initPlexClient } from '../../lib/plex-client'
 import {
   decideMatchReviewsBatch,
@@ -71,17 +70,6 @@ export default defineEventHandler(async (event) => {
 
     const decided = decideMatchReviewsBatch(decisions)
     const unchanged = resolvedReviews.length - pending.length
-    recordActivityEvent({
-      domain: 'user',
-      type: value.decision === 'accept' ? 'match_reviews_batch_accepted' : 'match_reviews_batch_rejected',
-      severity: value.decision === 'accept' ? 'success' : 'info',
-      actor: 'user',
-      title: value.decision === 'accept' ? '批量接受匹配候选' : '批量拒绝匹配候选',
-      summary: `处理 ${decided.length} 条${unchanged > 0 ? `，${unchanged} 条状态未变化` : ''}。`,
-      context: { reviewIds: ids, processed: decided.length, unchanged, decision: value.decision },
-      link: '/match-reviews',
-      groupKey: `match-review-batch:${Date.now()}`,
-    })
     return success({
       decision: value.decision,
       requested: ids.length,

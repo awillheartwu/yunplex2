@@ -156,90 +156,6 @@
         />
       </section>
 
-      <section v-else-if="activeTab === 'runs'" class="space-y-4">
-        <FilterBar
-          :search="runs.filter.value.search || ''"
-          placeholder="搜索运行摘要、ID、来源或歌曲"
-          search-label="搜索运行记录"
-          :active-count="runAdvancedFilterCount"
-          :can-clear="runCanClear"
-          advanced
-          :advanced-label="runAdvancedFilterLabel"
-          advanced-title="高级筛选"
-          @update:search="onRunSearch"
-          @clear="clearRunFilters"
-          @advanced-open="prepareRunDraftFilters"
-        >
-          <template #advanced>
-            <div class="filter-sheet-group">
-              <p class="filter-sheet-group__label">运行类型</p>
-              <div class="filter-sheet-group__controls">
-                <FilterChip v-for="item in runTypeFilters" :key="item.value || 'all'" :active="draftRunType === item.value" @click="draftRunType = item.value">
-                  {{ item.label }}
-                </FilterChip>
-              </div>
-            </div>
-            <div class="filter-sheet-group">
-              <p class="filter-sheet-group__label">运行状态</p>
-              <div class="filter-sheet-group__controls">
-                <FilterChip v-for="item in runStatusFilters" :key="item.value || 'all'" :active="draftRunStatus === item.value" @click="draftRunStatus = item.value">
-                  {{ item.label }}
-                </FilterChip>
-              </div>
-            </div>
-            <div class="filter-sheet-group">
-              <label class="filter-sheet-group__label" for="run-source-filter">来源</label>
-              <select id="run-source-filter" v-model="draftRunSource" class="form-input">
-                <option value="">全部来源</option>
-                <option v-for="source in sourceOptions" :key="source.id" :value="source.id">{{ sourceOptionLabel(source) }}</option>
-              </select>
-            </div>
-            <FilterDateRange :model-value="draftRunDateFilter" :min-date="runs.earliestDate.value" @update:model-value="setDraftRunDate" />
-          </template>
-
-          <template #advanced-footer="{ close }">
-            <button class="btn btn-secondary" type="button" @click="resetRunDraftFilters">重置</button>
-            <button class="btn btn-primary" type="button" @click="applyRunDraftFilters(close)">应用</button>
-          </template>
-
-          <template #active-filters>
-            <button
-              v-for="chip in runFilterChips"
-              :key="chip.key"
-              type="button"
-              class="filter-chip filter-chip-active filter-chip--removable"
-              :aria-label="`移除筛选：${chip.label}`"
-              @click="removeRunFilter(chip.key)"
-            >
-              <span>{{ chip.label }}</span>
-              <span class="filter-chip__remove" aria-hidden="true"><AppIcon name="close" :size="12" /></span>
-            </button>
-          </template>
-
-          <template #actions>
-            <button class="btn btn-secondary btn-xs" type="button" :disabled="runs.loading.value" @click="runs.fetch()">
-              <AppIcon :name="runs.loading.value ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': runs.loading.value }" />
-              刷新
-            </button>
-          </template>
-          <template #summary>
-            <span v-if="runs.total.value > 0">共 {{ runs.total.value }} 次运行</span>
-          </template>
-        </FilterBar>
-
-        <div v-if="runs.loading.value && runs.items.value.length === 0" class="task-loading">正在加载运行记录…</div>
-        <EmptyState v-else-if="runs.items.value.length === 0" title="暂无运行记录" description="当前筛选条件下没有匹配的运行" />
-        <div v-else class="run-groups">
-          <section v-for="group in groupedRuns" :key="group.key" class="run-group">
-            <h3>{{ group.label }}</h3>
-            <div class="run-group__list">
-              <RunCard v-for="run in group.items" :key="run.id" :run="run" />
-            </div>
-          </section>
-          <Pagination :has-more="runs.hasMore.value" :loading="runs.loadingMore.value" :current-count="runs.items.value.length" :total="runs.total.value" @load-more="runs.loadMore()" />
-        </div>
-      </section>
-
       <section v-else class="space-y-4">
         <div class="failure-status-tabs" role="tablist" aria-label="异常状态">
           <button v-for="item in failureStatusTabs" :key="item.value" role="tab" type="button" :aria-selected="failures.filter.value.status === item.value" :class="{ 'is-active': failures.filter.value.status === item.value }" @click="setFailureStatus(item.value)">
@@ -381,16 +297,14 @@ import { useTaskCenterPage } from '~~/composables/useTaskCenterPage'
 import { runSummaryLabel } from '~~/lib/run-presentation'
 
 const {
-  activeTab, applyFailureDraftFilters, applyRunDraftFilters, batchIgnore, batchReopen, batchRetry, clearFailureFilters, clearRunFilters,
-  draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType, draftRunDateFilter, draftRunSource, draftRunStatus, draftRunType,
+  activeTab, applyFailureDraftFilters, batchIgnore, batchReopen, batchRetry, clearFailureFilters,
+  draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType,
   downloadQueue, elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed, formatRunDuration,
-  failureStatusTabs, failureTypeFilters, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
-  livePercent, liveTitle, onFailureSearch, onRunSearch, onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, prepareRunDraftFilters,
-  primaryActiveRun, removeFailureFilter, removeRunFilter, reopenFailure, resetFailureDraftFilters, resetRunDraftFilters,
-  retryFailure, runAdvancedFilterCount,
-  runAdvancedFilterLabel, runBadgeStatus, runCanClear, runFilterChips, runs, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
-  semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, sourceOptionLabel, sourceOptions, switchTab,
+  failureStatusTabs, failureTypeFilters, formatTime, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
+  livePercent, liveTitle, onFailureSearch, onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters,
+  primaryActiveRun, removeFailureFilter, reopenFailure, resetFailureDraftFilters, retryFailure, runBadgeStatus,
+  runTypeLabel, secondaryActiveRuns, selectedFailures, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions, switchTab,
   syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
 } = useTaskCenterPage()
 </script>

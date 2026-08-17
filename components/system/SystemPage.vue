@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-6">
-    <PageHeader description="查看实时资源、运行健康与运行记录清理" />
+    <PageHeader description="集中查看系统健康、诊断日志与运行记录" />
 
     <PageTabs
       :model-value="activeTab"
@@ -27,23 +27,27 @@
       @copy-diagnostics="copyDiagnostics"
     />
 
-    <SystemMaintenancePanel
-      v-else
-      v-model:cleanup-from="cleanupFrom"
-      v-model:cleanup-to="cleanupTo"
-      v-model:cleanup-type="cleanupType"
-      v-model:cleanup-status="cleanupStatus"
-      v-model:show-run-cleanup-confirm="showRunCleanupConfirm"
-      :can-cleanup="canCleanup"
-      :cleanup-confirm-message="cleanupConfirmMessage"
-      :cleanup-loading="cleanupLoading"
-      :cleanup-message="cleanupMessage"
-      :cleanup-preview-error="cleanupPreviewError"
-      :cleanup-preview-loading="cleanupPreviewLoading"
-      :cleanup-preview-message="cleanupPreviewMessage"
-      @preview="fetchCleanupPreview"
-      @confirm-cleanup="handleRunCleanup"
-    />
+    <SystemLogsPanel v-else-if="activeTab === 'logs'" />
+
+    <div v-else class="space-y-6">
+      <SystemRunRecordsPanel />
+      <SystemMaintenancePanel
+        v-model:cleanup-from="cleanupFrom"
+        v-model:cleanup-to="cleanupTo"
+        v-model:cleanup-type="cleanupType"
+        v-model:cleanup-status="cleanupStatus"
+        v-model:show-run-cleanup-confirm="showRunCleanupConfirm"
+        :can-cleanup="canCleanup"
+        :cleanup-confirm-message="cleanupConfirmMessage"
+        :cleanup-loading="cleanupLoading"
+        :cleanup-message="cleanupMessage"
+        :cleanup-preview-error="cleanupPreviewError"
+        :cleanup-preview-loading="cleanupPreviewLoading"
+        :cleanup-preview-message="cleanupPreviewMessage"
+        @preview="fetchCleanupPreview"
+        @confirm-cleanup="handleRunCleanup"
+      />
+    </div>
   </div>
 </template>
 

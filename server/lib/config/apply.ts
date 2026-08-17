@@ -1,20 +1,10 @@
 import type { AppConfig } from './types'
 import { readConfig, writeConfig } from './store'
-import { recordActivityEvent } from '../activity/store'
 import { getSyncWorker } from '../sync/instance'
 import { markInheritedMissingMediaSourcesForReconcile } from '../playlist/store'
 
-interface ApplyConfigUpdateOptions {
-  title: string
-  type: string
-  summaryWhenChanged: (changedKeys: string[]) => string
-  summaryWhenUnchanged: string
-  groupKey: string
-}
-
 export function applyConfigUpdate(
   patch: unknown,
-  options: ApplyConfigUpdateOptions,
 ): { updated: AppConfig; changedKeys: string[] } {
   const previous = readConfig()
   const updated = writeConfig(patch)
@@ -29,20 +19,6 @@ export function applyConfigUpdate(
   }
 
   const changedKeys = getChangedTopLevelKeys(previous, updated, patch)
-
-  recordActivityEvent({
-    domain: 'user',
-    type: options.type,
-    severity: 'info',
-    actor: 'user',
-    title: options.title,
-    summary: changedKeys.length > 0
-      ? options.summaryWhenChanged(changedKeys)
-      : options.summaryWhenUnchanged,
-    context: { changedKeys },
-    link: '/config',
-    groupKey: options.groupKey,
-  })
 
   return { updated, changedKeys }
 }
