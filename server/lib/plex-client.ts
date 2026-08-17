@@ -2,6 +2,7 @@ import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
 import { stripPunct, s2t, t2s, normalizeForSearch, titleIdentityDescriptorsCompatible } from './sync/matchers'
 import { isArtistNameMatch } from './sync/artist-match'
+import { foldPlexPath, normalizePlexPath } from './sync/identity-normalization'
 
 export interface PlexTrack {
   ratingKey: string
@@ -129,14 +130,6 @@ const sectionPathIndexBuilds = new Map<string, Promise<PlexPathIndex>>()
 const sectionPathIndexGenerations = new Map<string, number>()
 let pathIndexEpoch = 0
 
-function normalizePlexFilePath(filePath: string): string {
-  return filePath.normalize('NFC').replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '')
-}
-
-function foldPlexFilePath(filePath: string): string {
-  return normalizePlexFilePath(filePath).toLowerCase()
-}
-
 async function buildSectionPathIndex(sectionKey: string): Promise<PlexPathIndex> {
   if (!client) throw new Error('Plex client not initialized')
 
@@ -161,13 +154,13 @@ async function buildSectionPathIndex(sectionKey: string): Promise<PlexPathIndex>
       for (const media of track.Media ?? []) {
         for (const part of media.Part ?? []) {
           if (!part.file) continue
-          const key = normalizePlexFilePath(part.file)
+          const key = normalizePlexPath(part.file)
           if (indexedPaths.has(key)) continue
           indexedPaths.add(key)
           const candidates = index.exact.get(key)
           if (!candidates) index.exact.set(key, [track])
           else if (!candidates.some(candidate => candidate.ratingKey === track.ratingKey)) candidates.push(track)
-          const foldedKey = foldPlexFilePath(key)
+          const foldedKey = foldPlexPath(key)
           const folded = index.folded.get(foldedKey) ?? { exactPaths: new Set<string>(), tracks: [] }
           folded.exactPaths.add(key)
           if (!folded.tracks.some(candidate => candidate.ratingKey === track.ratingKey)) folded.tracks.push(track)
@@ -454,6 +447,20 @@ export async function searchTrack(
   artistCandidates: string[],
   album: string,
 ): Promise<PlexTrack | null> {
+  return (await searchTrackCandidates(sectionKey, songName, artistCandidates, album)).match
+}
+
+export interface PlexTrackSearchCandidates {
+  match: PlexTrack | null
+  candidates: PlexTrack[]
+}
+
+export async function searchTrackCandidates(
+  sectionKey: string,
+  songName: string,
+  artistCandidates: string[],
+  album: string,
+): Promise<PlexTrackSearchCandidates> {
   if (!client) throw new Error('Plex client not initialized')
 
   const coreTitle = songName
@@ -461,8 +468,9 @@ export async function searchTrack(
     .replace(/\s*\[[^\]]*\]\s*/g, ' ')
     .trim()
 
-  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, " ").replace(/\\s+/g, " ").trim()
+  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, ' ').replace(/\s+/g, ' ').trim()
   const searchTitle = normalizeForSearch(songName)
+  const candidatesByKey = new Map<string, PlexTrack>()
 
   // ── Strategy A: search by every artist candidate (most reliable) ──
   for (const candidate of artistCandidates) {
@@ -470,10 +478,7 @@ export async function searchTrack(
       `/library/sections/${sectionKey}/all?type=10&artist.title=${encodeURIComponent(candidate)}`,
     )
     const artistTracks = extractMetadata(artistRes)
-    if (artistTracks.length) {
-      const match = findMatch(artistTracks, songName, coreTitle, cleanTitle, artistCandidates, album)
-      if (match) return match
-    }
+    for (const track of artistTracks) candidatesByKey.set(track.ratingKey, track)
   }
 
   // ── Strategy B: title-based search with candidate artist matching ──
@@ -482,12 +487,15 @@ export async function searchTrack(
     const res = await client.query(
       `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(t)}`,
     )
-    const tracks = extractMetadata(res)
-    const match = findMatch(tracks, songName, coreTitle, cleanTitle, artistCandidates, album)
-    if (match) return match
+    for (const track of extractMetadata(res)) candidatesByKey.set(track.ratingKey, track)
   }
 
-  return null
+  const candidates = [...candidatesByKey.values()]
+    .sort((left, right) => left.ratingKey.localeCompare(right.ratingKey))
+  return {
+    match: findMatch(candidates, songName, coreTitle, cleanTitle, artistCandidates, album),
+    candidates,
+  }
 }
 
 export async function searchTracksByTitle(sectionKey: string, songName: string): Promise<PlexTrack[]> {
@@ -497,7 +505,7 @@ export async function searchTracksByTitle(sectionKey: string, songName: string):
     .replace(/\s*\([^)]*\)\s*/g, ' ')
     .replace(/\s*\[[^\]]*\]\s*/g, ' ')
     .trim()
-  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, ' ').replace(/\\s+/g, ' ').trim()
+  const cleanTitle = coreTitle.replace(/[/\\:*?"<>|']/g, ' ').replace(/\s+/g, ' ').trim()
   const searchTitle = normalizeForSearch(songName)
   const traditionalTitle = s2t(songName)
   const simplifiedTitle = t2s(songName)
@@ -571,10 +579,10 @@ export async function findTracksByFilePath(sectionKey: string, filePath: string)
   if (!client || !filePath) return []
   try {
     const index = await getSectionPathIndex(sectionKey)
-    const normalized = normalizePlexFilePath(filePath)
+    const normalized = normalizePlexPath(filePath)
     const exact = index.exact.get(normalized)
     if (exact) return [...exact]
-    const folded = index.folded.get(foldPlexFilePath(normalized))
+    const folded = index.folded.get(foldPlexPath(normalized))
     // Case folding is a fallback only. A case-sensitive Plex library may
     // legitimately contain both variants, so ambiguity must remain review-only.
     if (!folded || folded.exactPaths.size !== 1 || folded.tracks.length !== 1) return []
@@ -605,23 +613,26 @@ function findMatch(
   if (!results.length) return null
 
   // 1) Exact triple match — title + any candidate artist + album
-  const exact = results.find(
+  const exact = results.filter(
     (item) =>
       titleVariantsMatch(item.title, songName) &&
       artistCandidates.some((c) => item.grandparentTitle.toLowerCase() === c.toLowerCase()) &&
       titleVariantsMatch(item.parentTitle, album),
   )
-  if (exact) return exact
+  if (exact.length === 1) return exact[0]!
+  if (exact.length > 1) return null
 
   // 2) Relaxed: stripped title + candidate artist match
   const songStripped = buildTitleMatchVariants(coreTitle)
-  const relaxed = results.find((item) => {
+  const relaxed = results.filter((item) => {
     const pt = buildTitleMatchVariants(item.title)
-    const titleMatch = pt.some((variant) => songStripped.some((candidate) => variant === candidate || variant.includes(candidate) || candidate.includes(variant)))
+    const titleMatch = titleIdentityDescriptorsCompatible(item.title, songName)
+      && pt.some((variant) => songStripped.includes(variant))
     const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, c))
     return titleMatch && artistMatch
   })
-  if (relaxed) return relaxed
+  if (relaxed.length === 1) return relaxed[0]!
+  if (relaxed.length > 1) return null
 
   // 3) s2t conversion: try simplified→traditional for each candidate
   const tCoreTitle = s2t(coreTitle)
@@ -631,13 +642,14 @@ function findMatch(
   })
   if (needS2t) {
     const tStripped = buildTitleMatchVariants(tCoreTitle)
-    const s2tMatch = results.find((item) => {
+    const s2tMatch = results.filter((item) => {
       const pt = buildTitleMatchVariants(item.title)
-      const titleMatch = pt.some((variant) => tStripped.some((candidate) => variant === candidate || variant.includes(candidate) || candidate.includes(variant)))
+      const titleMatch = titleIdentityDescriptorsCompatible(item.title, songName)
+        && pt.some((variant) => tStripped.includes(variant))
       const artistMatch = artistCandidates.some((c) => isArtistNameMatch(item.grandparentTitle, s2t(c)))
       return titleMatch && artistMatch
     })
-    if (s2tMatch) return s2tMatch
+    if (s2tMatch.length === 1) return s2tMatch[0]!
   }
 
   return null

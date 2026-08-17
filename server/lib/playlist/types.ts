@@ -19,7 +19,8 @@ export interface PlaylistSource {
   autoCreatePlexPlaylist: boolean
   trackCount: number
   lastTrackUpdateTime: number | null
-  forceFullCompare: boolean
+  forceFullCompare: boolean | null
+  downloadWhenMediaMissing: boolean | null
   consecutiveSkips: number
   fullCompareAfterSkips: number | null
   fullCompareAfterDays: number | null
@@ -36,8 +37,8 @@ export interface PlaylistSource {
   lastComparedNeteaseCursor: string | null
   lastObservedAt: string | null
   lastComparedAt: string | null
-  skipPlexPlaylist: boolean
-  skipRemoveExtraTracks: boolean
+  skipPlexPlaylist: boolean | null
+  skipRemoveExtraTracks: boolean | null
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
   requiresMatchReconcile: boolean
@@ -65,7 +66,8 @@ export interface PlaylistSourceRow {
   auto_create_plex_playlist: number
   track_count: number
   last_track_update_time: number | null
-  force_full_compare: number
+  force_full_compare: number | null
+  download_when_media_missing: number | null
   consecutive_skips: number
   full_compare_after_skips: number | null
   full_compare_after_days: number | null
@@ -78,8 +80,8 @@ export interface PlaylistSourceRow {
   last_compared_netease_cursor: string | null
   last_observed_at: string | null
   last_compared_at: string | null
-  skip_plex_playlist: number
-  skip_remove_extra_tracks: number
+  skip_plex_playlist: number | null
+  skip_remove_extra_tracks: number | null
   copyright_restricted_ids: string | null
   ignored_failure_ids: string | null
   requires_match_reconcile: number
@@ -108,7 +110,8 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     autoCreatePlexPlaylist: row.auto_create_plex_playlist === 1,
     trackCount: row.track_count,
     lastTrackUpdateTime: row.last_track_update_time,
-    forceFullCompare: row.force_full_compare === 1,
+    forceFullCompare: row.force_full_compare === null ? null : row.force_full_compare === 1,
+    downloadWhenMediaMissing: row.download_when_media_missing === null ? null : row.download_when_media_missing === 1,
     consecutiveSkips: row.consecutive_skips,
     fullCompareAfterSkips: row.full_compare_after_skips,
     fullCompareAfterDays: row.full_compare_after_days,
@@ -121,8 +124,8 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     lastComparedNeteaseCursor: row.last_compared_netease_cursor,
     lastObservedAt: row.last_observed_at,
     lastComparedAt: row.last_compared_at,
-    skipPlexPlaylist: row.skip_plex_playlist === 1,
-    skipRemoveExtraTracks: row.skip_remove_extra_tracks === 1,
+    skipPlexPlaylist: row.skip_plex_playlist === null ? null : row.skip_plex_playlist === 1,
+    skipRemoveExtraTracks: row.skip_remove_extra_tracks === null ? null : row.skip_remove_extra_tracks === 1,
     copyrightRestrictedIds: row.copyright_restricted_ids,
     ignoredFailureIds: row.ignored_failure_ids,
     requiresMatchReconcile: row.requires_match_reconcile === 1,

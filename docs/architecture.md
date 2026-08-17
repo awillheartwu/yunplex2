@@ -1,0 +1,119 @@
+# reYunPlex 当前架构
+
+本文描述当前工作树的模块责任和主要调用链。领域术语以 [CONTEXT.md](../CONTEXT.md) 为准，同步细节以 [sync-flow.md](sync-flow.md) 为准。
+
+## 运行拓扑
+
+```text
+浏览器（Nuxt SPA）
+  pages -> components/composables -> useApi -> Nitro /api
+  composables/sse.ts <- /api/sync/events
+
+Nitro 单进程服务
+  HTTP API
+  SQLite data/data.db
+  Source Convergence 单实例
+  全局自动同步 timer
+  持久下载队列 + 全局下载并发
+  Plex / 网易云 / MusicBrainz 外部调用
+```
+
+当前部署模型是单进程、单数据库。同步服务用 `isRunning` 防止并行 Source Convergence；下载队列可以并发，但并发数来自全局配置。来源级持久调度队列属于 roadmap P0，尚不是当前行为。
+
+## 前端边界
+
+| 区域 | 页面/模块 | 责任 |
+|---|---|---|
+| 初始化与认证 | `pages/setup.vue`、`pages/login.vue`、`middleware/` | 初始管理员、连接配置、会话保护 |
+| 仪表盘 | `pages/index.vue`、`components/dashboard/` | 运行状态、KPI、来源健康、最近活动 |
+| 来源管理 | `pages/sync-sources.vue`、`components/sources/`、`composables/useSyncSourcesPage.ts` | 歌单/专辑来源、过滤、批量操作、来源级策略 |
+| 手动下载 | `pages/manual-download.vue`、`components/manual-download/` | 解析歌单/专辑/歌曲、勾选并创建下载任务 |
+| 任务中心 | `pages/task-center/`、`components/task-center/`、`components/jobs/` | 同步/下载/补全运行、实时进度、结果与重试 |
+| 身份管理 | `pages/match-reviews.vue`、`components/match-management/` | Match Review、绑定总览、身份事件 |
+| 运维 | `pages/activity.vue`、`pages/logs.vue`、`pages/system.vue` | 活动、日志、健康、数据统计和维护动作 |
+
+`composables/sse.ts` 是浏览器端共享 SSE 连接。下载队列和同步状态采用 SSE 优先、必要时轮询回退；订阅者离开页面时必须释放 listener、timer 和引用。
+
+## 服务端边界
+
+| 模块 | 责任 | 不应承担 |
+|---|---|---|
+| `server/api/` | HTTP 参数、鉴权边界、调用领域服务、统一响应 | 复制同步或下载主流程 |
+| `server/lib/config/` | 默认值、类型、迁移、校验、持久化、运行时应用 | 来源身份或 Plex mutation |
+| `server/lib/db/` | 当前 schema、历史迁移、幂等修复、结构探测 | 业务策略 |
+| `server/lib/playlist/` | Playlist Source CRUD、批量动作、来源状态 | 歌曲身份推断 |
+| `server/lib/download/` | 持久任务、lease、并发消费、单曲下载配置 | Plex 歌单删除授权 |
+| `server/lib/sync/` | Track Resolution、Identity Binding、Reconciliation Plan、Source Convergence | 第二套手动下载入口 |
+| `server/lib/run/` | 统一 task run 记录和清理 | 领域状态真相 |
+| `server/lib/activity/`、`server/lib/log/` | 用户活动投影和诊断日志 | 替代 task run 或身份事件 |
+| `server/lib/integrations/` | MusicBrainz transport、类型与解析 | 自动降低身份门槛 |
+
+## 关键调用链
+
+### Source Convergence
+
+```text
+全局/单源/批量/重试/定时入口
+  -> server/lib/sync/service.ts
+  -> 获取 NetEase Target Song snapshot
+  -> change-detection.ts
+  -> source-pure-reorder.ts（仅完整强身份的纯重排）
+     或 plex-reconciler.ts + lookup.ts（完整 Track Resolution）
+  -> source-downloads.ts（需要下载或替换的 Local Media Asset）
+  -> source-plex-reconciliation.ts
+       身份版本校验 -> 应用本轮 binding -> Plex mutation -> read-back
+  -> source-finalization.ts
+       来源游标、失败记忆、task run、activity
+```
+
+`service.ts` 是唯一编排入口。API handler、补全动作或未来 worker 不应自行拼接“查找—下载—扫描—重排”第二条链路。
+
+### 手动下载
+
+```text
+pages/manual-download.vue
+  -> server/api/download.post.ts
+  -> server/lib/download/download-batch.ts
+  -> server/lib/download/queue.ts
+  -> server/lib/download/single-song.ts
+  -> server/lib/tag-writer.ts
+```
+
+同步、补全和重试需要单曲下载配置时，统一通过 `server/lib/download/options.ts` 装配默认值和模式覆盖。全局下载并发由 queue 消费端控制。
+
+### 身份审核
+
+```text
+Track Resolution 证据不足
+  -> song_match_reviews / review occurrence
+  -> Match Management API 与 UI
+  -> 人工 accept / reject / unbind / rebind
+  -> song_identity_bindings + song_identity_events
+  -> 下次 Source Convergence 重新规划
+```
+
+人工决定是正式身份事实；审核候选不是删除授权。身份版本在计划和 Plex mutation 之间发生变化时，本轮必须安全中止。
+
+## 数据责任
+
+- `playlist_sources` 及 occurrence 表：来源配置、目标快照、顺序和同步游标。
+- `song_identity_bindings`、`song_identity_events`：当前身份与不可变审计历史。
+- `local_media_assets`：本地路径、managed/external 归属、连续性和替换状态。
+- `song_match_reviews` 及关联 occurrence：需要人工处理的候选。
+- `download_tasks`：可保留和恢复的下载队列；不是长期歌曲身份事实。
+- `task_runs`、failure records：运行结果和可操作失败。
+- `activity_events`、`logs`：用户可读活动与诊断记录。
+- MusicBrainz cache：可重建的外部查询缓存；不是身份事实。
+
+`server/lib/db/schema.ts` 是全新数据库的当前结构；`migration-history.ts` 保留旧版本升级步骤；`migrations.ts` 运行历史迁移和当前幂等修复。历史迁移中出现已退役表不代表当前运行时仍使用它。
+
+## 系统不变量
+
+1. Playlist Source 定义目标成员和顺序，但不能绕过删除保护。
+2. Identity Binding、Local Media Asset 和 Playlist Occurrence 是三种不同事实。
+3. 只有具体 Plex `playlistItemID` 可以被授权移除；同步不删除媒体文件。
+4. 弱元数据只产生候选，不能自动建立身份。
+5. 下载替换先写临时文件并校验，失败保留旧媒体、旧身份和旧 Plex occurrence。
+6. Plex mutation 前检查身份版本，写入后必须 read-back。
+7. 配置的来源级布尔覆盖是三态值，`null` 表示继承，不能用普通 truthy 合并。
+8. 外部服务、文件系统、重启和长时间运行验证必须与单元测试/构建结果分开陈述。

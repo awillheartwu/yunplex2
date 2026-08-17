@@ -3,21 +3,22 @@ import { closeDb, initDb } from '../server/lib/db'
 import { readConfig, setDataDir } from '../server/lib/config/store'
 import { getSource } from '../server/lib/playlist/store'
 import { getPlaylistTracks, initPlexClient } from '../server/lib/plex-client'
-import { getRun, listRuns } from '../server/lib/run/store'
+import { RunBuilder } from '../server/lib/run/builder'
 import { getSyncService } from '../server/lib/sync/service'
+import type { SyncMode } from '../server/lib/sync/service-state'
+import type { SyncJob } from '../server/lib/job/types'
 
 interface CliOptions {
   sourceId: string
   runs: number
   apply: boolean
-  forceFull: boolean
-  rebuildMatch: boolean
+  mode: SyncMode
   dataDir: string
   verbose: boolean
 }
 
 type PlaylistSnapshot = Awaited<ReturnType<typeof snapshotPlaylist>>
-type RunSummary = ReturnType<typeof summarizeLatestRun>
+type RunSummary = ReturnType<typeof summarizeRun>
 interface Observation { phase: string; playlist: PlaylistSnapshot; run?: RunSummary }
 
 function readOption(args: string[], name: string): string | undefined {
@@ -37,12 +38,21 @@ function parseOptions(args: string[]): CliOptions {
     throw new Error('--runs 必须是 1–5 的整数')
   }
 
+  const apply = args.includes('--apply')
+  const requestedMode = readOption(args, 'mode')
+  const mode: SyncMode = !apply
+    ? 'preview'
+    : requestedMode === 'rebuild_matching'
+      ? 'rebuild_matching'
+      : requestedMode === 'full'
+        ? 'full'
+        : 'normal'
+
   return {
     sourceId,
     runs,
-    apply: args.includes('--apply'),
-    forceFull: args.includes('--force-full'),
-    rebuildMatch: args.includes('--rebuild-match'),
+    apply,
+    mode,
     dataDir: readOption(args, 'data-dir')?.trim() || './data',
     verbose: args.includes('--verbose'),
   }
@@ -61,28 +71,43 @@ async function snapshotPlaylist(playlistRatingKey: string) {
     title: track.title,
     artist: track.grandparentTitle,
     album: track.parentTitle,
+    guid: track.guid,
+    filePaths: (track.Media ?? []).flatMap(media =>
+      media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [],
+    ),
   }))
+  const duplicateRatingKeys = duplicates(items.map(item => item.ratingKey))
+  const duplicatePlaylistItemIds = duplicates(
+    items.flatMap(item => item.playlistItemId === undefined ? [] : [String(item.playlistItemId)]),
+  )
 
   return {
     count: items.length,
     identityFingerprint: sha256(items.map(item => item.ratingKey)),
     occurrenceFingerprint: sha256(items.flatMap(item => [item.ratingKey, item.playlistItemId])),
+    duplicateRatingKeys,
+    duplicatePlaylistItemIds,
     items,
   }
 }
 
-function summarizeLatestRun(sourceId: string) {
-  const latest = listRuns({ type: 'sync', sourceId, limit: 1 }).items[0]
-  if (!latest) throw new Error('同步完成后未找到对应运行记录')
-  const run = getRun(latest.id)
-  if (!run) throw new Error(`无法读取运行记录 ${latest.id}`)
+function duplicates(values: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([value]) => value)
+    .sort()
+}
 
+function summarizeRun(run: SyncJob, sourceId: string) {
+  const sourceSongs = run.songs.filter(song => song.sourceId === sourceId)
   const statusCounts = Object.fromEntries(
-    [...new Set(run.songs.map(song => song.status))]
+    [...new Set(sourceSongs.map(song => song.status))]
       .sort()
-      .map(status => [status, run.songs.filter(song => song.status === status).length]),
+      .map(status => [status, sourceSongs.filter(song => song.status === status).length]),
   )
-  const attention = run.songs
+  const attention = sourceSongs
     .filter(song => !['success', 'skipped_existing', 'removed'].includes(song.status))
     .map(song => ({
       songId: song.neteaseSongId,
@@ -98,10 +123,10 @@ function summarizeLatestRun(sourceId: string) {
     id: run.id,
     status: run.status,
     summary: run.summary,
-    totalSongs: run.totalSongs,
-    successSongs: run.successSongs,
-    failedSongs: run.failedSongs,
-    removedSongs: run.removedSongs,
+    totalSongs: sourceSongs.length,
+    successSongs: sourceSongs.filter(song => ['success', 'skipped_existing'].includes(song.status)).length,
+    failedSongs: sourceSongs.filter(song => song.status.startsWith('failed_')).length,
+    removedSongs: sourceSongs.filter(song => song.status === 'removed').length,
     warnings: run.warnings,
     statusCounts,
     attention,
@@ -125,16 +150,16 @@ async function main() {
   ]
 
   for (let index = 1; index <= options.runs; index++) {
-    await service.runSyncForSource(source.id, {
-      dryRun: !options.apply,
-      forceFull: options.forceFull,
-      rebuildMatch: options.rebuildMatch,
+    const run = new RunBuilder(options.mode === 'preview')
+    await service.runSync({
+      mode: options.mode,
+      sourceIds: [source.id],
       trigger: 'user',
-    })
+    }, run)
     observations.push({
       phase: `after-${index}`,
       playlist: await snapshotPlaylist(source.plexPlaylistRatingKey),
-      run: summarizeLatestRun(source.id),
+      run: summarizeRun(run.getRun(), source.id),
     })
   }
 

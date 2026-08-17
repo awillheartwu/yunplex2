@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
     "check:repo-size": "node scripts/check-repo-size.mjs",
     "diagnose:sync-source": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-sync-source.ts",
     "format": "prettier --write .",

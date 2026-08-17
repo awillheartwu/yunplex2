@@ -1,4 +1,4 @@
-export type BindingMethod = 'path' | 'mb_recording' | 'metadata' | 'manual' | 'migrated'
+export type BindingMethod = 'path' | 'mb_recording' | 'provider_guid' | 'metadata' | 'manual' | 'migrated'
 export type BindingStatus = 'active' | 'stale' | 'unbound'
 export type ReviewStatus = 'pending' | 'accepted' | 'rejected' | 'unbound' | 'superseded'
 export type ReviewEvidenceType = 'path' | 'mb_recording' | 'metadata' | 'historical' | 'manual' | 'migration'

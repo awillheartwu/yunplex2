@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { initDb, readRawConfigFromDb, writeConfigToDb } from '../db'
+import { getDb, initDb, readRawConfigFromDb, writeConfigToDb } from '../db'
 import { listActivityEvents } from '../activity/store'
 import { clearSyncWorker, setSyncWorker } from '../sync/instance'
 import { DEFAULT_CONFIG } from './defaults'
@@ -60,28 +60,36 @@ describe('settings config validation and migration', () => {
     expect(readConfig().sync.extraTrackRemovalPolicy).toBe('balanced')
   })
 
-  it('migrates high-confidence metadata binding to a safe disabled default', () => {
+  it('migrates the missing-media policy as disabled by default', () => {
+    setupDb()
+    writeConfigToDb({
+      ...DEFAULT_CONFIG,
+      sync: Object.fromEntries(
+        Object.entries(DEFAULT_CONFIG.sync).filter(([key]) => key !== 'downloadWhenMediaMissing'),
+      ),
+    } as any)
+
+    expect(readConfig().sync.downloadWhenMediaMissing).toBe(false)
+  })
+
+  it('removes retired metadata-binding settings from persisted legacy config', () => {
     setupDb()
     const legacy = structuredClone(DEFAULT_CONFIG) as any
-    delete legacy.sync.enableHighConfidenceMetadataBinding
-    delete legacy.sync.metadataDurationToleranceSec
+    legacy.sync.enableHighConfidenceMetadataBinding = true
+    legacy.sync.metadataDurationToleranceSec = 9
     writeConfigToDb(legacy)
 
     const migrated = readConfig()
 
-    expect(migrated.sync.enableHighConfidenceMetadataBinding).toBe(false)
-    expect(migrated.sync.metadataDurationToleranceSec).toBe(2)
+    expect(migrated.sync).not.toHaveProperty('enableHighConfidenceMetadataBinding')
+    expect(migrated.sync).not.toHaveProperty('metadataDurationToleranceSec')
   })
 
-  it('validates and persists high-confidence metadata binding settings', () => {
+  it('rejects retired metadata-binding settings in new writes', () => {
     setupDb()
 
-    writeConfig({ sync: { enableHighConfidenceMetadataBinding: true, metadataDurationToleranceSec: 3 } })
-    expect(readConfig().sync).toMatchObject({
-      enableHighConfidenceMetadataBinding: true,
-      metadataDurationToleranceSec: 3,
-    })
-    expect(() => writeConfig({ sync: { metadataDurationToleranceSec: 31 } })).toThrow('高置信元数据时长误差必须在 0-30 之间')
+    expect(() => writeConfig({ sync: { enableHighConfidenceMetadataBinding: true } } as any))
+      .toThrow('同步包含未知配置项：enableHighConfidenceMetadataBinding')
   })
 
   it('persists every supported extra-track removal policy', () => {
@@ -150,6 +158,37 @@ describe('settings config validation and migration', () => {
     const events = listActivityEvents({ limit: 10 }).items
     expect(events[0]?.type).toBe('config_imported')
     expect(events[0]?.summary).toBe('本次导入更新了 sync')
+  })
+
+  it('marks inherited sources for reconciliation when the global policy is enabled', () => {
+    setupDb()
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (
+        id, netease_playlist_id, download_when_media_missing, created_at, updated_at
+      ) VALUES
+        ('inherits', 1, NULL, ?, ?),
+        ('disabled', 2, 0, ?, ?)
+    `).run(now, now, now, now)
+
+    applyConfigUpdate(
+      { sync: { downloadWhenMediaMissing: true } },
+      {
+        title: '更新系统配置',
+        type: 'config_updated',
+        summaryWhenChanged: keys => keys.join('、'),
+        summaryWhenUnchanged: '无变化',
+        groupKey: 'config:update',
+      },
+    )
+
+    expect(getDb().prepare(`
+      SELECT id, requires_match_reconcile
+      FROM playlist_sources ORDER BY id
+    `).all()).toEqual([
+      { id: 'disabled', requires_match_reconcile: 0 },
+      { id: 'inherits', requires_match_reconcile: 1 },
+    ])
   })
 
   it('resolves connection tests from candidate form config instead of saved config', () => {

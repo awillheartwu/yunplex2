@@ -25,6 +25,7 @@ export type RemovalDecision =
       ratingKey: string
       reason:
         | 'surplus_bound_occurrence'
+        | 'replaced_bound_occurrence'
         | 'bound_song_not_in_target'
         | 'stable_unknown_extra'
         | 'complete_target_unknown_extra'
@@ -78,6 +79,13 @@ export function buildReconciliationPlan(input: {
       ? [target.plexRatingKey]
       : [],
   ))
+  const strongTargetKeysBySongId = new Map<number, Set<string>>()
+  for (const target of input.targets) {
+    if (!target.plexRatingKey || !isStrongTargetIdentity(target.matchTrace)) continue
+    const keys = strongTargetKeysBySongId.get(target.neteaseSongId) ?? new Set<string>()
+    keys.add(target.plexRatingKey)
+    strongTargetKeysBySongId.set(target.neteaseSongId, keys)
+  }
   const strongTargetObservationKeys = new Set(input.currentItems.flatMap(item =>
     strongTargetKeys.has(item.ratingKey) && item.observationKey
       ? [item.observationKey]
@@ -135,6 +143,25 @@ export function buildReconciliationPlan(input: {
     }
 
     const knownIdentity = knownIdentityByRatingKey.get(item.ratingKey)
+    const replacementKeys = knownIdentity
+      ? strongTargetKeysBySongId.get(knownIdentity.neteaseSongId)
+      : undefined
+    if (
+      knownIdentity
+      && targetSongIds.has(knownIdentity.neteaseSongId)
+      && replacementKeys?.size === 1
+      && !replacementKeys.has(item.ratingKey)
+    ) {
+      authorizedRemovalItemIds.add(item.playlistItemId)
+      removalDecisions.push({
+        action: 'remove',
+        playlistItemId: item.playlistItemId,
+        ratingKey: item.ratingKey,
+        reason: 'replaced_bound_occurrence',
+        neteaseSongId: knownIdentity.neteaseSongId,
+      })
+      continue
+    }
     if (knownIdentity && !targetSongIds.has(knownIdentity.neteaseSongId)) {
       authorizedRemovalItemIds.add(item.playlistItemId)
       removalDecisions.push({
@@ -227,7 +254,7 @@ export function findExtraPlaylistOccurrences(
 
 function isStrongTargetIdentity(trace: MatchTrace | undefined): boolean {
   if (!trace?.identity || trace.identity.bindingStatus !== 'active') return false
-  return ['path', 'mb_recording', 'metadata', 'manual', 'migrated'].includes(trace.identity.method)
+  return ['path', 'mb_recording', 'provider_guid', 'metadata', 'manual', 'migrated'].includes(trace.identity.method)
 }
 
 function countKeys(keys: readonly string[]): Map<string, number> {

@@ -6,7 +6,10 @@
 
 - **Web 管理面板** -- 可视化管理配置、触发同步、查看状态
 - **定时同步** -- 按设定间隔自动同步网易云歌单到 Plex
-- **手动同步** -- 支持手动触发及 dry-run 预览模式
+- **手动同步** -- 支持普通、全量和无副作用预览模式
+- **来源管理** -- 支持歌单与专辑来源、来源级同步策略和批量操作
+- **下载中心** -- 支持歌单、专辑、单曲下载，实时队列、并发限制和失败重试
+- **安全匹配** -- 持久身份、MusicBrainz 强证据、人工审核和 Plex 删除保护
 - **日志追踪** -- 同步任务日志落盘，支持按级别过滤查看
 - **文件标签** -- 下载歌曲时写入 ID3/FLAC 元数据和封面
 - **Docker 部署** -- 单容器 Docker Compose 部署，配置持久化
@@ -17,14 +20,15 @@
 YunPlex2/
 ├── server/
 │   ├── api/           # API 路由（配置、同步、日志、系统）
-│   ├── lib/           # 核心逻辑（config store、log store、sync service）
+│   ├── lib/           # 配置、数据库、下载队列、身份与同步领域逻辑
 │   └── plugins/       # Nitro 插件（sync daemon）
 ├── pages/             # 前端页面（仪表盘、配置、日志、任务、系统）
 ├── components/        # Vue 组件
 ├── composables/       # 可组合函数
 ├── assets/css/        # 全局样式
+├── docs/              # 当前实现文档与架构决策
 ├── data/              # 运行时数据目录
-│   └── data.db        # SQLite 数据库（配置 + 日志）
+│   └── data.db        # SQLite 数据库
 ├── Dockerfile
 ├── docker-compose.yml
 └── package.json
@@ -137,10 +141,9 @@ volumes:
 | 同步间隔 | 自动同步间隔（分钟），建议 30-60 |
 | 歌曲上限 | 每次同步处理的歌曲数量 |
 | 启用自动同步 | 开关 |
-| 高置信元数据自动绑定 | 两侧无可用 MB recording 时，以标题、完整艺人、专辑、音轨号和时长全字段一致建立绑定；默认关闭 |
-| 元数据时长允许误差 | 高置信绑定的最大时长差，默认 2 秒 |
+| 缺少已登记媒体时自动下载 | 没有有效媒体资产时直接下载并以文件路径建立身份；默认关闭，来源可单独覆盖 |
 
-MusicBrainz 返回多个相近 recording 时，同一“元数据时长允许误差”也用于 recording 消歧。系统会先排除 Instrumental、Live、Remix、Demo 等版本不兼容候选，再要求最近时长候选唯一且至少领先第二名 500 ms；证据不足时仍进入匹配审核，不会自动删除 Plex 旧条目。
+开启缺失媒体自动下载后，人工绑定仍然优先，已验证的 YunPlex 或外部媒体继续复用。下载完成后只通过精确文件路径定位 Plex 项；失败或尚未索引时保留旧歌单条目，不使用元数据候选替代。
 
 ## API 接口
 
@@ -156,13 +159,19 @@ MusicBrainz 返回多个相近 recording 时，同一“元数据时长允许误
 | PUT | /api/config | 保存配置 |
 | GET | /api/config/defaults | 获取默认配置 |
 | POST | /api/config/test-connection | 测试连接 |
-| POST | /api/sync/trigger | 触发同步（可选 `{ dryRun: true }`） |
+| POST | /api/sync/trigger | 触发同步（`{ mode: "normal" | "preview" | "full" }`） |
 | GET | /api/sync/status | 查询同步状态 |
 | POST | /api/sync/cancel | 取消正在运行的同步 |
 | GET | /api/logs | 查询日志（参数 `level`, `limit`） |
 | DELETE | /api/logs | 清空日志 |
 | GET | /api/system/health | 健康检查 |
 | GET | /api/system/info | 系统信息 |
+
+## 项目文档
+
+- [项目路线图](ROADMAP.md)：当前能力、优先级、验收标准和后续开发顺序。
+- [文档索引](docs/README.md)：当前架构、同步流程、比较决策和 ADR。
+- [领域词汇](CONTEXT.md)：同步、身份、媒体和 Plex occurrence 的统一术语。
 
 ## 旧项目
 

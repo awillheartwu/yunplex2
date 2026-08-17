@@ -1,6 +1,7 @@
 import { success, fail } from '../lib/response'
 import { readConfig } from '../lib/config/store'
 import { runDownloadBatch } from '../lib/download/download-batch'
+import { resolveSingleSongConfig } from '../lib/download/options'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -34,20 +35,13 @@ export default defineEventHandler(async (event) => {
       neteaseId: body.neteaseId,
       songIds: body.songIds,
       config: {
-        quality: body.quality ?? cfg.netease.quality,
-        cookie: cfg.netease.cookie,
-        downloadDir: cfg.download.dir,
-        pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-        multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
-        downloadLyrics: body.downloadLyrics ?? cfg.download.downloadLyrics,
-        embedMetadata: body.embedMetadata ?? cfg.download.embedMetadata,
-        embedCover: body.downloadImages ?? cfg.download.embedCover,
-        saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-        saveArtistImage: cfg.download.saveArtistImage ?? false,
-        lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
-        downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
-        downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
-        downloadMode: 'full',
+        ...resolveSingleSongConfig(cfg, {
+          quality: body.quality ?? cfg.netease.quality,
+          downloadLyrics: body.downloadLyrics ?? cfg.download.downloadLyrics,
+          embedMetadata: body.embedMetadata ?? cfg.download.embedMetadata,
+          embedCover: body.downloadImages ?? cfg.download.embedCover,
+          downloadMode: 'full',
+        }),
         artistAliases: cfg.other?.artistAliases ?? {},
         applyAliasToAlbum: cfg.other?.applyAliasToAlbum ?? false,
         downloadConcurrency: cfg.sync.downloadConcurrency || 3,

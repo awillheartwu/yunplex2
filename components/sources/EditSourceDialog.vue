@@ -25,9 +25,21 @@
           </div>
           <p v-if="saveError" class="text-2xs text-danger">{{ saveError }}</p>
 
+          <SourceBooleanOverride
+            v-model="form.downloadWhenMediaMissing"
+            label="缺少已登记媒体时自动下载"
+            :global-value="globalSyncSettings.downloadWhenMediaMissing"
+            hint="没有有效资产时直接下载；人工绑定豁免，已有托管或外部资产继续复用"
+          />
+
           <!-- Album-only: skip Plex playlist -->
           <template v-if="source.type === 'album'">
-            <ToggleField v-model="form.skipPlexPlaylist" label="仅下载不入歌单" hint="只下载到本地并导入 Plex 库，不创建 Plex 歌单也不重排" />
+            <SourceBooleanOverride
+              v-model="form.skipPlexPlaylist"
+              label="仅下载不入歌单"
+              :global-value="globalSyncSettings.skipPlexPlaylist"
+              hint="只下载到本地并导入 Plex 库，不创建 Plex 歌单也不重排"
+            />
           </template>
 
           <!-- Playlist-only settings -->
@@ -53,10 +65,20 @@
           <div style="height:1px;background:var(--border-primary)" />
           <ToggleField v-model="form.enabled" label="启用" hint="关闭后该歌单将不会参与同步" />
           <ToggleField v-model="form.autoCreatePlexPlaylist" label="自动创建 Plex 歌单" hint="Plex 中不存在同名歌单时自动创建" />
-          <ToggleField v-model="form.forceFullCompare" label="始终全量对比" hint="覆盖全局设置，每次都进行完整对比" />
-	      <ToggleField v-model="form.skipRemoveExtraTracks" label="不删除多余歌曲" hint="覆盖全局设置，保留 Plex 中网易云已移除的歌曲" />
+          <SourceBooleanOverride
+            v-model="form.forceFullCompare"
+            label="始终全量对比"
+            :global-value="globalSyncSettings.forceFullCompare"
+            hint="每次都进行完整对比"
+          />
+          <SourceBooleanOverride
+            v-model="form.skipRemoveExtraTracks"
+            label="不删除多余歌曲"
+            :global-value="globalSyncSettings.skipRemoveExtraTracks"
+            hint="保留 Plex 中网易云已移除的歌曲"
+          />
           <!-- Per-source skip limits (hidden when always full) -->
-          <template v-if="!form.forceFullCompare">
+          <template v-if="effectiveBoolean(form.forceFullCompare, globalSyncSettings.forceFullCompare) === false">
             <div style="height:1px;background:var(--border-primary)" />
             <div class="grid grid-cols-2 gap-3">
               <div>
@@ -86,6 +108,7 @@
 
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
+import type { AppConfig } from '~~/server/lib/config/types'
 
 interface PlexPlaylistItem { title: string; ratingKey: string }
 
@@ -97,6 +120,12 @@ const loading = ref(false)
 const plexPlaylists = ref<PlexPlaylistItem[]>([])
 const plexError = ref('')
 const saveError = ref('')
+const globalSyncSettings = reactive({
+  forceFullCompare: false,
+  downloadWhenMediaMissing: false,
+  skipPlexPlaylist: false,
+  skipRemoveExtraTracks: false,
+})
 
 const form = reactive({
   name: '',
@@ -104,11 +133,12 @@ const form = reactive({
   syncLimit: null as number | null,
   enabled: true,
   autoCreatePlexPlaylist: true,
-  forceFullCompare: false,
-  skipRemoveExtraTracks: false,
+  forceFullCompare: null as boolean | null,
+  downloadWhenMediaMissing: null as boolean | null,
+  skipRemoveExtraTracks: null as boolean | null,
   fullCompareAfterSkips: null as number | null,
   fullCompareAfterDays: null as number | null,
-  skipPlexPlaylist: false,
+  skipPlexPlaylist: null as boolean | null,
   subscribed: false,
 })
 
@@ -120,18 +150,36 @@ watch(() => props.source, (s) => {
   form.syncLimit = s.syncLimit
   form.enabled = s.enabled
   form.autoCreatePlexPlaylist = s.autoCreatePlexPlaylist ?? true
-  form.forceFullCompare = s.forceFullCompare ?? false
-  form.skipRemoveExtraTracks = s.skipRemoveExtraTracks ?? false
+  form.forceFullCompare = s.forceFullCompare
+  form.downloadWhenMediaMissing = s.downloadWhenMediaMissing
+  form.skipRemoveExtraTracks = s.skipRemoveExtraTracks
   form.fullCompareAfterSkips = s.fullCompareAfterSkips
   form.fullCompareAfterDays = s.fullCompareAfterDays
-  form.skipPlexPlaylist = s.skipPlexPlaylist ?? false
+  form.skipPlexPlaylist = s.skipPlexPlaylist
   form.subscribed = s.subscribed ?? false
 
   // Reset then refetch
   plexPlaylists.value = []
   plexError.value = ''
   fetchPlexPlaylists()
+  fetchGlobalSettings()
 })
+
+function effectiveBoolean(override: boolean | null, globalValue: boolean): boolean {
+  return override ?? globalValue
+}
+
+async function fetchGlobalSettings() {
+  try {
+    const config = await api.get<AppConfig>('/config')
+    globalSyncSettings.forceFullCompare = config.sync.forceFullCompare
+    globalSyncSettings.downloadWhenMediaMissing = config.sync.downloadWhenMediaMissing
+    globalSyncSettings.skipPlexPlaylist = config.sync.skipPlexPlaylist
+    globalSyncSettings.skipRemoveExtraTracks = config.sync.skipRemoveExtraTracks
+  } catch {
+    // Editing remains available; inherited values fall back to safe defaults.
+  }
+}
 
 async function fetchPlexPlaylists() {
   plexError.value = ''
@@ -151,6 +199,7 @@ async function handleSave() {
       enabled: form.enabled,
       autoCreatePlexPlaylist: form.autoCreatePlexPlaylist,
       forceFullCompare: form.forceFullCompare,
+      downloadWhenMediaMissing: form.downloadWhenMediaMissing,
       skipRemoveExtraTracks: form.skipRemoveExtraTracks,
       fullCompareAfterSkips: form.fullCompareAfterSkips,
       fullCompareAfterDays: form.fullCompareAfterDays,

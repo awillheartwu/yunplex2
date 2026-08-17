@@ -12,12 +12,20 @@ const TITLE_IDENTITY_DESCRIPTOR_RULES: Array<{ key: string; pattern: RegExp }> =
   { key: 'edit', pattern: /\b(edit|radio edit)\b/u },
   { key: 'rework', pattern: /\b(rework|bootleg|mashup)\b/u },
   { key: 'piano', pattern: /\bpiano\b|钢琴/u },
+  { key: 'remaster', pattern: /\bremaster(?:ed)?\b|母带|重灌/u },
+  { key: 'deluxe', pattern: /\bdeluxe\b|豪华版/u },
 ]
 
 export function normalizeTitle(title: string): string {
   return title
-    .replace(/\s*\([^)]*\)\s*/g, ' ')
-    .replace(/\s*\[[^\]]*\]\s*/g, ' ')
+    .replace(/[（(【[]\s*[）)】\]]/gu, ' ')
+    .replace(/[（(【[]([^）)】\]]+)[）)】\]]/gu, (_match, rawContent: string) => {
+      const content = normalizeForSearch(rawContent)
+      const isIdentityDescriptor = TITLE_IDENTITY_DESCRIPTOR_RULES.some(rule => rule.pattern.test(content.toLowerCase()))
+      const isNonIdentityDetail = /\bfeat(?:uring)?\.?\b|\bft\.?\b|\bbonus(?: track)?\b|附赠曲/iu.test(content)
+      return isIdentityDescriptor || isNonIdentityDetail ? ' ' : ` ${content} `
+    })
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
@@ -71,6 +79,27 @@ export function titleIdentityDescriptorsCompatible(left: string, right: string):
   if (leftDescriptors.length === 0 && rightDescriptors.length === 0) return true
   if (leftDescriptors.length === 0 || rightDescriptors.length === 0) return false
 
+  if (leftDescriptors.length !== rightDescriptors.length) return false
   const rightSet = new Set(rightDescriptors)
-  return leftDescriptors.some((descriptor) => rightSet.has(descriptor))
+  return leftDescriptors.every(descriptor => rightSet.has(descriptor))
+}
+
+export function titlesMatchConservatively(left: string, right: string): boolean {
+  if (!titleIdentityDescriptorsCompatible(left, right)) return false
+  const leftKey = stripPunct(normalizeTitle(left))
+  const rightKey = stripPunct(normalizeTitle(right))
+  return Boolean(leftKey && rightKey && leftKey === rightKey)
+}
+
+export function titleCoresEqual(left: string, right: string): boolean {
+  const leftKey = stripPunct(normalizeTitle(left))
+  const rightKey = stripPunct(normalizeTitle(right))
+  return Boolean(leftKey && rightKey && leftKey === rightKey)
+}
+
+export function albumsMatchConservatively(left: string, right: string): boolean {
+  if (!left || !right) return true
+  const leftKey = stripPunct(normalizeTitle(left))
+  const rightKey = stripPunct(normalizeTitle(right))
+  return Boolean(leftKey && rightKey && leftKey === rightKey)
 }

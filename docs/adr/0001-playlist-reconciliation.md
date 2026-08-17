@@ -1,7 +1,7 @@
 # ADR 0001: Playlist Reconciliation
 
 **Date:** 2026-05-27
-**Status:** Accepted
+**Status:** Superseded by [ADR 0004](0004-durable-identity-convergence.md)
 
 ## Context
 

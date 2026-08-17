@@ -4,7 +4,6 @@ import { buildSystemDataTableRows } from './system-data-catalog'
 describe('system data catalog', () => {
   it('includes durable identity and review tables with meaningful categories', () => {
     const rows = buildSystemDataTableRows({
-      song_lookup: 3099,
       song_identity_bindings: 147,
       song_identity_events: 151,
       song_match_reviews: 10,
@@ -36,11 +35,6 @@ describe('system data catalog', () => {
         count: 10,
         desc: '匹配审核与决策',
         href: '/match-reviews',
-      }),
-      expect.objectContaining({
-        name: 'song_lookup',
-        count: 3099,
-        desc: '可丢弃的 Plex 查询缓存',
       }),
     ]))
   })

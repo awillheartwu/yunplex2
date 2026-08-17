@@ -25,6 +25,44 @@ describe('validateAudioBuffer', () => {
 })
 
 describe('validateLocalAudioFile', () => {
+  it('accepts a FLAC container after an ID3v2 metadata prefix', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'yunplex-media-validation-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, 'tagged.flac')
+    const id3Header = Buffer.from([
+      0x49, 0x44, 0x33, // ID3
+      0x03, 0x00, // version 2.3
+      0x00, // flags
+      0x00, 0x00, 0x00, 0x04, // four-byte synchsafe payload size
+    ])
+    writeFileSync(filePath, Buffer.concat([
+      id3Header,
+      Buffer.from('tags'),
+      Buffer.from('fLaCmetadata'),
+    ]))
+
+    expect(validateLocalAudioFile(filePath)).toEqual({ valid: true })
+  })
+
+  it('rejects an ID3-prefixed file without a FLAC container', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'yunplex-media-validation-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, 'fake.flac')
+    writeFileSync(filePath, Buffer.from([
+      0x49, 0x44, 0x33,
+      0x03, 0x00,
+      0x00,
+      0x00, 0x00, 0x00, 0x04,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+    ]))
+
+    expect(validateLocalAudioFile(filePath)).toEqual({
+      valid: false,
+      reason: 'FLAC 文件头无效',
+    })
+  })
+
   it('recognises a corrupt on-disk FLAC as invalid', () => {
     const dir = mkdtempSync(join(tmpdir(), 'yunplex-media-validation-'))
     tempDirs.push(dir)

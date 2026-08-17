@@ -43,12 +43,9 @@ vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
 }))
 
-// Mock getDb + upsertLookup
-vi.mock('../../server/lib/db', () => ({
-  getDb: vi.fn(() => ({})),
-}))
-vi.mock('../../server/lib/sync/lookup', () => ({
-  upsertLookup: vi.fn(),
+vi.mock('../../server/lib/sync/local-media-store', () => ({
+  getLocalMediaAsset: vi.fn(() => null),
+  upsertLocalMediaAsset: vi.fn(),
 }))
 vi.mock('../../server/lib/media-validation', () => ({
   validateLocalAudioFile: vi.fn(() => ({ valid: true })),
@@ -291,6 +288,25 @@ describe('downloadSingleSong', () => {
     )
   })
 
+  it('downloads beside a protected external path instead of overwriting it', async () => {
+    const protectedPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.flac'
+
+    await downloadSingleSong(123456, {
+      ...mockConfig,
+      protectedAudioPath: protectedPath,
+    })
+
+    expect(downloadSong).toHaveBeenCalledWith(
+      'https://example.com/song.flac',
+      expect.any(Object),
+      'flac',
+      '/tmp/music',
+      expect.any(Object),
+      'Artist A/Test Album (2023)/Test Song (YunPlex).flac',
+      undefined,
+    )
+  })
+
   it('uses audioPath override for ancillary file location', async () => {
     const overridePath = '/tmp/music/Old Artist/Old Album (2020)/Test Song.flac'
     vi.mocked(existsSync).mockImplementation((p) => p === overridePath)
@@ -358,17 +374,17 @@ describe('downloadSingleSong', () => {
     )
   })
 
-  it('writes file_path after successful download', async () => {
-    const { upsertLookup } = await import('../../server/lib/sync/lookup')
+  it('records the managed local media identity after a successful download', async () => {
+    const { upsertLocalMediaAsset } = await import('../../server/lib/sync/local-media-store')
 
     await downloadSingleSong(123456, mockConfig)
 
-    expect(upsertLookup).toHaveBeenCalledWith(
-      expect.anything(),
-      123456,
-      null,
-      '/tmp/music/Artist A/Test Album (2023)/Test Song.flac',
-    )
+    expect(upsertLocalMediaAsset).toHaveBeenCalledWith(expect.objectContaining({
+      neteaseSongId: 123456,
+      filePath: '/tmp/music/Artist A/Test Album (2023)/Test Song.flac',
+      provenance: 'manual',
+      ownership: 'managed',
+    }))
   })
 
   it('passes lyrics disabled correctly', async () => {

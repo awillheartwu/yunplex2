@@ -1,119 +1,40 @@
-# 对比决策说明
+# 同步比较决策
 
-这份文档只描述“是否跳过 / 是否走纯重排 / 是否进入 full compare”的判定规则。
+## 是否进入比较
 
-## 唯一触发源
+同步先获取网易云目标快照和 Plex 观察快照，再由 `detectChanges` 决定：
 
-当前实现中，是否需要对一个 source 执行同步，只由网易云侧决定：
+- `normal`：来源和 Plex 均无变化时跳过；达到跳过次数或时间上限后自动全量比较。
+- `preview`：始终比较，但不产生副作用。
+- `full`：忽略增量跳过条件，执行完整比较。
+- `rebuild_matching`：先失效非人工绑定，再执行完整比较。
+- `redownload_managed`：执行完整比较，并仅重建 YunPlex 管理的媒体。
 
-- 看 `trackUpdateTime`
-- 不看 Plex 侧 `updatedAt`
+Plex 指纹变化会触发完整对齐，避免网易云未变时忽略用户在 Plex 中造成的漂移。
 
-这意味着：
+来源启用 `downloadWhenMediaMissing` 时，快速跳过前还会执行轻量资产体检。所有资产健康时
+继续跳过；发现未登记、缺失或 replaced 资产时进入完整处理。`redownload_managed` 使用其
+独立替换策略，不受此开关影响。
 
-- 即使 Plex 歌单被手工修改，只要网易云没变化，本轮仍可跳过
-- Plex 中“多余歌曲是否保留”先由 `skipRemoveExtraTracks` 总开关控制；允许清理时，再由 `extraTrackRemovalPolicy` 决定严格保护、连续观察或立即精确对齐
+## 纯重排
 
-## 决策链
+只有以下条件全部满足才走纯重排快速路径：
 
-```mermaid
-flowchart TD
-  A["拉取网易云 playlist/detail"] --> B{"trackUpdateTime 是否变化?"}
-  B -- 否 --> C["skipEntirely = true"]
-  B -- 是 --> D{"rebuildMatch / forceFull 系列开关?"}
-  D -- 是 --> E["needFullCompare = true"]
-  D -- 否 --> F["比较 currentIdOrder 与 trackIdSnapshot"]
-  F --> G{"纯重排?"}
-  G -- 否 --> E
-  G -- 是 --> H["检查 song_lookup 缓存完整性"]
-  H --> I{"每首歌都有 plex_rating_key?"}
-  I -- 否 --> E
-  I -- 是 --> J["允许纯重排快捷路径"]
-```
+1. 网易云成员集合未变，仅顺序变化。
+2. 每首歌曲都有 active 正式身份绑定。
+3. 每个 rating key 仍存在。
+4. Plex 媒体路径仍与绑定路径一致。
 
-## 规则展开
+任何验证失败都回退到完整解析，不使用元数据缓存猜测身份。
 
-### 1. 直接跳过
+## 结果分类
 
-满足以下条件时直接跳过：
+- `matched_plex_playlist`：强身份已经在目标歌单中。
+- `found_in_plex_library`：强身份存在于 Plex 库，等待加入歌单。
+- `found_on_disk`：正式本地媒体存在，等待 Plex 索引。
+- `needs_review`：有候选但证据不足。
+- `needs_download`：没有有效已登记媒体，或启用策略后需要建立托管副本。
+- `copyright_restricted`：网易云明确不可下载。
+- `ignored_failure`：达到下载失败暂停阈值。
 
-- 不是专辑源
-- `trackUpdateTime` 与 `lastTrackUpdateTime` 相同
-- 没有 `forceFull`
-- 没有 rebuild 模式
-- 不是 dry-run
-- 没有因为跳过次数或时间间隔触发自动全量
-
-效果：
-
-- 不进入 compare
-- `consecutiveSkips + 1`
-- 更新 `lastSyncedAt`
-
-### 2. 纯重排快捷路径
-
-满足以下条件时允许直接重排：
-
-- 网易云发生变化
-- 差异类型是“纯重排”
-- 没有 rebuild 模式
-- 没有 forceFull
-- 当前 source 本次参与同步的每首歌，都能从 `song_lookup` 取到 `plex_rating_key`
-
-否则即使是纯重排，也要回退 full compare。
-
-### 3. full compare
-
-以下任意情况都进入 full compare：
-
-- rebuild 模式
-- `forceFull`
-- source / global `forceFullCompare`
-- 自动全量触发
-- 纯新增
-- 纯删除
-- 新增 + 删除 + 重排的混合变化
-- 纯重排但缓存不完整
-- 首次同步 / 没有 `trackIdSnapshot`
-- 专辑源
-
-## rebuild 模式
-
-“重建匹配并同步”会在 compare 前做一件额外事情：
-
-- 删除当前 source 本次 songIds 对应的 `song_lookup`
-
-随后这次运行会：
-
-- 强制 full compare
-- 禁用纯重排捷径
-- 正常更新 `trackIdSnapshot`、`lastFullCompareAt`、`lastTrackUpdateTime`
-
-## 多余歌单项清理
-
-清理只移除 Plex 歌单 occurrence，不会删除 Plex 音乐库中的媒体文件。无论选择哪种策略，待审核候选、目标身份不完整、空目标未经二次确认，以及插入或重排失败都会阻止删除。
-
-- `strict`：只删除可追溯到既有全局身份、且对应网易云歌曲已经不在目标中的旧项；未知历史项持续保留。
-- `balanced`（默认）：目标歌曲全部通过路径、MusicBrainz recording 或人工绑定验证后，对具有稳定 Plex 路径的未知旧项进行连续观察；第二个不同 run 仍存在时才授权删除。同一 run 重试不会重复计数，目标不完整或中途消失会重置连续次数。
-- `exact`：目标歌曲全部建立强身份后，在本轮直接移除不属于目标顺序的多余 occurrence。
-
-连续观察保存在 `playlist_extra_observations`，身份优先使用规范化 Plex 文件路径，`ratingKey` 仅作为无法取得路径时的诊断回退；平衡模式不会依赖回退键自动删除。
-
-## 缓存完整性要求
-
-纯重排不是“能排多少算多少”，而是“要么完整重排，要么回退 full compare”。
-
-因此当前策略是：
-
-- 缺任何一个 `plex_rating_key`，就认为缓存不完整
-- 不允许生成残缺 `targetOrder`
-- 必须回到 `DB -> Plex 搜索 -> 本地文件 -> 下载` 的完整链路
-
-## 与文档旧版本的差异
-
-旧设计里曾把 `plexChanged` 纳入跳过决策；当前实现已经明确取消这一点。
-
-当前有效规则是：
-
-- Plex 变化不触发同步
-- Plex 只影响“同步时如何对齐”，不影响“这一轮要不要同步”
+待审核与身份冲突项都属于目标未收敛状态，不能授权删除 Plex 旧条目。

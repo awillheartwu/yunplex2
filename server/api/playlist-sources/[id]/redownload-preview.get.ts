@@ -10,7 +10,7 @@ export default defineEventHandler((event) => {
   if (!id) return fail('缺少 ID')
   const source = getSource(id)
   if (!source) return fail('歌单源不存在')
-  if (source.type !== 'playlist') return fail('重新下载全部音频仅支持歌单同步源')
+  if (source.type !== 'playlist') return fail('重新下载托管音频仅支持歌单同步源')
 
   const occurrenceIds = listPlaylistSourceTrackOccurrences(source.id)
     .map(item => item.neteaseSongId)

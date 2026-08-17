@@ -4,6 +4,7 @@ import { getDb } from '../../../lib/db'
 import { readConfig } from '../../../lib/config/store'
 import { processAll } from '../../../lib/download/queue'
 import { downloadSingleSong } from '../../../lib/download/single-song'
+import { resolveSingleSongConfig } from '../../../lib/download/options'
 import { appendLog } from '../../../lib/log/store'
 
 export default defineEventHandler(async () => {
@@ -24,22 +25,10 @@ export default defineEventHandler(async () => {
     stage: 'download',
   }, retentionDays)
 
-  processAll((task, onProgress, signal) => downloadSingleSong(task.songId, {
+  processAll((task, onProgress, signal) => downloadSingleSong(task.songId, resolveSingleSongConfig(cfg, {
     quality: task.quality || cfg.netease.quality,
-    cookie: cfg.netease.cookie,
-    downloadDir: cfg.download.dir,
-    pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-    multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
-    downloadLyrics: cfg.download.downloadLyrics,
-    embedMetadata: cfg.download.embedMetadata,
-    embedCover: cfg.download.embedCover,
-    saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-    saveArtistImage: cfg.download.saveArtistImage ?? false,
-    lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
-    downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
-    downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
     downloadMode: 'full',
-  }, onProgress, signal), undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch((err: unknown) => {
+  }), onProgress, signal), undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     appendLog(dataDir, {
       level: 'error',

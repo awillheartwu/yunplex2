@@ -43,6 +43,27 @@ afterEach(() => {
 })
 
 describe('MusicBrainz recording resolution', () => {
+  it('coalesces concurrent resolution requests for the same identity', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      recordings: [{
+        id: 'recording-shared',
+        title: 'Shared Song',
+        score: 100,
+        'artist-credit': [{ artist: { name: 'Shared Artist' } }],
+      }],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [first, second] = await Promise.all([
+      resolveRecording('Shared Song', ['Shared Artist']),
+      resolveRecording('Shared Song', ['Shared Artist']),
+    ])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(first?.id).toBe('recording-shared')
+    expect(second?.id).toBe('recording-shared')
+  })
+
   it('retries an empty featured-title query with the collaboration descriptor removed', async () => {
     const recordingId = '9771041b-ffe9-4f99-a6d9-70884f30fd73'
     const fetchMock = vi.fn()

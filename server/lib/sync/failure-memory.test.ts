@@ -1,34 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const getSongLookup = vi.fn()
-
-vi.mock('./song-lookup-store', () => ({
-  getSongLookup,
-}))
+import { describe, expect, it } from 'vitest'
 
 describe('failure memory', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-  })
-
-  it('does not pre-skip legacy Plex match failures that only have a local file path', async () => {
-    getSongLookup.mockReturnValue({
-      netease_song_id: 1,
-      plex_rating_key: null,
-      file_path: '/downloads/foo.flac',
-      last_verified_at: '2026-06-19T00:00:00.000Z',
-    })
-
+  it('does not pre-skip an explicitly recorded Plex match failure', async () => {
     const { parseFailureMemory, shouldSkipSongDueToFailure, inferFailurePhase } = await import('./failure-memory')
-    const memory = parseFailureMemory(JSON.stringify({ 1: 1 }))
+    const memory = parseFailureMemory(JSON.stringify({
+      1: { count: 1, lastStatus: 'failed_plex_match', lastPhase: 'plex_match' },
+    }))
 
     expect(inferFailurePhase(1, memory[1])).toBe('plex_match')
     expect(shouldSkipSongDueToFailure(memory, 1, 1)).toBe(false)
   })
 
   it('still pre-skips true download failures once threshold is reached', async () => {
-    getSongLookup.mockReturnValue(undefined)
-
     const { parseFailureMemory, shouldSkipSongDueToFailure } = await import('./failure-memory')
     const memory = parseFailureMemory(JSON.stringify({
       2: { count: 2, lastStatus: 'failed_download', lastPhase: 'download' },

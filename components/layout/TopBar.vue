@@ -1,5 +1,5 @@
 <template>
-  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8" style="background:color-mix(in srgb, var(--bg-app) 84%, transparent);border-bottom:1px solid var(--border-primary);backdrop-filter:blur(16px)">
+  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8 xl:px-9">
     <div class="flex min-w-0 items-center gap-3 sm:gap-4">
       <button
         class="icon-button"
@@ -12,7 +12,7 @@
       >
         <AppIcon name="menu" :size="18" />
       </button>
-      <h1 class="truncate text-[1.35rem] font-semibold tracking-normal sm:text-[1.65rem] md:text-[1.9rem]" style="color:var(--text-primary)">{{ pageTitle }}</h1>
+      <h1 class="app-topbar__title truncate">{{ pageTitle }}</h1>
       <StatusBadge
         v-if="syncState"
         class="hidden sm:inline-flex"
@@ -131,11 +131,29 @@ function formatTime(iso: string): string {
 <style scoped>
 .app-topbar {
   min-block-size: var(--app-topbar-block-size);
-  padding-block: 0.75rem;
+  padding-block: 0.55rem;
+  border-bottom: 1px solid var(--border-primary);
+  background: color-mix(in srgb, var(--bg-app) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.15);
+}
+
+.app-topbar__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-weight: 750;
+  letter-spacing: 0;
 }
 
 .topbar-version-link {
   min-block-size: 2.5rem;
   align-items: center;
+}
+
+@media (max-width: 767px) {
+  .app-topbar__title {
+    font-size: 1.35rem;
+  }
 }
 </style>

@@ -42,6 +42,7 @@ export interface SyncStrategyConfig {
   downloadTaskRetentionDays: number
   activityRetentionDays: number
   forceFullCompare: boolean
+  downloadWhenMediaMissing: boolean
   reconcileOnPlexDrift: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
@@ -49,8 +50,6 @@ export interface SyncStrategyConfig {
   skipPlexPlaylist: boolean
   skipRemoveExtraTracks: boolean
   extraTrackRemovalPolicy: ExtraTrackRemovalPolicy
-  enableHighConfidenceMetadataBinding: boolean
-  metadataDurationToleranceSec: number
   maxFailureAttempts: number
 }
 

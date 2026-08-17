@@ -1,7 +1,8 @@
 import type { PlexTrack } from '../plex-client'
 import { getPlexTrackMusicBrainzIdentity, getPlexTrackRecordingId } from '../plex-client'
-import type { MatchReview } from './identity-store'
-import { normalizePlexPath, type MatchReviewDecisionBinding } from './identity-store'
+import type { MatchReview } from '~~/types/match-review'
+import type { MatchReviewDecisionBinding } from './identity-store'
+import { normalizePlexPath } from './identity-normalization'
 
 export function buildAcceptedReviewBinding(input: {
   review: MatchReview

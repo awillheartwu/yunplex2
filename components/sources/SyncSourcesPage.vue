@@ -381,84 +381,35 @@
                     >
                       <AppIcon name="edit" :size="14" />
                     </button>
-                    <div class="sync-row-actions__menu">
-                      <button class="icon-button sync-row-actions__icon" type="button" aria-label="更多操作" @click.stop="toggleMoreMenu(s.id)">
-                        <AppIcon name="more" :size="14" />
-                      </button>
-                      <div
-                        v-if="moreMenuId === s.id"
-                        class="sync-row-menu"
-                        :class="idx >= filteredSources.length - 3 ? 'sync-row-menu--top' : 'sync-row-menu--bottom'"
-                        @click.stop
-                      >
-                        <button
-                          v-if="!showInlineEditAction"
-                          class="sync-row-menu__item"
-                          type="button"
-                          @click="openEdit(s); moreMenuId = null"
-                        >
-                          <AppIcon name="edit" :size="12" />
-                          <span>编辑同步源</span>
-                        </button>
-                        <button
-                          v-if="!showInlineFullSyncAction(s) && s.type === 'playlist'"
-                          class="sync-row-menu__item"
-                          :disabled="isAnySyncing"
-                          @click="syncSource(s, true); moreMenuId = null"
-                        >
-                          <AppIcon name="refresh" :size="12" />
-                          <span>全量同步</span>
-                        </button>
-                        <button class="sync-row-menu__item" :disabled="isAnySyncing" @click="openRebuildConfirm(s); moreMenuId = null">
-                          <AppIcon name="repair" :size="12" />
-                          <span>{{ rebuildActionLabel(s) }}</span>
-                        </button>
-                        <button
-                          v-if="s.type === 'playlist'"
-                          class="sync-row-menu__item sync-row-menu__item--warning"
-                          :disabled="isAnySyncing"
-                          @click="openRedownloadConfirm(s); moreMenuId = null"
-                        >
-                          <AppIcon name="download" :size="12" />
-                          <span>重新下载全部音频并同步</span>
-                        </button>
-                        <button class="sync-row-menu__item" type="button" @click="toggleExpand(s.id); moreMenuId = null">
-                          <AppIcon name="chevronRight" :size="12" />
-                          <span>{{ expandedId === s.id ? '收起歌曲明细' : '展开歌曲明细' }}</span>
-                        </button>
-                        <button
-                          v-if="!showInlineRepairAction"
-                          class="sync-row-menu__item"
-                          :class="repairingSourceId === s.id ? 'sync-row-menu__item--active' : ''"
-                          :disabled="isAnySyncing"
-                          @click="repairSource(s); moreMenuId = null"
-                        >
-                          <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
-                          <AppIcon v-else name="music" :size="12" />
-                          <span>修复标签、词图</span>
-                        </button>
-                        <button class="sync-row-menu__item sync-row-menu__item--danger" type="button" @click="confirmDelete = s; moreMenuId = null">
-                          <AppIcon name="trash" :size="12" />
-                          <span>删除</span>
-                        </button>
-                      </div>
-                      <div v-if="moreMenuId === s.id" class="fixed inset-0 z-10" @click="moreMenuId = null" />
-                    </div>
+                    <SourceOverflowActions
+                      :source="s"
+                      :open="moreMenuId === s.id"
+                      :placement="idx >= filteredSources.length - 3 ? 'top' : 'bottom'"
+                      :busy="isAnySyncing"
+                      :expanded="expandedId === s.id"
+                      :repairing="repairingSourceId === s.id"
+                      :repair-progress="repairProgress[s.id]"
+                      :include-edit="!showInlineEditAction"
+                      :include-full-sync="!showInlineFullSyncAction(s)"
+                      include-song-details
+                      :include-repair="!showInlineRepairAction"
+                      @toggle="toggleMoreMenu(s.id)"
+                      @close="moreMenuId = null"
+                      @edit="openEdit(s); moreMenuId = null"
+                      @full-sync="syncSource(s, true); moreMenuId = null"
+                      @rebuild="openRebuildConfirm(s); moreMenuId = null"
+                      @redownload="openRedownloadConfirm(s); moreMenuId = null"
+                      @toggle-songs="toggleExpand(s.id); moreMenuId = null"
+                      @repair="repairSource(s); moreMenuId = null"
+                      @delete="confirmDelete = s; moreMenuId = null"
+                    />
                   </div>
                 </td>
               </tr>
               <tr v-if="expandedId === s.id" class="sync-table__expanded-row">
                 <td colspan="7">
                   <div class="sync-expanded-panel">
-                    <div v-if="expandedLoading" class="text-2xs text-muted py-2">加载中...</div>
-                    <div v-else-if="expandedSongs.length === 0" class="text-2xs text-muted py-2">暂无歌曲记录</div>
-                    <div v-else class="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-3">
-                      <div v-for="song in expandedSongs" :key="song.id" class="flex items-center gap-2 text-xs min-w-0">
-                        <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="songStatusDot(song.status)" />
-                        <span class="truncate" style="color:var(--text-primary)">{{ song.songName }}</span>
-                        <span class="text-muted-deep truncate">{{ song.artist }}</span>
-                      </div>
-                    </div>
+                    <SourceSongDetails :songs="expandedSongs" :loading="expandedLoading" />
                   </div>
                 </td>
               </tr>
@@ -586,62 +537,24 @@
               <AppIcon name="edit" :size="14" />
               编辑
             </button>
-            <div class="sync-row-actions__menu">
-              <button class="icon-button" type="button" aria-label="更多操作" @click.stop="toggleMoreMenu(s.id)">
-                <AppIcon name="more" :size="14" />
-              </button>
-              <div v-if="moreMenuId === s.id" class="sync-row-menu sync-row-menu--top" @click.stop>
-                <button
-                  v-if="s.type === 'playlist'"
-                  class="sync-row-menu__item"
-                  :disabled="isAnySyncing"
-                  @click="syncSource(s, true); moreMenuId = null"
-                >
-                  <AppIcon name="refresh" :size="12" />
-                  <span>全量同步</span>
-                </button>
-                <button class="sync-row-menu__item" :disabled="isAnySyncing" @click="openRebuildConfirm(s); moreMenuId = null">
-                  <AppIcon name="repair" :size="12" />
-                  <span>{{ rebuildActionLabel(s) }}</span>
-                </button>
-                <button
-                  v-if="s.type === 'playlist'"
-                  class="sync-row-menu__item sync-row-menu__item--warning"
-                  :disabled="isAnySyncing"
-                  @click="openRedownloadConfirm(s); moreMenuId = null"
-                >
-                  <AppIcon name="download" :size="12" />
-                  <span>重新下载全部音频并同步</span>
-                </button>
-                <button
-                  class="sync-row-menu__item"
-                  :class="repairingSourceId === s.id ? 'sync-row-menu__item--active' : ''"
-                  :disabled="isAnySyncing"
-                  @click="repairSource(s); moreMenuId = null"
-                >
-                  <span v-if="repairingSourceId === s.id && repairProgress[s.id]">{{ repairProgress[s.id]?.processed }}/{{ repairProgress[s.id]?.total }}</span>
-                  <AppIcon v-else name="music" :size="12" />
-                  <span>修复标签、词图</span>
-                </button>
-                <button class="sync-row-menu__item sync-row-menu__item--danger" type="button" @click="confirmDelete = s; moreMenuId = null">
-                  <AppIcon name="trash" :size="12" />
-                  <span>删除</span>
-                </button>
-              </div>
-              <div v-if="moreMenuId === s.id" class="fixed inset-0 z-10" @click="moreMenuId = null" />
-            </div>
+            <SourceOverflowActions
+              :source="s"
+              :open="moreMenuId === s.id"
+              :busy="isAnySyncing"
+              :repairing="repairingSourceId === s.id"
+              :repair-progress="repairProgress[s.id]"
+              @toggle="toggleMoreMenu(s.id)"
+              @close="moreMenuId = null"
+              @full-sync="syncSource(s, true); moreMenuId = null"
+              @rebuild="openRebuildConfirm(s); moreMenuId = null"
+              @redownload="openRedownloadConfirm(s); moreMenuId = null"
+              @repair="repairSource(s); moreMenuId = null"
+              @delete="confirmDelete = s; moreMenuId = null"
+            />
           </div>
 
           <div v-if="expandedId === s.id" class="sync-expanded-panel sync-expanded-panel--mobile">
-            <div v-if="expandedLoading" class="text-2xs text-muted py-2">加载中...</div>
-            <div v-else-if="expandedSongs.length === 0" class="text-2xs text-muted py-2">暂无歌曲记录</div>
-            <div v-else class="grid grid-cols-1 gap-y-2">
-              <div v-for="song in expandedSongs" :key="song.id" class="flex items-center gap-2 text-xs min-w-0">
-                <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="songStatusDot(song.status)" />
-                <span class="truncate" style="color:var(--text-primary)">{{ song.songName }}</span>
-                <span class="text-muted-deep truncate">{{ song.artist }}</span>
-              </div>
-            </div>
+            <SourceSongDetails :songs="expandedSongs" :loading="expandedLoading" mobile />
           </div>
         </article>
       </div>
@@ -654,36 +567,7 @@
       role="tooltip"
       aria-live="polite"
     >
-      <div class="sync-hover-card__header">
-        <div class="sync-hover-card__cover">
-          <img
-            v-if="hoverCard.source.coverUrl"
-            :src="sourceCoverSrc(hoverCard.source.coverUrl)"
-            :alt="`${sourceDisplayName(hoverCard.source)} 封面`"
-          >
-          <div v-else class="sync-hover-card__cover-fallback">
-            <AppIcon :name="hoverCard.source.type === 'album' ? 'album' : 'music'" :size="22" />
-          </div>
-        </div>
-        <div class="min-w-0">
-          <div class="sync-hover-card__title-row">
-            <span class="sync-hover-card__title">{{ sourceDisplayName(hoverCard.source) }}</span>
-            <SourceBadge :type="hoverCard.source.type" :subscribed="hoverCard.source.subscribed" />
-          </div>
-          <p v-if="sourceHoverOrigin(hoverCard.source)" class="sync-hover-card__origin">{{ sourceHoverOrigin(hoverCard.source) }}</p>
-          <p class="sync-hover-card__meta">ID {{ hoverCard.source.neteasePlaylistId }} · Plex {{ plexTargetName(hoverCard.source) }}</p>
-        </div>
-      </div>
-      <div class="sync-hover-card__stats">
-        <span>{{ hoverCard.source.trackCount }} 首</span>
-        <span>{{ sourceIssueSummary(hoverCard.source) }}</span>
-        <span>{{ repairingSourceId === hoverCard.source.id ? '修复中' : syncResultLabel(hoverCard.source) }}</span>
-      </div>
-      <p class="sync-hover-card__footer">
-        {{ hoverCard.source.lastSyncedAt
-          ? `${hoverCard.source.type === 'album' ? '上次下载' : '上次同步'} ${formatRelative(hoverCard.source.lastSyncedAt)}`
-          : (hoverCard.source.type === 'album' ? '尚未下载' : '尚未同步') }}
-      </p>
+      <SourceSummaryContent :source="hoverCard.source" :repairing="repairingSourceId === hoverCard.source.id" />
     </div>
 
     <Teleport to="body">
@@ -701,39 +585,13 @@
             :aria-label="`${sourceDisplayName(mobilePreviewSource)} 来源详情`"
           >
             <div class="sheet-handle" />
-            <div class="sync-mobile-source-sheet__header">
-              <div class="sync-hover-card__cover">
-                <img
-                  v-if="mobilePreviewSource.coverUrl"
-                  :src="sourceCoverSrc(mobilePreviewSource.coverUrl)"
-                  :alt="`${sourceDisplayName(mobilePreviewSource)} 封面`"
-                >
-                <div v-else class="sync-hover-card__cover-fallback">
-                  <AppIcon :name="mobilePreviewSource.type === 'album' ? 'album' : 'music'" :size="22" />
-                </div>
-              </div>
-              <div class="min-w-0">
-                <div class="sync-hover-card__title-row">
-                  <span class="sync-hover-card__title">{{ sourceDisplayName(mobilePreviewSource) }}</span>
-                  <SourceBadge :type="mobilePreviewSource.type" :subscribed="mobilePreviewSource.subscribed" />
-                </div>
-                <p v-if="sourceHoverOrigin(mobilePreviewSource)" class="sync-hover-card__origin">{{ sourceHoverOrigin(mobilePreviewSource) }}</p>
-                <p class="sync-hover-card__meta">ID {{ mobilePreviewSource.neteasePlaylistId }} · Plex {{ plexTargetName(mobilePreviewSource) }}</p>
-              </div>
-              <button class="icon-button sync-mobile-source-sheet__close" type="button" aria-label="关闭来源详情" @click="closeMobileSourcePreview">
-                <AppIcon name="close" :size="16" />
-              </button>
-            </div>
-            <div class="sync-hover-card__stats">
-              <span>{{ mobilePreviewSource.trackCount }} 首</span>
-              <span>{{ sourceIssueSummary(mobilePreviewSource) }}</span>
-              <span>{{ repairingSourceId === mobilePreviewSource.id ? '修复中' : syncResultLabel(mobilePreviewSource) }}</span>
-            </div>
-            <p class="sync-hover-card__footer">
-              {{ mobilePreviewSource.lastSyncedAt
-                ? `${mobilePreviewSource.type === 'album' ? '上次下载' : '上次同步'} ${formatRelative(mobilePreviewSource.lastSyncedAt)}`
-                : (mobilePreviewSource.type === 'album' ? '尚未下载' : '尚未同步') }}
-            </p>
+            <SourceSummaryContent :source="mobilePreviewSource" :repairing="repairingSourceId === mobilePreviewSource.id">
+              <template #header-action>
+                <button class="icon-button sync-mobile-source-sheet__close" type="button" aria-label="关闭来源详情" @click="closeMobileSourcePreview">
+                  <AppIcon name="close" :size="16" />
+                </button>
+              </template>
+            </SourceSummaryContent>
             <div class="sync-mobile-source-sheet__actions">
               <button
                 class="btn btn-primary"
@@ -791,17 +649,17 @@
     />
     <ConfirmDialog
       :visible="!!confirmRebuild"
-      :title="confirmRebuild?.type === 'album' ? '重建匹配并下载' : '重建匹配并同步'"
+      :title="confirmRebuild?.type === 'album' ? '重新评估自动匹配并下载' : '重新评估自动匹配并同步'"
       :message="confirmRebuild?.type === 'album'
-        ? `将清除此专辑当前下载范围内的匹配缓存，并立即执行一次重新下载对比。不会清除失败记忆。确定继续处理「${confirmRebuild?.name || ''}」吗？`
-        : `将清除此同步源当前同步范围内的匹配缓存，并立即执行一次全量对比。不会清除失败记忆。确定继续处理「${confirmRebuild?.name || ''}」吗？`"
-      :confirm-label="confirmRebuild?.type === 'album' ? '确认重建并下载' : '确认重建'"
+        ? `将保留人工决定，把此专辑范围内的自动绑定置为待重新评估，并立即执行全量下载对比。确定继续处理「${confirmRebuild?.name || ''}」吗？`
+        : `将保留人工决定，把此同步源范围内的自动绑定置为待重新评估，并立即执行全量对比。确定继续处理「${confirmRebuild?.name || ''}」吗？`"
+      :confirm-label="confirmRebuild?.type === 'album' ? '确认重新评估并下载' : '确认重新评估'"
       @confirm="handleRebuildSync"
       @cancel="confirmRebuild = null"
     />
     <ConfirmDialog
       :visible="!!confirmRedownload"
-      title="重新下载全部音频并同步"
+      title="重新下载托管音频并同步"
       message=""
       confirm-label="确认重新下载"
       variant="danger"
@@ -848,6 +706,9 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import AddPlaylistDialog from '~/components/sources/AddPlaylistDialog.vue'
 import EditSourceDialog from '~/components/sources/EditSourceDialog.vue'
+import SourceOverflowActions from '~/components/sources/SourceOverflowActions.vue'
+import SourceSongDetails from '~/components/sources/SourceSongDetails.vue'
+import SourceSummaryContent from '~/components/sources/SourceSummaryContent.vue'
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import { useSyncSourcesPage } from '~~/composables/useSyncSourcesPage'
 import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
@@ -860,10 +721,10 @@ const {
   handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
   onAlbumCreated, onDragEnd, onDragLeave, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved,
   onSourceSearchInput, onSourceTabChange, openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, plexTargetHint, plexTargetName,
-  prepareDraftFilters, rebuildActionLabel, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress, repairSource, resetDraftFilters,
+  prepareDraftFilters, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress, repairSource, resetDraftFilters,
   runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedSourceIds, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction,
-  showSourceHover, someVisibleSelected, songStatusDot, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
-  sourceHoverOrigin, sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
+  showSourceHover, someVisibleSelected, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
+  sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
   sourceStateClass, sourceStateLabel, statusFilterOptions, syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, tableShellRef,
   toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright, totalFailureCache,
   takeOverExternal, totalSourceCount,
@@ -905,7 +766,8 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
+<!-- These page-specific BEM classes also style extracted child components. -->
+<style>
 @import '~/assets/css/pages/sync-sources-layout.css';
 @import '~/assets/css/pages/sync-sources-table.css';
 </style>

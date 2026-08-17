@@ -439,6 +439,20 @@
   line-height: 1.6;
 }
 
+.dark .download-queue-panel {
+  background: var(--bg-surface);
+}
+
+.dark .download-queue-panel__stage-card,
+.dark .download-queue-flow li,
+.dark .download-queue-metrics article {
+  background: var(--bg-input);
+}
+
+.dark .download-queue-flow li.is-current {
+  background: var(--accent-muted);
+}
+
 @media (max-width: 960px) {
   .download-queue-flow,
   .download-queue-metrics {

@@ -54,7 +54,7 @@ describe('sync worker scheduling', () => {
 
     expect(worker.isScheduled()).toBe(true)
     await vi.advanceTimersByTimeAsync(61_000)
-    expect(service.runSync).toHaveBeenCalledWith({ trigger: 'schedule' })
+    expect(service.runSync).toHaveBeenCalledWith({ mode: 'normal', trigger: 'schedule' })
   })
 
   it('rechecks the latest enabled flag before running scheduled sync', async () => {

@@ -1,7 +1,7 @@
 # ADR 0003: Managed Media Path Identity
 
 **Date:** 2026-07-24
-**Status:** Accepted
+**Status:** Accepted; identity evidence order amended by [ADR 0004](0004-durable-identity-convergence.md)
 
 ## Context
 
@@ -31,7 +31,7 @@ explicitly says they adopted an existing file. Computed naming-policy paths are 
 
 ### Use managed exact paths as strong identity
 
-The automatic identity order is:
+The automatic identity order at the time of this decision was:
 
 1. Valid explicit human binding.
 2. Unique exact Plex path for an active managed asset.
@@ -68,4 +68,4 @@ existing extra-track deletion gates.
   or manual review.
 - Replaced files and duplicate Plex path ownership are visible in Match Management and never
   cause automatic deletion.
-- `song_lookup` remains a performance cache and cannot override durable identity decisions.
+- Durable identity and local media provenance remain separate from rebuildable performance data. ADR 0004 later retired `song_lookup` and weak automatic metadata identity entirely.

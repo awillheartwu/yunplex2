@@ -312,7 +312,7 @@ function alignmentLabel(value: string) {
   return ({ aligned: 'Plex 已读回确认', pending: '等待下次同步', missing: 'Plex 未找到', unknown: '历史数据未验证' } as Record<string, string>)[value] ?? value
 }
 function evidenceLabel(value?: string) {
-  return ({ path: '精确路径', mb_recording: 'MusicBrainz recording', metadata: '高置信元数据', manual: '人工绑定', migrated: '自动迁移' } as Record<string, string>)[value ?? ''] ?? '无强证据'
+  return ({ path: '精确路径', mb_recording: 'MusicBrainz recording', provider_guid: '来源 GUID', metadata: '历史元数据（已退役）', manual: '人工绑定', migrated: '自动迁移' } as Record<string, string>)[value ?? ''] ?? '无强证据'
 }
 function mediaOriginLabel(item: MatchOverviewItem) {
   const media = item.localMedia

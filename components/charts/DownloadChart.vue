@@ -43,12 +43,35 @@ const props = withDefaults(defineProps<{
 }>(), { days: 7 })
 
 const chartMode = ref<'bar' | 'line'>('bar')
+const { theme } = useTheme()
 const modes = [
   { key: 'bar' as const, label: '柱状' },
   { key: 'line' as const, label: '折线' },
 ]
 
 const totalCount = computed(() => props.data.reduce((s, d) => s + d.count, 0))
+
+const chartPalette = computed(() => theme.value === 'dark'
+  ? {
+      axis: '#8ea0bd',
+      grid: 'rgba(143,166,209,0.12)',
+      barStart: '#7c93ff',
+      barEnd: 'rgba(70,199,255,0.25)',
+      emphasis: '#a7b7ff',
+      line: '#7c93ff',
+      areaStart: 'rgba(124,147,255,0.28)',
+      areaEnd: 'rgba(124,147,255,0)',
+    }
+  : {
+      axis: '#6d778b',
+      grid: 'rgba(38,56,91,0.09)',
+      barStart: '#3159c7',
+      barEnd: 'rgba(93,130,229,0.28)',
+      emphasis: '#21439e',
+      line: '#3159c7',
+      areaStart: 'rgba(49,89,199,0.2)',
+      areaEnd: 'rgba(49,89,199,0)',
+    })
 
 const option = computed(() => ({
   grid: { top: 8, right: 0, bottom: 0, left: 0, containLabel: true },
@@ -68,15 +91,15 @@ const option = computed(() => ({
       const dt = new Date(d.date)
       return `${dt.getMonth() + 1}/${dt.getDate()}`
     }),
-    axisLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
+    axisLine: { lineStyle: { color: chartPalette.value.grid } },
     axisTick: { show: false },
-    axisLabel: { color: '#71717a', fontSize: 10, margin: 10 },
+    axisLabel: { color: chartPalette.value.axis, fontSize: 10, margin: 10 },
   },
   yAxis: {
     type: 'value',
     minInterval: 1,
-    axisLabel: { color: '#71717a', fontSize: 10 },
-    splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } },
+    axisLabel: { color: chartPalette.value.axis, fontSize: 10 },
+    splitLine: { lineStyle: { color: chartPalette.value.grid } },
   },
   series: [{
     type: chartMode.value,
@@ -89,20 +112,20 @@ const option = computed(() => ({
         color: {
           type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(129,140,248,0.9)' },
-            { offset: 1, color: 'rgba(99,102,241,0.3)' },
+            { offset: 0, color: chartPalette.value.barStart },
+            { offset: 1, color: chartPalette.value.barEnd },
           ],
         },
       },
-      emphasis: { itemStyle: { color: '#a5b4fc' } },
+      emphasis: { itemStyle: { color: chartPalette.value.emphasis } },
     } : {
-      lineStyle: { color: '#818cf8', width: 2 },
+      lineStyle: { color: chartPalette.value.line, width: 2 },
       areaStyle: {
         color: {
           type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(99,102,241,0.2)' },
-            { offset: 1, color: 'rgba(99,102,241,0)' },
+            { offset: 0, color: chartPalette.value.areaStart },
+            { offset: 1, color: chartPalette.value.areaEnd },
           ],
         },
       },

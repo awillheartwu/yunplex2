@@ -1,5 +1,12 @@
 import type { SyncState } from '../log/types'
 
+export const SYNC_MODES = ['normal', 'preview', 'full', 'rebuild_matching', 'redownload_managed'] as const
+export type SyncMode = typeof SYNC_MODES[number]
+
+export function isSyncMode(value: unknown): value is SyncMode {
+  return typeof value === 'string' && SYNC_MODES.includes(value as SyncMode)
+}
+
 export const STAGE_LABELS: Record<string, string> = {
   idle: '空闲',
   fetching_playlist: '获取源曲目',
@@ -14,11 +21,8 @@ export const STAGE_LABELS: Record<string, string> = {
 }
 
 export interface SyncRunOptions {
-  dryRun?: boolean
+  mode?: SyncMode
   sourceIds?: string[]
-  forceFull?: boolean
-  rebuildMatch?: boolean
-  redownloadAll?: boolean
   takeOverExternal?: boolean
   trigger?: 'user' | 'schedule' | 'system' | 'retry'
 }

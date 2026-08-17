@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
+import { parseJsonObject } from '../json'
 import { readConfig } from '../config/store'
 import { dateEndBoundary, dateStartBoundary } from '../date-range'
 import type {
@@ -34,18 +35,9 @@ function rowToActivityEvent(row: ActivityEventRow): ActivityEvent {
     actor: row.actor,
     title: row.title,
     summary: row.summary,
-    context: parseContext(row.context),
+    context: parseJsonObject(row.context) as ActivityEvent['context'],
     link: row.link,
     groupKey: row.group_key,
-  }
-}
-
-function parseContext(raw: string): ActivityEvent['context'] {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as ActivityEvent['context'] : {}
-  } catch {
-    return {}
   }
 }
 

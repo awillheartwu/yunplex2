@@ -1,20 +1,22 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, statSync, readFileSync } from 'node:fs'
-import { basename, extname } from 'node:path'
+import { extname } from 'node:path'
 
 const MAX_TRACKED_FILE_BYTES = 1024 * 1024
 const MAX_UNTRACKED_FILE_BYTES = 1024 * 1024
-const MAX_PRODUCTION_SOURCE_LINES = 800
-const PRODUCTION_SOURCE_DIRS = [
-  'assets/css/',
-  'components/',
-  'composables/',
-  'lib/',
-  'pages/',
-  'scripts/',
-  'server/',
-]
-const SOURCE_EXTENSIONS = new Set(['.css', '.mjs', '.ts', '.vue'])
+const MAX_SOURCE_LINES = 800
+const SOURCE_EXTENSIONS = new Set([
+  '.css',
+  '.cjs',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.scss',
+  '.sql',
+  '.ts',
+  '.tsx',
+  '.vue',
+])
 
 const EXEMPT_TRACKED_FILES = new Set([
   'pnpm-lock.yaml',
@@ -35,12 +37,8 @@ function lineCount(file) {
   return readFileSync(file, 'utf8').split('\n').length
 }
 
-function isProductionSource(file) {
-  if (!SOURCE_EXTENSIONS.has(extname(file))) return false
-  if (file.startsWith('tests/') || file.includes('/tests/') || file.includes('/test/')) return false
-  const name = basename(file)
-  if (name.includes('.test.') || name.includes('.spec.')) return false
-  return PRODUCTION_SOURCE_DIRS.some((dir) => file.startsWith(dir))
+function isSource(file) {
+  return SOURCE_EXTENSIONS.has(extname(file))
 }
 
 const problems = []
@@ -70,10 +68,10 @@ for (const file of untrackedFiles) {
 }
 
 for (const file of sourceFiles) {
-  if (!isProductionSource(file) || !existsSync(file)) continue
+  if (!isSource(file) || !existsSync(file)) continue
   const lines = lineCount(file)
-  if (lines > MAX_PRODUCTION_SOURCE_LINES) {
-    problems.push(`production source exceeds ${MAX_PRODUCTION_SOURCE_LINES} lines: ${file} (${lines})`)
+  if (lines > MAX_SOURCE_LINES) {
+    problems.push(`source file exceeds ${MAX_SOURCE_LINES} lines: ${file} (${lines})`)
   }
 }
 

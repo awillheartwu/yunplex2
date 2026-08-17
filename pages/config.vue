@@ -202,34 +202,12 @@
           <FormField label="Plex 扫描重试间隔（秒）" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
         <ToggleField v-model="form.sync.forceFullCompare" label="始终全量对比" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
+        <ToggleField
+          v-model="form.sync.downloadWhenMediaMissing"
+          label="缺少已登记媒体时自动下载"
+          hint="开启后，来源歌曲没有可验证的已登记媒体时会直接下载，不再尝试用 Plex 元数据猜测。可能增加下载量和存储占用；保存后在下一次同步执行，单个来源可覆盖"
+        />
         <ToggleField v-model="form.sync.reconcileOnPlexDrift" label="自动修复 Plex 侧漂移" hint="网易云未变化但 Plex 歌单被手动改动时，自动进入全量对齐" />
-        <div class="metadata-binding-policy" :class="{ 'metadata-binding-policy--enabled': form.sync.enableHighConfidenceMetadataBinding }">
-          <ToggleField
-            v-model="form.sync.enableHighConfidenceMetadataBinding"
-            label="高置信元数据自动绑定"
-            hint="仅在两侧都没有可用 MusicBrainz recording 时启用；标题、完整艺人、专辑、音轨号和时长必须全部一致。"
-          />
-          <div v-if="form.sync.enableHighConfidenceMetadataBinding" class="metadata-binding-policy__details">
-            <FormField
-              label="时长允许误差（秒）"
-              hint="用于容忍编码或容器造成的轻微时长差异；建议 2 秒，最大 30 秒。"
-            >
-              <input
-                v-model.number="form.sync.metadataDurationToleranceSec"
-                type="number"
-                min="0"
-                max="30"
-                step="1"
-                class="form-input"
-                aria-describedby="metadata-binding-safety-note"
-              />
-            </FormField>
-            <p id="metadata-binding-safety-note" class="metadata-binding-policy__note" role="note">
-              <AppIcon name="shield" :size="15" />
-              <span>不会覆盖冲突的 MB recording；任一字段缺失或不一致仍进入匹配审核。</span>
-            </p>
-          </div>
-        </div>
         <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
@@ -299,7 +277,7 @@
                 min="0.8"
                 max="1.5"
                 step="0.05"
-                class="w-full accent-[#818cf8]"
+                class="w-full accent-[var(--accent)]"
                 aria-label="字体缩放"
               />
               <span class="w-12 shrink-0 text-right text-xs text-muted">{{ form.other.fontScale?.toFixed(2) }}x</span>
@@ -664,15 +642,11 @@ async function handleSave() {
       previous.download.dir !== updated.download.dir ||
       previous.download.plexLibraryPathPrefix !== updated.download.plexLibraryPathPrefix
     )
-    const matchingPolicyChanged = !!previous && (
-      previous.sync.enableHighConfidenceMetadataBinding !== updated.sync.enableHighConfidenceMetadataBinding ||
-      previous.sync.metadataDurationToleranceSec !== updated.sync.metadataDurationToleranceSec
-    )
     showConfigFeedback(
       'success',
       '配置已保存',
-      pathChanged || matchingPolicyChanged
-        ? '匹配相关配置已变更，建议对受影响的同步源执行“重建匹配并同步”。'
+      pathChanged
+        ? '媒体路径配置已变更，建议对受影响的同步源执行“重新评估自动匹配并同步”。'
         : undefined,
     )
   } catch (err) {
@@ -782,238 +756,4 @@ const { showImportTextarea, importJson, importing, importResult, handleFileImpor
 onMounted(loadConfig)
 </script>
 
-<style scoped>
-.metadata-binding-policy {
-  margin-top: .75rem;
-  padding: .9rem 1rem;
-  border: 1px solid var(--border-primary);
-  border-radius: .75rem;
-  background: var(--bg-app);
-  transition: border-color 160ms ease, background-color 160ms ease;
-}
-.metadata-binding-policy--enabled {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-primary));
-  background: color-mix(in srgb, var(--accent-muted) 18%, var(--bg-app));
-}
-.metadata-binding-policy__details {
-  display: grid;
-  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
-  align-items: end;
-  gap: 1rem;
-  margin-top: .75rem;
-  padding-top: .75rem;
-  border-top: 1px solid var(--border-primary);
-}
-.metadata-binding-policy__note {
-  display: flex;
-  min-height: 2.75rem;
-  align-items: center;
-  gap: .5rem;
-  color: var(--text-muted-deep);
-  font-size: .72rem;
-  line-height: 1.5;
-}
-@media (max-width: 700px) {
-  .metadata-binding-policy__details { grid-template-columns: 1fr; align-items: stretch; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .metadata-binding-policy { transition: none; }
-}
-.config-header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.config-header-actions__primary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.path-mapping-disclosure {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-}
-
-.path-mapping-disclosure > .app-icon {
-  flex: 0 0 auto;
-  margin-top: 0.08rem;
-  color: var(--accent);
-}
-
-.path-mapping-disclosure p {
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.55;
-}
-
-.path-mapping-disclosure strong {
-  color: var(--text-primary);
-}
-
-.removal-policy {
-  display: grid;
-  gap: 0.75rem;
-  min-width: 0;
-  padding: 1rem;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-}
-
-.removal-policy__legend {
-  padding: 0 0.3rem;
-  color: var(--text-primary);
-  font-size: 0.8125rem;
-  font-weight: 650;
-}
-
-.removal-policy__help {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  line-height: 1.6;
-}
-
-.removal-policy__options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-}
-
-.removal-policy__option {
-  display: flex;
-  min-height: 7.25rem;
-  gap: 0.65rem;
-  padding: 0.85rem;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  cursor: pointer;
-  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
-}
-
-.removal-policy__option:hover {
-  border-color: var(--border-secondary);
-}
-
-.removal-policy__option:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.removal-policy__option--selected {
-  border-color: var(--accent);
-  background: var(--accent-muted);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.removal-policy__option input {
-  flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
-  margin-top: 0.15rem;
-  accent-color: var(--accent);
-}
-
-.removal-policy__content,
-.removal-policy__title-row {
-  display: flex;
-}
-
-.removal-policy__content {
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.removal-policy__title-row {
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  color: var(--text-primary);
-  font-size: 0.8125rem;
-}
-
-.removal-policy__badge {
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
-  background: var(--accent);
-  color: white;
-  font-size: 0.625rem;
-  font-weight: 700;
-}
-
-.removal-policy__description {
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  line-height: 1.55;
-}
-
-.removal-policy__warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border-primary));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--warning) 9%, transparent);
-  color: var(--warning);
-  font-size: 0.75rem;
-  line-height: 1.55;
-}
-
-.removal-policy__warning > .app-icon {
-  flex: 0 0 auto;
-  margin-top: 0.12rem;
-}
-
-@media (max-width: 767px) {
-  .removal-policy__options {
-    grid-template-columns: 1fr;
-  }
-
-  .removal-policy__option {
-    min-height: 0;
-  }
-
-  .config-header-actions {
-    width: 100%;
-    justify-content: center;
-    gap: 0.5rem;
-    padding-top: 0.15rem;
-  }
-
-  .config-header-actions__toggle {
-    min-width: 0;
-    justify-content: center;
-  }
-
-  .config-header-actions__primary {
-    width: auto;
-    flex: 0 1 auto;
-    justify-content: center;
-  }
-
-  .config-header-actions__primary > .btn {
-    min-width: 6.9rem;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 390px) {
-  .config-header-actions__primary {
-    width: 100%;
-  }
-}
-</style>
+<style scoped src="~/assets/css/pages/config.css"></style>

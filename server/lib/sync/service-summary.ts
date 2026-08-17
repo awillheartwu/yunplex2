@@ -1,17 +1,22 @@
 import type { SyncJob } from '../job/types'
 import { recordActivityEvent } from '../activity/store'
+import type { SyncMode } from './service-state'
 
 export function buildSyncRunSummary(params: {
   job: SyncJob
   sourceCount: number
-  dryRun: boolean
-  rebuildMatch: boolean
-  redownloadAll?: boolean
+  mode: SyncMode
 }): string {
-  const { job, sourceCount, dryRun, rebuildMatch, redownloadAll } = params
-  const summaryPrefix = redownloadAll ? '重新下载全部音频并同步' : rebuildMatch ? '重建缓存后全量同步' : dryRun ? '[预览]' : ''
-  if (dryRun) return `${summaryPrefix} ${sourceCount} 个歌单源`.trim()
-  if (redownloadAll) {
+  const { job, sourceCount, mode } = params
+  const summaryPrefix = mode === 'redownload_managed'
+    ? '重新下载托管音频并同步'
+    : mode === 'rebuild_matching'
+      ? '重新评估自动匹配并全量同步'
+      : mode === 'preview'
+        ? '[预览]'
+        : ''
+  if (mode === 'preview') return `${summaryPrefix} ${sourceCount} 个歌单源`.trim()
+  if (mode === 'redownload_managed') {
     const counts = [
       job.successSongs > 0 ? `重新下载 ${job.successSongs} 首` : '',
       job.skippedSongs > 0 ? `保护或保留 ${job.skippedSongs} 首` : '',

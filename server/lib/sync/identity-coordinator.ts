@@ -1,4 +1,9 @@
-import { getActiveSongIdentityBindings } from './identity-store'
+import {
+  getActiveSongIdentityBindings,
+  upsertVerifiedSongIdentityBinding,
+  type BindingInput,
+  type SongIdentityBinding,
+} from './identity-store'
 
 export type BindingVersionSnapshot = Map<number, string | null>
 
@@ -31,4 +36,20 @@ export function assertBindingVersionsUnchanged(snapshot: BindingVersionSnapshot)
       throw new Error(`歌曲 #${songId} 的身份已变化，本轮已安全中止 Plex 写入和删除，请重试同步`)
     }
   }
+}
+
+/**
+ * Commit identities discovered by this convergence only after proving that
+ * no external identity mutation invalidated its earlier lookup decisions.
+ * The caller must hold the identity mutation lock until Plex mutation ends.
+ */
+export function applyVerifiedBindingsIfSnapshotCurrent(
+  snapshot: BindingVersionSnapshot,
+  pendingBindings: readonly BindingInput[],
+): Map<number, SongIdentityBinding> {
+  assertBindingVersionsUnchanged(snapshot)
+  for (const binding of pendingBindings) {
+    upsertVerifiedSongIdentityBinding(binding)
+  }
+  return getActiveSongIdentityBindings([...snapshot.keys()])
 }

@@ -42,9 +42,19 @@ export async function matchTrackInPlexWithRetry(
   expectedLocalPath: string | null | undefined,
   maxRetries = 5,
   delayMs = 15000,
+  options: { pathOnly?: boolean } = {},
 ): Promise<PlexMatchResult> {
-  const candidates = await resolveSongArtistCandidateNames(song.artists)
   const normalizedExpectedPath = normalizeExistingLocalPath(expectedLocalPath)
+  if (options.pathOnly) {
+    return matchTrackByExactPathWithRetry(
+      sectionKey,
+      cfg,
+      normalizedExpectedPath,
+      maxRetries,
+      delayMs,
+    )
+  }
+  const candidates = await resolveSongArtistCandidateNames(song.artists)
   const traces: PlexMatchAttemptTrace[] = []
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -200,6 +210,87 @@ export async function matchTrackInPlexWithRetry(
     localFilePath: normalizedExpectedPath,
     traces,
   }
+}
+
+async function matchTrackByExactPathWithRetry(
+  sectionKey: string,
+  cfg: AppConfig,
+  normalizedExpectedPath: string | null,
+  maxRetries: number,
+  delayMs: number,
+): Promise<PlexMatchResult> {
+  const traces: PlexMatchAttemptTrace[] = []
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, delayMs))
+    if (!normalizedExpectedPath) {
+      traces.push({ attempt, artistCandidates: 0, titleCandidates: 0, pathCandidates: 0, matchedBy: null })
+      continue
+    }
+
+    const expectedPlexPath = mapLocalPathToPlex(normalizedExpectedPath, cfg)
+    const exactMatches = expectedPlexPath
+      ? await findTracksByFilePath(sectionKey, expectedPlexPath)
+      : []
+    const exactCandidates = uniqueTracks(exactMatches
+      .filter(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg)))
+    const exact = exactCandidates.length === 1 ? exactCandidates[0] : null
+    if (exact) {
+      traces.push({
+        attempt,
+        artistCandidates: 0,
+        titleCandidates: 0,
+        pathCandidates: exactCandidates.length,
+        matchedBy: 'path_lookup',
+      })
+      return {
+        ratingKey: exact.ratingKey,
+        matchedBy: 'path_lookup',
+        attempts: attempt + 1,
+        localFilePath: normalizedExpectedPath,
+        traces,
+      }
+    }
+
+    const recentTracks = await getRecentlyAddedTracks(sectionKey, 100)
+    const recentCandidates = uniqueTracks(recentTracks
+      .filter(track => trackMapsToLocalPath(track, normalizedExpectedPath, cfg)))
+    const combinedCandidates = uniqueTracks([...exactCandidates, ...recentCandidates])
+    const recent = combinedCandidates.length === 1 ? combinedCandidates[0] : null
+    const pathCandidates = combinedCandidates.length
+    if (recent) {
+      traces.push({
+        attempt,
+        artistCandidates: 0,
+        titleCandidates: 0,
+        pathCandidates,
+        matchedBy: 'recent_path_lookup',
+      })
+      return {
+        ratingKey: recent.ratingKey,
+        matchedBy: 'recent_path_lookup',
+        attempts: attempt + 1,
+        localFilePath: normalizedExpectedPath,
+        traces,
+      }
+    }
+    traces.push({ attempt, artistCandidates: 0, titleCandidates: 0, pathCandidates, matchedBy: null })
+  }
+  return {
+    ratingKey: null,
+    matchedBy: null,
+    attempts: maxRetries + 1,
+    localFilePath: normalizedExpectedPath,
+    traces,
+  }
+}
+
+function uniqueTracks(tracks: readonly PlexTrack[]): PlexTrack[] {
+  const seen = new Set<string>()
+  return tracks.filter(track => {
+    if (seen.has(track.ratingKey)) return false
+    seen.add(track.ratingKey)
+    return true
+  })
 }
 
 function trackMapsToLocalPath(track: PlexTrack, expectedLocalPath: string, cfg: AppConfig): boolean {

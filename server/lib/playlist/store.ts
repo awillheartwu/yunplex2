@@ -74,6 +74,16 @@ export function getEnabledSources(): PlaylistSource[] {
   return listSources(true)
 }
 
+export function markInheritedMissingMediaSourcesForReconcile(): number {
+  const now = new Date().toISOString()
+  const result = getDb().prepare(`
+    UPDATE playlist_sources
+    SET requires_match_reconcile = 1, updated_at = ?
+    WHERE download_when_media_missing IS NULL
+  `).run(now)
+  return result.changes
+}
+
 export async function createSource(
   neteasePlaylistId: number,
   _cookie: string,
@@ -112,12 +122,13 @@ export function updateSource(id: string, partial: Partial<{
   autoCreatePlexPlaylist: boolean
   trackCount: number
   lastTrackUpdateTime: number | null
-  forceFullCompare: boolean
+  forceFullCompare: boolean | null
+  downloadWhenMediaMissing: boolean | null
   consecutiveSkips: number
   fullCompareAfterSkips: number | null
   fullCompareAfterDays: number | null
-  skipPlexPlaylist: boolean
-  skipRemoveExtraTracks: boolean
+  skipPlexPlaylist: boolean | null
+  skipRemoveExtraTracks: boolean | null
   copyrightRestrictedIds: string | null
   ignoredFailureIds: string | null
   requiresMatchReconcile: boolean
@@ -149,12 +160,13 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.lastJobId !== undefined) { sets.push('last_job_id = ?'); vals.push(partial.lastJobId) }
   if (partial.autoCreatePlexPlaylist !== undefined) { sets.push('auto_create_plex_playlist = ?'); vals.push(partial.autoCreatePlexPlaylist ? 1 : 0) }
   if (partial.trackCount !== undefined) { sets.push('track_count = ?'); vals.push(partial.trackCount) }
-  if (partial.forceFullCompare !== undefined) { sets.push('force_full_compare = ?'); vals.push(partial.forceFullCompare ? 1 : 0) }
+  if (partial.forceFullCompare !== undefined) { sets.push('force_full_compare = ?'); vals.push(toNullableBoolean(partial.forceFullCompare)) }
+  if (partial.downloadWhenMediaMissing !== undefined) { sets.push('download_when_media_missing = ?'); vals.push(toNullableBoolean(partial.downloadWhenMediaMissing)) }
   if (partial.consecutiveSkips !== undefined) { sets.push('consecutive_skips = ?'); vals.push(partial.consecutiveSkips) }
   if (partial.fullCompareAfterSkips !== undefined) { sets.push('full_compare_after_skips = ?'); vals.push(partial.fullCompareAfterSkips) }
   if (partial.fullCompareAfterDays !== undefined) { sets.push('full_compare_after_days = ?'); vals.push(partial.fullCompareAfterDays) }
-  if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(partial.skipPlexPlaylist ? 1 : 0) }
-  if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(partial.skipRemoveExtraTracks ? 1 : 0) }
+  if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(toNullableBoolean(partial.skipPlexPlaylist)) }
+  if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(toNullableBoolean(partial.skipRemoveExtraTracks)) }
   if (partial.copyrightRestrictedIds !== undefined) { sets.push('copyright_restricted_ids = ?'); vals.push(partial.copyrightRestrictedIds) }
   if (partial.ignoredFailureIds !== undefined) { sets.push('ignored_failure_ids = ?'); vals.push(partial.ignoredFailureIds) }
   if (partial.requiresMatchReconcile !== undefined) { sets.push('requires_match_reconcile = ?'); vals.push(partial.requiresMatchReconcile ? 1 : 0) }
@@ -178,6 +190,10 @@ export function updateSource(id: string, partial: Partial<{
 
   db.prepare(`UPDATE playlist_sources SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
   return getSource(id)
+}
+
+function toNullableBoolean(value: boolean | null): number | null {
+  return value === null ? null : value ? 1 : 0
 }
 
 export interface SourceSyncObservation {

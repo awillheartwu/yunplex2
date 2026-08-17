@@ -3,6 +3,7 @@ import { getDownloadTask, processAll } from '../../../../lib/download/queue'
 import { getSyncServiceInstance } from '../../../../lib/sync/instance'
 import { readConfig } from '../../../../lib/config/store'
 import { downloadSingleSong } from '../../../../lib/download/single-song'
+import { resolveSingleSongConfig } from '../../../../lib/download/options'
 import { appendLog } from '../../../../lib/log/store'
 
 export default defineEventHandler(async (event) => {
@@ -32,22 +33,10 @@ export default defineEventHandler(async (event) => {
     onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
     signal: AbortSignal,
   ) => {
-    return downloadSingleSong(t.songId, {
+    return downloadSingleSong(t.songId, resolveSingleSongConfig(cfg, {
       quality: t.quality || cfg.netease.quality,
-      cookie: cfg.netease.cookie,
-      downloadDir: cfg.download.dir,
-      pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-      multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
-      downloadLyrics: cfg.download.downloadLyrics,
-      embedMetadata: cfg.download.embedMetadata,
-      embedCover: cfg.download.embedCover,
-      saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-      saveArtistImage: cfg.download.saveArtistImage ?? false,
-      lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
-      downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
-      downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
-    downloadMode: 'full',
-    }, onProgress, signal)
+      downloadMode: 'full',
+    }), onProgress, signal)
   }
 
   processAll(async (t, onProgress, signal) => {

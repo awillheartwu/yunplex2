@@ -37,7 +37,17 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-block: 0.25rem;
+  min-height: 3.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-input) 78%, transparent);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.toggle-field:hover {
+  border-color: var(--border-secondary);
+  background: var(--bg-input);
 }
 
 .toggle-field__switch {

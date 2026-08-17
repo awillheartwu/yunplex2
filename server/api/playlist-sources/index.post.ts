@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
       const syncService = getSyncServiceInstance()
       const state = syncService.getState()
       if (!state.isRunning && !isRepairRunning()) {
-        autoSyncRunId = syncService.startSyncForSource(source.id, { forceFull: true, trigger: 'system' }).runId
+        autoSyncRunId = syncService.startSyncForSource(source.id, { mode: 'full', trigger: 'system' }).runId
       }
     }
     recordActivityEvent({

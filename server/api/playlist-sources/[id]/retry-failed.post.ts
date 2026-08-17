@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
 
   // Clearing failure memory must be followed by a real comparison even when
   // the Netease playlist timestamp itself has not changed.
-  const { runId } = syncService.startSyncForSource(source.id, { trigger: 'retry', forceFull: true })
+  const { runId } = syncService.startSyncForSource(source.id, { trigger: 'retry', mode: 'full' })
 
   return success({
     triggered: true,

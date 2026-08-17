@@ -1,17 +1,9 @@
 import type { NeteaseSong } from '../netease'
 import { getTrackByRatingKey } from '../plex-client'
-import { anyCandidateMatches, fuzzyAlbum, fuzzyMatch, normalizeArtistName } from './lookup'
+import { anyCandidateMatches, normalizeArtistName } from './artist-match'
+import { albumsMatchConservatively, titlesMatchConservatively } from './matchers'
 import { resolveSongArtistCandidateNames } from './song-artist-candidates'
-
-export function buildCachedTargetOrder(songIds: number[], ratingKeys: Map<number, string>): string[] | null {
-  const targetOrder: string[] = []
-  for (const songId of songIds) {
-    const ratingKey = ratingKeys.get(songId)
-    if (!ratingKey) return null
-    targetOrder.push(ratingKey)
-  }
-  return targetOrder
-}
+import { plexPathsExactlyEqual } from './identity-normalization'
 
 export interface CachedRatingKeyValidationIssue {
   songId: number
@@ -54,8 +46,7 @@ export async function validateCachedTargetOrder(
       const actualPaths = track.Media?.flatMap(media =>
         media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [],
       ) ?? []
-      const normalize = (value: string) => value.normalize('NFC').replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '')
-      if (actualPaths.some(actualPath => normalize(actualPath) === normalize(bindingPath))) {
+      if (actualPaths.some(actualPath => plexPathsExactlyEqual(actualPath, bindingPath))) {
         targetOrder.push(ratingKey)
         continue
       }
@@ -70,9 +61,9 @@ export async function validateCachedTargetOrder(
       source: 'original' as const,
       confidence: 100,
     }))
-    const titleMatched = fuzzyMatch(track.title, song.name)
+    const titleMatched = titlesMatchConservatively(track.title, song.name)
     const artistMatched = anyCandidateMatches(track.grandparentTitle, artistCandidates)
-    const albumMatched = fuzzyAlbum(track.parentTitle, song.album.name)
+    const albumMatched = albumsMatchConservatively(track.parentTitle, song.album.name)
 
     if (!titleMatched || !artistMatched || !albumMatched) {
       issues.push({

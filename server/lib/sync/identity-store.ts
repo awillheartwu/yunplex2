@@ -4,24 +4,28 @@ import type {
   BindingMethod,
   BindingStatus,
   MatchReview,
-  MatchReviewCounts,
-  MatchReviewEvidenceFacet,
   MatchReviewPage,
-  MatchReviewSourceFacet,
   ReviewEvidenceType,
   ReviewStatus,
   SongIdentityBinding,
 } from '~~/types/match-review'
 import { getDb } from '../db'
+import { parseJsonObject } from '../json'
+import {
+  queryMatchReviewsReadModel,
+  type MatchReviewFilters,
+} from './match-review-read-store'
+import { mapMatchReviewRow, type MatchReviewRow } from './match-review-record'
 import {
   buildMatchReviewCandidateKey,
   normalizePlexPath,
   normalizePlexRelativePath,
   resolvePlexIdentityPath,
 } from './identity-normalization'
-import { appendSongIdentityEvent, markSongSourcesPendingAlignment } from './match-management-store'
+import { recordIdentityTransition } from './identity-transition'
+import { appendSongIdentityEvent } from './match-management-store'
 
-export type { BindingMethod, BindingStatus, ReviewEvidenceType, ReviewStatus, SongIdentityBinding, MatchReview }
+export type { BindingMethod, BindingStatus, ReviewEvidenceType, ReviewStatus, SongIdentityBinding, MatchReview, MatchReviewFilters }
 export { buildMatchReviewCandidateKey, normalizePlexPath, normalizePlexRelativePath, resolvePlexIdentityPath }
 
 const REVIEW_EVIDENCE_TYPES = new Set<ReviewEvidenceType>([
@@ -52,31 +56,6 @@ type BindingRow = {
   last_verified_at: string | null
 }
 
-type ReviewRow = {
-  id: string
-  netease_song_id: number
-  source_id: string | null
-  run_id: string | null
-  candidate_plex_file_path: string | null
-  candidate_plex_rating_key: string | null
-  candidate_mb_recording_id: string | null
-  candidate_key: string
-  evidence_type: ReviewEvidenceType
-  evidence_json: string
-  status: ReviewStatus
-  decision: string | null
-  created_at: string
-  decided_at: string | null
-}
-
-export interface MatchReviewFilters {
-  status?: ReviewStatus
-  sourceId?: string
-  evidenceType?: ReviewEvidenceType
-  page?: number
-  pageSize?: number
-}
-
 interface CreateReviewInput {
   neteaseSongId: number
   sourceId?: string | null
@@ -94,17 +73,6 @@ export interface BindingInput extends Omit<SongIdentityBinding, 'createdAt' | 'u
   plexRelativePath?: string
   plexSectionRoot?: string | null
   lastVerifiedAt?: string | null
-}
-
-function safeJson(value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {}
-  } catch {
-    return {}
-  }
 }
 
 function nextVersionTimestamp(previous?: string | null): string {
@@ -136,28 +104,10 @@ function bindingFromRow(row: BindingRow): SongIdentityBinding {
     mbRecordingId: row.mb_recording_id,
     bindingMethod: row.binding_method,
     status: row.status,
-    evidence: safeJson(row.evidence_json),
+    evidence: parseJsonObject(row.evidence_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastVerifiedAt: row.last_verified_at,
-  }
-}
-
-function reviewFromRow(row: ReviewRow): MatchReview {
-  return {
-    id: row.id,
-    neteaseSongId: row.netease_song_id,
-    sourceId: row.source_id,
-    runId: row.run_id,
-    candidatePlexFilePath: row.candidate_plex_file_path,
-    candidatePlexRatingKey: row.candidate_plex_rating_key,
-    candidateMbRecordingId: row.candidate_mb_recording_id,
-    evidenceType: REVIEW_EVIDENCE_TYPES.has(row.evidence_type) ? row.evidence_type : 'historical',
-    evidence: safeJson(row.evidence_json),
-    status: row.status,
-    decision: row.decision,
-    createdAt: row.created_at,
-    decidedAt: row.decided_at,
   }
 }
 
@@ -204,6 +154,70 @@ export function getSongIdentityBindingByRatingKey(ratingKey: string): SongIdenti
   // A shared ratingKey is not proof of which Netease identity owns an extra
   // occurrence. Treat ambiguity as unknown so it can never authorize deletion.
   return rows.length === 1 ? bindingFromRow(rows[0]!) : null
+}
+
+export function getReplacedSongIdentityIdsByRatingKeys(ratingKeys: string[]): Map<string, number> {
+  const keys = [...new Set(ratingKeys.filter(Boolean))]
+  if (keys.length === 0) return new Map()
+
+  const rows = getDb().prepare(`
+    SELECT
+      e.netease_song_id,
+      e.event_type,
+      e.previous_binding_json,
+      e.next_binding_json,
+      e.evidence_json,
+      b.plex_rating_key AS current_plex_rating_key
+    FROM song_identity_events e
+    JOIN song_identity_bindings b ON b.netease_song_id = e.netease_song_id
+    WHERE b.status = 'active'
+      AND e.previous_binding_json IS NOT NULL
+      AND e.next_binding_json IS NOT NULL
+      AND json_extract(e.previous_binding_json, '$.plexRatingKey')
+        IN (${keys.map(() => '?').join(', ')})
+    ORDER BY e.created_at DESC
+  `).all(...keys) as Array<{
+    netease_song_id: number
+    event_type: string
+    previous_binding_json: string
+    next_binding_json: string
+    evidence_json: string
+    current_plex_rating_key: string | null
+  }>
+
+  const songIdsByOldKey = new Map<string, Set<number>>()
+  for (const row of rows) {
+    const previous = parseJsonObject(row.previous_binding_json)
+    const next = parseJsonObject(row.next_binding_json)
+    const evidence = parseJsonObject(row.evidence_json)
+    const previousKey = typeof previous.plexRatingKey === 'string' ? previous.plexRatingKey : ''
+    const nextKey = typeof next.plexRatingKey === 'string' ? next.plexRatingKey : ''
+    const staleReplacedByExactManagedPath = previous.status === 'stale'
+      && row.event_type === 'auto_migrate'
+      && next.bindingMethod === 'path'
+      && evidence.source === 'plex_retry_exact_path'
+      && evidence.matchedBy === 'path_lookup'
+      && ['download_missing', 'redownload_replaced'].includes(String(evidence.mediaPolicy))
+    if (
+      !previousKey
+      || (previous.status !== 'active' && !staleReplacedByExactManagedPath)
+      || next.status !== 'active'
+      || !nextKey
+      || nextKey === previousKey
+      || !row.current_plex_rating_key
+      || row.current_plex_rating_key === previousKey
+    ) continue
+
+    const songIds = songIdsByOldKey.get(previousKey) ?? new Set<number>()
+    songIds.add(row.netease_song_id)
+    songIdsByOldKey.set(previousKey, songIds)
+  }
+
+  return new Map(
+    [...songIdsByOldKey.entries()]
+      .filter(([, songIds]) => songIds.size === 1)
+      .map(([ratingKey, songIds]) => [ratingKey, [...songIds][0]!] as const),
+  )
 }
 
 export function getSongIdentityBindings(songIds: number[]): Map<number, SongIdentityBinding> {
@@ -289,7 +303,7 @@ export function upsertVerifiedSongIdentityBinding(input: BindingInput): SongIden
       binding = getSongIdentityBinding(input.neteaseSongId)!
     }
     if (identityChanged) {
-      appendSongIdentityEvent({
+      recordIdentityTransition({
         neteaseSongId: binding.neteaseSongId,
         eventType: previous && previous.plexRelativePath !== binding.plexRelativePath ? 'auto_migrate' : 'auto_bind',
         actorType: 'system',
@@ -299,7 +313,6 @@ export function upsertVerifiedSongIdentityBinding(input: BindingInput): SongIden
         nextBinding: binding,
         evidence: input.evidence,
       })
-      markSongSourcesPendingAlignment(binding.neteaseSongId)
     }
     if (binding.status === 'active') {
       const now = new Date().toISOString()
@@ -323,9 +336,9 @@ export function markSongIdentityBindingStale(neteaseSongId: number, evidence: Re
       UPDATE song_identity_bindings
       SET status = 'stale', evidence_json = ?, updated_at = ?
       WHERE netease_song_id = ?
-    `).run(JSON.stringify(evidence), now, neteaseSongId)
+    `).run(JSON.stringify({ ...previous.evidence, ...evidence }), now, neteaseSongId)
     const next = getSongIdentityBinding(neteaseSongId)
-    appendSongIdentityEvent({
+    recordIdentityTransition({
       neteaseSongId,
       eventType: 'invalidate',
       actorType: 'system',
@@ -334,8 +347,30 @@ export function markSongIdentityBindingStale(neteaseSongId: number, evidence: Re
       evidence,
       createdAt: now,
     })
-    markSongSourcesPendingAlignment(neteaseSongId, now)
   })()
+}
+
+export function markAutomaticSongIdentityBindingsStale(
+  songIds: number[],
+  evidence: Record<string, unknown> = {},
+): number {
+  const ids = [...new Set(songIds)].filter(Number.isFinite)
+  if (ids.length === 0) return 0
+  const rows = getDb().prepare(`
+    SELECT netease_song_id
+    FROM song_identity_bindings
+    WHERE netease_song_id IN (${ids.map(() => '?').join(', ')})
+      AND status = 'active'
+      AND binding_method != 'manual'
+  `).all(...ids) as Array<{ netease_song_id: number }>
+
+  for (const row of rows) {
+    markSongIdentityBindingStale(row.netease_song_id, {
+      ...evidence,
+      reason: 'manual_rebuild_matching',
+    })
+  }
+  return rows.length
 }
 
 export function unbindSongIdentity(neteaseSongId: number, sourceId?: string | null, runId?: string | null): void {
@@ -359,7 +394,7 @@ export function unbindSongIdentity(neteaseSongId: number, sourceId?: string | nu
       evidenceType: 'manual',
       evidence: { previousBinding },
     })
-    appendSongIdentityEvent({
+    recordIdentityTransition({
       neteaseSongId,
       eventType: 'manual_reevaluate',
       actorType: 'admin',
@@ -370,7 +405,6 @@ export function unbindSongIdentity(neteaseSongId: number, sourceId?: string | nu
       evidence: { mode: 'reevaluate' },
       createdAt: now,
     })
-    markSongSourcesPendingAlignment(neteaseSongId, now)
   })()
 }
 
@@ -403,7 +437,7 @@ export function createMatchReview(input: CreateReviewInput): MatchReview {
         input.neteaseSongId,
         candidatePlexFilePath ?? '',
         input.candidatePlexRatingKey?.trim() ?? '',
-      ) as ReviewRow | undefined
+      ) as MatchReviewRow | undefined
       if (rejected) {
         insertOccurrence(db, rejected.id, input, new Date().toISOString())
         return rejected.id
@@ -415,7 +449,7 @@ export function createMatchReview(input: CreateReviewInput): MatchReview {
         WHERE candidate_key = ? AND status IN ('pending', 'rejected')
         ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC
         LIMIT 1
-      `).get(candidateKey) as ReviewRow | undefined
+      `).get(candidateKey) as MatchReviewRow | undefined
       if (existing) {
         if (
           existing.status === 'pending'
@@ -467,8 +501,8 @@ export function createMatchReview(input: CreateReviewInput): MatchReview {
 }
 
 export function getMatchReview(id: string): MatchReview | null {
-  const row = getDb().prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as ReviewRow | undefined
-  return row ? reviewFromRow(row) : null
+  const row = getDb().prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as MatchReviewRow | undefined
+  return row ? mapMatchReviewRow(row) : null
 }
 
 /**
@@ -491,135 +525,15 @@ export function findRejectedMatchReview(input: {
       AND COALESCE(candidate_plex_rating_key, '') = ?
     ORDER BY decided_at DESC, created_at DESC
     LIMIT 1
-  `).get(input.neteaseSongId, path, ratingKey) as ReviewRow | undefined
-  return row ? reviewFromRow(row) : null
-}
-
-function buildReviewWhere(filters: Pick<MatchReviewFilters, 'status' | 'sourceId' | 'evidenceType'>, includeStatus = true): {
-  where: string
-  values: unknown[]
-} {
-  const conditions: string[] = []
-  const values: unknown[] = []
-  if (includeStatus && filters.status) {
-    conditions.push('r.status = ?')
-    values.push(filters.status)
-  }
-  if (filters.sourceId) {
-    conditions.push(`(
-      r.source_id = ? OR EXISTS (
-        SELECT 1 FROM song_match_review_occurrences occurrence
-        WHERE occurrence.review_id = r.id AND occurrence.source_id = ?
-      )
-    )`)
-    values.push(filters.sourceId, filters.sourceId)
-  }
-  if (filters.evidenceType) {
-    conditions.push('r.evidence_type = ?')
-    values.push(filters.evidenceType)
-  }
-  return {
-    where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
-    values,
-  }
-}
-
-function listSourceFacets(db: Database.Database): MatchReviewSourceFacet[] {
-  return db.prepare(`
-    WITH review_sources AS (
-      SELECT id AS review_id, source_id FROM song_match_reviews WHERE source_id IS NOT NULL AND source_id != ''
-      UNION
-      SELECT review_id, source_id FROM song_match_review_occurrences WHERE source_id != ''
-    )
-    SELECT review_sources.source_id,
-      COALESCE(NULLIF(playlist_sources.name, ''), NULLIF(playlist_sources.netease_playlist_name, ''), review_sources.source_id) AS name,
-      COUNT(DISTINCT review_sources.review_id) AS count
-    FROM review_sources
-    LEFT JOIN playlist_sources ON playlist_sources.id = review_sources.source_id
-    GROUP BY review_sources.source_id
-    ORDER BY name COLLATE NOCASE ASC, review_sources.source_id ASC
-  `).all().map((row: unknown) => {
-    const typed = row as { source_id: string; name: string; count: number }
-    return { sourceId: typed.source_id, name: typed.name, count: typed.count }
-  })
-}
-
-function listEvidenceFacets(db: Database.Database): MatchReviewEvidenceFacet[] {
-  return (db.prepare(`
-    SELECT evidence_type, COUNT(*) AS count
-    FROM song_match_reviews
-    GROUP BY evidence_type
-    ORDER BY count DESC, evidence_type ASC
-  `).all() as Array<{ evidence_type: ReviewEvidenceType; count: number }>).map(row => ({
-    evidenceType: row.evidence_type,
-    count: row.count,
-  }))
+  `).get(input.neteaseSongId, path, ratingKey) as MatchReviewRow | undefined
+  return row ? mapMatchReviewRow(row) : null
 }
 
 export function queryMatchReviews(filters: MatchReviewFilters = {}): MatchReviewPage {
-  const db = getDb()
-  const pageSize = Math.min(Math.max(Math.trunc(filters.pageSize ?? 25), 1), 100)
-  const requestedPage = Math.max(Math.trunc(filters.page ?? 1), 1)
-  const full = buildReviewWhere(filters)
-  const total = (db.prepare(`SELECT COUNT(*) AS count FROM song_match_reviews r ${full.where}`)
-    .get(...full.values) as { count: number }).count
-  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
-  const page = totalPages === 0 ? 1 : Math.min(requestedPage, totalPages)
-  const rows = db.prepare(`
-    SELECT r.* FROM song_match_reviews r
-    ${full.where}
-    ORDER BY r.created_at DESC, r.id DESC
-    LIMIT ? OFFSET ?
-  `).all(...full.values, pageSize, (page - 1) * pageSize) as ReviewRow[]
-  const reviews = rows.map(reviewFromRow)
-  const bindings = getSongIdentityBindings(reviews.map(review => review.neteaseSongId))
-
-  const aggregate = buildReviewWhere(filters, false)
-  const countRows = db.prepare(`
-    SELECT r.status, COUNT(*) AS count
-    FROM song_match_reviews r
-    ${aggregate.where}
-    GROUP BY r.status
-  `).all(...aggregate.values) as Array<{ status: ReviewStatus; count: number }>
-  const counts: MatchReviewCounts = {
-    pending: 0,
-    accepted: 0,
-    rejected: 0,
-    unbound: 0,
-    superseded: 0,
-    activeBindings: (db.prepare("SELECT COUNT(*) AS count FROM song_identity_bindings WHERE status = 'active'").get() as { count: number }).count,
-  }
-  for (const row of countRows) counts[row.status] = row.count
-
-  return {
-    items: reviews.map(review => ({ ...review, binding: bindings.get(review.neteaseSongId) ?? null })),
-    page,
-    pageSize,
-    total,
-    totalPages,
-    counts,
-    facets: {
-      sources: listSourceFacets(db),
-      evidenceTypes: listEvidenceFacets(db),
-    },
-  }
+  return queryMatchReviewsReadModel(filters, getSongIdentityBindings)
 }
 
-export function listMatchReviews(filters: {
-  status?: ReviewStatus
-  sourceId?: string
-  evidenceType?: ReviewEvidenceType
-  limit?: number
-} = {}): MatchReview[] {
-  const query = buildReviewWhere(filters)
-  const limit = Math.min(Math.max(Math.trunc(filters.limit ?? 100), 1), 500)
-  return (getDb().prepare(`
-    SELECT r.* FROM song_match_reviews r
-    ${query.where}
-    ORDER BY r.created_at DESC, r.id DESC
-    LIMIT ?
-  `).all(...query.values, limit) as ReviewRow[]).map(reviewFromRow)
-}
+export { listMatchReviews } from './match-review-read-store'
 
 export interface MatchReviewDecisionBinding {
   plexSectionKey: string
@@ -639,16 +553,16 @@ export interface MatchReviewDecisionInput {
 
 function applyMatchReviewDecision(db: Database.Database, input: MatchReviewDecisionInput): MatchReview {
   const { id, decision, binding } = input
-  const row = db.prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as ReviewRow | undefined
+  const row = db.prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as MatchReviewRow | undefined
   if (!row) throw new Error(`审核记录不存在：${id}`)
   if (row.status !== 'pending') {
     const sameDecision = (decision === 'accept' && row.status === 'accepted')
       || (decision === 'reject' && row.status === 'rejected')
-    if (sameDecision) return reviewFromRow(row)
+    if (sameDecision) return mapMatchReviewRow(row)
     throw new Error(`审核记录已是“${row.status}”状态，不能再次决策`)
   }
 
-  const review = reviewFromRow(row)
+  const review = mapMatchReviewRow(row)
   const now = new Date().toISOString()
   if (decision === 'accept') {
     if (!binding) throw new Error('接受匹配需要 Plex 文件身份')
@@ -676,7 +590,7 @@ function applyMatchReviewDecision(db: Database.Database, input: MatchReviewDecis
       SET status = 'superseded', decision = 'accepted_elsewhere', decided_at = ?
       WHERE netease_song_id = ? AND status = 'pending' AND id != ?
     `).run(now, review.neteaseSongId, id)
-    appendSongIdentityEvent({
+    recordIdentityTransition({
       neteaseSongId: review.neteaseSongId,
       eventType: 'manual_accept',
       actorType: 'admin',
@@ -688,7 +602,6 @@ function applyMatchReviewDecision(db: Database.Database, input: MatchReviewDecis
       evidence: { ...binding.evidence, candidateKey: row.candidate_key },
       createdAt: now,
     })
-    markSongSourcesPendingAlignment(review.neteaseSongId, now)
   } else {
     db.prepare(`
       UPDATE song_match_reviews
@@ -713,8 +626,8 @@ function applyMatchReviewDecision(db: Database.Database, input: MatchReviewDecis
     })
   }
 
-  const updated = db.prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as ReviewRow
-  return reviewFromRow(updated)
+  const updated = db.prepare('SELECT * FROM song_match_reviews WHERE id = ?').get(id) as MatchReviewRow
+  return mapMatchReviewRow(updated)
 }
 
 export class BindingVersionConflictError extends Error {
@@ -745,7 +658,7 @@ export function rebindSongIdentity(input: {
       evidence: { ...input.binding.evidence, decision: 'manual_rebind' },
     })
     const now = binding.updatedAt
-    appendSongIdentityEvent({
+    const affectedSources = recordIdentityTransition({
       neteaseSongId: input.neteaseSongId,
       eventType: 'manual_rebind',
       actorType: 'admin',
@@ -756,7 +669,6 @@ export function rebindSongIdentity(input: {
       evidence: input.binding.evidence,
       createdAt: now,
     })
-    const affectedSources = markSongSourcesPendingAlignment(input.neteaseSongId, now)
     return { binding, affectedSources }
   })()
 }
@@ -795,7 +707,7 @@ export function unbindSongIdentityWithMode(input: {
       })
       reviewId = review.id
     }
-    appendSongIdentityEvent({
+    const affectedSources = recordIdentityTransition({
       neteaseSongId: input.neteaseSongId,
       eventType: input.mode === 'exclude_current' ? 'manual_exclude' : 'manual_reevaluate',
       actorType: 'admin',
@@ -806,7 +718,6 @@ export function unbindSongIdentityWithMode(input: {
       evidence: { mode: input.mode },
       createdAt: now,
     })
-    const affectedSources = markSongSourcesPendingAlignment(input.neteaseSongId, now)
     return { binding, affectedSources }
   })()
 }
