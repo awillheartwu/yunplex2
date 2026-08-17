@@ -8,34 +8,28 @@ import {
   parseDateQueryValue,
 } from '~~/composables/useFilterQuery'
 import { useFeedback } from '~~/composables/useFeedback'
-import { useRuns } from '~~/composables/useRuns'
 import { useDebounceFn } from '~~/composables/useTiming'
 import { formatRunDuration, runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
 
 export function useTaskCenterPage() {
-  type TaskCenterTab = 'overview' | 'runs' | 'failures'
+  type TaskCenterTab = 'overview' | 'failures'
   const route = useRoute()
   const router = useRouter()
   const api = useApi()
   const feedback = useFeedback()
   const tabs: Array<{ key: TaskCenterTab; label: string }> = [
     { key: 'overview', label: '概览' },
-    { key: 'runs', label: '运行记录' },
     { key: 'failures', label: '异常处理' },
   ]
   const legacyTabs: Record<string, TaskCenterTab> = {
-    activities: 'runs',
-    'sync-history': 'runs',
-    'download-history': 'runs',
     downloads: 'overview',
     failures: 'failures',
   }
   const requestedTab = String(route.query.tab || 'overview')
-  const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'runs', 'failures'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
+  const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'failures'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
 
   const { state: syncState, loading: syncLoading, error: syncError, triggerSync, cancelSync } = useSync()
-  const runs = useRuns()
   const failures = useFailures()
   const sourceOptions = ref<TaskSourceOption[]>([])
   const latestRun = ref<TaskRunSummary | null>(null)
@@ -127,88 +121,17 @@ export function useTaskCenterPage() {
   })
   const elapsedLabel = computed(() => formatElapsed(syncState.value?.startedAt || ''))
 
-  const runTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
+  const failureTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
     { label: '全部类型', value: '' },
     { label: '同步', value: 'sync' },
     { label: '补全', value: 'repair' },
     { label: '手动下载', value: 'manual_download' },
   ]
-  const runStatusFilters: Array<{ label: string; value: JobStatus | '' }> = [
-    { label: '全部状态', value: '' },
-    { label: '运行中', value: 'running' },
-    { label: '成功', value: 'success' },
-    { label: '部分成功', value: 'partial' },
-    { label: '失败', value: 'failed' },
-    { label: '已取消', value: 'cancelled' },
-  ]
-  type RunFilterChipKey = 'search' | 'type' | 'status' | 'source' | 'date'
-  const draftRunType = ref<TaskRunType | ''>('')
-  const draftRunStatus = ref<JobStatus | ''>('')
-  const draftRunSource = ref('')
-  const draftRunFrom = ref<string | null>(null)
-  const draftRunTo = ref<string | null>(null)
-  const draftRunDateFilter = computed(() => ({ from: draftRunFrom.value, to: draftRunTo.value }))
-  const runAdvancedFilterCount = computed(() => countActiveFilters({
-    type: runs.filter.value.type,
-    status: runs.filter.value.status,
-    sourceId: runs.filter.value.sourceId,
-  }) + (runs.filter.value.from || runs.filter.value.to ? 1 : 0))
-  const runActiveFilterCount = computed(() => countActiveFilters({
-    search: runs.filter.value.search,
-    type: runs.filter.value.type,
-    status: runs.filter.value.status,
-    sourceId: runs.filter.value.sourceId,
-    from: runs.filter.value.from,
-    to: runs.filter.value.to,
-  }))
-  const runCanClear = computed(() => runActiveFilterCount.value > 0)
-  const runAdvancedFilterLabel = computed(() => runAdvancedFilterCount.value > 0 ? '筛选' : '高级筛选')
-  const runFilterChips = computed<Array<{ key: RunFilterChipKey; label: string }>>(() => {
-    const chips: Array<{ key: RunFilterChipKey; label: string }> = []
-    if (runs.filter.value.search) chips.push({ key: 'search', label: `搜索：${runs.filter.value.search}` })
-    if (runs.filter.value.type) chips.push({ key: 'type', label: `类型：${runTypeFilters.find(item => item.value === runs.filter.value.type)?.label || runs.filter.value.type}` })
-    if (runs.filter.value.status) chips.push({ key: 'status', label: `状态：${runStatusFilters.find(item => item.value === runs.filter.value.status)?.label || runs.filter.value.status}` })
-    if (runs.filter.value.sourceId) chips.push({ key: 'source', label: `来源：${sourceLabel(runs.filter.value.sourceId)}` })
-    if (runs.filter.value.from || runs.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(runs.filter.value.from, runs.filter.value.to) })
-    return chips
-  })
-  const groupedRuns = computed(() => {
-    const groups = new Map<string, { key: string; label: string; items: TaskRunSummary[] }>()
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(today.getDate() - 1)
-    const todayKey = localDateKey(today)
-    const yesterdayKey = localDateKey(yesterday)
-
-    for (const run of runs.items.value) {
-      const date = new Date(run.startedAt)
-      const key = localDateKey(date)
-      const label = key === todayKey
-        ? '今天'
-        : key === yesterdayKey
-          ? '昨天'
-          : date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
-      const group = groups.get(key) || { key, label, items: [] }
-      group.items.push(run)
-      groups.set(key, group)
-    }
-    return [...groups.values()]
-  })
-
-  function localDateKey(date: Date) {
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, '0'),
-      String(date.getDate()).padStart(2, '0'),
-    ].join('-')
-  }
-
   const failureStatusTabs: Array<{ label: string; value: FailureRecordStatus }> = [
     { label: '待处理', value: 'open' },
     { label: '已忽略', value: 'ignored' },
     { label: '已解决', value: 'resolved' },
   ]
-  const failureTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = runTypeFilters
   const failureKindFilters = [
     { label: '全部阶段', value: '' },
     { label: '下载失败', value: 'failed_download' },
@@ -257,65 +180,7 @@ export function useTaskCenterPage() {
     void router.replace({ query: { ...route.query, tab: tab === 'overview' ? undefined : tab, id: undefined } })
   }
   function onTaskCenterTabChange(tab: string) {
-    if (tab === 'overview' || tab === 'runs' || tab === 'failures') switchTab(tab)
-  }
-  function syncRunQuery() {
-    void router.replace({ query: {
-      ...route.query,
-      tab: 'runs',
-      runSearch: runs.filter.value.search || undefined,
-      runType: runs.filter.value.type || undefined,
-      runStatus: runs.filter.value.status || undefined,
-      runSource: runs.filter.value.sourceId || undefined,
-      runFrom: runs.filter.value.from || undefined,
-      runTo: runs.filter.value.to || undefined,
-    } })
-  }
-  function applyRunFilters() { runSearchDebounce.cancel(); syncRunQuery(); void runs.fetch() }
-  const runSearchDebounce = useDebounceFn(applyRunFilters, 350)
-  function onRunSearch(value: string) { runs.filter.value.search = value || undefined; runSearchDebounce.run() }
-  function prepareRunDraftFilters() {
-    draftRunType.value = runs.filter.value.type || ''
-    draftRunStatus.value = runs.filter.value.status || ''
-    draftRunSource.value = runs.filter.value.sourceId || ''
-    draftRunFrom.value = runs.filter.value.from || null
-    draftRunTo.value = runs.filter.value.to || null
-  }
-  function resetRunDraftFilters() {
-    draftRunType.value = ''
-    draftRunStatus.value = ''
-    draftRunSource.value = ''
-    draftRunFrom.value = null
-    draftRunTo.value = null
-  }
-  function setDraftRunDate(value: { from: string | null; to: string | null }) {
-    draftRunFrom.value = value.from
-    draftRunTo.value = value.to
-  }
-  function applyRunDraftFilters(close?: () => void) {
-    runs.filter.value.type = draftRunType.value || undefined
-    runs.filter.value.status = draftRunStatus.value || undefined
-    runs.filter.value.sourceId = draftRunSource.value || undefined
-    runs.filter.value.from = draftRunFrom.value || undefined
-    runs.filter.value.to = draftRunTo.value || undefined
-    close?.()
-    applyRunFilters()
-  }
-  function clearRunFilters() {
-    runs.filter.value = {}
-    resetRunDraftFilters()
-    applyRunFilters()
-  }
-  function removeRunFilter(key: RunFilterChipKey) {
-    if (key === 'search') runs.filter.value.search = undefined
-    if (key === 'type') runs.filter.value.type = undefined
-    if (key === 'status') runs.filter.value.status = undefined
-    if (key === 'source') runs.filter.value.sourceId = undefined
-    if (key === 'date') {
-      runs.filter.value.from = undefined
-      runs.filter.value.to = undefined
-    }
-    applyRunFilters()
+    if (tab === 'overview' || tab === 'failures') switchTab(tab)
   }
 
   function syncFailureQuery() {
@@ -405,7 +270,7 @@ export function useTaskCenterPage() {
     try {
       await triggerSync()
       await refreshOverview()
-      feedback.success('同步已触发', '运行记录会在任务中心持续更新。')
+      feedback.success('同步已触发', '可在“系统与运行”的运行记录中查看后续结果。')
     } catch (err) {
       feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试')
     }
@@ -474,18 +339,9 @@ export function useTaskCenterPage() {
   }
 
   onMounted(async () => {
-    const runTypes = runTypeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
-    const runStatuses = runStatusFilters.map(item => item.value).filter((value): value is JobStatus => value !== '')
+    const runTypes = failureTypeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
     const failureKinds = failureKindFilters.map(item => item.value).filter((value): value is string => value !== '')
     const failureStatuses = failureStatusTabs.map(item => item.value)
-    runs.filter.value = {
-      search: typeof route.query.runSearch === 'string' ? route.query.runSearch : undefined,
-      type: parseAllowedQueryValue(route.query.runType, runTypes),
-      status: parseAllowedQueryValue(route.query.runStatus, runStatuses),
-      sourceId: typeof route.query.runSource === 'string' ? route.query.runSource : undefined,
-      from: parseDateQueryValue(route.query.runFrom),
-      to: parseDateQueryValue(route.query.runTo),
-    }
     failures.filter.value = {
       status: parseAllowedQueryValue(route.query.failureStatus, failureStatuses) || 'open',
       search: typeof route.query.failureSearch === 'string' ? route.query.failureSearch : undefined,
@@ -498,10 +354,6 @@ export function useTaskCenterPage() {
     void router.replace({ query: {
       ...route.query,
       tab: activeTab.value === 'overview' ? undefined : activeTab.value,
-      runType: runs.filter.value.type || undefined,
-      runStatus: runs.filter.value.status || undefined,
-      runFrom: runs.filter.value.from || undefined,
-      runTo: runs.filter.value.to || undefined,
       failureStatus: failures.filter.value.status === 'open' ? undefined : failures.filter.value.status,
       failureType: failures.filter.value.type || undefined,
       failureKind: failures.filter.value.failureKind || undefined,
@@ -514,9 +366,7 @@ export function useTaskCenterPage() {
     } catch {
       sourceOptions.value = []
     }
-    await Promise.all([runs.fetch(), failures.fetch(), refreshOverview()])
-    const legacyId = typeof route.query.id === 'string' ? route.query.id : ''
-    if (legacyId) await navigateTo(`/task-center/runs/${legacyId}`, { replace: true })
+    await Promise.all([failures.fetch(), refreshOverview()])
   })
 
   watch(() => syncState.value?.isRunning, (running, previous) => {
@@ -524,19 +374,17 @@ export function useTaskCenterPage() {
   })
 
   return {
-    activeRunItems, activeTab, applyFailureDraftFilters, applyFailureFilters, applyRunDraftFilters, applyRunFilters, batchIgnore, batchReopen,
-    batchRetry, cancelSync, clearFailureFilters, clearRunFilters, draftFailureDateFilter, draftFailureFrom, draftFailureKind, draftFailureSource,
-    draftFailureTo, draftFailureType, draftRunDateFilter, draftRunFrom, draftRunSource, draftRunStatus, draftRunTo, draftRunType,
+    activeRunItems, activeTab, applyFailureDraftFilters, applyFailureFilters, batchIgnore, batchReopen,
+    batchRetry, clearFailureFilters, draftFailureDateFilter, draftFailureFrom, draftFailureKind, draftFailureSource,
+    draftFailureTo, draftFailureType,
     downloadQueue, elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
-    formatElapsed, formatRunDuration, formatTime, groupedRuns, handleCancelSync, handleTriggerSync, ignoreFailure,
-    isRetryable, latestRun, liveDescription, livePercent, liveTitle, localDateKey, onFailureSearch, onRunSearch,
-    onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, prepareRunDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter, removeRunFilter,
-    reopenFailure, requestedTab, resetFailureDraftFilters, resetRunDraftFilters, retryFailure, runActiveFilterCount, runAdvancedFilterCount, runAdvancedFilterLabel,
-    runBadgeStatus, runCanClear, runFilterChips, runs, runSearchDebounce, runStatusFilters, runTypeFilters, runTypeLabel, secondaryActiveRuns, selectedFailures,
-    semanticToneClass, setDraftFailureDate, setDraftRunDate, setFailureStatus, showMutationResult, sourceLabel, sourceOptionLabel, sourceOptions,
-    stageLabel, switchTab, syncError, syncFailureQuery, syncLoading, syncRunQuery, syncState, taskCenterTabs,
-    toggleFailure, triggerSync,
+    formatElapsed, formatRunDuration, formatTime, handleCancelSync, handleTriggerSync, ignoreFailure,
+    isRetryable, latestRun, liveDescription, livePercent, liveTitle, onFailureSearch,
+    onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter,
+    reopenFailure, resetFailureDraftFilters, retryFailure, runBadgeStatus, runTypeLabel, secondaryActiveRuns, selectedFailures,
+    semanticToneClass, setDraftFailureDate, setFailureStatus, showMutationResult, sourceOptionLabel, sourceOptions,
+    stageLabel, switchTab, syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
   }
 }

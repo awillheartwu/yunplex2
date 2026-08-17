@@ -10,7 +10,6 @@ import { fetchPlaylistSongs, fetchAlbumSongs, setArtistAliases } from '../../../
 import { saveSyncRun } from '../../../lib/run/store'
 import { appendLog } from '../../../lib/log/store'
 import { emitEvent } from '../../../lib/sync/events'
-import { recordActivityEvent } from '../../../lib/activity/store'
 import type { SyncJob } from '../../../lib/job/types'
 import { randomUUID } from 'node:crypto'
 import { buildDownloadPath } from '../../../lib/tag-writer'
@@ -91,17 +90,6 @@ export default defineEventHandler(async (event) => {
 
     appendLog(dataDir, { level: 'info', message: `[修复] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
     emitEvent({ type: 'stage-change', data: { stage: 'repair', sourceId: id, jobId }, timestamp: now })
-    recordActivityEvent({
-      domain: 'user',
-      type: 'repair_triggered',
-      severity: 'info',
-      actor: 'user',
-      title: `触发“${source.neteasePlaylistName || source.name}”媒体修复`,
-      summary: `将重写 ${totalSongs} 首本地歌曲的标准标签，补齐辅助文件，并请求 Plex 刷新。`,
-      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, totalSongs },
-      link: `/task-center/runs/${jobId}`,
-      groupKey: `job:${jobId}`,
-    })
   } catch (err) {
     setRepairRunning(false)
     return fail(err instanceof Error ? err.message : '创建补全任务失败')
@@ -220,16 +208,6 @@ export default defineEventHandler(async (event) => {
     updateSource(source.id, { lastStatus: job.status, lastSyncedAt: endTime })
 
     appendLog(dataDir, { level: 'info', message: `[修复] 完成: ${source.name}，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`, stage: 'download' }, retentionDays)
-    recordActivityEvent({
-      domain: 'sync',
-      type: 'repair_completed',
-      severity: job.status === 'success' ? 'success' : 'warning',
-      title: `媒体修复“${source.neteasePlaylistName || source.name}”已完成`,
-      summary: `修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`,
-      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId, succeeded, alreadyExisted, skipped, metadataRepaired, plexRefreshRequested },
-      link: `/task-center/runs/${jobId}`,
-      groupKey: `job:${jobId}`,
-    })
     emitEvent({
       type: 'repair-progress',
       data: { jobId, sourceId: id, processed: totalSongs, totalSongs, succeeded, skipped, metadataRepaired, plexRefreshRequested, finished: true },
@@ -248,16 +226,6 @@ export default defineEventHandler(async (event) => {
     updateSource(source.id, { lastStatus: 'failed', lastError: msg })
     setRepairRunning(false)
     appendLog(dataDir, { level: 'error', message: `[修复] 异常中断: ${source.name}`, detail: msg, stage: 'download' }, retentionDays)
-    recordActivityEvent({
-      domain: 'sync',
-      type: 'repair_failed',
-      severity: 'error',
-      title: `媒体修复“${source.neteasePlaylistName || source.name}”异常中断`,
-      summary: msg,
-      context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId },
-      link: `/task-center/runs/${jobId}`,
-      groupKey: `job:${jobId}`,
-    })
     emitEvent({ type: 'stage-change', data: { stage: 'idle', sourceId: id }, timestamp: new Date().toISOString() })
   })
 

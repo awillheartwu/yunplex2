@@ -24,13 +24,7 @@ export default defineEventHandler(async (event) => {
       return fail('无效的配置格式，请提供 YunPlex2 配置 JSON 或旧 yunplex 配置')
     }
 
-    const { updated } = applyConfigUpdate(config, {
-      title: '导入系统配置',
-      type: 'config_imported',
-      summaryWhenChanged: (changedKeys) => `本次导入更新了 ${changedKeys.join('、')}`,
-      summaryWhenUnchanged: '导入内容与当前配置一致，运行中的调度器已重新检查。',
-      groupKey: 'config:import',
-    })
+    const { updated } = applyConfigUpdate(config)
 
     return success(updated, '配置导入成功')
   } catch (err) {

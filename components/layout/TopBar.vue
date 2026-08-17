@@ -101,13 +101,12 @@ async function handleLogout() {
 
 const titles: Record<string, string> = {
   '/': '仪表盘',
-  '/activity': '动态',
   '/sync-sources': '同步源',
   '/match-reviews': '匹配管理',
   '/manual-download': '手动下载',
   '/task-center': '任务中心',
   '/config': '设置',
-  '/system': '系统',
+  '/system': '系统与运行',
 }
 
 const pageTitle = computed(() => {

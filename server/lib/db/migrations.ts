@@ -104,6 +104,11 @@ export function retireWeakMetadataBindingsAndLookupCache(d: Database.Database): 
   })()
 }
 
+/** Retire the removed user-facing activity projection and all stored rows. */
+export function retireActivityEvents(d: Database.Database): void {
+  d.prepare('DROP TABLE IF EXISTS activity_events').run()
+}
+
 /** Expand the historical recording-cache CHECK without dropping cached data. */
 export function ensureMusicBrainzRecordingCacheStatuses(d: Database.Database): void {
   if (!tableExists(d, 'musicbrainz_recording_cache')) return
@@ -759,7 +764,7 @@ const MIGRATIONS = createHistoricalMigrations({
   ensurePlaylistExtraObservationTable, ensurePlaylistSourceSyncCursorColumns,
   ensureSongIdentityBindingMethods, ensureSongIdentityReviewSchema, ensureTaskRunSources,
   migrateLegacyJobsToTaskRunsAndDrop, repairArtistResolutionCache,
-  retireWeakMetadataBindingsAndLookupCache,
+  retireActivityEvents, retireWeakMetadataBindingsAndLookupCache,
 })
 
 export function runMigrations(d: Database.Database): void {
@@ -789,5 +794,6 @@ export function runMigrations(d: Database.Database): void {
   ensureLocalMediaAssetOwnership(d)
   ensureNullableSourceSyncOverrides(d)
   ensureDownloadWhenMediaMissingOverride(d)
+  retireActivityEvents(d)
   retireWeakMetadataBindingsAndLookupCache(d)
 }

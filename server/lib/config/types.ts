@@ -40,7 +40,6 @@ export interface SyncStrategyConfig {
   jobRetentionSuccessDays: number
   jobRetentionFailedDays: number
   downloadTaskRetentionDays: number
-  activityRetentionDays: number
   forceFullCompare: boolean
   downloadWhenMediaMissing: boolean
   reconcileOnPlexDrift: boolean

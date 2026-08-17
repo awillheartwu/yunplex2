@@ -22,6 +22,7 @@ describe('source forced redownload UX', () => {
     expect(composable).toContain("mode: 'redownload_managed'")
     expect(composable).toContain('takeOverExternal: takeOverExternal.value')
     expect(endpoint).toContain("mode === 'redownload_managed'")
-    expect(endpoint).toContain('source_redownload_sync_triggered')
+    expect(endpoint).toContain('const { runId } = syncService.startSyncForSource')
+    expect(endpoint).toContain('{ triggered: true, sourceId: id, runId }')
   })
 })

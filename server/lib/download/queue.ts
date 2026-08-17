@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import { emitEvent } from '../sync/events'
-import { recordActivityEvent } from '../activity/store'
 import { recordFailure, resolveFailures } from '../tasks/failure-records'
 import { syncManualDownloadRun } from '../run/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
@@ -505,23 +504,6 @@ export async function processAll(
             },
             timestamp: new Date().toISOString(),
           })
-          recordActivityEvent({
-            domain: 'download',
-            type: 'download_failed',
-            severity: 'error',
-            title: `标签写入失败：${task.songName}`,
-            summary: msg,
-            context: {
-              sourceId: task.sourceId ?? undefined,
-              taskId: task.id,
-              songId: task.songId,
-              songName: task.songName,
-              jobId: task.jobId,
-              filePath: result.filePath,
-            },
-            link: '/task-center?tab=failures',
-            groupKey: `download:${task.jobId || 'manual'}:${task.sourceId || 'manual'}`,
-          })
           continue
         }
 
@@ -547,16 +529,6 @@ export async function processAll(
           type: 'song-progress',
           data: { taskId: task.id, songName: task.songName, status: 'done', completed: ++completed, total: tasks.length, sourceId: task.sourceId },
           timestamp: new Date().toISOString(),
-        })
-        recordActivityEvent({
-          domain: 'download',
-          type: 'download_completed',
-          severity: 'success',
-          title: `${result.audioOperation === 'redownloaded' ? '重新下载' : '下载'}完成：${task.songName}`,
-          summary: `${task.artist || '未知艺人'} · ${task.album || '未知专辑'} 已处理完成`,
-            context: { sourceId: task.sourceId ?? undefined, taskId: task.id, songId: task.songId, songName: task.songName, jobId: task.jobId },
-          link: task.jobId ? `/task-center/runs/${task.jobId}` : '/manual-download?view=history',
-          groupKey: `download:${task.jobId || 'manual'}:${task.sourceId || 'manual'}`,
         })
       } catch (err) {
         const tagError = isTagWriteError(err) ? err : null
@@ -586,16 +558,6 @@ export async function processAll(
             ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),
           },
           timestamp: new Date().toISOString(),
-        })
-        recordActivityEvent({
-          domain: 'download',
-          type: 'download_failed',
-          severity: 'error',
-          title: `下载失败：${task.songName}`,
-          summary: msg,
-          context: { sourceId: task.sourceId ?? undefined, taskId: task.id, songId: task.songId, songName: task.songName, jobId: task.jobId },
-          link: '/task-center?tab=failures',
-          groupKey: `download:${task.jobId || 'manual'}:${task.sourceId || 'manual'}`,
         })
       }
     }

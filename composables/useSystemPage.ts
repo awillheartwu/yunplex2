@@ -1,10 +1,9 @@
 import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
-import { resolveLegacyActivityRedirect } from '~~/lib/activity-navigation'
 import { useDebounceFn, useIntervalFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
 import { buildSystemDataTableRows } from '~~/lib/system-data-catalog'
 
-type SystemTab = 'monitor' | 'maintenance'
+type SystemTab = 'monitor' | 'logs' | 'runs'
 type Tone = 'ok' | 'warning' | 'error' | 'idle'
 
 export interface SystemStats {
@@ -168,13 +167,6 @@ async function writeClipboard(text: string) {
   document.body.removeChild(textarea)
 }
 
-export async function redirectLegacySystemRoute(route: ReturnType<typeof useRoute>) {
-  const legacyRedirect = resolveLegacyActivityRedirect(route.path, route.query)
-  if (legacyRedirect) {
-    await navigateTo(legacyRedirect, { replace: true, redirectCode: 302 })
-  }
-}
-
 export function useSystemPage() {
   const api = useApi()
   const route = useRoute()
@@ -185,9 +177,11 @@ export function useSystemPage() {
 
   const tabs = [
     { key: 'monitor', label: '系统监控' },
-    { key: 'maintenance', label: '运行记录' },
+    { key: 'logs', label: '系统日志' },
+    { key: 'runs', label: '运行记录' },
   ]
-  const activeTab = ref<SystemTab>(route.query.tab === 'maintenance' ? 'maintenance' : 'monitor')
+  const requestedTab = route.query.tab === 'maintenance' ? 'runs' : route.query.tab
+  const activeTab = ref<SystemTab>(requestedTab === 'logs' || requestedTab === 'runs' ? requestedTab : 'monitor')
   const stats = ref<SystemStats | null>(null)
   const info = ref<SystemInfo | null>(null)
   const healthRefreshing = ref(false)
@@ -305,7 +299,7 @@ export function useSystemPage() {
   })
 
   function switchSystemTab(tab: string) {
-    if (tab !== 'monitor' && tab !== 'maintenance') return
+    if (tab !== 'monitor' && tab !== 'logs' && tab !== 'runs') return
     activeTab.value = tab
     void router.replace({ query: { ...route.query, tab: tab === 'monitor' ? undefined : tab } })
   }
@@ -395,10 +389,33 @@ export function useSystemPage() {
 
   const statsPolling = useIntervalFn(() => { void fetchStats() }, 3000)
 
-  onMounted(async () => {
-    try { info.value = await api.get<SystemInfo>('/system/info') } catch { /* keep partial monitor visible */ }
+  async function startMonitor() {
+    if (!info.value) {
+      try { info.value = await api.get<SystemInfo>('/system/info') } catch { /* keep partial monitor visible */ }
+    }
     await fetchStats()
     statsPolling.start()
+  }
+
+  onMounted(async () => {
+    if (route.query.tab === 'maintenance') {
+      await router.replace({ query: { ...route.query, tab: 'runs' } })
+    }
+    if (activeTab.value === 'monitor') await startMonitor()
+  })
+
+  watch(activeTab, (tab) => {
+    if (tab === 'monitor') void startMonitor()
+    else statsPolling.stop()
+  })
+
+  watch(() => route.query.tab, (tab) => {
+    const nextTab: SystemTab = tab === 'maintenance' || tab === 'runs'
+      ? 'runs'
+      : tab === 'logs'
+        ? 'logs'
+        : 'monitor'
+    if (activeTab.value !== nextTab) activeTab.value = nextTab
   })
 
   onUnmounted(() => statsPolling.stop())

@@ -363,7 +363,6 @@
           <FormField label="成功运行保留天数" hint="成功或取消的运行记录保留天数，超期自动清理"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="365" class="form-input" /></FormField>
           <FormField label="失败运行保留天数" hint="失败或部分成功的运行记录保留更久，方便排查问题"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="1" max="365" class="form-input" /></FormField>
           <FormField label="下载队列保留天数" hint="下载队列的临时记录保留天数，0 = 永不清除"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
-          <FormField label="内部事件保留天数" hint="仪表盘摘要和内部诊断事件的保留天数，0 = 永不清除"><input v-model.number="form.sync.activityRetentionDays" type="number" min="0" max="365" class="form-input" /></FormField>
         </div>
       </ConfigSection>
 

@@ -1,30 +1,18 @@
 import type { PlaylistSource } from '../playlist/types'
 import type { SyncState } from '../log/types'
-import type { DownloadTask } from '../download/queue'
-import type { TaskRunSummary } from '../job/types'
-import type { ActivityEvent } from '../activity/types'
 import {
-  type DashboardActivityItem,
   type DashboardPendingItem,
   type DashboardSourceHealthSummary,
   type DashboardSummary,
   type DashboardTone,
 } from '~~/types/dashboard'
-import {
-  activityHeadlinePriority,
-  activityIcon,
-  activityStatusLabel,
-  activityTone,
-} from '~~/lib/activity-presentation'
 import { getSystemHealthSnapshot } from '../system-health'
 import { readConfig } from '../config/store'
 import { listSources } from '../playlist/store'
-import { getQueueStatus, listDownloadTasks } from '../download/queue'
+import { getQueueStatus } from '../download/queue'
 import { getDailyDownloadStats } from '../download/stats'
 import { queryFailureRecords } from '../tasks/failure-records'
-import { listRuns } from '../run/store'
 import { getSyncServiceInstance } from '../sync/instance'
-import { listActivityEvents } from '../activity/store'
 
 function startOfDay(daysAgo = 0): string {
   const d = new Date()
@@ -151,156 +139,14 @@ export function buildPendingItems(input: {
   return items.sort((left, right) => right.count - left.count)
 }
 
-export function buildRecentActivities(input: {
-  events: ActivityEvent[]
-  runs: TaskRunSummary[]
-  downloads: DownloadTask[]
-  sources: PlaylistSource[]
-}): DashboardActivityItem[] {
-  const activityEvents = buildDashboardActivitiesFromEvents(input.events, 4)
-  if (activityEvents.length > 0) return activityEvents
-  return buildLegacyRecentActivities(input)
-}
-
-function buildLegacyRecentActivities(input: {
-  runs: TaskRunSummary[]
-  downloads: DownloadTask[]
-  sources: PlaylistSource[]
-}): DashboardActivityItem[] {
-  const sourceMap = new Map(input.sources.map((source) => [source.id, source]))
-  const activities: DashboardActivityItem[] = []
-
-  for (const job of input.runs) {
-    const sourceName = job.source ? sourceMap.get(job.source)?.name || sourceMap.get(job.source)?.neteasePlaylistName : null
-    const isRepair = job.type === 'repair'
-    const title = isRepair
-      ? job.status === 'success'
-        ? '修复元数据'
-        : '修复任务未完成'
-      : `${sourceName ? `同步源 “${sourceName}”` : '同步任务'} ${job.status === 'success' ? '同步成功' : job.status === 'partial' ? '部分完成' : job.status === 'failed' ? '同步失败' : '已结束'}`
-    const subtitle = isRepair
-      ? `${job.successSongs} 首已修复，${job.failedSongs} 首未完成`
-      : `同步了 ${job.totalSongs} 首歌曲`
-    activities.push({
-      id: `job:${job.id}`,
-      type: job.type,
-      domain: 'sync',
-      severity: job.status === 'success' ? 'success' : job.status === 'partial' ? 'warning' : job.status === 'failed' ? 'error' : 'info',
-      title,
-      subtitle,
-      timestamp: job.finishedAt || job.startedAt,
-      icon: isRepair ? 'repair' : 'sync',
-      tone: job.status === 'success' ? 'success' : job.status === 'partial' ? 'warning' : job.status === 'failed' ? 'danger' : 'neutral',
-      link: `/task-center/runs/${job.id}`,
-      groupKey: `job:${job.id}`,
-      statusLabel: job.status === 'success' ? '完成' : job.status === 'partial' ? '部分完成' : job.status === 'failed' ? '失败' : '已结束',
-    })
-  }
-
-  for (const task of input.downloads) {
-    activities.push({
-      id: `download:${task.id}`,
-      type: task.status === 'failed' ? 'download_failed' : 'download',
-      domain: 'download',
-      severity: task.status === 'done' ? 'success' : 'error',
-      title: `下载任务 “${task.songName}” ${task.status === 'done' ? '已完成' : '失败'}`,
-      subtitle: task.status === 'done'
-        ? `${task.artist} · ${task.quality || '音频已入库'}`
-        : task.error || `${task.artist} · 下载失败`,
-      timestamp: task.updatedAt,
-      icon: task.status === 'done' ? 'music' : 'alert',
-      tone: task.status === 'done' ? 'accent' : 'danger',
-      link: '/manual-download?view=history',
-      groupKey: task.jobId ? `job:${task.jobId}` : null,
-      statusLabel: task.status === 'done' ? '完成' : '失败',
-    })
-  }
-
-  for (const source of [...input.sources].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 2)) {
-    activities.push({
-      id: `source:${source.id}`,
-      type: 'source_created',
-      domain: 'user',
-      severity: 'info',
-      title: `新增同步源 “${source.name || source.neteasePlaylistName}”`,
-      subtitle: source.type === 'album' ? '专辑源已加入控制台' : '歌单源已加入控制台',
-      timestamp: source.createdAt,
-      icon: 'plus',
-      tone: 'neutral',
-      link: '/sync-sources',
-      groupKey: `source:${source.id}`,
-      statusLabel: '新增',
-    })
-  }
-
-  return activities
-    .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
-    .slice(0, 5)
-}
-
-function buildDashboardActivityFromEvent(event: ActivityEvent): DashboardActivityItem {
-  return {
-    id: event.id,
-    type: event.type,
-    domain: event.domain,
-    severity: event.severity,
-    title: event.title,
-    subtitle: event.summary,
-    timestamp: event.occurredAt,
-    icon: activityIcon(event),
-    tone: activityTone(event),
-    link: event.link || '/task-center?tab=runs',
-    groupKey: event.groupKey,
-    statusLabel: activityStatusLabel(event.severity, event.actor),
-  }
-}
-
-export function buildDashboardActivitiesFromEvents(events: ActivityEvent[], maxItems = 5): DashboardActivityItem[] {
-  if (events.length === 0) return []
-
-  const winners = new Map<string, ActivityEvent>()
-  const standalone: ActivityEvent[] = []
-
-  for (const event of events) {
-    if (event.groupKey) {
-      const current = winners.get(event.groupKey)
-      if (!current) {
-        winners.set(event.groupKey, event)
-        continue
-      }
-
-      const nextScore = activityHeadlinePriority(event)
-      const currentScore = activityHeadlinePriority(current)
-      if (nextScore > currentScore || (nextScore === currentScore && event.occurredAt > current.occurredAt)) {
-        winners.set(event.groupKey, event)
-      }
-      continue
-    }
-
-    standalone.push(event)
-  }
-
-  return [...winners.values(), ...standalone]
-    .sort((left, right) => {
-      const timeDiff = new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime()
-      if (Math.abs(timeDiff) > 5 * 60 * 1000) return timeDiff
-      return activityHeadlinePriority(right) - activityHeadlinePriority(left) || timeDiff
-    })
-    .slice(0, maxItems)
-    .map(buildDashboardActivityFromEvent)
-}
-
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const config = readConfig()
   const syncState = resolveSyncState()
-  const [health, sources, queueStatus, trendPoints, downloadHistory, runs, activityEvents, actionableFailures, copyrightFailures, downloadFailures, todayFailures, yesterdayFailures] = await Promise.all([
+  const [health, sources, queueStatus, trendPoints, actionableFailures, copyrightFailures, downloadFailures, todayFailures, yesterdayFailures] = await Promise.all([
     getSystemHealthSnapshot(),
     Promise.resolve(listSources()),
     Promise.resolve(getQueueStatus()),
     Promise.resolve(getDailyDownloadStats(7)),
-    Promise.resolve(listDownloadTasks({ status: 'done,failed', limit: 8, offset: 0 }).items),
-    Promise.resolve(listRuns({ limit: 5, offset: 0 }).items),
-    Promise.resolve(listActivityEvents({ limit: 40 }).items),
     Promise.resolve(queryFailureRecords({ status: 'open', excludeFailureKinds: ['copyright_restricted'], limit: 1 })),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'copyright_restricted', limit: 1 })),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'failed_download', limit: 1 })),
@@ -313,13 +159,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     copyrightCount: copyrightFailures.total,
     failedDownloadCount: downloadFailures.total,
     failedSourceCount: sources.filter((source) => source.lastStatus === 'failed').length,
-  })
-
-  const activities = buildRecentActivities({
-    events: activityEvents,
-    runs,
-    downloads: downloadHistory,
-    sources,
   })
 
   const latestTrend = trendPoints.at(-1)?.count ?? 0
@@ -395,7 +234,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       points: trendPoints,
     },
     pendingItems,
-    recentActivities: activities,
     sourceHealth: healthSummary,
   }
 }

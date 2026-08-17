@@ -21,10 +21,9 @@ import { resolveEffectiveSourceSyncSettings } from './effective-settings'
 import { resolveSyncModePolicy } from './mode-policy'
 import { observePlaylistSourceTracks } from './match-management-store'
 import { captureBindingVersions } from './identity-coordinator'
-import { recordActivityEvent } from '../activity/store'
 import { getFailureMemoryEntry, inferFailurePhase, parseFailureMemory, shouldSkipSongDueToFailure } from './failure-memory'
 import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
-import { buildSyncRunSummary, recordSyncRunCompletion } from './service-summary'
+import { buildSyncRunSummary } from './service-summary'
 import {
   buildNeteasePlaylistCursor,
   buildPlexPlaylistFingerprint,
@@ -318,16 +317,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt,
               consecutiveSkips: (source.consecutiveSkips || 0) + 1,
             })
-            recordActivityEvent({
-              domain: 'sync',
-              type: 'source_sync_skipped_unchanged',
-              severity: 'info',
-              title: `跳过“${playlistName}”同步`,
-              summary: `检测到内容未变化，已连续跳过 ${(source.consecutiveSkips || 0) + 1} 次。`,
-              context: { sourceId: source.id, sourceName: playlistName, jobId: job.getId() },
-              link: `/task-center/runs/${job.getId()}`,
-              groupKey: `job:${job.getId()}:source:${source.id}`,
-            })
             if (unchangedStatus === 'success') successfulSources++
             else if (unchangedStatus === 'partial') partialSources++
             else failedSources++
@@ -591,16 +580,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           lastError: message,
         })
       }
-      if (!dryRun) recordActivityEvent({
-        domain: 'sync',
-        type: 'source_sync_failed',
-        severity: 'error',
-        title: `同步源“${source.neteasePlaylistName || source.name}”失败`,
-        summary: message,
-        context: { sourceId: source.id, sourceName: source.neteasePlaylistName || source.name, jobId: job.getId() },
-        link: `/task-center/runs/${job.getId()}`,
-        groupKey: `job:${job.getId()}:source:${source.id}`,
-      })
       totalFailed++
       failedSources++
     }
@@ -618,7 +597,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
   finishedJob.summary = summary
   if (!dryRun) {
     saveSyncRun(finishedJob)
-    recordSyncRunCompletion(finishedJob, summary)
   }
 
   log('info', summary)
@@ -637,16 +615,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
       const j = job.finish('failed', message)
       if (!dryRun) saveSyncRun(j)
-      if (!dryRun) recordActivityEvent({
-        domain: 'sync',
-        type: 'sync_run_failed',
-        severity: 'error',
-        title: '同步任务异常失败',
-        summary: message,
-        context: { jobId: j.id },
-        link: `/task-center/runs/${j.id}`,
-        groupKey: `job:${j.id}`,
-      })
       finishState('failure')
       return { ...state }
     } finally {

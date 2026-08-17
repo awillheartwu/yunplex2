@@ -13,13 +13,7 @@ export default defineEventHandler(async (event) => {
       return fail(failed.message)
     }
 
-    const { updated } = applyConfigUpdate(body.config, {
-      title: '完成首次初始化',
-      type: 'setup_completed',
-      summaryWhenChanged: (changedKeys) => `初始化保存了 ${changedKeys.join('、')} 配置`,
-      summaryWhenUnchanged: '初始化完成，配置保持不变。',
-      groupKey: 'setup:complete',
-    })
+    const { updated } = applyConfigUpdate(body.config)
     const setup = markSetupComplete()
     return success({ setup, config: updated, checks }, '初始化已完成')
   } catch (err) {

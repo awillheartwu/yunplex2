@@ -98,9 +98,7 @@ describe('playlist source batch actions', () => {
     insertSource({ id: 'playlist-1', enabled: true })
     insertSource({ id: 'playlist-2', enabled: true })
 
-    const result = applyPlaylistSourceBatchAction('disable', ['playlist-1', 'playlist-2'], {
-      recordActivity: vi.fn(),
-    })
+    const result = applyPlaylistSourceBatchAction('disable', ['playlist-1', 'playlist-2'])
 
     expect(result).toEqual({ action: 'disable', count: 2, ids: ['playlist-1', 'playlist-2'] })
     expect(getSource('playlist-1')?.enabled).toBe(false)
@@ -126,9 +124,7 @@ describe('playlist source batch actions', () => {
       VALUES ('task-1', 'playlist-1', 1, 'Song', 'Artist', 'Album', 'done', 100, ?, ?)
     `).run(new Date().toISOString(), new Date().toISOString())
 
-    const result = applyPlaylistSourceBatchAction('delete', ['playlist-1'], {
-      recordActivity: vi.fn(),
-    })
+    const result = applyPlaylistSourceBatchAction('delete', ['playlist-1'])
 
     expect(result.count).toBe(1)
     expect(getSource('playlist-1')).toBeNull()
@@ -140,20 +136,13 @@ describe('playlist source batch actions', () => {
     insertSource({ id: 'playlist-1' })
     insertSource({ id: 'playlist-2' })
     const runSync = vi.fn(() => ({ runId: 'run-1' }))
-    const recordActivity = vi.fn()
-
     const result = applyPlaylistSourceBatchAction('sync', ['playlist-1', 'playlist-2'], {
       isSyncRunning: () => false,
       isRepairRunning: () => false,
       runSync,
-      recordActivity,
     })
 
     expect(result).toEqual({ action: 'sync', count: 2, ids: ['playlist-1', 'playlist-2'], runId: 'run-1' })
     expect(runSync).toHaveBeenCalledWith(['playlist-1', 'playlist-2'])
-    expect(recordActivity).toHaveBeenCalledWith(expect.objectContaining({
-      link: '/task-center/runs/run-1',
-      context: expect.objectContaining({ jobId: 'run-1' }),
-    }))
   })
 })

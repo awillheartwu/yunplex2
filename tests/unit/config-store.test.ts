@@ -27,12 +27,12 @@ describe('config deepMerge', () => {
       sync: {
         intervalMinutes: 30,
         downloadConcurrency: 3,
-        activityRetentionDays: 30,
+        logRetentionDays: 30,
       },
     }
     const partial = {
       sync: {
-        activityRetentionDays: 7,
+        logRetentionDays: 7,
       },
     }
 
@@ -41,7 +41,7 @@ describe('config deepMerge', () => {
     expect(merged.sync).toEqual({
       intervalMinutes: 30,
       downloadConcurrency: 3,
-      activityRetentionDays: 7,
+      logRetentionDays: 7,
     })
   })
 

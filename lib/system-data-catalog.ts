@@ -40,11 +40,10 @@ const TABLE_CATALOG: Record<string, CatalogEntry> = {
 
   playlist_sources: { desc: '歌单同步源', group: 'sync', href: '/sync-sources' },
   playlist_source_track_occurrences: { desc: '歌单目标成员与对齐状态', group: 'sync', href: '/match-reviews?tab=overview' },
-  task_runs: { desc: '统一运行记录', group: 'sync', href: '/task-center?tab=runs' },
-  task_run_sources: { desc: '运行与歌单源关联', group: 'sync', href: '/task-center?tab=runs' },
+  task_runs: { desc: '统一运行记录', group: 'sync', href: '/system?tab=runs' },
+  task_run_sources: { desc: '运行与歌单源关联', group: 'sync', href: '/system?tab=runs' },
   sync_state: { desc: '同步运行时状态', group: 'sync' },
-  activity_events: { desc: '结构化活动事件', group: 'sync', href: '/activity' },
-  logs: { desc: '同步日志', group: 'sync', href: '/activity?tab=logs' },
+  logs: { desc: '同步日志', group: 'sync', href: '/system?tab=logs' },
 
   download_tasks: { desc: '下载任务队列', group: 'operations', href: '/manual-download?view=queue' },
   downloads: { desc: '历史下载记录', group: 'operations', href: '/manual-download' },
