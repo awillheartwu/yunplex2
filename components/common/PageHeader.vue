@@ -19,21 +19,35 @@ defineProps<{
 .page-header {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  min-height: 2.625rem;
+  align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .page-header__copy {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
   min-width: 0;
+}
+
+.page-header__copy::before {
+  width: 3px;
+  height: 1.6rem;
+  flex: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-soft));
+  content: "";
 }
 
 .page-header__description {
   max-width: 48rem;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.6;
+  font-size: 0.8rem;
+  font-weight: 550;
+  line-height: 1.55;
 }
 
 .page-header__actions {
@@ -48,6 +62,7 @@ defineProps<{
 @media (max-width: 767px) {
   .page-header {
     flex-direction: column;
+    align-items: stretch;
     gap: 0.85rem;
   }
 

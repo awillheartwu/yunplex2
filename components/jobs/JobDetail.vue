@@ -51,6 +51,24 @@
       </div>
     </section>
 
+    <section v-if="mediaPolicyItems.length > 0" class="section-card p-4" aria-label="缺失媒体策略统计">
+      <div class="mb-3">
+        <h3 class="text-sm font-semibold">缺失媒体策略</h3>
+        <p class="mt-1 text-2xs text-muted">按已登记资产和人工决定统计本轮处理路径</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div
+          v-for="item in mediaPolicyItems"
+          :key="item.key"
+          class="rounded-lg border px-3 py-2"
+          style="border-color:var(--border-primary);background:var(--bg-app)"
+        >
+          <p class="text-base font-bold">{{ item.count }}</p>
+          <span class="text-2xs text-muted">{{ item.label }}</span>
+        </div>
+      </div>
+    </section>
+
     <section class="section-card overflow-hidden">
       <button
         type="button"
@@ -254,6 +272,31 @@ const badgeStatus = computed(() => runBadgeStatus(props.job.status))
 const typeIdentity = computed(() => runTypeIdentity(props.job.type))
 const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))
+const mediaPolicyItems = computed(() => {
+  const labels: Record<string, string> = {
+    manual_exempt: '人工豁免',
+    reuse_managed: '复用托管',
+    reuse_external: '复用外部',
+    register_managed: '恢复托管登记',
+    register_external: '登记外部',
+    download_missing: '缺失下载',
+    redownload_replaced: '替换下载',
+  }
+  const counts = new Map<string, number>()
+  for (const song of props.job.songs) {
+    const trace = song.metadata?.matchTrace
+    const evidence = trace && typeof trace.evidence === 'object' && trace.evidence
+      ? trace.evidence as Record<string, unknown>
+      : null
+    const disposition = typeof evidence?.mediaPolicy === 'string'
+      ? evidence.mediaPolicy
+      : null
+    if (disposition) counts.set(disposition, (counts.get(disposition) ?? 0) + 1)
+  }
+  return [...counts.entries()].flatMap(([key, count]) =>
+    labels[key] ? [{ key, count, label: labels[key] }] : [],
+  )
+})
 
 const songFilters = computed(() => SONG_STATUS_BUCKETS.map(bucket => ({
   ...bucket,

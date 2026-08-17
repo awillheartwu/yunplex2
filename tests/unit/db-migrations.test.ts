@@ -21,6 +21,21 @@ function createTempDataDir(): string {
 }
 
 describe('database migrations', () => {
+  it('advances a fresh database to the complete schema without skipping required columns', () => {
+    const dir = createTempDataDir()
+
+    initDb(dir)
+
+    const version = getDb().prepare('PRAGMA user_version').get() as { user_version: number }
+    const downloadColumns = getDb().prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
+    expect(version.user_version).toBe(46)
+    expect(downloadColumns.map(column => column.name)).toEqual(expect.arrayContaining([
+      'run_id',
+      'idempotency_key',
+      'lease_owner',
+    ]))
+  })
+
   it('repairs an existing database whose version advanced before idempotency columns were added', () => {
     const dir = createTempDataDir()
     const legacyDb = new Database(join(dir, 'data.db'))

@@ -53,13 +53,22 @@ export interface SystemHealthItem {
 
 const MAX_POINTS = 60
 
-function historyChart(data: { time: string; value: number }[], unit: string, color: string, lightColor: string) {
+function historyChart(
+  data: { time: string; value: number }[],
+  unit: string,
+  color: string,
+  lightColor: string,
+  isDark: boolean,
+) {
   const hasData = data.length > 0
+  const axisColor = isDark ? '#9ca3af' : '#667085'
+  const lineColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(30,41,59,0.12)'
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(30,41,59,0.08)'
   return {
     grid: { top: 8, right: 8, bottom: 24, left: 44 },
     tooltip: {
       backgroundColor: 'rgba(24,24,27,0.96)',
-      borderColor: 'rgba(255,255,255,0.06)',
+      borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.12)',
       borderWidth: 1,
       padding: [8, 12],
       textStyle: { color: '#f4f4f6', fontSize: 12 },
@@ -70,14 +79,14 @@ function historyChart(data: { time: string; value: number }[], unit: string, col
     xAxis: {
       type: 'category' as const,
       data: data.map(d => d.time),
-      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
+      axisLine: { lineStyle: { color: lineColor } },
       axisTick: { show: false },
-      axisLabel: { color: '#71717a', fontSize: 9, interval: hasData ? Math.max(Math.floor(data.length / 5), 1) : 0 },
+      axisLabel: { color: axisColor, fontSize: 9, interval: hasData ? Math.max(Math.floor(data.length / 5), 1) : 0 },
     },
     yAxis: {
       type: 'value' as const,
-      axisLabel: { color: '#71717a', fontSize: 10 },
-      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)' } },
+      axisLabel: { color: axisColor, fontSize: 10 },
+      splitLine: { lineStyle: { color: gridColor } },
     },
     series: [{
       type: 'line' as const,
@@ -90,7 +99,7 @@ function historyChart(data: { time: string; value: number }[], unit: string, col
           type: 'linear' as const, x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
             { offset: 0, color: lightColor },
-            { offset: 1, color: 'rgba(255,255,255,0)' },
+            { offset: 1, color: isDark ? 'rgba(15,23,42,0)' : 'rgba(255,255,255,0)' },
           ],
         },
       },
@@ -171,6 +180,7 @@ export function useSystemPage() {
   const route = useRoute()
   const router = useRouter()
   const feedback = useFeedback()
+  const { theme } = useTheme()
   const { state: syncState } = useSync()
 
   const tabs = [
@@ -197,8 +207,20 @@ export function useSystemPage() {
 
   const tableRows = computed(() => buildSystemDataTableRows(stats.value?.dbStats || {}))
 
-  const cpuChartOption = computed(() => historyChart(cpuHistory.value, 'CPU %', '#818cf8', 'rgba(129,140,248,0.25)'))
-  const memChartOption = computed(() => historyChart(memHistory.value, 'RSS MB', '#22c55e', 'rgba(34,197,94,0.2)'))
+  const cpuChartOption = computed(() => historyChart(
+    cpuHistory.value,
+    'CPU %',
+    theme.value === 'dark' ? '#6f8fff' : '#3159c7',
+    theme.value === 'dark' ? 'rgba(111,143,255,0.25)' : 'rgba(49,89,199,0.2)',
+    theme.value === 'dark',
+  ))
+  const memChartOption = computed(() => historyChart(
+    memHistory.value,
+    'RSS MB',
+    theme.value === 'dark' ? '#4ade80' : '#269653',
+    theme.value === 'dark' ? 'rgba(74,222,128,0.2)' : 'rgba(38,150,83,0.17)',
+    theme.value === 'dark',
+  ))
   const lastStatsLabel = computed(() => stats.value ? `更新于 ${formatTime(stats.value.timestamp)}` : '等待采样')
   const dependencyCheckedLabel = computed(() => formatDateTime(stats.value?.dependencyCheckedAt))
 

@@ -1,5 +1,6 @@
 import { sseSubscribe, sseConnected } from './sse'
 import { useTimeoutFn } from './useTiming'
+import type { SyncMode } from '~~/server/lib/sync/service-state'
 
 /**
  * Per-source sync — fire-and-forget trigger with SSE-driven state tracking.
@@ -20,9 +21,7 @@ export function useSourceSync() {
   const fallbackClear = useTimeoutFn(clearSyncing, 30000)
 
   async function syncSource(sourceId: string, body?: {
-    forceFull?: boolean
-    rebuildMatch?: boolean
-    redownloadAll?: boolean
+    mode?: SyncMode
     takeOverExternal?: boolean
   }) {
     error.value = null
@@ -30,7 +29,7 @@ export function useSourceSync() {
     // Fallback: clear after 30s if SSE doesn't fire
     fallbackClear.schedule()
     try {
-      await api.post(`/playlist-sources/${sourceId}/sync`, body)
+      await api.post(`/playlist-sources/${sourceId}/sync`, body ?? { mode: 'normal' })
     } catch (err) {
       clearSyncing()
       error.value = err instanceof Error ? err.message : '触发同步失败'

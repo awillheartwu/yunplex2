@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard-page">
-    <section v-if="summary" class="dashboard-toolbar" aria-label="首页状态与同步操作">
+    <section v-if="summary" class="section-card dashboard-toolbar" aria-label="首页状态与同步操作">
       <div class="dashboard-topbar__main">
         <div class="dashboard-topbar__chips">
           <span
@@ -146,7 +146,7 @@ async function toggleAutoSync() {
 
 async function handleSync() {
   try {
-    await triggerSync(false)
+    await triggerSync('normal')
     await fetchDashboard()
     feedback.success('同步已触发', '可在任务中心或动态页查看后续进度。')
   } catch (err) {
@@ -176,7 +176,9 @@ onUnmounted(() => {
 <style scoped>
 .dashboard-page {
   display: grid;
-  gap: 0.95rem;
+  gap: 0.85rem;
+  min-block-size: calc(100dvh - var(--app-topbar-block-size) - 2.5rem);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .dashboard-toolbar {
@@ -184,7 +186,14 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.85rem;
-  padding: 0 0.2rem;
+  padding: 0.65rem 0.75rem;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-muted) 58%, transparent), transparent 34%),
+    var(--bg-surface);
+}
+
+:global(.dark) .dashboard-toolbar {
+  background: var(--bg-surface);
 }
 
 .dashboard-topbar__main {
@@ -208,8 +217,8 @@ onUnmounted(() => {
   min-height: 1.75rem;
   padding: 0 0.62rem;
   border-radius: 999px;
-  border: 1px solid var(--border-primary);
-  background: var(--bg-input);
+  border: 0;
+  background: transparent;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -246,13 +255,14 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.7rem;
-  min-height: 2.1rem;
+  min-height: 2.4rem;
   padding: 0 0.78rem;
   border-radius: 0.9rem;
   border: 1px solid var(--border-primary);
   background: var(--bg-input);
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
 }
 
@@ -331,9 +341,11 @@ onUnmounted(() => {
 
 .dashboard-layout {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  align-items: start;
+  grid-template-rows: minmax(16rem, 1fr) minmax(18rem, 1.12fr) auto;
+  align-items: stretch;
+  min-block-size: 0;
 }
 
 .dashboard-layout__kpis {
@@ -350,6 +362,7 @@ onUnmounted(() => {
 .dashboard-layout__activity,
 .dashboard-layout__recent {
   grid-column: span 4;
+  min-block-size: 100%;
 }
 
 .dashboard-layout__health {
@@ -360,7 +373,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.9rem 1rem;
+  padding: 0.85rem 1rem 0.7rem;
   min-block-size: var(--chart-card-min-block-size);
 }
 
@@ -368,9 +381,53 @@ onUnmounted(() => {
   flex: 1;
 }
 
-@media (max-width: 1279px) {
+@media (min-width: 2200px) {
+  .dashboard-layout {
+    grid-template-rows: minmax(7.5rem, auto) minmax(20rem, 1.2fr) minmax(16rem, 0.9fr);
+  }
+
+  .dashboard-layout__kpis {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .dashboard-layout__trend {
+    grid-column: 1 / span 8;
+    grid-row: 2;
+  }
+
+  .dashboard-layout__activity {
+    grid-column: 9 / span 4;
+    grid-row: 2;
+  }
+
+  .dashboard-layout__pending {
+    grid-column: 1 / span 4;
+    grid-row: 3;
+  }
+
+  .dashboard-layout__recent {
+    grid-column: 5 / span 4;
+    grid-row: 3;
+  }
+
+  .dashboard-layout__health {
+    grid-column: 9 / span 4;
+    grid-row: 3;
+    min-block-size: 100%;
+  }
+}
+
+@media (max-width: 1535px) {
+  .dashboard-page {
+    min-block-size: auto;
+    grid-template-rows: none;
+  }
+
   .dashboard-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
   }
 
   .dashboard-layout__kpis,
@@ -382,9 +439,19 @@ onUnmounted(() => {
     grid-column: auto;
     grid-row: auto;
   }
+
+  .dashboard-layout__pending,
+  .dashboard-layout__activity,
+  .dashboard-layout__recent {
+    min-block-size: auto;
+  }
 }
 
 @media (max-width: 767px) {
+  .dashboard-toolbar {
+    padding: 0.85rem;
+  }
+
   .dashboard-toolbar,
   .dashboard-topbar__actions {
     display: grid;

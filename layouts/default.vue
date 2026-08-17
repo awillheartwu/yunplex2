@@ -23,8 +23,11 @@
         :menu-mode="isDesktopViewport ? 'desktop' : 'mobile'"
         @toggle-menu="toggleNavigation"
       />
-      <main class="app-main flex-1 px-4 py-5 sm:px-6 md:px-8 md:py-7 xl:px-10">
-        <div class="w-full min-w-0">
+      <main class="app-main flex-1 px-4 py-4 sm:px-6 md:px-8 md:py-5 xl:px-9">
+        <div
+          class="app-page-frame w-full min-w-0"
+          :class="{ 'app-page-frame--dashboard': route.path === '/' }"
+        >
           <slot />
         </div>
       </main>
@@ -35,6 +38,7 @@
 <script setup lang="ts">
 import { useSidebarState } from '~/composables/useSidebarState'
 
+const route = useRoute()
 const mobileNavOpen = ref(false)
 const isDesktopViewport = ref(false)
 const { sidebarCollapsed, loadSidebarState, toggleSidebarCollapsed } = useSidebarState()
@@ -84,6 +88,17 @@ onUnmounted(() => {
   window.removeEventListener('keydown', closeMobileNavigation)
 })
 </script>
+
+<style scoped>
+.app-page-frame {
+  max-width: var(--app-content-max-width);
+  margin-inline: auto;
+}
+
+.app-page-frame--dashboard {
+  max-width: var(--dashboard-content-max-width);
+}
+</style>
 
 <style scoped>
 @media (min-width: 768px) {

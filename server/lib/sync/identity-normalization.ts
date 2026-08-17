@@ -8,6 +8,18 @@ export function normalizePlexPath(path: string): string {
   return normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized
 }
 
+/**
+ * Case-folded lookup key for Plex search recovery. Never persist this value as
+ * identity: exact normalized paths remain the durable identity in ADR 0003.
+ */
+export function foldPlexPath(path: string): string {
+  return normalizePlexPath(path).toLocaleLowerCase('en-US')
+}
+
+export function plexPathsExactlyEqual(first: string, second: string): boolean {
+  return normalizePlexPath(first) === normalizePlexPath(second)
+}
+
 export function normalizePlexRelativePath(path: string, sectionRoot?: string | null): string {
   const normalizedPath = normalizePlexPath(path)
   if (!normalizedPath || normalizedPath === '.') return ''

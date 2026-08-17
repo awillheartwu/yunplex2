@@ -16,6 +16,7 @@ import {
   getIssueSummaryLabel,
   getSyncResultLabel,
   getSyncResultTone,
+  getSyncSourceCoverUrl,
 } from '~~/composables/useSyncSourcePresentation'
 import { formatFailureCacheClearedLabel } from '~~/lib/failure-cache-presentation'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
@@ -241,10 +242,10 @@ export function useSyncSourcesPage() {
     const times = allSources.value.filter(s => s.lastSyncedAt).map(s => new Date(s.lastSyncedAt!).getTime())
     if (times.length === 0) return ''
     const latest = new Date(Math.max(...times))
-    return formatRelative(latest.toISOString())
+    return formatSyncSourceRelativeTime(latest.toISOString())
   })
-  const totalFailureCache = computed(() => allSources.value.reduce((sum, s) => sum + sourceFailureCacheCount(s), 0))
-  const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + sourceCopyrightCount(s), 0))
+  const totalFailureCache = computed(() => allSources.value.reduce((sum, s) => sum + getFailureCacheCount(s), 0))
+  const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + getCopyrightCount(s), 0))
   const advancedFilterLabel = computed(() => advancedFilterCount.value > 0 ? '筛选' : '高级筛选')
 
   // Add dialogs
@@ -398,82 +399,13 @@ export function useSyncSourcesPage() {
     finally { expandedLoading.value = false }
   }
 
-  function songStatusDot(status: string): string {
-    switch (status) {
-      case 'success': return 'bg-success'
-      case 'failed_download': case 'failed_tags': return 'bg-danger'
-      case 'failed_plex_match': case 'failed_plex_insert': return 'bg-warning'
-      case 'copyright_restricted': case 'ignored_failure': return 'bg-ignored'
-      case 'skipped_existing': return 'bg-existing'
-      default: return 'bg-muted-deep'
-    }
-  }
-
-  function sourceDisplayName(source: PlaylistSource): string {
-    return getSourceDisplayName(source)
-  }
-
-  function sourceOriginName(source: PlaylistSource): string {
-    return getSourceOriginName(source)
-  }
-
-  function sourceMetaLabel(source: PlaylistSource): string {
-    return getSourceMetaLabel(source)
-  }
-
-  function plexTargetName(source: PlaylistSource): string {
-    return getPlexTargetName(source)
-  }
-
-  function plexTargetHint(source: PlaylistSource): string {
-    return getPlexTargetHint(source)
-  }
-
   function sourceCoverSrc(url: string): string {
-    if (!url) return ''
-    return url.includes('?') ? `${url}&param=80y80` : `${url}?param=80y80`
-  }
-
-  function sourceFailureCacheCount(source: PlaylistSource): number {
-    return getFailureCacheCount(source)
-  }
-
-  function sourceCopyrightCount(source: PlaylistSource): number {
-    return getCopyrightCount(source)
-  }
-
-  function sourceIssueCount(source: PlaylistSource): number {
-    return getIssueCount(source)
-  }
-
-  function sourceIssueSummary(source: PlaylistSource): string {
-    return getIssueSummaryLabel(source)
-  }
-
-  function sourceIssueActionLabel(source: PlaylistSource): string {
-    return getIssueActionLabel(source)
-  }
-
-  function sourceHoverOrigin(source: PlaylistSource): string {
-    const origin = sourceOriginName(source)
-    return origin !== sourceDisplayName(source) ? origin : ''
-  }
-
-  function sourceStateLabel(source: PlaylistSource): string {
-    return getSourceStateLabel(source)
+    return getSyncSourceCoverUrl(url)
   }
 
   function sourceStateClass(source: PlaylistSource): string {
     const tone = getSourceStateTone(source)
     return `sync-pill--${tone}`
-  }
-
-  function syncResultLabel(source: PlaylistSource): string {
-    return getSyncResultLabel(source)
-  }
-
-  function rebuildActionLabel(source: PlaylistSource): string {
-    return source.type === 'album' ? '重建匹配并下载' : '重建匹配并同步'
   }
 
   function syncResultTextClass(source: PlaylistSource): string {
@@ -533,8 +465,8 @@ export function useSyncSourcesPage() {
 
   async function clearIssueCache(s: PlaylistSource) {
     const counts = {
-      continuousFailure: sourceFailureCacheCount(s),
-      copyrightRestricted: sourceCopyrightCount(s),
+      continuousFailure: getFailureCacheCount(s),
+      copyrightRestricted: getCopyrightCount(s),
     }
     try {
       await api.put(`/playlist-sources/${s.id}`, { ignoredFailureIds: null, copyrightRestrictedIds: null })
@@ -569,7 +501,7 @@ export function useSyncSourcesPage() {
     togglingId.value = s.id
     const prev = s.enabled
     const next = !prev
-    const label = sourceDisplayName(s)
+    const label = getSourceDisplayName(s)
     s.enabled = next
     try {
       await api.put(`/playlist-sources/${s.id}`, { enabled: next })
@@ -591,7 +523,7 @@ export function useSyncSourcesPage() {
     try {
       await api.del(`/playlist-sources/${id}`)
       await refreshSources()
-      feedback.success('同步源已删除', sourceDisplayName(source))
+      feedback.success('同步源已删除', getSourceDisplayName(source))
     } catch (err) {
       feedback.error('删除同步源失败', err instanceof Error ? err.message : '请稍后重试')
     }
@@ -633,16 +565,16 @@ export function useSyncSourcesPage() {
     takeOverExternal.value = false
   }
 
-  async function syncSource(s: PlaylistSource, forceFull = false) {
+  async function syncSource(s: PlaylistSource, full = false) {
     try {
-      if (forceFull) {
+      if (full) {
         if (s.type === 'album') syncingSourceId.value = s.id
         else forceFullId.value = s.id
-        await api.post(`/playlist-sources/${s.id}/sync`, { forceFull: true })
+        await api.post(`/playlist-sources/${s.id}/sync`, { mode: 'full' })
       } else {
         await triggerSourceSync(s.id)
       }
-      feedback.success(sourceSyncTriggerTitle(s, forceFull), sourceDisplayName(s))
+      feedback.success(sourceSyncTriggerTitle(s, full), getSourceDisplayName(s))
     } catch (err) {
       forceFullId.value = null
       syncingSourceId.value = null
@@ -656,8 +588,8 @@ export function useSyncSourcesPage() {
     confirmRebuild.value = null
     rebuildSyncId.value = source.id
     try {
-      await api.post(`/playlist-sources/${source.id}/sync`, { forceFull: true, rebuildMatch: true })
-      feedback.success(source.type === 'album' ? '重建匹配并下载已触发' : '重建匹配并同步已触发', sourceDisplayName(source))
+      await api.post(`/playlist-sources/${source.id}/sync`, { mode: 'rebuild_matching' })
+      feedback.success(source.type === 'album' ? '重新评估自动匹配并下载已触发' : '重新评估自动匹配并同步已触发', getSourceDisplayName(source))
     } catch (err) {
       rebuildSyncId.value = null
       feedback.error('触发重建失败', err instanceof Error ? err.message : '请稍后重试')
@@ -670,11 +602,10 @@ export function useSyncSourcesPage() {
     redownloadSyncId.value = source.id
     try {
       await api.post(`/playlist-sources/${source.id}/sync`, {
-        forceFull: true,
-        redownloadAll: true,
+        mode: 'redownload_managed',
         takeOverExternal: takeOverExternal.value,
       })
-      feedback.success('重新下载全部音频并同步已触发', sourceDisplayName(source))
+      feedback.success('重新下载托管音频并同步已触发', getSourceDisplayName(source))
       confirmRedownload.value = null
     } catch (err) {
       feedback.error('触发重新下载失败', err instanceof Error ? err.message : '请稍后重试')
@@ -683,9 +614,9 @@ export function useSyncSourcesPage() {
     }
   }
 
-  function sourceSyncTriggerTitle(source: PlaylistSource, forceFull: boolean): string {
+  function sourceSyncTriggerTitle(source: PlaylistSource, full: boolean): string {
     if (source.type === 'album') return '专辑下载已触发'
-    return forceFull ? '全量同步已触发' : '同步已触发'
+    return full ? '全量同步已触发' : '同步已触发'
   }
 
   const batchLoading = ref(false)
@@ -750,7 +681,7 @@ export function useSyncSourcesPage() {
     repairingSourceId.value = s.id
     try {
       await api.post(`/playlist-sources/${s.id}/repair`)
-      feedback.success('媒体修复任务已触发', sourceDisplayName(s))
+      feedback.success('媒体修复任务已触发', getSourceDisplayName(s))
     } catch (err) {
       repairingSourceId.value = null
       feedback.error('触发媒体修复失败', err instanceof Error ? err.message : '请稍后重试')
@@ -804,27 +735,23 @@ export function useSyncSourcesPage() {
     for (const unsub of sseUnsubs) unsub()
   })
 
-  function formatRelative(iso: string): string {
-    return formatSyncSourceRelativeTime(iso)
-  }
-
   return {
     advancedFilterCount, advancedFilterLabel, albumSourceCount, allSources, allVisibleSelected, applyDraftFilters, applySourceFilters, batchDeleting,
     batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer, clearIssueCache,
     clearSelection, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
     draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget, enabledCount, enabledFilter, expandedId,
-    expandedLoading, expandedSongs, fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative,
+    expandedLoading, expandedSongs, fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative: formatSyncSourceRelativeTime,
     globalSyncState, handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, hoverHideTimer, isAnySyncing, issueFilter,
     lastSyncTime, loading, moreMenuId, onAlbumCreated, onDragEnd, onDragLeave, onDragOver, onDragStart,
     onDrop, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved, onSourceSearchInput, onSourceTabChange,
-    openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, playlistSourceCount, plexTargetHint, plexTargetName, prepareDraftFilters,
-    pruneSelectionToVisible, queryString, rebuildActionLabel, rebuildSyncId, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress,
+    openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, playlistSourceCount, plexTargetHint: getPlexTargetHint, plexTargetName: getPlexTargetName, prepareDraftFilters,
+    pruneSelectionToVisible, queryString, rebuildSyncId, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress,
     repairSource, resetDraftFilters, restoreSourceFiltersFromRoute, runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedHasAlbum, selectedHasDisabledPlaylist,
     selectedSourceIds, selectedSources, setSourceType, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction, showSourceHover,
-    someVisibleSelected, songStatusDot, sourceActiveCount, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
-    sourceFilters, sourceHoverOrigin, sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs,
-    sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
-    syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver, takeOverExternal,
+    someVisibleSelected, sourceActiveCount, sourceCanClear, sourceCoverSrc, sourceDisplayName: getSourceDisplayName, sourceFilterChips,
+    sourceFilters, sourceIssueActionLabel: getIssueActionLabel, sourceIssueCount: getIssueCount, sourceIssueSummary: getIssueSummaryLabel, sourceMetaLabel: getSourceMetaLabel, sourceOriginName: getSourceOriginName, sourcePageTabs,
+    sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel: getSourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
+    syncingSourceId, syncResultDotClass, syncResultLabel: getSyncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver, takeOverExternal,
     tableShellWidth, toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright,
     totalFailureCache, totalSourceCount, triggerSourceSync, updateTableShellWidth,
   }

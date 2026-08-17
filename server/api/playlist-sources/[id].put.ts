@@ -1,6 +1,8 @@
 import { success, fail } from '../../lib/response'
 import { getSource, updateSource } from '../../lib/playlist/store'
 import { recordActivityEvent } from '../../lib/activity/store'
+import { readConfig } from '../../lib/config/store'
+import { enablesMissingMediaPolicy } from '../../lib/sync/effective-settings'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -16,15 +18,18 @@ export default defineEventHandler(async (event) => {
     plexPlaylistRatingKey?: string
     syncLimit?: number | null
     autoCreatePlexPlaylist?: boolean
-    forceFullCompare?: boolean
+    forceFullCompare?: boolean | null
+    downloadWhenMediaMissing?: boolean | null
     fullCompareAfterSkips?: number | null
     fullCompareAfterDays?: number | null
-    skipPlexPlaylist?: boolean
-    skipRemoveExtraTracks?: boolean
+    skipPlexPlaylist?: boolean | null
+    skipRemoveExtraTracks?: boolean | null
     neteasePlaylistName?: string
     copyrightRestrictedIds?: string | null
     ignoredFailureIds?: string | null
   }>(event)
+
+  const globalDownloadWhenMissing = readConfig().sync.downloadWhenMediaMissing
 
   const updated = updateSource(id, {
     name: body.name,
@@ -34,6 +39,7 @@ export default defineEventHandler(async (event) => {
     syncLimit: body.syncLimit,
     autoCreatePlexPlaylist: body.autoCreatePlexPlaylist,
     forceFullCompare: body.forceFullCompare,
+    downloadWhenMediaMissing: body.downloadWhenMediaMissing,
     fullCompareAfterSkips: body.fullCompareAfterSkips,
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,
@@ -41,6 +47,13 @@ export default defineEventHandler(async (event) => {
     neteasePlaylistName: body.neteasePlaylistName,
     copyrightRestrictedIds: body.copyrightRestrictedIds,
     ignoredFailureIds: body.ignoredFailureIds,
+    requiresMatchReconcile: enablesMissingMediaPolicy(
+      existing.downloadWhenMediaMissing,
+      body.downloadWhenMediaMissing,
+      globalDownloadWhenMissing,
+    )
+      ? true
+      : undefined,
   })
 
   const changedKeys = Object.entries({
@@ -51,6 +64,7 @@ export default defineEventHandler(async (event) => {
     syncLimit: body.syncLimit,
     autoCreatePlexPlaylist: body.autoCreatePlexPlaylist,
     forceFullCompare: body.forceFullCompare,
+    downloadWhenMediaMissing: body.downloadWhenMediaMissing,
     fullCompareAfterSkips: body.fullCompareAfterSkips,
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,

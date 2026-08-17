@@ -1,5 +1,4 @@
 import type { SongStatus, SongTask } from '../job/types'
-import { getSongLookup } from './song-lookup-store'
 
 export type FailureMemoryPhase = Exclude<SongTask['phase'], 'done'>
 export type FailureMemoryStatus = Extract<
@@ -96,11 +95,8 @@ export function getFailureCount(memory: FailureMemory, songId: number): number {
   return getFailureMemoryEntry(memory, songId)?.count ?? 0
 }
 
-export function inferFailurePhase(songId: number, entry?: FailureMemoryEntry | null): FailureMemoryPhase {
+export function inferFailurePhase(_songId: number, entry?: FailureMemoryEntry | null): FailureMemoryPhase {
   if (entry?.lastPhase) return entry.lastPhase
-
-  const lookup = getSongLookup(songId)
-  if (lookup?.file_path && !lookup.plex_rating_key) return 'plex_match'
   return 'download'
 }
 

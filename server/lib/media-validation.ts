@@ -60,7 +60,8 @@ export function validateAudioBuffer(buffer: Uint8Array, fileType: string): Audio
 
 export function validateLocalAudioFile(filePath: string): AudioValidationResult {
   try {
-    if (statSync(filePath).size === 0) {
+    const fileSize = statSync(filePath).size
+    if (fileSize === 0) {
       return { valid: false, reason: '音频文件为空' }
     }
 
@@ -68,13 +69,47 @@ export function validateLocalAudioFile(filePath: string): AudioValidationResult 
     try {
       const header = Buffer.alloc(16)
       const bytesRead = readSync(fd, header, 0, header.length, 0)
-      return validateAudioBuffer(header.subarray(0, bytesRead), extname(filePath))
+      const initial = header.subarray(0, bytesRead)
+      const fileType = extname(filePath)
+      const directResult = validateAudioBuffer(initial, fileType)
+      if (directResult.valid || normalizeFileType(fileType) !== 'flac' || !hasPrefix(initial, 'ID3')) {
+        return directResult
+      }
+
+      const flacOffset = id3v2PayloadEndOffset(initial, fileSize)
+      if (flacOffset === null) return directResult
+      return readPrefixAt(fd, flacOffset, 'fLaC')
+        ? { valid: true }
+        : { valid: false, reason: 'FLAC 文件头无效' }
     } finally {
       closeSync(fd)
     }
   } catch {
     return { valid: false, reason: '无法读取音频文件' }
   }
+}
+
+function normalizeFileType(fileType: string): string {
+  return fileType.toLowerCase().replace(/^\./, '')
+}
+
+function id3v2PayloadEndOffset(header: Uint8Array, fileSize: number): number | null {
+  if (header.length < 10 || !hasPrefix(header, 'ID3')) return null
+  const sizeBytes = [header[6], header[7], header[8], header[9]]
+  if (sizeBytes.some(value => value === undefined)) return null
+  const definedSizeBytes = sizeBytes as number[]
+  if (definedSizeBytes.some(value => (value & 0x80) !== 0)) return null
+
+  const payloadSize = definedSizeBytes.reduce((size, value) => (size << 7) | value, 0)
+  const footerSize = (header[5]! & 0x10) !== 0 ? 10 : 0
+  const offset = 10 + payloadSize + footerSize
+  return offset + 4 <= fileSize ? offset : null
+}
+
+function readPrefixAt(fd: number, offset: number, value: string): boolean {
+  const signature = Buffer.alloc(value.length)
+  const bytesRead = readSync(fd, signature, 0, signature.length, offset)
+  return bytesRead === signature.length && hasPrefix(signature, value)
 }
 
 function hasPrefix(buffer: Uint8Array, value: string): boolean {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
 import { configureResolver } from './artist-resolver'
-import { buildCachedTargetOrder, validateCachedTargetOrder } from './reorder-cache'
+import { validateCachedTargetOrder } from './reorder-cache'
 
 configureResolver({ enableMB: false })
 
@@ -22,32 +22,7 @@ function track(ratingKey: string, title: string, artist = 'Artist', album = 'Alb
   return { ratingKey, title, grandparentTitle: artist, parentTitle: album }
 }
 
-describe('buildCachedTargetOrder', () => {
-  it('returns ordered rating keys when cache is complete', () => {
-    const result = buildCachedTargetOrder(
-      [11, 22, 33],
-      new Map([
-        [11, 'rk-1'],
-        [22, 'rk-2'],
-        [33, 'rk-3'],
-      ]),
-    )
-
-    expect(result).toEqual(['rk-1', 'rk-2', 'rk-3'])
-  })
-
-  it('returns null when any cache entry is missing', () => {
-    const result = buildCachedTargetOrder(
-      [11, 22, 33],
-      new Map([
-        [11, 'rk-1'],
-        [33, 'rk-3'],
-      ]),
-    )
-
-    expect(result).toBeNull()
-  })
-
+describe('validateCachedTargetOrder', () => {
   it('validates every cached Plex rating key before using pure reorder', async () => {
     const result = await validateCachedTargetOrder(
       [song(11, 'A'), song(22, 'B')],

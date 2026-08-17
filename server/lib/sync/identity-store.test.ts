@@ -9,8 +9,11 @@ import {
   decideMatchReview,
   decideMatchReviewsBatch,
   getMatchReview,
+  getReplacedSongIdentityIdsByRatingKeys,
   getSongIdentityBinding,
   getSongIdentityBindingByRatingKey,
+  markAutomaticSongIdentityBindingsStale,
+  markSongIdentityBindingStale,
   listMatchReviews,
   normalizePlexRelativePath,
   resolvePlexIdentityPath,
@@ -30,6 +33,16 @@ function setup() {
 afterEach(() => { closeDb(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 describe('song identity store', () => {
+  it('rebuild invalidates automatic identities while preserving manual authority', () => {
+    setup()
+    upsertSongIdentityBinding({ neteaseSongId: 1, plexSectionKey: '12', plexFilePath: '/music/auto.flac', plexRatingKey: '1', mbRecordingId: null, bindingMethod: 'path', status: 'active', evidence: {} })
+    upsertSongIdentityBinding({ neteaseSongId: 2, plexSectionKey: '12', plexFilePath: '/music/manual.flac', plexRatingKey: '2', mbRecordingId: null, bindingMethod: 'manual', status: 'active', evidence: {} })
+
+    expect(markAutomaticSongIdentityBindingsStale([1, 2], { sourceId: 'source-1' })).toBe(1)
+    expect(getSongIdentityBinding(1)?.status).toBe('stale')
+    expect(getSongIdentityBinding(2)?.status).toBe('active')
+  })
+
   it('refreshes verification without changing the durable identity version', () => {
     setup()
     const original = upsertVerifiedSongIdentityBinding({
@@ -62,6 +75,93 @@ describe('song identity store', () => {
       lastVerifiedAt: '2026-07-24T00:00:00.000Z',
       evidence: { validation: 'path_recovered' },
     })
+  })
+
+  it('recovers a unique replaced ratingKey from durable identity events', () => {
+    setup()
+    upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 98,
+      plexSectionKey: '12',
+      plexFilePath: '/volume1/Music/old.flac',
+      plexRatingKey: 'old-rating',
+      mbRecordingId: null,
+      bindingMethod: 'path',
+      status: 'active',
+      evidence: {},
+    })
+    upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 98,
+      plexSectionKey: '12',
+      plexFilePath: '/volume1/Music/new.flac',
+      plexRatingKey: 'new-rating',
+      mbRecordingId: null,
+      bindingMethod: 'path',
+      status: 'active',
+      evidence: {},
+    })
+
+    expect(getReplacedSongIdentityIdsByRatingKeys(['old-rating', 'unknown']))
+      .toEqual(new Map([['old-rating', 98]]))
+  })
+
+  it('recovers a stale automatic binding replaced by an exact managed path', () => {
+    setup()
+    upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 95,
+      plexSectionKey: '12',
+      plexFilePath: '/volume1/Music/external-old.flac',
+      plexRatingKey: 'stale-old-rating',
+      mbRecordingId: null,
+      bindingMethod: 'path',
+      status: 'active',
+      evidence: {},
+    })
+    markSongIdentityBindingStale(95, { reason: 'manual_rebuild_matching' })
+    upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 95,
+      plexSectionKey: '12',
+      plexFilePath: '/volume1/Music/managed-new.flac',
+      plexRatingKey: 'managed-new-rating',
+      mbRecordingId: null,
+      bindingMethod: 'path',
+      status: 'active',
+      evidence: {
+        source: 'plex_retry_exact_path',
+        matchedBy: 'path_lookup',
+        mediaPolicy: 'download_missing',
+      },
+    })
+
+    expect(getReplacedSongIdentityIdsByRatingKeys(['stale-old-rating']))
+      .toEqual(new Map([['stale-old-rating', 95]]))
+  })
+
+  it('does not recover a replaced ratingKey shared by multiple song histories', () => {
+    setup()
+    for (const neteaseSongId of [96, 97]) {
+      upsertVerifiedSongIdentityBinding({
+        neteaseSongId,
+        plexSectionKey: '12',
+        plexFilePath: `/volume1/Music/${neteaseSongId}-old.flac`,
+        plexRatingKey: 'shared-old-rating',
+        mbRecordingId: null,
+        bindingMethod: 'path',
+        status: 'active',
+        evidence: {},
+      })
+      upsertVerifiedSongIdentityBinding({
+        neteaseSongId,
+        plexSectionKey: '12',
+        plexFilePath: `/volume1/Music/${neteaseSongId}-new.flac`,
+        plexRatingKey: `new-rating-${neteaseSongId}`,
+        mbRecordingId: null,
+        bindingMethod: 'path',
+        status: 'active',
+        evidence: {},
+      })
+    }
+
+    expect(getReplacedSongIdentityIdsByRatingKeys(['shared-old-rating'])).toEqual(new Map())
   })
 
   it('keeps a global path binding and lets an accepted review replace it', () => {

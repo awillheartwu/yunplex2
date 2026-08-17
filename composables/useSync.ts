@@ -131,13 +131,13 @@ function teardownSharedRealtime() {
 export function useSyncStatus() {
   sharedApi ??= useApi()
 
-  async function triggerSync(dryRun = false) {
+  async function triggerSync(mode: 'normal' | 'preview' | 'full' = 'normal') {
     const api = ensureApi()
     sharedLoading.value = true
     sharedError.value = null
 
     try {
-      const result = await api.post<{ triggered: boolean; runId: string }>('/sync/trigger', { dryRun })
+      const result = await api.post<{ triggered: boolean; runId: string }>('/sync/trigger', { mode })
       if (!sseConnected.value) startPollingShared(2000)
       return result
     } catch (err) {

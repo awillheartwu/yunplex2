@@ -59,6 +59,67 @@ describe('plex retry matcher', () => {
     expect(searchTrack).not.toHaveBeenCalled()
   })
 
+  it('uses only exact paths in missing-media mode', async () => {
+    findTracksByFilePath.mockResolvedValue([])
+    getRecentlyAddedTracks.mockResolvedValue([])
+
+    const { matchTrackInPlexWithRetry } = await import('./plex-match')
+    const result = await matchTrackInPlexWithRetry(
+      '12',
+      {
+        id: 1,
+        name: 'song',
+        artists: [{ name: 'Artist' }],
+        album: { id: 1, name: 'Album' },
+      } as any,
+      {} as any,
+      '/downloads/Artist/Album/song.flac',
+      0,
+      0,
+      { pathOnly: true },
+    )
+
+    expect(result.ratingKey).toBeNull()
+    expect(resolveSongArtistCandidateNames).not.toHaveBeenCalled()
+    expect(searchTrack).not.toHaveBeenCalled()
+    expect(searchTracksByTitle).not.toHaveBeenCalled()
+    expect(searchTracksByArtists).not.toHaveBeenCalled()
+    expect(searchTracksByAlbum).not.toHaveBeenCalled()
+  })
+
+  it('does not bind when multiple rating keys point to the same exact path', async () => {
+    findTracksByFilePath.mockResolvedValue([
+      {
+        ratingKey: 'duplicate-a',
+        Media: [{ Part: [{ file: '/downloads/Artist/Album/song.flac' }] }],
+      },
+      {
+        ratingKey: 'duplicate-b',
+        Media: [{ Part: [{ file: '/downloads/Artist/Album/song.flac' }] }],
+      },
+    ])
+    getRecentlyAddedTracks.mockResolvedValue([])
+
+    const { matchTrackInPlexWithRetry } = await import('./plex-match')
+    const result = await matchTrackInPlexWithRetry(
+      '12',
+      {
+        id: 1,
+        name: 'song',
+        artists: [{ name: 'Artist' }],
+        album: { id: 1, name: 'Album' },
+      } as any,
+      {} as any,
+      '/downloads/Artist/Album/song.flac',
+      0,
+      0,
+      { pathOnly: true },
+    )
+
+    expect(result.ratingKey).toBeNull()
+    expect(result.traces[0]?.pathCandidates).toBe(2)
+  })
+
   it('falls back to recently added path lookup when metadata search misses', async () => {
     searchTrack.mockResolvedValue(null)
     searchTracksByTitle.mockResolvedValue([])

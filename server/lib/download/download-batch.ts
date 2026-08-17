@@ -14,15 +14,17 @@ import type { DownloadTask } from './queue'
 import { createManualDownloadRun, syncManualDownloadRun } from '../run/store'
 import type { MultiArtistFormat } from '../config/types'
 
+export interface DownloadBatchConfig extends SingleSongConfig {
+  artistAliases: Record<string, string>
+  applyAliasToAlbum: boolean
+  downloadConcurrency: number
+}
+
 export interface DownloadBatchInput {
   type: 'playlist' | 'album' | 'songs'
   neteaseId?: number
   songIds?: number[]
-  config: SingleSongConfig & {
-    artistAliases?: Record<string, string>
-    applyAliasToAlbum?: boolean
-    downloadConcurrency?: number
-  }
+  config: DownloadBatchConfig
 }
 
 export interface DownloadBatchResult {
@@ -41,8 +43,8 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   const { config } = input
 
   setArtistAliases(
-    config.artistAliases ?? {},
-    config.applyAliasToAlbum ?? false,
+    config.artistAliases,
+    config.applyAliasToAlbum,
   )
 
   // ── 1. Fetch songs from Netease ──
@@ -133,8 +135,7 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   }
 
   // ── 4. Fire-and-forget processing ──
-  const concurrency = config.downloadConcurrency ?? 3
-  processAll(processor, batchId, concurrency)
+  processAll(processor, batchId, config.downloadConcurrency)
     .then((failed) => {
       syncManualDownloadRun(batchId)
       const status = getQueueStatus()

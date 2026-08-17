@@ -3,6 +3,7 @@ import { getSyncRun, saveSyncRun } from '../../../lib/run/store'
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
+import { resolveSingleSongConfig } from '../../../lib/download/options'
 import { emitEvent } from '../../../lib/sync/events'
 import { appendLog } from '../../../lib/log/store'
 import { setArtistAliases } from '../../../lib/netease'
@@ -84,22 +85,9 @@ export default defineEventHandler(async (event) => {
   setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
   appendLog(dataDir, { level: 'info', message: `[重试] 开始下载: ${song.songName} - ${song.artist}`, stage: 'download' }, retentionDays)
 
-  downloadSingleSong(neteaseId, {
-    quality: cfg.netease.quality,
-    cookie: cfg.netease.cookie,
-    downloadDir: cfg.download.dir,
-    pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-    multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
-    downloadLyrics: cfg.download.downloadLyrics,
-    embedMetadata: cfg.download.embedMetadata,
-    embedCover: cfg.download.embedCover,
-    saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-    saveArtistImage: cfg.download.saveArtistImage ?? false,
-    lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
-    downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
-    downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
+  downloadSingleSong(neteaseId, resolveSingleSongConfig(cfg, {
     downloadMode: 'full',
-  }, (pct) => {
+  }), (pct) => {
     emitEvent({
       type: 'song-retry-progress',
       data: { jobId: runId, runId, songId, status: 'downloading', progress: pct },
@@ -145,7 +133,7 @@ export default defineEventHandler(async (event) => {
     appendLog(dataDir, { level: 'info', message: `[重试] 下载成功: ${song.songName} - ${song.artist} → ${result.filePath}`, stage: 'download' }, retentionDays)
     let syncRunId: string | undefined
     if (!syncService.getState().isRunning && !isRepairRunning()) {
-      syncRunId = syncService.startSyncForSource(source.id, { forceFull: true, trigger: 'retry' }).runId
+      syncRunId = syncService.startSyncForSource(source.id, { mode: 'full', trigger: 'retry' }).runId
     }
     emitEvent({
       type: 'song-retry-progress',

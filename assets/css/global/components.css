@@ -1,16 +1,17 @@
 .btn {
     display: inline-flex;
-    min-height: 2.5rem;
+    min-height: 2.625rem;
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
     padding: 0 0.9rem;
     font-size: 0.875rem;
-    font-weight: 650;
+    font-weight: 700;
     border-radius: var(--radius-md);
     border: 1px solid transparent;
     cursor: pointer;
-    transition: transform 150ms ease, background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
+    letter-spacing: 0.005em;
+    transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
     white-space: nowrap;
     user-select: none;
     text-decoration: none;
@@ -23,10 +24,14 @@
     pointer-events: none;
   }
   .btn-primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    background: var(--accent);
     color: #fff;
-    border-color: rgba(255,255,255,0.12);
-    box-shadow: 0 14px 32px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.22);
+    border-color: color-mix(in srgb, var(--accent) 86%, #000);
+    box-shadow: 0 7px 16px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+    box-shadow: 0 9px 20px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.18);
   }
   .btn-secondary {
     background: var(--bg-surface);
@@ -98,7 +103,7 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(14px);
 }
 .section-card::before {
   content: "";
@@ -106,9 +111,19 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  background: linear-gradient(145deg, rgba(255,255,255,0.18), transparent 36%);
+  border-top: 1px solid color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  background: linear-gradient(145deg, rgba(255,255,255,0.12), transparent 32%);
 }
 .section-card > * { position: relative; }
+
+.dark .section-card {
+  backdrop-filter: none;
+}
+
+.dark .section-card::before {
+  border-top-color: rgba(255, 255, 255, 0.035);
+  background: none;
+}
 
 .section-header {
   padding: 0.875rem 1.125rem;
@@ -120,9 +135,9 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .dashboard-section-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1rem;
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: 750;
   letter-spacing: 0;
   color: var(--text-primary);
 }
@@ -165,8 +180,8 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
+  min-width: 2.625rem;
+  min-height: 2.625rem;
   border-radius: var(--radius-md);
   color: var(--text-tertiary);
   border: 1px solid transparent;
@@ -203,12 +218,12 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  min-height: 2.5rem;
+  min-height: 2.625rem;
   min-width: min(24rem, 100%);
   flex: 1;
   padding: 0 0.8rem;
   border-radius: var(--radius-md);
-  background: var(--bg-input);
+  background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   color: var(--text-tertiary);
 }
@@ -275,7 +290,7 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  min-height: 2.25rem;
+  min-height: 2.375rem;
 }
 .filter-active-list {
   display: flex;

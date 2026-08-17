@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
       isSyncRunning: () => syncService.getState().isRunning,
       isRepairRunning,
       runSync: (ids) => {
-        return syncService.startSync({ sourceIds: ids, trigger: 'user' })
+        return syncService.startSync({ mode: 'normal', sourceIds: ids, trigger: 'user' })
       },
     })
 

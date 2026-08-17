@@ -13,6 +13,7 @@ import {
   getSourceStateTone,
   getSyncResultLabel,
   getSyncResultTone,
+  getSyncSourceCoverUrl,
 } from './useSyncSourcePresentation'
 
 describe('sync source presentation helpers', () => {
@@ -80,6 +81,13 @@ describe('sync source presentation helpers', () => {
       copyrightRestrictedIds: '[]',
       ignoredFailureIds: '',
     })).toBe('无失败缓存或版权受限')
+  })
+
+  it('adds a single Netease image size parameter', () => {
+    expect(getSyncSourceCoverUrl('')).toBe('')
+    expect(getSyncSourceCoverUrl('https://img.example/cover.jpg')).toBe('https://img.example/cover.jpg?param=80y80')
+    expect(getSyncSourceCoverUrl('https://img.example/cover.jpg?token=one', 160))
+      .toBe('https://img.example/cover.jpg?token=one&param=160y160')
   })
 
   it('formats relative time against now', () => {

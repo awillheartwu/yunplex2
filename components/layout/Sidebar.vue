@@ -1,7 +1,7 @@
 <template>
   <aside
     data-testid="app-sidebar"
-    class="flex flex-col select-none shrink-0 transition-all duration-200 overflow-hidden"
+    class="app-sidebar-shell flex flex-col select-none shrink-0 transition-all duration-200 overflow-hidden"
     :style="{ background: 'var(--bg-sidebar)', width: sidebarWidth }"
   >
     <div
@@ -24,7 +24,7 @@
       >YunPlex2</span>
     </div>
 
-    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
+    <nav class="sidebar-nav flex-1 overflow-y-auto px-3 py-4">
       <SidebarItem
         v-for="item in navItems"
         :key="item.path"
@@ -88,7 +88,7 @@ const navItems = [
   align-items: center;
   gap: 12px;
   min-block-size: var(--app-topbar-block-size);
-  padding-inline: 20px;
+  padding-inline: 18px;
 }
 
 .sidebar-brand--collapsed {
@@ -104,7 +104,25 @@ const navItems = [
   flex: 0 0 40px;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 13px;
+  box-shadow: 0 10px 24px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25) !important;
+}
+
+.app-sidebar-shell {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  border-right: 1px solid var(--border-primary);
+  box-shadow: 8px 0 28px rgba(28, 40, 68, 0.025);
+  backdrop-filter: blur(22px);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
 }
 
 .sidebar-collapse-button {

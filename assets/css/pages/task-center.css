@@ -51,6 +51,8 @@
 .compact-run small{font-size:.72rem;color:var(--text-tertiary)}
 .issue-summary{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:1.15rem 1.2rem;background:linear-gradient(145deg,var(--bg-surface),var(--bg-input))}
 .issue-summary.has-issues{background:linear-gradient(145deg,var(--warning-soft),var(--bg-surface) 70%)}
+.dark .task-live-card,.dark .issue-summary{background:var(--bg-surface)}
+.dark .issue-summary.has-issues{background:color-mix(in srgb,var(--warning-soft) 34%,var(--bg-surface))}
 .issue-summary__count{display:block;margin-top:.15rem;color:var(--text-primary);font-size:2rem;line-height:1}
 .issue-summary.has-issues .issue-summary__count{color:var(--warning)}
 .issue-summary h3{margin-top:.2rem}

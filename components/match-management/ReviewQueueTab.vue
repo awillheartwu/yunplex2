@@ -382,7 +382,7 @@ function localMediaLabel(review: MatchReviewWithBinding): string {
 function bindingLabel(binding: SongIdentityBinding): string {
   const method = binding.bindingMethod === 'metadata' && binding.evidence.source === 'plex_netease_provider'
     ? '网易云来源身份'
-    : ({ manual: '人工确认', mb_recording: 'MB recording', metadata: '高置信元数据', path: '精确路径', migrated: '自动迁移' })[binding.bindingMethod]
+    : ({ manual: '人工确认', mb_recording: 'MB recording', provider_guid: '来源 GUID', metadata: '历史元数据（已退役）', path: '精确路径', migrated: '自动迁移' })[binding.bindingMethod]
   return binding.status === 'active' ? method : `${method} · ${binding.status === 'stale' ? '已失效' : '已解绑'}`
 }
 function statusLabel(value: ReviewStatus): string {
@@ -576,7 +576,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.match-reviews-page { max-width: 1180px; margin: 0 auto; }
+.match-reviews-page { width: 100%; min-width: 0; }
 .review-summary { display: flex; align-items: center; gap: 2rem; padding: 1rem 1.25rem; }
 .review-summary > div { display: flex; gap: .55rem; align-items: baseline; color: var(--text-muted); font-size: .78rem; }
 .review-summary strong { font-size: 1.25rem; color: var(--text-primary); }

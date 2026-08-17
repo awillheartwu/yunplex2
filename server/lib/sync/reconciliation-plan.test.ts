@@ -192,6 +192,46 @@ describe('buildReconciliationPlan', () => {
     expect([...plan.authorizedRemovalItemIds]).toEqual([])
   })
 
+  it('removes an audited old occurrence after the same target song has a strong replacement', () => {
+    const plan = buildReconciliationPlan({
+      expectedTargetSongIds: [1, 2],
+      targets: [{ neteaseSongId: 1, plexRatingKey: 'replacement', matchTrace: strongPathTrace }],
+      currentItems: [
+        { ratingKey: 'old', playlistItemId: 10 },
+        { ratingKey: 'replacement', playlistItemId: 11 },
+        { ratingKey: 'unknown', playlistItemId: 12 },
+      ],
+      knownCurrentIdentities: [{ neteaseSongId: 1, plexRatingKey: 'old' }],
+    })
+
+    expect(plan.hasIncompleteTargetOrder).toBe(true)
+    expect([...plan.authorizedRemovalItemIds]).toEqual([10])
+    expect(plan.removalDecisions).toEqual([
+      expect.objectContaining({
+        action: 'remove',
+        playlistItemId: 10,
+        reason: 'replaced_bound_occurrence',
+        neteaseSongId: 1,
+      }),
+      expect.objectContaining({ action: 'preserve', playlistItemId: 12 }),
+    ])
+  })
+
+  it('preserves an old occurrence when the replacement identity is weak', () => {
+    const plan = buildReconciliationPlan({
+      expectedTargetSongIds: [1],
+      targets: [{
+        neteaseSongId: 1,
+        plexRatingKey: 'replacement',
+        matchTrace: { source: 'plex_search', decision: 'pending_review' },
+      }],
+      currentItems: [{ ratingKey: 'old', playlistItemId: 10 }],
+      knownCurrentIdentities: [{ neteaseSongId: 1, plexRatingKey: 'old' }],
+    })
+
+    expect([...plan.authorizedRemovalItemIds]).toEqual([])
+  })
+
   it('does not put a weak ratingKey into the target order', () => {
     const plan = buildReconciliationPlan({
       targets: [{

@@ -31,6 +31,12 @@ export function getPlexTargetHint(source: Pick<PlaylistSource, 'plexPlaylistName
   return source.plexPlaylistName ? '指定目标' : '按名称匹配'
 }
 
+export function getSyncSourceCoverUrl(url: string, size = 80): string {
+  if (!url) return ''
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}param=${size}y${size}`
+}
+
 export function getCopyrightCount(source: Pick<PlaylistSource, 'copyrightRestrictedIds'>): number {
   return countCopyrightRestrictedEntries(source.copyrightRestrictedIds)
 }

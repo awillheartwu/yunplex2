@@ -137,7 +137,8 @@ export function createSchema(db: Database.Database): void {
       auto_create_plex_playlist INTEGER NOT NULL DEFAULT 0,
       track_count              INTEGER NOT NULL DEFAULT 0,
       last_track_update_time  INTEGER,
-      force_full_compare      INTEGER NOT NULL DEFAULT 0,
+      force_full_compare      INTEGER,
+      download_when_media_missing INTEGER,
       consecutive_skips       INTEGER NOT NULL DEFAULT 0,
       full_compare_after_skips INTEGER,
       full_compare_after_days  INTEGER,
@@ -155,7 +156,8 @@ export function createSchema(db: Database.Database): void {
       type                    TEXT NOT NULL DEFAULT 'playlist',
       subscribed              INTEGER NOT NULL DEFAULT 0,
       cover_url               TEXT NOT NULL DEFAULT '',
-      skip_plex_playlist      INTEGER NOT NULL DEFAULT 0,
+      skip_plex_playlist      INTEGER,
+      skip_remove_extra_tracks INTEGER,
       copyright_restricted_ids TEXT,
       ignored_failure_ids     TEXT,
       requires_match_reconcile INTEGER NOT NULL DEFAULT 0,
@@ -164,15 +166,6 @@ export function createSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_playlist_sources_enabled ON playlist_sources(enabled);
-
-    CREATE TABLE IF NOT EXISTS song_lookup (
-      netease_song_id   INTEGER PRIMARY KEY,
-      plex_rating_key   TEXT,
-      file_path         TEXT,
-      last_verified_at  TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_song_lookup_rating_key ON song_lookup(plex_rating_key);
 
     -- Durable provenance for files written or adopted by YunPlex. Unlike the
     -- download queue this table is not retention-pruned, so path identity can
@@ -194,8 +187,6 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_local_media_assets_path ON local_media_assets(file_path);
     CREATE INDEX IF NOT EXISTS idx_local_media_assets_status ON local_media_assets(status);
 
-    -- song_lookup is deliberately only a lookup-performance cache.  The tables
-    -- below own the durable identity and human-review decisions used by sync.
     CREATE TABLE IF NOT EXISTS song_identity_bindings (
       netease_song_id INTEGER PRIMARY KEY,
       plex_section_key TEXT NOT NULL DEFAULT '',
@@ -203,7 +194,7 @@ export function createSchema(db: Database.Database): void {
       plex_relative_path TEXT NOT NULL DEFAULT '',
       plex_rating_key TEXT,
       mb_recording_id TEXT,
-      binding_method TEXT NOT NULL CHECK(binding_method IN ('path','mb_recording','metadata','manual','migrated')),
+      binding_method TEXT NOT NULL CHECK(binding_method IN ('path','mb_recording','provider_guid','metadata','manual','migrated')),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
       evidence_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,

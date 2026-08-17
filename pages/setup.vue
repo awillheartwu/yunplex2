@@ -179,6 +179,14 @@
           <input id="plex-prefix" v-model="config.download.plexLibraryPathPrefix" class="form-input font-mono" :disabled="isChecking('download')" placeholder="可选，例如 /music">
           <p class="setup-path-note"><strong>这里只换算路径，不会传输文件。</strong>如果 Plex 在另一台主机，下载目录必须是 Plex 扫描目录的共享挂载，或另有复制流程。</p>
         </div>
+        <ToggleField
+          v-model="config.sync.downloadWhenMediaMissing"
+          label="缺少已登记媒体时自动下载"
+          hint="开启后，没有可验证的已登记媒体时会直接下载，不再用 Plex 元数据猜测。人工绑定和有效的外部媒体仍会复用；可能增加下载量和存储占用"
+        />
+        <p class="setup-path-note">
+          此策略默认关闭。初始化只保存选择，不会立即下载；首次手动或定时同步时生效。
+        </p>
         <p v-if="checks.download.message" class="setup-check" :class="'setup-check--' + checks.download.status" role="status">
           {{ checks.download.message }}
         </p>
@@ -206,6 +214,11 @@
             <AppIcon :name="isStepComplete(item) ? 'checkCircle' : 'alert'" :size="17" />
             <span>{{ checkLabels[item] }}</span>
             <strong>{{ checks[item].status === 'ok' ? '已通过' : '待验证' }}</strong>
+          </div>
+          <div v-if="config" class="setup-summary__item">
+            <AppIcon name="download" :size="17" />
+            <span>缺少已登记媒体</span>
+            <strong>{{ config.sync.downloadWhenMediaMissing ? '自动下载' : '继续匹配' }}</strong>
           </div>
         </div>
         <div>

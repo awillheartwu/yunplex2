@@ -5,8 +5,8 @@ import { getSyncServiceInstance, isRepairRunning, setRepairRunning } from '../..
 import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
+import { resolveSingleSongConfig } from '../../../lib/download/options'
 import { fetchPlaylistSongs, fetchAlbumSongs, setArtistAliases } from '../../../lib/netease'
-import { getDb } from '../../../lib/db'
 import { saveSyncRun } from '../../../lib/run/store'
 import { appendLog } from '../../../lib/log/store'
 import { emitEvent } from '../../../lib/sync/events'
@@ -17,6 +17,8 @@ import { buildDownloadPath } from '../../../lib/tag-writer'
 import { createSplitArtists } from '../../../lib/sync/artist-utils'
 import { resolveAccessibleLocalPath } from '../../../lib/sync/path-map'
 import { findExistingLocalSongPath } from '../../../lib/sync/local-file-discovery'
+import { getLocalMediaAsset } from '../../../lib/sync/local-media-store'
+import { getSongIdentityBinding } from '../../../lib/sync/identity-store'
 import { getSectionKey, initPlexClient, refreshLibrary } from '../../../lib/plex-client'
 
 export default defineEventHandler(async (event) => {
@@ -138,18 +140,12 @@ export default defineEventHandler(async (event) => {
               cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
               pathVars, 'mp3',
             ))
-            const resolvedComputedPath = resolveAccessibleLocalPath(computedPath, cfg)
-            if (resolvedComputedPath) {
-              audioPath = resolvedComputedPath
-            } else {
-              // Fallback: song_lookup cache
-              const db = getDb()
-              const cached = db.prepare('SELECT file_path FROM song_lookup WHERE netease_song_id = ?').get(song.id) as { file_path: string | null } | undefined
-              const resolvedCachedPath = resolveAccessibleLocalPath(cached?.file_path, cfg)
-              if (resolvedCachedPath) {
-                audioPath = resolvedCachedPath
-              }
-            }
+            const localAsset = getLocalMediaAsset(song.id)
+            const binding = getSongIdentityBinding(song.id)
+            audioPath = resolveAccessibleLocalPath(localAsset?.filePath, cfg)
+              ?? resolveAccessibleLocalPath(computedPath, cfg)
+              ?? resolveAccessibleLocalPath(binding?.plexFilePath, cfg)
+              ?? undefined
           }
         } catch { /* can't resolve — skip */ }
 
@@ -158,23 +154,12 @@ export default defineEventHandler(async (event) => {
           continue
         }
 
-        const result = await downloadSingleSong(song.id, {
-          quality: cfg.netease.quality,
-          cookie: cfg.netease.cookie,
-          downloadDir: cfg.download.dir,
-          pathFormat: cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-          multiArtistFormat: cfg.other?.multiArtistFormat ?? 'ampersand',
-          downloadLyrics: cfg.download.downloadLyrics,
+        const result = await downloadSingleSong(song.id, resolveSingleSongConfig(cfg, {
           embedMetadata: true,
           embedCover: false,
-          saveAlbumCover: cfg.download.saveAlbumCover ?? false,
-          saveArtistImage: cfg.download.saveArtistImage ?? false,
-          lyricOrder: (cfg.other?.lyricOrder ?? 'original_first') as 'original_first' | 'translated_first',
-          downloadTranslatedLyric: cfg.other?.downloadTranslatedLyric ?? true,
-          downloadRomajiLyric: cfg.other?.downloadRomajiLyric ?? false,
           downloadMode: 'missing',
           audioPath,
-        })
+        }))
         // Distinguish actual writes from pure skips
         if (result.ops.tags === 'ok') metadataRepaired++
         if (result.ops.tags === 'ok' || result.ops.lyric === 'ok' || result.ops.cover === 'ok') {

@@ -62,7 +62,7 @@ function selectTab(key: string) {
 .page-tabs {
   display: flex;
   min-width: 0;
-  gap: 0.25rem;
+  gap: 0.2rem;
   overflow-x: auto;
   border-bottom: 1px solid var(--border-primary);
   scrollbar-width: none;
@@ -76,16 +76,16 @@ function selectTab(key: string) {
   position: relative;
   display: inline-flex;
   min-width: max-content;
-  min-height: 2.75rem;
+  min-height: 2.625rem;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  padding: 0 1rem;
+  padding: 0 0.9rem;
   border: 0;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   transition: color 150ms ease, background 150ms ease;
@@ -104,11 +104,12 @@ function selectTab(key: string) {
 
 .page-tabs__tab:hover:not(:disabled) {
   color: var(--text-primary);
-  background: linear-gradient(to top, var(--bg-hover), transparent 65%);
+  background: linear-gradient(to top, var(--bg-hover), transparent 72%);
 }
 
 .page-tabs__tab--active {
   color: var(--accent);
+  background: linear-gradient(to top, var(--accent-muted), transparent 72%);
 }
 
 .page-tabs__tab--active::after {
@@ -141,7 +142,7 @@ function selectTab(key: string) {
 
 @media (max-width: 767px) {
   .page-tabs__tab {
-    min-height: 2.75rem;
+    min-height: 2.625rem;
     padding: 0 0.85rem;
   }
 }

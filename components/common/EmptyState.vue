@@ -28,8 +28,15 @@ defineProps<{ title: string; description?: string }>()
 }
 
 .empty-state__icon {
-  margin-bottom: 1.5rem;
-  opacity: 0.3;
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  place-items: center;
+  margin-bottom: 1rem;
+  border: 1px dashed var(--border-secondary);
+  border-radius: 1.35rem;
+  background: var(--bg-input);
+  opacity: 0.55;
 }
 
 .empty-state__title {

@@ -1,5 +1,5 @@
 import { getDb } from '../db'
-import { normalizePlexPath } from './identity-store'
+import { normalizePlexPath } from './identity-normalization'
 
 export interface ExtraTrackObservationItem {
   identityKey: string

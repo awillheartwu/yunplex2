@@ -14,118 +14,28 @@
 
 import { getDb } from '../db'
 import { titleIdentityDescriptorsCompatible } from '../sync/matchers'
+import {
+  configureMusicBrainzTransport,
+  fetchMusicBrainzJson,
+  getMusicBrainzBreakerState,
+  musicBrainzTransportAvailable,
+} from './musicbrainz-transport'
+import { configureMusicBrainzArtist, resolveArtist } from './musicbrainz-artist'
+import type {
+  MusicBrainzRecordingAmbiguityReason,
+  MusicBrainzDurationEvidence,
+  MusicBrainzDurationResolutionOutcome,
+  MusicBrainzIdMappingResult,
+  MusicBrainzRecordingArtistInput,
+  MusicBrainzRecordingCandidate,
+  MusicBrainzRecordingQueryStrategy,
+  MusicBrainzRecordingResolutionOptions,
+  MusicBrainzRecordingResult,
+  MusicBrainzRecordingStatus,
+} from './musicbrainz-types'
 
-// ── Types ──
-
-export interface MusicBrainzArtistAlias {
-  name: string
-  locale?: string | null
-  primary?: boolean
-}
-
-export interface MusicBrainzResolveResult {
-  matchedName: string | null
-  score: number | null
-  aliases: MusicBrainzArtistAlias[]
-  disambiguation?: string | null
-}
-
-export type MusicBrainzRecordingStatus = 'success' | 'ambiguous' | 'empty' | 'failed'
-
-export type MusicBrainzRecordingQueryStrategy =
-  | 'title_artist_release'
-  | 'title_release'
-  | 'title_artist'
-  | 'title_only'
-
-export type MusicBrainzRecordingAmbiguityReason =
-  | 'insufficient_constraints'
-  | 'below_threshold'
-  | 'runner_up_too_close'
-  | 'identity_descriptor_mismatch'
-
-export interface MusicBrainzRecordingCandidate {
-  id: string
-  score: number
-  title: string
-  artist: string | null
-  /** MusicBrainz recording length. Null means MB did not publish one. */
-  lengthMs: number | null
-  /** Derived against the requested duration and persisted for auditability. */
-  durationDeltaMs?: number | null
-  /** False for identity-changing variants such as Instrumental/Live/Remix. */
-  titleDescriptorCompatible?: boolean
-}
-
-export interface MusicBrainzRecordingResolutionOptions {
-  durationMs?: number | null
-  durationToleranceMs?: number
-  minDurationSeparationMs?: number
-}
-
-export type MusicBrainzDurationResolutionOutcome =
-  | 'selected'
-  | 'missing_candidate_durations'
-  | 'outside_tolerance'
-  | 'duration_tie'
-  | 'runner_up_too_close'
-
-export interface MusicBrainzDurationEvidence {
-  targetMs: number
-  toleranceMs: number
-  minSeparationMs: number
-  selectedCandidateId: string | null
-  closestDeltaMs: number | null
-  runnerUpDeltaMs: number | null
-  separationMs: number | null
-  outcome: MusicBrainzDurationResolutionOutcome
-}
-
-export interface MusicBrainzRecordingResult {
-  id: string | null
-  score: number | null
-  title: string | null
-  artist: string | null
-  status: MusicBrainzRecordingStatus
-  candidates: MusicBrainzRecordingCandidate[]
-  runnerUpGap: number | null
-  queryStrategy: MusicBrainzRecordingQueryStrategy
-  attemptedStrategies: MusicBrainzRecordingQueryStrategy[]
-  ambiguityReason: MusicBrainzRecordingAmbiguityReason | null
-  failureReason: string | null
-  policy: { minScore: number; minRunnerUpGap: number }
-  cacheHit: boolean
-  /** Actual title variant used for the final query/classification. */
-  queryTitle?: string
-  /** Ordered title variants attempted, retained for review evidence. */
-  attemptedTitles?: string[]
-  /** Present when duration participated in resolving or preserving ambiguity. */
-  durationEvidence?: MusicBrainzDurationEvidence
-}
-
-export type MusicBrainzIdEntityType = 'recording' | 'release_track' | 'unknown'
-
-export interface MusicBrainzIdMappingResult {
-  inputId: string
-  recordingId: string | null
-  entityType: MusicBrainzIdEntityType
-  status: MusicBrainzRecordingStatus
-  candidateRecordingIds: string[]
-  failureReason: string | null
-  cacheHit: boolean
-}
-
-interface MbSearchArtist {
-  id: string
-  name: string
-  score: number
-  aliases?: Array<{
-    name: string
-    locale?: string | null
-    primary?: boolean
-  }>
-  disambiguation?: string
-}
+export type * from './musicbrainz-types'
+export { resolveArtist }
 
 interface MbSearchRecording {
   id: string
@@ -138,12 +48,8 @@ interface MbSearchRecording {
 // ── Config ──
 
 const MB_BASE = 'https://musicbrainz.org/ws/2'
-const USER_AGENT = 'YunPlex2/1.0 (music-sync; +https://github.com/awillheartwu/reYunPlex)'
-
 let minScore = 90
-let requestTimeoutMs = 2000
 let minRunnerUpGap = 5
-let recordingRequestIntervalMs = 1000
 
 export function configureMusicBrainz(opts: {
   minScore?: number
@@ -152,135 +58,13 @@ export function configureMusicBrainz(opts: {
   requestIntervalMs?: number
 }): void {
   if (opts.minScore !== undefined) minScore = opts.minScore
-  if (opts.requestTimeoutMs !== undefined) requestTimeoutMs = opts.requestTimeoutMs
   if (opts.minRunnerUpGap !== undefined) minRunnerUpGap = Math.max(0, opts.minRunnerUpGap)
-  if (opts.requestIntervalMs !== undefined) recordingRequestIntervalMs = Math.max(0, opts.requestIntervalMs)
+  configureMusicBrainzArtist(opts)
+  configureMusicBrainzTransport(opts)
 }
 
-// ── Circuit breaker ──
+export const getBreakerState = getMusicBrainzBreakerState
 
-type BreakerState = 'closed' | 'open' | 'half-open'
-
-interface Breaker {
-  state: BreakerState
-  consecutiveFailures: number
-  openedAt: number | null
-}
-
-const breaker: Breaker = { state: 'closed', consecutiveFailures: 0, openedAt: null }
-const FAILURE_THRESHOLD = 5
-const OPEN_DURATION_MS = 10 * 60 * 1000 // 10 min
-
-function breakerAllows(): boolean {
-  if (breaker.state === 'closed') return true
-  if (breaker.state === 'open' && breaker.openedAt) {
-    if (Date.now() - breaker.openedAt >= OPEN_DURATION_MS) {
-      breaker.state = 'half-open'
-      return true // allow 1 probe
-    }
-    return false
-  }
-  if (breaker.state === 'half-open') return true
-  return true
-}
-
-function breakerSuccess() {
-  breaker.consecutiveFailures = 0
-  breaker.state = 'closed'
-  breaker.openedAt = null
-}
-
-function breakerFailure() {
-  breaker.consecutiveFailures++
-  if (breaker.consecutiveFailures >= FAILURE_THRESHOLD) {
-    breaker.state = 'open'
-    breaker.openedAt = Date.now()
-  }
-}
-
-export function getBreakerState(): BreakerState { return breaker.state }
-
-// ── API ──
-
-/**
- * Search MusicBrainz for an artist and return useful English aliases.
- * Returns null when MB is unavailable or no quality match is found.
- */
-export async function resolveArtist(artistName: string): Promise<MusicBrainzResolveResult | null> {
-  if (!breakerAllows()) return null
-
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await waitForMusicBrainzRateLimit()
-    const controller = new AbortController()
-    timer = setTimeout(() => controller.abort(), requestTimeoutMs)
-
-    const url = `${MB_BASE}/artist/?query=artist:${encodeURIComponent(artistName)}&fmt=json&limit=3`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      if (res.status === 429 || res.status >= 500) breakerFailure()
-      return null
-    }
-
-    const data = (await res.json()) as { artists?: MbSearchArtist[] }
-    const artists = data.artists ?? []
-    if (artists.length === 0) {
-      breakerSuccess()
-      return { matchedName: null, score: null, aliases: [] }
-    }
-
-    const top = artists[0]!
-    if (top.score < minScore) {
-      breakerSuccess()
-      return { matchedName: null, score: null, aliases: [] }
-    }
-
-    // Build alias list: filter, deduplicate
-    const seen = new Set<string>()
-    seen.add(normalizeAliasKey(artistName))
-
-    const aliases: MusicBrainzArtistAlias[] = []
-
-    // Add the matched name itself if it differs from input
-    if (normalizeAliasKey(top.name) !== normalizeAliasKey(artistName)) {
-      aliases.push({ name: top.name, locale: null, primary: false })
-      seen.add(normalizeAliasKey(top.name))
-    }
-
-    // Add aliases from the search result, preferring en/non-locale Latin
-    for (const al of top.aliases ?? []) {
-      const key = normalizeAliasKey(al.name)
-      if (seen.has(key)) continue
-      if (key === normalizeAliasKey(artistName)) continue
-
-      // Accept: en locale, or Latin-script with no locale, or primary=true
-      const isLatin = /^[a-zA-Z\s'\-."!&/,()]+$/.test(al.name.trim())
-      const accept = al.locale === 'en' || (isLatin && !al.locale) || al.primary
-      if (!accept) continue
-
-      seen.add(key)
-      aliases.push({ name: al.name.trim(), locale: al.locale ?? null, primary: al.primary ?? false })
-    }
-
-    breakerSuccess()
-    return {
-      matchedName: top.name,
-      score: top.score,
-      aliases,
-      disambiguation: top.disambiguation,
-    }
-  } catch {
-    breakerFailure()
-    return null
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
-export type MusicBrainzRecordingArtistInput = string | readonly string[]
 type RecordingCacheStatus = MusicBrainzRecordingStatus | 'disabled'
 
 interface RecordingCacheRow {
@@ -562,14 +346,6 @@ function putCachedRecording(key: string, result: MusicBrainzRecordingResult): vo
   }
 }
 
-let nextMusicBrainzRequestAt = 0
-async function waitForMusicBrainzRateLimit(): Promise<void> {
-  const now = Date.now()
-  const delay = Math.max(0, nextMusicBrainzRequestAt - now)
-  nextMusicBrainzRequestAt = Math.max(nextMusicBrainzRequestAt, now) + recordingRequestIntervalMs
-  if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay))
-}
-
 function getCachedIdMapping(inputId: string): MusicBrainzIdMappingResult | null {
   try {
     const row = getDb().prepare(`
@@ -623,34 +399,6 @@ function idMappingResult(
   return { inputId, ...partial, cacheHit: false }
 }
 
-async function fetchMusicBrainzJson(url: string): Promise<
-  | { ok: true; status: number; body: unknown }
-  | { ok: false; status: number | null; reason: string }
-> {
-  await waitForMusicBrainzRateLimit()
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
-  try {
-    const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: controller.signal })
-    if (!response.ok) {
-      if (response.status === 404) return { ok: false, status: 404, reason: 'not_found' }
-      if (response.status === 429 || response.status >= 500) breakerFailure()
-      return { ok: false, status: response.status, reason: `http_${response.status}` }
-    }
-    breakerSuccess()
-    return { ok: true, status: response.status, body: await response.json() }
-  } catch (error) {
-    breakerFailure()
-    return {
-      ok: false,
-      status: null,
-      reason: error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'network_error',
-    }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 const inFlightIdMappings = new Map<string, Promise<MusicBrainzIdMappingResult>>()
 
 async function resolveUncachedMusicBrainzId(inputId: string): Promise<MusicBrainzIdMappingResult> {
@@ -659,7 +407,7 @@ async function resolveUncachedMusicBrainzId(inputId: string): Promise<MusicBrain
       recordingId: null, entityType: 'unknown', status: 'empty', candidateRecordingIds: [], failureReason: 'invalid_mbid',
     })
   }
-  if (!breakerAllows()) {
+  if (!musicBrainzTransportAvailable()) {
     return idMappingResult(inputId, {
       recordingId: null, entityType: 'unknown', status: 'failed', candidateRecordingIds: [], failureReason: 'circuit_open',
     })
@@ -667,7 +415,9 @@ async function resolveUncachedMusicBrainzId(inputId: string): Promise<MusicBrain
 
   const direct = await fetchMusicBrainzJson(`${MB_BASE}/recording/${inputId}?fmt=json`)
   if (direct.ok) {
-    const body = direct.body as { id?: unknown }
+    const body = direct.body && typeof direct.body === 'object'
+      ? direct.body as { id?: unknown }
+      : {}
     const recordingId = typeof body.id === 'string' && MUSICBRAINZ_UUID_PATTERN.test(body.id)
       ? body.id.toLowerCase()
       : inputId
@@ -689,7 +439,9 @@ async function resolveUncachedMusicBrainzId(inputId: string): Promise<MusicBrain
       recordingId: null, entityType: 'unknown', status: 'failed', candidateRecordingIds: [], failureReason: search.reason,
     })
   }
-  const payload = search.body as { recordings?: Array<{ id?: unknown }> }
+  const payload = search.body && typeof search.body === 'object'
+    ? search.body as { recordings?: Array<{ id?: unknown }> }
+    : {}
   const candidateRecordingIds = [...new Set((payload.recordings ?? [])
     .map(recording => typeof recording.id === 'string' ? recording.id.toLowerCase() : '')
     .filter(id => MUSICBRAINZ_UUID_PATTERN.test(id)))]
@@ -773,28 +525,15 @@ function toRecordingCandidates(recordings: readonly MbSearchRecording[]): MusicB
 }
 
 async function searchRecordings(query: string): Promise<RecordingSearchSuccess | RecordingSearchFailure> {
-  await waitForMusicBrainzRateLimit()
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
-  try {
-    const url = `${MB_BASE}/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=${MAX_RECORDING_CANDIDATES}`
-    const response = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: controller.signal,
-    })
-    if (!response.ok) {
-      if (response.status === 429 || response.status >= 500) breakerFailure()
-      return { ok: false, reason: `http_${response.status}` }
-    }
-    const payload = await response.json() as { recordings?: MbSearchRecording[] }
-    breakerSuccess()
-    return { ok: true, candidates: toRecordingCandidates(Array.isArray(payload.recordings) ? payload.recordings : []) }
-  } catch (error) {
-    breakerFailure()
-    const reason = error instanceof Error && error.name === 'AbortError' ? 'timeout' : 'network_error'
-    return { ok: false, reason }
-  } finally {
-    clearTimeout(timer)
+  const url = `${MB_BASE}/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=${MAX_RECORDING_CANDIDATES}`
+  const response = await fetchMusicBrainzJson(url)
+  if (!response.ok) return { ok: false, reason: response.reason }
+  const payload = response.body && typeof response.body === 'object'
+    ? response.body as { recordings?: MbSearchRecording[] }
+    : {}
+  return {
+    ok: true,
+    candidates: toRecordingCandidates(Array.isArray(payload.recordings) ? payload.recordings : []),
   }
 }
 
@@ -936,7 +675,7 @@ function failedRecordingResult(
  * strict result falls back to title + artist. Any uncertainty returns a null
  * ID plus persisted evidence, so callers can never auto-bind it.
  */
-export async function resolveRecording(
+async function resolveRecordingInternal(
   title: string,
   artist: MusicBrainzRecordingArtistInput,
   album = '',
@@ -951,7 +690,7 @@ export async function resolveRecording(
   const cached = getCachedRecording(key, initialStrategy, titleVariants[0] ?? title, options)
   if (cached) return cached
 
-  if (!breakerAllows()) {
+  if (!musicBrainzTransportAvailable()) {
     const result = failedRecordingResult(initialStrategy, [], 'circuit_open')
     putCachedRecording(key, result)
     return result
@@ -1029,6 +768,27 @@ export async function resolveRecording(
   return result
 }
 
-function normalizeAliasKey(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, '').trim()
+const inFlightRecordingResolutions = new Map<string, Promise<MusicBrainzRecordingResult | null>>()
+
+export function resolveRecording(
+  title: string,
+  artist: MusicBrainzRecordingArtistInput,
+  album = '',
+  resolutionOptions?: MusicBrainzRecordingResolutionOptions,
+): Promise<MusicBrainzRecordingResult | null> {
+  const artists = normalizeRecordingArtists(artist)
+  const options = normalizeRecordingResolutionOptions(resolutionOptions)
+  const key = recordingKey(
+    recordingTitleVariants(title).join('\u001d'),
+    artists,
+    usableRecordingAlbum(album),
+    options,
+  )
+  const existing = inFlightRecordingResolutions.get(key)
+  if (existing) return existing
+
+  const request = resolveRecordingInternal(title, artists, album, resolutionOptions)
+    .finally(() => inFlightRecordingResolutions.delete(key))
+  inFlightRecordingResolutions.set(key, request)
+  return request
 }

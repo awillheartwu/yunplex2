@@ -23,6 +23,7 @@ describe('playlist source row mapping', () => {
       track_count: 12,
       last_track_update_time: null,
       force_full_compare: 0,
+      download_when_media_missing: null,
       consecutive_skips: 0,
       full_compare_after_skips: null,
       full_compare_after_days: null,
@@ -45,6 +46,9 @@ describe('playlist source row mapping', () => {
       updated_at: '2026-06-12T00:00:00.000Z',
     }
 
-    expect(rowToSource(row).coverUrl).toBe('https://example.com/cover.jpg')
+    expect(rowToSource(row)).toMatchObject({
+      coverUrl: 'https://example.com/cover.jpg',
+      downloadWhenMediaMissing: null,
+    })
   })
 })

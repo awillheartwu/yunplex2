@@ -79,6 +79,34 @@ describe('responsive layout sizing', () => {
     }
   })
 
+  it('uses remaining viewport space without clipping enlarged dashboard text', () => {
+    const globals = readProjectFile('assets/css/main.css')
+    const dashboard = readProjectFile('pages/index.vue')
+    const layout = readProjectFile('layouts/default.vue')
+
+    expect(globals).toContain('--font-scale: 1')
+    expect(globals).toContain('--app-content-max-width: 160rem')
+    expect(globals).toContain('--dashboard-content-max-width: 220rem')
+    expect(layout).toContain('app-page-frame--dashboard')
+    expect(dashboard).toContain('min-block-size: calc(100dvh - var(--app-topbar-block-size) - 2.5rem)')
+    expect(dashboard).toContain('grid-template-rows: minmax(16rem, 1fr) minmax(18rem, 1.12fr) auto')
+    expect(dashboard).toContain('@media (max-width: 1535px)')
+    expect(dashboard).toContain('min-block-size: 0')
+  })
+
+  it('keeps review and run lists dense across wide and compact layouts', () => {
+    const reviews = readProjectFile('components/match-management/ReviewQueueTab.vue')
+    const runCard = readProjectFile('components/task-center/RunCard.vue')
+
+    expect(reviews).toContain('.match-reviews-page { width: 100%; min-width: 0; }')
+    expect(reviews).not.toContain('.match-reviews-page { max-width: 1180px')
+    expect(runCard).toContain('run-card__source-column')
+    expect(runCard).toContain('run-card__column-label')
+    expect(runCard).toContain('grid-template-columns:auto minmax(17rem,1.15fr) minmax(24rem,1.5fr)')
+    expect(runCard).toContain('@media(max-width:1280px)')
+    expect(runCard).toContain('@media(max-width:720px)')
+  })
+
   it('keeps shared empty and form controls accessible without fixed padding hacks', () => {
     const emptyState = readProjectFile('components/common/EmptyState.vue')
     const dateRange = readProjectFile('components/common/DateRange.vue')
@@ -117,6 +145,7 @@ describe('responsive layout sizing', () => {
 
   it('keeps mobile filters and source cards production-friendly', () => {
     const configPage = readProjectFile('pages/config.vue')
+    const configCss = readProjectFile('assets/css/pages/config.css')
     const syncPage = readProjectFile('components/sources/SyncSourcesPage.vue')
     const syncComposable = readProjectFile('composables/useSyncSourcesPage.ts')
     const syncTableCss = readProjectFile('assets/css/pages/sync-sources-table.css')
@@ -130,8 +159,9 @@ describe('responsive layout sizing', () => {
     expect(mobileSourceListStart).toBeGreaterThan(-1)
     expect(mobileSourceListEnd).toBeGreaterThan(mobileSourceListStart)
     expect(configPage).toContain('config-header-actions')
-    expect(configPage).toContain('.config-header-actions__primary > .btn')
-    expect(configPage).toContain('justify-content: center')
+    expect(configPage).toContain('scoped src="~/assets/css/pages/config.css"')
+    expect(configCss).toContain('.config-header-actions__primary > .btn')
+    expect(configCss).toContain('justify-content: center')
     expect(syncPage).toContain('statusFilterOptions')
     expect(syncComposable).toMatch(/statusFilterOptions[,\s]+subscribedFilter/)
     expect(syncTableCss).toContain('width: 100%')
