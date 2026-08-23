@@ -402,25 +402,3 @@ export function recoverInterruptedRuns(): number {
   }
   return changed
 }
-
-export function cleanupOldRuns(successDays: number, failedDays: number): number {
-  const db = getDb()
-  const success = db.prepare(
-    "DELETE FROM task_runs WHERE status IN ('success','cancelled') AND started_at < datetime('now', ?)",
-  ).run(`-${successDays} days`)
-  const failed = db.prepare(
-    "DELETE FROM task_runs WHERE status IN ('failed','partial') AND started_at < datetime('now', ?)",
-  ).run(`-${failedDays} days`)
-  return success.changes + failed.changes
-}
-
-export function cleanupOldSyncRuns(successDays: number, failedDays: number): number {
-  const db = getDb()
-  const success = db.prepare(
-    "DELETE FROM task_runs WHERE type IN ('sync','repair') AND status IN ('success','cancelled') AND started_at < datetime('now', ?)",
-  ).run(`-${successDays} days`)
-  const failed = db.prepare(
-    "DELETE FROM task_runs WHERE type IN ('sync','repair') AND status IN ('failed','partial') AND started_at < datetime('now', ?)",
-  ).run(`-${failedDays} days`)
-  return success.changes + failed.changes
-}

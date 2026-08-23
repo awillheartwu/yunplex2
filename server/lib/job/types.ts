@@ -114,6 +114,8 @@ export interface SyncJob {
   removedSongs: number
   warnings: number
   dryRun: boolean
+  /** Full step and song detail was compacted after the diagnostic retention window. */
+  detailsExpired?: boolean
   steps: JobStep[]
   songs: SongTask[]
   config: {

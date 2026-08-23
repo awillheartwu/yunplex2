@@ -6,8 +6,14 @@ import { setSyncService, setSyncWorker } from '../lib/sync/instance'
 import { recoverInterruptedRuns } from '../lib/run/store'
 import { backfillFailureRecords } from '../lib/tasks/failure-records'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
+import { appendLog } from '../lib/log/store'
+import {
+  dataLifecycleChangeCount,
+  runDataLifecycleMaintenance,
+} from '../lib/maintenance/data-lifecycle'
 
 const DOWNLOAD_LEASE_SWEEP_INTERVAL_MS = 60 * 1000
+const DATA_LIFECYCLE_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig()
@@ -17,6 +23,24 @@ export default defineNitroPlugin((nitroApp) => {
   initDb(dataDir)
   recoverInterruptedRuns()
   backfillFailureRecords()
+
+  const maintainDataLifecycle = () => {
+    try {
+      const appConfig = readConfig()
+      const result = runDataLifecycleMaintenance(appConfig.sync)
+      const changed = dataLifecycleChangeCount(result)
+      if (changed > 0) {
+        appendLog(dataDir, {
+          level: 'info',
+          message: `自动维护完成：压缩 ${result.compactedRuns} 条运行详情，清理 ${result.deletedRuns} 条运行、${result.deletedDownloadTasks} 条下载明细和 ${result.deletedResolvedFailures} 条已解决异常`,
+          stage: 'maintenance',
+        }, appConfig.sync.logRetentionDays)
+      }
+    } catch (error) {
+      console.error('[data-lifecycle] automatic maintenance failed', error)
+    }
+  }
+  maintainDataLifecycle()
 
   const svc = getSyncService(dataDir, () => readConfig())
   setSyncService(svc)
@@ -32,7 +56,10 @@ export default defineNitroPlugin((nitroApp) => {
     recoverExpiredDownloadTasks()
   }, DOWNLOAD_LEASE_SWEEP_INTERVAL_MS)
   leaseSweep.unref()
+  const lifecycleSweep = setInterval(maintainDataLifecycle, DATA_LIFECYCLE_INTERVAL_MS)
+  lifecycleSweep.unref()
   nitroApp.hooks.hookOnce('close', () => {
     clearInterval(leaseSweep)
+    clearInterval(lifecycleSweep)
   })
 })

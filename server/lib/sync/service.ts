@@ -4,13 +4,12 @@ import { appendLog } from '../log/store'
 import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache, setArtistAliases } from '../netease'
 import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
-import { cleanupOldRuns, saveSyncRun } from '../run/store'
+import { saveSyncRun } from '../run/store'
 import type { SongStatus } from '../job/types'
 import {
   getEnabledSources, listSources,
   recordSourceComparison, recordSourceObservation, updateSource,
 } from '../playlist/store'
-import { cleanupOldDownloadTasks } from '../download/queue'
 import { emitEvent } from './events'
 import { reconcileSource } from './plex-reconciler'
 import { createSplitArtists, joinArtist } from './artist-utils'
@@ -82,18 +81,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
     try {
       const cfg = getConfig()
-      const cleanedRuns = dryRun
-        ? 0
-        : cleanupOldRuns(cfg.sync.jobRetentionSuccessDays ?? 7, cfg.sync.jobRetentionFailedDays ?? 90)
-      const cleanedTasks = dryRun
-        ? 0
-        : cleanupOldDownloadTasks(cfg.sync.downloadTaskRetentionDays ?? 30)
-      if (cleanedRuns > 0 || cleanedTasks > 0) {
-        const parts: string[] = []
-        if (cleanedRuns > 0) parts.push(`${cleanedRuns} 条旧运行`)
-        if (cleanedTasks > 0) parts.push(`${cleanedTasks} 条下载队列`)
-        log('info', `清理过期数据: ${parts.join('、')}`)
-      }
       const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
       setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
       const splitArtists = createSplitArtists(multiFormat)

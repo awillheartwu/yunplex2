@@ -129,6 +129,11 @@ export function retireActivityEvents(d: Database.Database): void {
   d.prepare('DROP TABLE IF EXISTS activity_events').run()
 }
 
+/** Runtime sync state lives in the sync service and is exposed through SSE. */
+export function retireSyncState(d: Database.Database): void {
+  d.prepare('DROP TABLE IF EXISTS sync_state').run()
+}
+
 /** Expand the historical recording-cache CHECK without dropping cached data. */
 export function ensureMusicBrainzRecordingCacheStatuses(d: Database.Database): void {
   if (!tableExists(d, 'musicbrainz_recording_cache')) return
@@ -755,7 +760,7 @@ const MIGRATIONS = createHistoricalMigrations({
   ensurePlaylistExtraObservationTable, ensurePlaylistSourceSyncCursorColumns,
   ensureSongIdentityBindingMethods, ensureSongIdentityReviewSchema, ensureTaskRunSources,
   migrateLegacyJobsToTaskRunsAndDrop, repairArtistResolutionCache,
-  retireActivityEvents, retireWeakMetadataBindingsAndLookupCache,
+  retireActivityEvents, retireSyncState, retireWeakMetadataBindingsAndLookupCache,
 })
 
 export function runMigrations(d: Database.Database): void {
@@ -783,6 +788,7 @@ export function runMigrations(d: Database.Database): void {
   ensureNullableSourceSyncOverrides(d)
   ensureDownloadWhenMediaMissingOverride(d)
   retireActivityEvents(d)
+  retireSyncState(d)
   retireWeakMetadataBindingsAndLookupCache(d)
   retireComplexMatchingData(d)
 }

@@ -44,24 +44,6 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
 
-    CREATE TABLE IF NOT EXISTS sync_state (
-      id               INTEGER PRIMARY KEY CHECK(id = 1),
-      is_running       INTEGER NOT NULL DEFAULT 0,
-      current_stage    TEXT,
-      started_at       TEXT,
-      last_sync_at     TEXT,
-      last_sync_result TEXT,
-      sync_count       INTEGER NOT NULL DEFAULT 0,
-      success_count    INTEGER NOT NULL DEFAULT 0,
-      failure_count    INTEGER NOT NULL DEFAULT 0,
-      current_song     TEXT,
-      progress_current INTEGER,
-      progress_total   INTEGER,
-      dry_run          INTEGER NOT NULL DEFAULT 0
-    );
-
-    INSERT OR IGNORE INTO sync_state (id) VALUES (1);
-
     CREATE TABLE IF NOT EXISTS task_runs (
       id             TEXT PRIMARY KEY,
       type           TEXT NOT NULL,

@@ -616,12 +616,3 @@ export async function retryTask(
 
   return getDownloadTask(id)
 }
-
-export function cleanupOldDownloadTasks(retentionDays: number): number {
-  if (!retentionDays || retentionDays <= 0) return 0
-  const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString()
-  const result = getDb().prepare(
-    "DELETE FROM download_tasks WHERE status IN ('done','failed') AND updated_at < ?",
-  ).run(cutoff)
-  return result.changes
-}

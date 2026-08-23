@@ -1,5 +1,5 @@
 import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
-import { useDebounceFn, useIntervalFn } from '~~/composables/useTiming'
+import { useIntervalFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
 import { buildSystemDataTableRows } from '~~/lib/system-data-catalog'
 
@@ -27,12 +27,6 @@ export interface SystemInfo {
   platform?: string
   nodeVersion?: string
   docker?: boolean | string
-}
-
-export interface RunCleanupPreview {
-  runCount: number
-  downloadTaskCount: number
-  linkedFailureCount: number
 }
 
 export interface SystemKpiCard {
@@ -145,12 +139,6 @@ function formatUptime(seconds: number): string {
   return `${Math.floor(seconds)}s`
 }
 
-function cleanupPreviewSummary(preview: RunCleanupPreview | null): string {
-  if (!preview) return '选择日期范围后会预估影响范围'
-  if (preview.runCount === 0) return '没有符合条件的运行记录'
-  return `预计清理 ${preview.runCount} 条运行、${preview.downloadTaskCount} 条已完成/失败下载明细；${preview.linkedFailureCount} 条异常记录会保留但可能失去运行详情链接。`
-}
-
 async function writeClipboard(text: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -187,17 +175,6 @@ export function useSystemPage() {
   const healthRefreshing = ref(false)
   const cpuHistory = ref<{ time: string; value: number }[]>([])
   const memHistory = ref<{ time: string; value: number }[]>([])
-
-  const cleanupFrom = ref('')
-  const cleanupTo = ref('')
-  const cleanupType = ref('')
-  const cleanupStatus = ref('')
-  const cleanupLoading = ref(false)
-  const cleanupMessage = ref('')
-  const cleanupPreview = ref<RunCleanupPreview | null>(null)
-  const cleanupPreviewLoading = ref(false)
-  const cleanupPreviewError = ref('')
-  const showRunCleanupConfirm = ref(false)
 
   const tableRows = computed(() => buildSystemDataTableRows(stats.value?.dbStats || {}))
 
@@ -290,14 +267,6 @@ export function useSystemPage() {
     return 'ok'
   })
 
-  const cleanupPreviewMessage = computed(() => cleanupPreviewSummary(cleanupPreview.value))
-  const canCleanup = computed(() => Boolean((cleanupFrom.value || cleanupTo.value) && cleanupPreview.value && cleanupPreview.value.runCount > 0 && !cleanupPreviewLoading.value && !cleanupLoading.value))
-  const cleanupConfirmMessage = computed(() => {
-    const preview = cleanupPreview.value
-    if (!preview) return '将删除符合条件的运行详情及已完成下载明细。此操作不可撤销。'
-    return `将删除 ${preview.runCount} 条运行详情和 ${preview.downloadTaskCount} 条已完成/失败下载明细。${preview.linkedFailureCount} 条异常记录会保留，但可能失去原运行详情链接。此操作不可撤销。`
-  })
-
   function switchSystemTab(tab: string) {
     if (tab !== 'monitor' && tab !== 'logs' && tab !== 'runs') return
     activeTab.value = tab
@@ -327,53 +296,6 @@ export function useSystemPage() {
       feedback.error('健康检查失败', error instanceof Error ? error.message : '请稍后重试')
     } finally {
       healthRefreshing.value = false
-    }
-  }
-
-  async function fetchCleanupPreview() {
-    cleanupPreview.value = null
-    cleanupPreviewError.value = ''
-    if (!cleanupFrom.value && !cleanupTo.value) return
-    cleanupPreviewLoading.value = true
-    try {
-      cleanupPreview.value = await api.post<RunCleanupPreview>('/runs/cleanup/preview', {
-        from: cleanupFrom.value || undefined,
-        to: cleanupTo.value || undefined,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        type: cleanupType.value || undefined,
-        status: cleanupStatus.value || undefined,
-      })
-    } catch (error) {
-      cleanupPreviewError.value = error instanceof Error ? error.message : '预估失败，请稍后重试'
-    } finally {
-      cleanupPreviewLoading.value = false
-    }
-  }
-
-  const previewDebounce = useDebounceFn(fetchCleanupPreview, 250)
-  watch([cleanupFrom, cleanupTo, cleanupType, cleanupStatus], () => previewDebounce.run())
-
-  async function handleRunCleanup() {
-    showRunCleanupConfirm.value = false
-    cleanupLoading.value = true
-    cleanupMessage.value = ''
-    try {
-      const response = await api.rawPost<RunCleanupPreview & { count: number }>('/runs/cleanup', {
-        from: cleanupFrom.value || undefined,
-        to: cleanupTo.value || undefined,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        type: cleanupType.value || undefined,
-        status: cleanupStatus.value || undefined,
-      })
-      if (response.code !== 0) throw new Error(response.msg || '清理失败')
-      cleanupMessage.value = response.msg || `已清理 ${response.data?.count || 0} 条记录`
-      await Promise.all([fetchStats(), fetchCleanupPreview()])
-      feedback.success('清理完成', cleanupMessage.value)
-    } catch (error) {
-      cleanupMessage.value = error instanceof Error ? error.message : '清理失败，请稍后重试'
-      feedback.error('清理失败', cleanupMessage.value)
-    } finally {
-      cleanupLoading.value = false
     }
   }
 
@@ -422,27 +344,13 @@ export function useSystemPage() {
 
   return {
     activeTab,
-    canCleanup,
-    cleanupFrom,
-    cleanupConfirmMessage,
-    cleanupLoading,
-    cleanupMessage,
-    cleanupPreview,
-    cleanupPreviewError,
-    cleanupPreviewLoading,
-    cleanupPreviewMessage,
-    cleanupStatus,
-    cleanupTo,
-    cleanupType,
     copyDiagnostics,
     cpuChartOption,
     dependencyCheckedLabel,
-    fetchCleanupPreview,
     fetchStats,
     formatDateTime,
     formatTime,
     formatUptime,
-    handleRunCleanup,
     healthItems,
     healthRefreshing,
     info,
@@ -451,7 +359,6 @@ export function useSystemPage() {
     memChartOption,
     overallTone,
     refreshDependencyHealth,
-    showRunCleanupConfirm,
     stats,
     switchSystemTab,
     tableRows,
