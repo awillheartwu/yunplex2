@@ -114,7 +114,8 @@ export function queryMatchOverviewReadModel(filters: {
     ? db.prepare(`
         SELECT binding.*
         FROM song_identity_bindings binding
-        WHERE NOT EXISTS (
+        WHERE binding.status != 'unbound'
+          AND NOT EXISTS (
           SELECT 1 FROM playlist_source_track_occurrences occurrence
           WHERE occurrence.netease_song_id = binding.netease_song_id
             AND occurrence.membership_status = 'current'

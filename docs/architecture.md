@@ -26,10 +26,10 @@ Nitro 单进程服务
 |---|---|---|
 | 初始化与认证 | `pages/setup.vue`、`pages/login.vue`、`middleware/` | 初始管理员、连接配置、会话保护 |
 | 仪表盘 | `pages/index.vue`、`components/dashboard/` | 运行状态、KPI、来源健康和近期 Plex 变更 |
-| 来源管理 | `pages/sync-sources.vue`、`components/sources/`、`composables/useSyncSourcesPage.ts` | 歌单/专辑来源、过滤、批量操作、来源级策略 |
+| 来源管理 | `pages/sync-sources.vue`、`components/sources/`、`composables/useSyncSourcesPage.ts` | 歌单/专辑来源、过滤、批量操作、来源级策略、歌曲与媒体接管 |
 | 手动下载 | `pages/manual-download.vue`、`components/manual-download/` | 解析歌单/专辑/歌曲、勾选并创建下载任务 |
 | 任务中心 | `pages/task-center/`、`components/task-center/`、`components/jobs/` | 当前工作、实时进度、下载队列和异常处理 |
-| 媒体复用 | `pages/match-reviews.vue`、`components/match-management/` | 托管路径关联、外部媒体接管和验证 |
+| 高级媒体关联 | `pages/match-reviews.vue`、`components/sources/SourceMediaDetails.vue` | 仅发现和清理未被当前来源引用的孤立关联，不是一级入口 |
 | 系统与运行 | `pages/system.vue`、`components/system/` | 系统监控、诊断日志、运行记录、数据统计和维护动作 |
 
 `composables/sse.ts` 是浏览器端共享 SSE 连接。下载队列和同步状态采用 SSE 优先、必要时轮询回退；订阅者离开页面时必须释放 listener、timer 和引用。
@@ -62,7 +62,7 @@ Nitro 单进程服务
   -> source-plex-reconciliation.ts
        身份版本校验 -> 应用本轮 binding -> Plex mutation -> read-back
   -> source-finalization.ts
-       来源游标、失败记忆和 task run
+       来源游标、当前异常投影和 task run
 ```
 
 `service.ts` 是唯一编排入口。API handler、补全动作或未来 worker 不应自行拼接“查找—下载—扫描—重排”第二条链路。
@@ -83,7 +83,7 @@ pages/manual-download.vue
 ### 媒体接管
 
 ```text
-媒体复用页搜索 Plex
+同步源歌曲上下文搜索 Plex
   -> 用户选择一个具体 Plex 媒体
   -> song_identity_bindings(manual)
   -> 受影响来源标记为待对齐

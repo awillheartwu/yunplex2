@@ -189,7 +189,7 @@
     </div>
 
     <section v-else ref="tableShellRef" class="section-card sync-table-shell overflow-hidden">
-      <div class="hidden md:block overflow-x-auto">
+      <div ref="desktopTableScrollRef" class="hidden md:block overflow-x-auto">
         <table
           class="sync-table"
           :class="[
@@ -399,7 +399,7 @@
                       @full-sync="syncSource(s, true); moreMenuId = null"
                       @rebuild="openRebuildConfirm(s); moreMenuId = null"
                       @redownload="openRedownloadConfirm(s); moreMenuId = null"
-                      @toggle-songs="toggleExpand(s.id); moreMenuId = null"
+                      @toggle-songs="toggleSourceMedia(s.id); moreMenuId = null"
                       @repair="repairSource(s); moreMenuId = null"
                       @delete="confirmDelete = s; moreMenuId = null"
                     />
@@ -409,7 +409,7 @@
               <tr v-if="expandedId === s.id" class="sync-table__expanded-row">
                 <td colspan="7">
                   <div class="sync-expanded-panel">
-                    <SourceSongDetails :songs="expandedSongs" :loading="expandedLoading" />
+                    <SourceMediaDetails v-if="!compactViewport" :source-id="s.id" @changed="refreshSources" />
                   </div>
                 </td>
               </tr>
@@ -531,7 +531,7 @@
             </button>
             <button class="btn btn-secondary btn-xs sync-mobile-card__secondary-action" type="button" @click="toggleExpand(s.id)">
               <AppIcon name="chevronRight" :size="14" class="transition-transform" :class="expandedId === s.id ? 'rotate-90' : ''" />
-              歌曲
+              媒体与歌曲
             </button>
             <button class="btn btn-secondary btn-xs sync-mobile-card__secondary-action" type="button" @click="openEdit(s)">
               <AppIcon name="edit" :size="14" />
@@ -554,7 +554,7 @@
           </div>
 
           <div v-if="expandedId === s.id" class="sync-expanded-panel sync-expanded-panel--mobile">
-            <SourceSongDetails :songs="expandedSongs" :loading="expandedLoading" mobile />
+            <SourceMediaDetails v-if="compactViewport" :source-id="s.id" mobile @changed="refreshSources" />
           </div>
         </article>
       </div>
@@ -707,7 +707,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import AddPlaylistDialog from '~/components/sources/AddPlaylistDialog.vue'
 import EditSourceDialog from '~/components/sources/EditSourceDialog.vue'
 import SourceOverflowActions from '~/components/sources/SourceOverflowActions.vue'
-import SourceSongDetails from '~/components/sources/SourceSongDetails.vue'
+import SourceMediaDetails from '~/components/sources/SourceMediaDetails.vue'
 import SourceSummaryContent from '~/components/sources/SourceSummaryContent.vue'
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import { useSyncSourcesPage } from '~~/composables/useSyncSourcesPage'
@@ -717,7 +717,7 @@ const {
   advancedFilterCount, advancedFilterLabel, allSources, allVisibleSelected, applyDraftFilters, batchDeleting, batchLoading, batchToggling,
   canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload,
   clearHoverHideTimer, desktopActionDensity, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget,
-  enabledCount, expandedId, expandedLoading, expandedSongs, filteredSources, filterType, forceFullId, formatRelative,
+  enabledCount, expandedId, filteredSources, filterType, forceFullId, formatRelative,
   handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
   onAlbumCreated, onDragEnd, onDragLeave, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved,
   onSourceSearchInput, onSourceTabChange, openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, plexTargetHint, plexTargetName,
@@ -731,6 +731,20 @@ const {
 } = useSyncSourcesPage()
 
 const mobilePreviewSource = ref<PlaylistSource | null>(null)
+const compactViewport = ref(false)
+const desktopTableScrollRef = ref<HTMLElement | null>(null)
+let compactViewportQuery: MediaQueryList | null = null
+
+function updateCompactViewport() {
+  compactViewport.value = compactViewportQuery?.matches ?? false
+}
+
+function toggleSourceMedia(sourceId: string) {
+  toggleExpand(sourceId)
+  nextTick(() => {
+    if (desktopTableScrollRef.value) desktopTableScrollRef.value.scrollLeft = 0
+  })
+}
 
 function openMobileSourcePreview(source: PlaylistSource) {
   clearHoverHideTimer()
@@ -758,10 +772,14 @@ function closeMobilePreviewOnEscape(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  compactViewportQuery = window.matchMedia('(max-width: 767px)')
+  updateCompactViewport()
+  compactViewportQuery.addEventListener('change', updateCompactViewport)
   window.addEventListener('keydown', closeMobilePreviewOnEscape)
 })
 
 onBeforeUnmount(() => {
+  compactViewportQuery?.removeEventListener('change', updateCompactViewport)
   window.removeEventListener('keydown', closeMobilePreviewOnEscape)
 })
 </script>

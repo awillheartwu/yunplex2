@@ -102,7 +102,7 @@ async function handleLogout() {
 const titles: Record<string, string> = {
   '/': '仪表盘',
   '/sync-sources': '同步源',
-  '/match-reviews': '媒体复用',
+  '/match-reviews': '高级媒体关联',
   '/manual-download': '手动下载',
   '/task-center': '任务中心',
   '/config': '设置',
