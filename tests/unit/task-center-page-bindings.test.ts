@@ -48,7 +48,7 @@ describe('task center page bindings', () => {
 
     expect(composable).not.toContain("{ key: 'downloads', label: '下载队列' }")
     expect(composable).toContain("downloads: 'overview'")
-    expect(composable).toContain('useDownloadQueue({ includeHistory: false, liveRunId: primaryActiveRunId, liveLimit: 12 })')
+    expect(composable).toContain('useDownloadQueue({ liveRunId: primaryActiveRunId, liveLimit: 12 })')
     expect(page).not.toContain("activeTab === 'downloads'")
     expect(page).not.toContain('compact-download-queue')
     expect(page).toContain('<DownloadQueuePanel')
@@ -63,5 +63,21 @@ describe('task center page bindings', () => {
     expect(panel).toContain('downstreamLabel')
     expect(panel).not.toContain('重试失败')
     expect(panel).not.toContain('role="tablist"')
+  })
+
+  it('keeps manual download focused on creating work and routes history elsewhere', () => {
+    const page = readProjectFile('components/manual-download/ManualDownloadPage.vue')
+    const composable = readProjectFile('composables/useManualDownloadPage.ts')
+    const queue = readProjectFile('composables/useDownloadQueue.ts')
+    const recentPlex = readProjectFile('components/dashboard/DashboardRecentPlexList.vue')
+
+    expect(page).not.toContain('<PageTabs')
+    expect(page).not.toContain('手动下载记录')
+    expect(page).not.toContain('manual-queue-card')
+    expect(page).toContain('to="/task-center"')
+    expect(composable).not.toContain('useRuns(')
+    expect(composable).not.toContain('useDownloadQueue(')
+    expect(queue).not.toContain('/downloads/history')
+    expect(recentPlex).toContain("'/system?tab=runs'")
   })
 })

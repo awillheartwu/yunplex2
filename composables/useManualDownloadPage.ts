@@ -1,37 +1,16 @@
 import { URL_PATTERNS } from '~~/composables/useManualDownload'
 import {
   MANUAL_DOWNLOAD_QUALITY_LABELS,
-  buildManualQueueTabs,
-  canDeleteManualDownloadTask,
   formatManualDuration,
   formatManualRelativeTime,
   formatManualTotalDuration,
-  manualDownloadStatusLabel,
-  manualDownloadStatusTone,
   manualQualityLabel,
   manualResourceTypeLabel,
 } from '~~/composables/useManualDownloadPresentation'
-import type { DownloadTask } from '~~/server/lib/download/queue'
-import { useRuns } from '~~/composables/useRuns'
 import { useFeedback } from '~~/composables/useFeedback'
 
 export function useManualDownloadPage() {
-  const route = useRoute()
-  const router = useRouter()
   const feedback = useFeedback()
-  const manualView = ref<'workspace' | 'history'>(route.query.view === 'history' ? 'history' : 'workspace')
-  const manualPageTabs = [
-    { key: 'workspace', label: '工作台' },
-    { key: 'history', label: '下载记录' },
-  ]
-  const manualRuns = useRuns({ type: 'manual_download' })
-
-  async function switchManualView(view: string) {
-    if (view !== 'workspace' && view !== 'history') return
-    manualView.value = view
-    void router.replace({ query: { ...route.query, view: view === 'history' ? 'history' : undefined } })
-    if (view === 'history' && manualRuns.items.value.length === 0) await manualRuns.fetch()
-  }
 
   interface ParseHistoryItem {
     id: string
@@ -75,22 +54,6 @@ export function useManualDownloadPage() {
     toggleTrack,
   } = useManualDownload()
 
-  const {
-    queueStatus,
-    activeTasks,
-    failedTasks,
-    loading,
-    retrying,
-    retryingOne,
-    retryOne: retryQueueItem,
-    retryAll: retryAllFailedQueueItems,
-    clearQueue: clearPendingAndFailedQueueItems,
-    deleteOne: deleteQueueItem,
-  } = useDownloadQueue({ includeHistory: false })
-
-  type QueueTab = 'running' | 'pending' | 'failed'
-
-  const activeQueueTab = ref<QueueTab>('running')
   const parseHistory = ref<ParseHistoryItem[]>([])
   const PARSE_HISTORY_KEY = 'yunplex-manual-parse-history'
   const PARSE_HISTORY_LIMIT = 10
@@ -147,26 +110,6 @@ export function useManualDownloadPage() {
     return !inputValue.value.trim()
   })
 
-  const queueTabs = computed(() => buildManualQueueTabs(queueStatus.value))
-  const pendingTasks = computed(() => activeTasks.value.filter((task) => task.status === 'pending'))
-  const runningTasks = computed(() => activeTasks.value.filter((task) => task.status === 'downloading' || task.status === 'tagging'))
-  const clearableQueueCount = computed(() =>
-    queueStatus.value.pending
-    + queueStatus.value.failed,
-  )
-
-  const visibleQueueTasks = computed<DownloadTask[]>(() => {
-    if (activeQueueTab.value === 'pending') return pendingTasks.value
-    if (activeQueueTab.value === 'failed') return failedTasks.value.slice(0, 8)
-    return runningTasks.value
-  })
-
-  const queueEmptyTitle = computed(() => {
-    if (activeQueueTab.value === 'pending') return '没有等待中的任务'
-    if (activeQueueTab.value === 'failed') return '没有失败任务'
-    return '当前没有正在执行的下载'
-  })
-
   function onPaste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text') || ''
     if (URL_PATTERNS.some((p) => p.pattern.test(text))) {
@@ -196,7 +139,6 @@ export function useManualDownloadPage() {
     } else if (error.value) {
       feedback.error('下载任务创建失败', error.value)
     }
-    activeQueueTab.value = 'running'
   }
 
   async function handleDownloadAndSave() {
@@ -210,7 +152,6 @@ export function useManualDownloadPage() {
     } else if (error.value) {
       feedback.error('下载任务创建失败', error.value)
     }
-    activeQueueTab.value = 'running'
   }
 
   function resetOptions() {
@@ -285,60 +226,20 @@ export function useManualDownloadPage() {
     feedback.success('解析历史已清空')
   }
 
-  async function retryOne(id: string) {
-    try {
-      await retryQueueItem(id)
-      feedback.success('已开始重试下载')
-    } catch (err) {
-      feedback.error('重试失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  async function retryAll() {
-    try {
-      await retryAllFailedQueueItems()
-      feedback.success('失败任务已开始重试')
-    } catch (err) {
-      feedback.error('批量重试失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  async function clearQueue() {
-    try {
-      await clearPendingAndFailedQueueItems()
-      activeQueueTab.value = 'running'
-      feedback.success('队列已清空', '已移除等待中和失败的下载任务。')
-    } catch (err) {
-      feedback.error('清空队列失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  async function deleteOne(id: string) {
-    try {
-      await deleteQueueItem(id)
-      feedback.success('下载任务已删除')
-    } catch (err) {
-      feedback.error('删除任务失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
   onMounted(() => {
     loadParseHistory()
-    if (manualView.value === 'history') void manualRuns.fetch()
   })
 
   return {
-    activeQueueTab, activeTasks, albumInfo, allSelected, artist, artistsLine, canDeleteManualDownloadTask, canSaveAsSource,
-    clearableQueueCount, clearParseHistory, clearPendingAndFailedQueueItems, clearQueue, coverUrl, deleteOne, deleteQueueItem, detectHint,
+    albumInfo, allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, detectHint,
     download, downloadAndSave, downloadImages, downloading, downloadLyrics, downloadResult, embedMetadata, error,
-    failedTasks, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, handlePrimaryAction,
-    hideBrokenImage, inputValue, invertSelection, loading, loadParseHistory, manualDownloadStatusLabel, manualDownloadStatusTone, manualPageTabs,
-    manualResourceTypeLabel, manualRuns, manualView, neteaseId, onPaste, parse, PARSE_HISTORY_KEY, PARSE_HISTORY_LIMIT,
-    parsedTargetLine, parseHistory, parseState, pendingTasks, placeholderText, primaryActionDisabled, primaryActionIcon, primaryActionLabel,
-    quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel, queueEmptyTitle, queueStatus, queueTabs,
+    formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, handlePrimaryAction,
+    hideBrokenImage, inputValue, invertSelection, loadParseHistory, manualResourceTypeLabel, neteaseId, onPaste, parse, PARSE_HISTORY_KEY, PARSE_HISTORY_LIMIT,
+    parsedTargetLine, parseHistory, parseState, placeholderText, primaryActionDisabled, primaryActionIcon, primaryActionLabel,
+    quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
     rememberParsedResource, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine,
-    retryAll, retryAllFailedQueueItems, retrying, retryingOne, retryOne, retryQueueItem, runningTasks, saveError,
-    saveParseHistory, selectedCount, switchManualView, title, toggleAll, toggleTrack, totalDurationLabel, trackCount,
-    tracks, visibleQueueTasks,
+    saveError,
+    saveParseHistory, selectedCount, title, toggleAll, toggleTrack, totalDurationLabel, trackCount,
+    tracks,
   }
 }

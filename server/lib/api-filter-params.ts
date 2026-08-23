@@ -7,21 +7,10 @@ import { isValidDateFilter, isValidTimeZone } from './date-range'
 type QueryValue = string | string[] | number | boolean | null | undefined
 type QueryRecord = Record<string, unknown>
 
-export interface DownloadHistoryFilter {
-  status: string
-  limit: number
-  offset: number
-  from?: string
-  to?: string
-  search?: string
-  timeZone?: string
-}
-
 const RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download'])
 const JOB_STATUSES = new Set<JobStatus>(['running', 'success', 'partial', 'failed', 'cancelled'])
 const SOURCE_TYPES = new Set<NonNullable<PlaylistSourceFilter['type']>>(['playlist', 'album'])
 const SOURCE_STATUSES = new Set<PlaylistSource['lastStatus']>(['idle', 'success', 'partial', 'failed'])
-const DOWNLOAD_STATUSES = new Set(['pending', 'downloading', 'tagging', 'done', 'failed'])
 const FAILURE_KINDS = new Set([
   'failed_download',
   'failed_tags',
@@ -82,14 +71,6 @@ function timeZoneParam(query: QueryRecord): string | undefined {
   return value && value.length <= 100 && isValidTimeZone(value) ? value : undefined
 }
 
-function statusCsvParam(query: QueryRecord, key: string, fallback: string): string {
-  const statuses = (stringParam(query, key) ?? fallback)
-    .split(',')
-    .map((status) => status.trim())
-    .filter((status) => DOWNLOAD_STATUSES.has(status))
-  return statuses.length > 0 ? statuses.join(',') : fallback
-}
-
 export function parsePlaylistSourceFilters(query: QueryRecord): PlaylistSourceFilter {
   return {
     search: stringParam(query, 'search'),
@@ -112,18 +93,6 @@ export function parseRunFilters(query: QueryRecord): TaskRunFilter {
     offset: parseBoundedInt(query, 'offset', 0, 0, Number.MAX_SAFE_INTEGER),
     from: dateParam(query, 'from'),
     to: dateParam(query, 'to'),
-    timeZone: timeZoneParam(query),
-  }
-}
-
-export function parseDownloadHistoryFilters(query: QueryRecord): DownloadHistoryFilter {
-  return {
-    status: statusCsvParam(query, 'status', 'done'),
-    limit: parseBoundedInt(query, 'limit', 50, 1),
-    offset: parseBoundedInt(query, 'offset', 0, 0, Number.MAX_SAFE_INTEGER),
-    from: dateParam(query, 'from'),
-    to: dateParam(query, 'to'),
-    search: stringParam(query, 'search'),
     timeZone: timeZoneParam(query),
   }
 }

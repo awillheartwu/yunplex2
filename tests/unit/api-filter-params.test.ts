@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  parseDownloadHistoryFilters,
   parseFailureRecordFilters,
   parseOptionalBoolean,
   parsePlaylistSourceFilters,
@@ -69,30 +68,6 @@ describe('api filter parameter parsing', () => {
       type: undefined,
       status: undefined,
       limit: 1,
-      offset: 0,
-    })
-  })
-
-  it('parses download history filters with multi-status search', () => {
-    expect(parseDownloadHistoryFilters({
-      status: 'done, failed,unknown',
-      search: '  artist  ',
-      from: '2026-02-01',
-      to: '2026-02-02',
-      limit: '999',
-      offset: '120',
-    })).toEqual({
-      status: 'done,failed',
-      search: 'artist',
-      from: '2026-02-01',
-      to: '2026-02-02',
-      limit: 500,
-      offset: 120,
-    })
-
-    expect(parseDownloadHistoryFilters({ status: 'unknown' })).toMatchObject({
-      status: 'done',
-      limit: 50,
       offset: 0,
     })
   })

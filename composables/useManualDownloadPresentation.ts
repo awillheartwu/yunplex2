@@ -1,4 +1,4 @@
-import type { DownloadTask, QueueStatus } from '~~/server/lib/download/queue'
+import type { DownloadTask } from '~~/server/lib/download/queue'
 import type { ResourceType } from './useManualDownload'
 
 export const MANUAL_DOWNLOAD_QUALITY_LABELS: Record<string, string> = {
@@ -21,17 +21,6 @@ export function manualResourceTypeLabel(type: ResourceType | null | undefined): 
 export function manualQualityLabel(quality: string | null | undefined): string {
   if (!quality) return '默认音质'
   return MANUAL_DOWNLOAD_QUALITY_LABELS[quality] ?? quality
-}
-
-export function manualDownloadStatusLabel(status: DownloadTask['status'] | string): string {
-  const map: Record<string, string> = {
-    pending: '等待中',
-    downloading: '下载中',
-    tagging: '写入标签',
-    done: '成功',
-    failed: '失败',
-  }
-  return map[status] ?? status
 }
 
 export function manualDownloadStatusTone(status: DownloadTask['status'] | string): 'idle' | 'running' | 'success' | 'danger' {
@@ -71,16 +60,4 @@ export function formatManualRelativeTime(iso: string | null | undefined, now = n
   const diffDays = Math.floor(diffHours / 24)
   if (diffDays < 7) return `${diffDays} 天前`
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
-}
-
-export function buildManualQueueTabs(status: QueueStatus) {
-  return [
-    { key: 'running' as const, label: '下载中', count: status.downloading + status.tagging },
-    { key: 'pending' as const, label: '等待中', count: status.pending },
-    { key: 'failed' as const, label: '失败', count: status.failed },
-  ]
-}
-
-export function canDeleteManualDownloadTask(task: Pick<DownloadTask, 'status'>): boolean {
-  return task.status !== 'downloading' && task.status !== 'tagging'
 }
