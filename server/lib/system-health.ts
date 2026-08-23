@@ -2,7 +2,6 @@ import { statSync, existsSync, accessSync, constants } from 'node:fs'
 import { resolve } from 'node:path'
 import { checkCookie } from './netease'
 import { readConfig, getDataDir } from './config/store'
-import { getDb } from './db'
 import os from 'node:os'
 
 export const DEPENDENCY_HEALTH_TTL_MS = 60_000
@@ -52,7 +51,6 @@ export interface SystemHealthSnapshot {
   uptime: number
   pid: number
   dbSize: number
-  dbStats: Record<string, number>
   plexOk: boolean
   neteaseOk: boolean
   dirWritable: boolean
@@ -84,21 +82,6 @@ export function getMemUsage() {
     heapUsed: Math.round(m.heapUsed / 1024 / 1024),
     heapTotal: Math.round(m.heapTotal / 1024 / 1024),
     external: Math.round(m.external / 1024 / 1024),
-  }
-}
-
-export function getDbStats() {
-  try {
-    const db = getDb()
-    const tables: Record<string, number> = {}
-    const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]
-    for (const r of rows) {
-      const cnt = (db.prepare(`SELECT COUNT(*) as c FROM "${r.name}"`).get() as { c: number }).c
-      tables[r.name] = cnt
-    }
-    return tables
-  } catch {
-    return {}
   }
 }
 
@@ -184,9 +167,8 @@ export function setSystemHealthCheckersForTest(checkers: Partial<HealthCheckers>
 }
 
 export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
-  const [mem, dbStats, dbSize, dependencyHealth] = await Promise.all([
+  const [mem, dbSize, dependencyHealth] = await Promise.all([
     Promise.resolve(getMemUsage()),
-    Promise.resolve(getDbStats()),
     Promise.resolve(getDbFileSize()),
     getDependencyHealthSnapshot(),
   ])
@@ -197,7 +179,6 @@ export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
     uptime: Math.round(process.uptime()),
     pid: process.pid,
     dbSize,
-    dbStats,
     ...dependencyHealth,
     timestamp: Date.now(),
   }

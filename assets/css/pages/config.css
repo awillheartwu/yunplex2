@@ -6,13 +6,6 @@
   flex-wrap: wrap;
 }
 
-.config-header-actions__primary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .path-mapping-disclosure {
   display: flex;
   align-items: flex-start;
@@ -173,25 +166,5 @@
     padding-top: 0.15rem;
   }
 
-  .config-header-actions__toggle {
-    min-width: 0;
-    justify-content: center;
-  }
-
-  .config-header-actions__primary {
-    width: auto;
-    flex: 0 1 auto;
-    justify-content: center;
-  }
-
-  .config-header-actions__primary > .btn {
-    min-width: 6.9rem;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 390px) {
-  .config-header-actions__primary {
-    width: 100%;
-  }
+  .config-header-actions .btn { width: 100%; justify-content: center; }
 }
