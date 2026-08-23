@@ -6,9 +6,10 @@ import type { JobStatus, TaskRunTrigger, TaskRunType } from '../job/types'
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export const DATA_LIFECYCLE_LIMITS = {
-  runDetailDays: 14,
+  runDetailDays: 7,
+  runDetailMaxBytes: 8 * 1024 * 1024,
   successfulRunDays: 7,
-  failedRunDays: 30,
+  failedRunDays: 14,
   downloadTaskDays: 30,
   resolvedFailureDays: 30,
   failureOccurrenceDays: 90,
@@ -22,6 +23,7 @@ type RetentionConfig = Pick<
 
 export interface DataLifecyclePolicy {
   runDetailDays: number
+  runDetailMaxBytes: number
   successfulRunDays: number
   failedRunDays: number
   downloadTaskDays: number
@@ -48,6 +50,7 @@ function boundedDays(value: number | undefined, fallback: number, maximum: numbe
 export function resolveDataLifecyclePolicy(config: RetentionConfig): DataLifecyclePolicy {
   return {
     runDetailDays: DATA_LIFECYCLE_LIMITS.runDetailDays,
+    runDetailMaxBytes: DATA_LIFECYCLE_LIMITS.runDetailMaxBytes,
     successfulRunDays: boundedDays(
       config.jobRetentionSuccessDays,
       DATA_LIFECYCLE_LIMITS.successfulRunDays,
@@ -91,9 +94,50 @@ interface CompactableRunRow {
   target: string
   duration_ms: number
   data: string
+  payload_bytes?: number
 }
 
-function compactRunDetails(db: Database.Database, before: string, retainAfter: string): number {
+function compactRunDetail(
+  row: CompactableRunRow,
+  update: Database.Statement,
+): boolean {
+  try {
+    const previous = JSON.parse(row.data) as { dryRun?: unknown; sourceIds?: unknown }
+    const sourceIds = Array.isArray(previous.sourceIds)
+      ? previous.sourceIds.filter((sourceId): sourceId is string => typeof sourceId === 'string')
+      : []
+    update.run(JSON.stringify({
+      id: row.id,
+      type: row.type,
+      trigger: row.trigger,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      status: row.status,
+      durationMs: row.duration_ms,
+      summary: row.summary,
+      source: row.source,
+      sourceIds,
+      target: row.target,
+      totalSongs: row.total_items,
+      successSongs: row.success_items,
+      failedSongs: row.failed_items,
+      skippedSongs: row.skipped_items,
+      removedSongs: row.removed_items,
+      warnings: row.warnings,
+      dryRun: Boolean(previous.dryRun),
+      steps: [],
+      songs: [],
+      config: {},
+      detailsExpired: true,
+    }), row.id)
+    return true
+  } catch {
+    // A malformed historical payload remains queryable by its summary columns.
+    return false
+  }
+}
+
+function compactRunDetailsByAge(db: Database.Database, before: string, retainAfter: string): number {
   const rows = db.prepare(`
     SELECT id, type, trigger, started_at, finished_at, status, summary,
       total_items, success_items, failed_items, skipped_items, removed_items,
@@ -109,39 +153,43 @@ function compactRunDetails(db: Database.Database, before: string, retainAfter: s
   let compacted = 0
 
   for (const row of rows) {
-    try {
-      const previous = JSON.parse(row.data) as { dryRun?: unknown; sourceIds?: unknown }
-      const sourceIds = Array.isArray(previous.sourceIds)
-        ? previous.sourceIds.filter((sourceId): sourceId is string => typeof sourceId === 'string')
-        : []
-      update.run(JSON.stringify({
-        id: row.id,
-        type: row.type,
-        trigger: row.trigger,
-        startedAt: row.started_at,
-        finishedAt: row.finished_at,
-        status: row.status,
-        durationMs: row.duration_ms,
-        summary: row.summary,
-        source: row.source,
-        sourceIds,
-        target: row.target,
-        totalSongs: row.total_items,
-        successSongs: row.success_items,
-        failedSongs: row.failed_items,
-        skippedSongs: row.skipped_items,
-        removedSongs: row.removed_items,
-        warnings: row.warnings,
-        dryRun: Boolean(previous.dryRun),
-        steps: [],
-        songs: [],
-        config: {},
-        detailsExpired: true,
-      }), row.id)
-      compacted += 1
-    } catch {
-      // A malformed historical payload remains queryable by its summary columns.
+    if (compactRunDetail(row, update)) compacted += 1
+  }
+
+  return compacted
+}
+
+/**
+ * Time retention alone still grows quickly when a scheduler produces many
+ * partial runs. Keep the newest valid detail payloads within a hard byte
+ * budget and compact the older overflow to their indexed summary columns.
+ */
+function compactRunDetailsByBudget(db: Database.Database, maxBytes: number): number {
+  const rows = db.prepare(`
+    SELECT id, type, trigger, started_at, finished_at, status, summary,
+      total_items, success_items, failed_items, skipped_items, removed_items,
+      warnings, source, target, duration_ms, data,
+      LENGTH(CAST(data AS BLOB)) AS payload_bytes
+    FROM task_runs
+    WHERE status IN ('failed', 'partial')
+      AND json_valid(data) = 1
+      AND COALESCE(json_extract(data, '$.detailsExpired'), 0) != 1
+    ORDER BY started_at DESC, id DESC
+  `).all() as CompactableRunRow[]
+  const update = db.prepare('UPDATE task_runs SET data = ? WHERE id = ?')
+  let retainedBytes = 0
+  let retainedRows = 0
+  let compacted = 0
+
+  for (const row of rows) {
+    const payloadBytes = row.payload_bytes ?? Buffer.byteLength(row.data)
+    const retain = retainedRows === 0 || retainedBytes + payloadBytes <= maxBytes
+    if (retain) {
+      retainedBytes += payloadBytes
+      retainedRows += 1
+      continue
     }
+    if (compactRunDetail(row, update)) compacted += 1
   }
 
   return compacted
@@ -186,7 +234,7 @@ export function runDataLifecycleMaintenance(
   `
 
   return db.transaction(() => {
-    const compactedRuns = compactRunDetails(db, detailCutoff, failedRunCutoff)
+    const compactedByAge = compactRunDetailsByAge(db, detailCutoff, failedRunCutoff)
     const runParams = [successfulRunCutoff, failedRunCutoff]
     const clearedSourceRuns = db.prepare(`
       UPDATE playlist_sources
@@ -202,6 +250,7 @@ export function runDataLifecycleMaintenance(
       DELETE FROM task_runs
       WHERE ${expiredRunWhere}
     `).run(...runParams).changes
+    const compactedByBudget = compactRunDetailsByBudget(db, policy.runDetailMaxBytes)
     const clearedStaleSourceRuns = db.prepare(`
       UPDATE playlist_sources
       SET last_job_id = NULL
@@ -267,7 +316,7 @@ export function runDataLifecycleMaintenance(
     `).run(policy.failureOccurrencesPerFingerprint).changes
 
     return {
-      compactedRuns,
+      compactedRuns: compactedByAge + compactedByBudget,
       deletedRuns,
       clearedRunReferences:
         clearedSourceRuns
