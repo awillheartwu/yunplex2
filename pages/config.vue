@@ -5,20 +5,10 @@
     >
       <template #actions>
         <div class="config-header-actions" aria-label="配置操作">
-          <button type="button" class="btn btn-ghost btn-sm config-header-actions__toggle" @click="toggleAll">
-            <AppIcon :name="allExpanded ? 'chevronsUp' : 'chevronsDown'" :size="14" />
-            {{ allExpanded ? '收起全部' : '展开全部' }}
+          <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
+            <AppIcon :name="saving ? 'loader' : 'save'" :size="15" :class="{ 'animate-spin': saving }" />
+            {{ saving ? '保存中...' : '保存配置' }}
           </button>
-          <div class="config-header-actions__primary">
-            <button type="button" class="btn btn-danger btn-sm" @click="showResetConfirm = true">
-              <AppIcon name="rotateCcw" :size="14" />
-              恢复默认
-            </button>
-            <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
-              <AppIcon :name="saving ? 'loader' : 'save'" :size="15" :class="{ 'animate-spin': saving }" />
-              {{ saving ? '保存中...' : '保存配置' }}
-            </button>
-          </div>
         </div>
       </template>
     </PageHeader>
@@ -38,7 +28,7 @@
     <!-- Form -->
     <template v-else-if="form">
       <!-- ═══ Tab: 连接 ═══ -->
-      <template v-if="activeTab === 'connection'">
+      <template v-if="activeTab === 'general'">
         <!-- Netease -->
         <ConfigSection title="网易云音乐" description="用于获取歌单和歌曲下载链接的认证信息" :collapsed="!!collapsed.netease" @toggle="toggle('netease')">
           <template #icon><SidebarIcon name="music" :active="true" /></template>
@@ -95,7 +85,7 @@
       </template>
 
       <!-- ═══ Tab: 下载 ═══ -->
-      <template v-if="activeTab === 'download'">
+      <template v-if="activeTab === 'media'">
       <!-- Download -->
       <ConfigSection title="下载与文件" description="歌曲文件的存储路径和元数据处理选项" :collapsed="!!collapsed.download" @toggle="toggle('download')">
         <template #icon><SidebarIcon name="download" :active="true" /></template>
@@ -177,14 +167,20 @@
           </select>
         </FormField>
       </ConfigSection>
+
+      <ConfigSection title="艺人写入规则" description="控制艺人名称如何写入文件路径和媒体标签" :collapsed="!!collapsed.aliases" @toggle="toggle('aliases')">
+        <template #icon><SidebarIcon name="music" :active="true" /></template>
+        <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
+        <FormField label="艺人名替换映射" hint="替换影响文件路径和 ID3 标签。重复的原艺人名以后出现的为准。">
+          <AliasEditor v-model="form.other.artistAliases" />
+        </FormField>
+      </ConfigSection>
       </template>
 
       <!-- ═══ Tab: 同步 ═══ -->
-      <template v-if="activeTab === 'sync'">
-
       <!-- Sync strategy -->
       <!-- Sync schedule -->
-      <ConfigSection title="同步调度" description="控制同步的触发和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
+      <ConfigSection v-if="activeTab === 'general'" title="同步调度" description="控制自动同步的间隔和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
         <template #icon><SidebarIcon name="play" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟"><input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" /></FormField>
@@ -195,7 +191,7 @@
       </ConfigSection>
 
       <!-- Sync strategy -->
-      <ConfigSection title="同步策略" description="对比、重试、清理等细节行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
+      <ConfigSection v-if="activeTab === 'advanced'" title="同步内部策略" description="对比、重试和删除保护等低频行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
         <template #icon><SidebarIcon name="sync" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
@@ -250,18 +246,16 @@
       </ConfigSection>
 
       <!-- Album Sync -->
-      <ConfigSection title="专辑同步" description="收藏专辑的同步行为与默认策略" :collapsed="!!collapsed.album" @toggle="toggle('album')">
+      <ConfigSection v-if="activeTab === 'media'" title="专辑同步" description="收藏专辑的下载行为与默认产物" :collapsed="!!collapsed.album" @toggle="toggle('album')">
         <template #icon><SidebarIcon name="album" :active="true" /></template>
         <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
           <ToggleField v-model="form.sync.skipPlexPlaylist" label="默认不入 Plex 歌单" hint="全局默认仅下载不建歌单；单个专辑可单独覆盖" />
         </div>
       </ConfigSection>
-      </template>
-
       <!-- ═══ Tab: 偏好 ═══ -->
-      <template v-if="activeTab === 'preferences'">
-      <ConfigSection title="其他策略" description="界面显示、艺人解析和维护动作" :collapsed="!!collapsed.other" @toggle="toggle('other')">
+      <template v-if="activeTab === 'general'">
+      <ConfigSection title="界面" description="调整管理界面的显示大小" :collapsed="!!collapsed.other" @toggle="toggle('other')">
         <template #icon><SidebarIcon name="settings" :active="true" /></template>
         <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -288,33 +282,6 @@
             </div>
           </div>
         </FormField>
-
-        <div class="space-y-3">
-          <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
-        </div>
-        <FormField label="艺人名替换映射" hint="替换影响文件路径和 ID3 标签。重复的「原艺人名」按表格从上到下，后出现的覆盖前者。">
-          <AliasEditor v-model="form.other.artistAliases" />
-        </FormField>
-
-        <div class="mt-2 border-t border-[var(--border-primary)] pt-5">
-          <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
-            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div class="flex min-w-0 items-start gap-3">
-                <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-input)] text-danger">
-                  <AppIcon name="warn" :size="18" />
-                </span>
-                <div class="min-w-0">
-                  <h4 class="text-sm font-semibold text-[var(--text-primary)]">重新初始化</h4>
-                  <p class="mt-1 text-2xs leading-5 text-muted">保留现有配置和管理员密码，但重新进入 setup，要求再次通过网易云、Plex 和下载目录检查。</p>
-                </div>
-              </div>
-              <button class="btn btn-danger btn-sm shrink-0" type="button" :disabled="reinitializing" @click="showReinitializeConfirm = true">
-                <AppIcon name="rotateCcw" :size="15" />
-                {{ reinitializing ? '处理中...' : '触发重新初始化' }}
-              </button>
-            </div>
-          </div>
-        </div>
       </ConfigSection>
       </template>
 
@@ -376,6 +343,24 @@
               <AppIcon :name="importResult.ok ? 'check' : 'x'" :size="14" />
               {{ importResult.msg }}
             </span>
+          </div>
+        </div>
+      </ConfigSection>
+
+      <ConfigSection title="危险操作" description="仅在需要恢复或重新验证整套配置时使用" :collapsed="!!collapsed.danger" @toggle="toggle('danger')">
+        <template #icon><SidebarIcon name="warn" :active="true" /></template>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
+            <h4 class="text-sm font-semibold text-[var(--text-primary)]">恢复默认配置</h4>
+            <p class="mt-1 text-2xs leading-5 text-muted">覆盖当前连接、下载和同步设置，不删除媒体或运行数据。</p>
+            <button type="button" class="btn btn-danger btn-sm mt-3" @click="showResetConfirm = true">恢复默认</button>
+          </div>
+          <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
+            <h4 class="text-sm font-semibold text-[var(--text-primary)]">重新初始化</h4>
+            <p class="mt-1 text-2xs leading-5 text-muted">保留配置和管理员密码，重新进入 setup 并验证三个必需条件。</p>
+            <button class="btn btn-danger btn-sm mt-3" type="button" :disabled="reinitializing" @click="showReinitializeConfirm = true">
+              {{ reinitializing ? '处理中...' : '进入重新初始化' }}
+            </button>
           </div>
         </div>
       </ConfigSection>
@@ -570,37 +555,20 @@ watch(storageConfigFingerprint, (current, previous) => {
 })
 
 // ── Tab navigation ──
-const activeTab = ref<string>('connection')
+const activeTab = ref<string>('general')
 const tabs = [
-  { key: 'connection', label: '连接' },
-  { key: 'download',   label: '下载' },
-  { key: 'sync',       label: '同步' },
-  { key: 'preferences', label: '偏好' },
-  { key: 'advanced',   label: '高级' },
+  { key: 'general', label: '日常' },
+  { key: 'media', label: '媒体产物' },
+  { key: 'advanced', label: '高级' },
 ]
 
 // ── Collapsible sections ──
-type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'schedule' | 'sync' | 'album' | 'security' | 'retention' | 'other' | 'import'
+type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'aliases' | 'schedule' | 'sync' | 'album' | 'security' | 'retention' | 'other' | 'import' | 'danger'
 const collapsed = ref<Partial<Record<SectionKey, boolean>>>({})
-
-const allExpanded = computed(() => {
-  const keys: SectionKey[] = ['netease', 'plex', 'download', 'filePolicy', 'schedule', 'sync', 'album', 'security', 'retention', 'other', 'import']
-  return keys.every((k) => !collapsed.value[k])
-})
 
 function toggle(key: SectionKey) {
   collapsed.value = { ...collapsed.value, [key]: !collapsed.value[key] }
 }
-
-function toggleAll() {
-  if (allExpanded.value) {
-    collapsed.value = { netease: true, plex: true, download: true, filePolicy: true, schedule: true, sync: true, album: true, security: true, retention: true, other: true, import: true }
-  } else {
-    collapsed.value = {}
-  }
-}
-
-
 
 async function loadConfig() {
   loading.value = true

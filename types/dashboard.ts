@@ -6,20 +6,6 @@ export interface DashboardStatusItem {
   ok: boolean
 }
 
-export interface DashboardKpi {
-  key: string
-  label: string
-  value: string
-  note: string
-  icon: string
-  tone: DashboardTone
-}
-
-export interface DashboardTrendPoint {
-  date: string
-  count: number
-}
-
 export interface DashboardPendingItem {
   id: string
   title: string
@@ -47,20 +33,6 @@ export interface DashboardSummary {
     autoSyncEnabled: boolean
     syncRunning: boolean
   }
-  kpis: DashboardKpi[]
-  trend: {
-    days: number
-    points: DashboardTrendPoint[]
-  }
   pendingItems: DashboardPendingItem[]
   sourceHealth: DashboardSourceHealthSummary
-}
-
-export interface PlexRecentItem {
-  ratingKey: string
-  title: string
-  artist: string
-  album: string
-  addedAt: string | null
-  thumb: string | null
 }

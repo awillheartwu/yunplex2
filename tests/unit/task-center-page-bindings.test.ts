@@ -65,11 +65,10 @@ describe('task center page bindings', () => {
     expect(panel).not.toContain('role="tablist"')
   })
 
-  it('keeps manual download focused on creating work and routes history elsewhere', () => {
+  it('keeps manual download focused on creating work', () => {
     const page = readProjectFile('components/manual-download/ManualDownloadPage.vue')
     const composable = readProjectFile('composables/useManualDownloadPage.ts')
     const queue = readProjectFile('composables/useDownloadQueue.ts')
-    const recentPlex = readProjectFile('components/dashboard/DashboardRecentPlexList.vue')
 
     expect(page).not.toContain('<PageTabs')
     expect(page).not.toContain('手动下载记录')
@@ -78,6 +77,5 @@ describe('task center page bindings', () => {
     expect(composable).not.toContain('useRuns(')
     expect(composable).not.toContain('useDownloadQueue(')
     expect(queue).not.toContain('/downloads/history')
-    expect(recentPlex).toContain("'/system?tab=runs'")
   })
 })

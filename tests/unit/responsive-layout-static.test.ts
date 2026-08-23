@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -47,26 +47,18 @@ describe('responsive layout sizing', () => {
     expect(workspaceCss).not.toContain('height: 160px')
   })
 
-  it('sizes charts through reusable chart tokens instead of inline heights', () => {
-    const globals = readProjectFile('assets/css/main.css')
-    const systemLineChart = readProjectFile('components/charts/SystemLineChart.vue')
-    const downloadChart = readProjectFile('components/charts/DownloadChart.vue')
-    const systemCharts = readProjectFile('components/system/SystemCharts.vue')
-
-    expect(globals).toContain('--chart-card-min-block-size')
-    expect(globals).toContain('--chart-plot-min-block-size')
-    expect(systemLineChart).not.toContain('style="height:160px"')
-    expect(systemLineChart).toContain('system-line-chart')
-    expect(systemLineChart).toContain('min-block-size: var(--chart-plot-min-block-size)')
-    expect(downloadChart).toContain('min-block-size: var(--chart-card-min-block-size)')
-    expect(systemCharts).toContain('system-chart-card')
+  it('does not keep decorative dashboard or system charts', () => {
+    expect(existsSync(resolve(root, 'components/charts/SystemLineChart.vue'))).toBe(false)
+    expect(existsSync(resolve(root, 'components/charts/DownloadChart.vue'))).toBe(false)
+    expect(existsSync(resolve(root, 'components/system/SystemCharts.vue'))).toBe(false)
+    expect(readProjectFile('pages/index.vue')).not.toContain('summary.trend')
   })
 
   it('keeps text sizing stable and avoids compressed tracking in UI chrome', () => {
     const files = [
       'assets/css/global/components.css',
       'assets/css/pages/task-center.css',
-      'components/dashboard/DashboardKpiCard.vue',
+      'pages/index.vue',
       'components/layout/TopBar.vue',
       'pages/setup.vue',
     ]
@@ -79,7 +71,7 @@ describe('responsive layout sizing', () => {
     }
   })
 
-  it('uses remaining viewport space without clipping enlarged dashboard text', () => {
+  it('keeps the simplified dashboard responsive', () => {
     const globals = readProjectFile('assets/css/main.css')
     const dashboard = readProjectFile('pages/index.vue')
     const layout = readProjectFile('layouts/default.vue')
@@ -88,10 +80,10 @@ describe('responsive layout sizing', () => {
     expect(globals).toContain('--app-content-max-width: 160rem')
     expect(globals).toContain('--dashboard-content-max-width: 220rem')
     expect(layout).toContain('app-page-frame--dashboard')
-    expect(dashboard).toContain('min-block-size: calc(100dvh - var(--app-topbar-block-size) - 2.5rem)')
-    expect(dashboard).toContain('grid-template-rows: minmax(16rem, 1fr) minmax(18rem, 1.12fr) auto')
-    expect(dashboard).toContain('@media (max-width: 1535px)')
-    expect(dashboard).toContain('min-block-size: 0')
+    expect(dashboard).toContain('class="dashboard-workspace"')
+    expect(dashboard).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)')
+    expect(dashboard).toContain('@media (max-width: 900px)')
+    expect(dashboard).toContain('grid-template-columns: 1fr')
   })
 
   it('keeps source media and run lists dense across wide and compact layouts', () => {
@@ -110,7 +102,6 @@ describe('responsive layout sizing', () => {
   it('keeps shared empty and form controls accessible without fixed padding hacks', () => {
     const emptyState = readProjectFile('components/common/EmptyState.vue')
     const dateRange = readProjectFile('components/common/DateRange.vue')
-    const downloadChart = readProjectFile('components/charts/DownloadChart.vue')
     const toggleField = readProjectFile('components/config/ToggleField.vue')
     const aliasEditor = readProjectFile('components/config/AliasEditor.vue')
     const timeline = readProjectFile('components/common/ProcessTimeline.vue')
@@ -121,8 +112,6 @@ describe('responsive layout sizing', () => {
     expect(dateRange).toContain('date-range-nav-button')
     expect(dateRange).toContain('date-range-day')
     expect(dateRange).not.toContain('w-5 h-5')
-    expect(downloadChart).toContain('download-chart__mode-button')
-    expect(downloadChart).toContain(':aria-pressed="chartMode === mode.key"')
     expect(toggleField).toContain('toggle-field__switch')
     expect(toggleField).toContain(':aria-label="label"')
     expect(toggleField).not.toContain('w-9 h-5')
@@ -160,7 +149,7 @@ describe('responsive layout sizing', () => {
     expect(mobileSourceListEnd).toBeGreaterThan(mobileSourceListStart)
     expect(configPage).toContain('config-header-actions')
     expect(configPage).toContain('scoped src="~/assets/css/pages/config.css"')
-    expect(configCss).toContain('.config-header-actions__primary > .btn')
+    expect(configCss).toContain('.config-header-actions .btn')
     expect(configCss).toContain('justify-content: center')
     expect(syncPage).toContain('statusFilterOptions')
     expect(syncComposable).toMatch(/statusFilterOptions[,\s]+subscribedFilter/)
@@ -199,19 +188,16 @@ describe('responsive layout sizing', () => {
     expect(dateRange).toContain('isMobileViewport.value ? [leftMonth.value] : [leftMonth.value, rightMonth.value]')
   })
 
-  it('uses mobile-specific layouts for dense system and job detail rows', () => {
-    const stats = readProjectFile('components/system/SystemDataStats.vue')
+  it('keeps the simplified system monitor and dense job rows responsive', () => {
     const monitor = readProjectFile('components/system/SystemMonitorPanel.vue')
-    const systemInfo = readProjectFile('components/system/SystemInfoPanel.vue')
     const jobDetail = readProjectFile('components/jobs/JobDetail.vue')
 
-    expect(stats).toContain('system-table-row__identity')
-    expect(stats).toContain('.system-table-row__meta {\n    display: flex;')
-    expect(stats).toContain('.system-data-group--matching')
-    expect(monitor.indexOf('<SystemDataStats')).toBeLessThan(monitor.indexOf('<SystemInfoPanel'))
+    expect(monitor).toContain('<SystemHealthOverview')
+    expect(monitor).toContain('<SystemKpiGrid')
+    expect(monitor).not.toContain('<SystemCharts')
+    expect(monitor).not.toContain('<SystemDataStats')
+    expect(monitor).not.toContain('<SystemInfoPanel')
     expect(monitor).not.toContain('lg:grid-cols-[minmax(18rem')
-    expect(systemInfo).toContain('class="system-runtime"')
-    expect(systemInfo).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
     expect(jobDetail).toContain('run-detail__song-group-name')
     expect(jobDetail).toContain('flex:1 1 calc(100% - 7rem)')
     expect(jobDetail).toContain('padding-left:3.05rem')

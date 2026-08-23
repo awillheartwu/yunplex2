@@ -11,18 +11,11 @@
 
     <SystemMonitorPanel
       v-if="activeTab === 'monitor'"
-      :cpu-chart-option="cpuChartOption"
       :dependency-checked-label="dependencyCheckedLabel"
-      :format-uptime="formatUptime"
       :health-items="healthItems"
       :health-refreshing="healthRefreshing"
-      :info="info"
       :kpi-cards="kpiCards"
-      :last-stats-label="lastStatsLabel"
-      :mem-chart-option="memChartOption"
       :overall-tone="overallTone"
-      :stats="stats"
-      :table-rows="tableRows"
       @refresh-health="refreshDependencyHealth"
       @copy-diagnostics="copyDiagnostics"
     />
@@ -39,20 +32,13 @@ import { useSystemPage } from '~~/composables/useSystemPage'
 const {
   activeTab,
   copyDiagnostics,
-  cpuChartOption,
   dependencyCheckedLabel,
-  formatUptime,
   healthItems,
   healthRefreshing,
-  info,
   kpiCards,
-  lastStatsLabel,
-  memChartOption,
   overallTone,
   refreshDependencyHealth,
-  stats,
   switchSystemTab,
-  tableRows,
   tabs,
 } = useSystemPage()
 </script>

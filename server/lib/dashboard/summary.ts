@@ -9,29 +9,8 @@ import {
 import { getSystemHealthSnapshot } from '../system-health'
 import { readConfig } from '../config/store'
 import { listSources } from '../playlist/store'
-import { getQueueStatus } from '../download/queue'
-import { getDailyDownloadStats } from '../download/stats'
 import { queryFailureRecords } from '../tasks/failure-records'
 import { getSyncServiceInstance } from '../sync/instance'
-
-function startOfDay(daysAgo = 0): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().slice(0, 10)
-}
-
-function endOfDay(daysAgo = 0): string {
-  const d = new Date()
-  d.setHours(23, 59, 59, 999)
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString()
-}
-
-function formatSignedDelta(delta: number): string {
-  if (delta === 0) return '较昨日 持平'
-  return `较昨日 ${delta > 0 ? '+' : ''}${delta}`
-}
 
 function resolveSyncState(): SyncState {
   try {
@@ -130,16 +109,11 @@ export function buildPendingItems(input: {
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const config = readConfig()
   const syncState = resolveSyncState()
-  const [health, sources, queueStatus, trendPoints, actionableFailures, copyrightFailures, downloadFailures, todayFailures, yesterdayFailures] = await Promise.all([
+  const [health, sources, copyrightFailures, downloadFailures] = await Promise.all([
     getSystemHealthSnapshot(),
     Promise.resolve(listSources()),
-    Promise.resolve(getQueueStatus()),
-    Promise.resolve(getDailyDownloadStats(7)),
-    Promise.resolve(queryFailureRecords({ status: 'open', excludeFailureKinds: ['copyright_restricted'], limit: 1 })),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'copyright_restricted', limit: 1 })),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'failed_download', limit: 1 })),
-    Promise.resolve(queryFailureRecords({ status: 'open', excludeFailureKinds: ['copyright_restricted'], from: startOfDay(0), to: endOfDay(0), limit: 1 })),
-    Promise.resolve(queryFailureRecords({ status: 'open', excludeFailureKinds: ['copyright_restricted'], from: startOfDay(1), to: endOfDay(1), limit: 1 })),
   ])
 
   const healthSummary = buildSourceHealthSummary(sources)
@@ -148,11 +122,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     failedDownloadCount: downloadFailures.total,
     failedSourceCount: sources.filter((source) => source.lastStatus === 'failed').length,
   })
-
-  const latestTrend = trendPoints.at(-1)?.count ?? 0
-  const previousTrend = trendPoints.at(-2)?.count ?? 0
-  const createdToday = sources.filter((source) => source.createdAt >= startOfDay(0)).length
-  const createdYesterday = sources.filter((source) => source.createdAt >= startOfDay(1) && source.createdAt < startOfDay(0)).length
 
   const overallTone: DashboardTone = !health.plexOk || !health.neteaseOk || !health.dirWritable || healthSummary.failed > 0
     ? 'danger'
@@ -183,56 +152,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       autoSyncEnabled: config.sync.enabled,
       syncRunning: syncState.isRunning,
     },
-    kpis: [
-      {
-        key: 'downloads',
-        label: '已下载歌曲',
-        value: String(queueStatus.done),
-        note: formatSignedDelta(latestTrend - previousTrend),
-        icon: 'music',
-        tone: 'accent',
-      },
-      {
-        key: 'failures',
-        label: '失败次数',
-        value: String(actionableFailures.total),
-        note: formatSignedDelta(todayFailures.total - yesterdayFailures.total),
-        icon: 'alert',
-        tone: actionableFailures.total > 0 ? 'danger' : 'success',
-      },
-      {
-        key: 'sources',
-        label: '同步源数',
-        value: String(sources.length),
-        note: formatSignedDelta(createdToday - createdYesterday),
-        icon: 'source',
-        tone: 'accent',
-      },
-      {
-        key: 'last-result',
-        label: '最后结果',
-        value: syncState.lastSyncResult === 'success' ? '成功' : syncState.lastSyncResult === 'failure' ? '异常' : '未同步',
-        note: syncState.lastSyncAt ? `上轮同步 ${formatRelativeTime(syncState.lastSyncAt)}` : '尚未运行同步',
-        icon: 'check',
-        tone: syncState.lastSyncResult === 'failure' ? 'danger' : syncState.lastSyncResult === 'success' ? 'success' : 'neutral',
-      },
-    ],
-    trend: {
-      days: 7,
-      points: trendPoints,
-    },
     pendingItems,
     sourceHealth: healthSummary,
   }
-}
-
-export function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins} 分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  return `${days} 天前`
 }

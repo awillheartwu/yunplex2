@@ -21,6 +21,17 @@ describe('system workspace information architecture', () => {
     expect(page).toContain('<SystemRunRecordsPanel v-else />')
   })
 
+  it('keeps monitor focused on health and current resources', () => {
+    const monitor = readProjectFile('components/system/SystemMonitorPanel.vue')
+    const composable = readProjectFile('composables/useSystemPage.ts')
+
+    expect(monitor).toContain('<SystemHealthOverview')
+    expect(monitor).toContain('<SystemKpiGrid')
+    expect(monitor).not.toContain('SystemCharts')
+    expect(monitor).not.toContain('SystemDataStats')
+    expect(composable).toContain('}, 10000)')
+  })
+
   it('redirects retired list routes into their system tabs', () => {
     expect(readProjectFile('pages/logs.vue')).toContain("navigateTo('/system?tab=logs'")
     expect(readProjectFile('pages/jobs.vue')).toContain("navigateTo('/system?tab=runs'")
