@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(__dirname, '../..')
 const sourcePage = readFileSync(resolve(root, 'components/sources/SyncSourcesPage.vue'), 'utf8')
 const sourceActions = readFileSync(resolve(root, 'components/sources/SourceOverflowActions.vue'), 'utf8')
-const sourceDetails = readFileSync(resolve(root, 'components/sources/SourceSongDetails.vue'), 'utf8')
+const sourceDetails = readFileSync(resolve(root, 'components/sources/SourceMediaDetails.vue'), 'utf8')
 const sourceSummary = readFileSync(resolve(root, 'components/sources/SourceSummaryContent.vue'), 'utf8')
 
 describe('sync source UI modules', () => {
@@ -17,9 +17,11 @@ describe('sync source UI modules', () => {
   })
 
   it('shares song details and source summaries without external templates', () => {
-    expect(sourcePage.match(/<SourceSongDetails/g)?.length).toBe(2)
+    expect(sourcePage.match(/<SourceMediaDetails/g)?.length).toBe(2)
     expect(sourcePage.match(/<SourceSummaryContent/g)?.length).toBe(2)
-    expect(sourceDetails).toContain('failed_plex_insert')
+    expect(sourceDetails).toContain('/match-management/overview')
+    expect(sourceDetails).toContain('/match-management/validate')
+    expect(sourceDetails).toContain('/match-management/plex-search')
     expect(sourceSummary).toContain('getIssueSummaryLabel')
     expect(sourcePage).not.toContain('<template src=')
   })

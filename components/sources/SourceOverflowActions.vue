@@ -22,7 +22,7 @@
       </button>
       <button v-if="includeSongDetails" class="sync-row-menu__item" type="button" @click="$emit('toggle-songs')">
         <AppIcon name="chevronRight" :size="12" />
-        <span>{{ expanded ? '收起歌曲明细' : '展开歌曲明细' }}</span>
+        <span>{{ expanded ? '收起媒体与歌曲' : '展开媒体与歌曲' }}</span>
       </button>
       <button v-if="includeRepair" class="sync-row-menu__item" :class="repairing ? 'sync-row-menu__item--active' : ''" :disabled="busy" @click="$emit('repair')">
         <span v-if="repairing && repairProgress">{{ repairProgress.processed }}/{{ repairProgress.total }}</span>

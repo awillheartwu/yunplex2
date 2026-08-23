@@ -33,7 +33,7 @@ const TABLE_CATALOG: Record<string, CatalogEntry> = {
   playlist_extra_observations: { desc: 'Plex 多余曲目观察', group: 'matching' },
 
   playlist_sources: { desc: '歌单同步源', group: 'sync', href: '/sync-sources' },
-  playlist_source_track_occurrences: { desc: '歌单目标成员与对齐状态', group: 'sync', href: '/match-reviews' },
+  playlist_source_track_occurrences: { desc: '歌单目标成员与对齐状态', group: 'sync', href: '/sync-sources' },
   task_runs: { desc: '统一运行记录', group: 'sync', href: '/system?tab=runs' },
   task_run_sources: { desc: '运行与歌单源关联', group: 'sync', href: '/system?tab=runs' },
   logs: { desc: '同步日志', group: 'sync', href: '/system?tab=logs' },

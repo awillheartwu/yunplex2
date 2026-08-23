@@ -387,15 +387,9 @@ export function useSyncSourcesPage() {
 
   // Expand songs
   const expandedId = ref<string | null>(null)
-  const expandedSongs = ref<Array<{ id: string; songName: string; artist: string; status: string }>>([])
-  const expandedLoading = ref(false)
-
-  async function toggleExpand(sourceId: string) {
+  function toggleExpand(sourceId: string) {
     if (expandedId.value === sourceId) { expandedId.value = null; return }
     expandedId.value = sourceId
-    expandedLoading.value = true
-    try { expandedSongs.value = await api.get(`/playlist-sources/${sourceId}/songs`) } catch { expandedSongs.value = [] }
-    finally { expandedLoading.value = false }
   }
 
   function sourceCoverSrc(url: string): string {
@@ -735,7 +729,7 @@ export function useSyncSourcesPage() {
     batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer,
     clearSelection, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
     draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget, enabledCount, enabledFilter, expandedId,
-    expandedLoading, expandedSongs, fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative: formatSyncSourceRelativeTime,
+    fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative: formatSyncSourceRelativeTime,
     globalSyncState, handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, hoverHideTimer, isAnySyncing, issueFilter,
     lastSyncTime, loading, moreMenuId, onAlbumCreated, onDragEnd, onDragLeave, onDragOver, onDragStart,
     onDrop, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved, onSourceSearchInput, onSourceTabChange,

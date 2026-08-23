@@ -94,11 +94,12 @@ describe('responsive layout sizing', () => {
     expect(dashboard).toContain('min-block-size: 0')
   })
 
-  it('keeps media reuse and run lists dense across wide and compact layouts', () => {
-    const mediaReuse = readProjectFile('components/match-management/OverviewTab.vue')
+  it('keeps source media and run lists dense across wide and compact layouts', () => {
+    const sourceMedia = readProjectFile('components/sources/SourceMediaDetails.vue')
     const runCard = readProjectFile('components/task-center/RunCard.vue')
 
-    expect(mediaReuse).toContain('min-width: 0')
+    expect(sourceMedia).toContain('min-width: 0')
+    expect(sourceMedia).toContain('@media (max-width: 760px)')
     expect(runCard).toContain('run-card__source-column')
     expect(runCard).toContain('run-card__column-label')
     expect(runCard).toContain('grid-template-columns:auto minmax(17rem,1.15fr) minmax(24rem,1.5fr)')

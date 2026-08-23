@@ -14,7 +14,7 @@ describe('system data catalog', () => {
         name: 'playlist_source_track_occurrences',
         count: 210,
         desc: '歌单目标成员与对齐状态',
-        href: '/match-reviews',
+        href: '/sync-sources',
       }),
       expect.objectContaining({
         name: 'song_identity_bindings',
