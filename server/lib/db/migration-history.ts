@@ -18,6 +18,7 @@ export interface HistoricalMigrationRepairs {
   migrateLegacyJobsToTaskRunsAndDrop: (d: Database.Database) => void
   repairArtistResolutionCache: (d: Database.Database) => void
   retireActivityEvents: (d: Database.Database) => void
+  retireSyncState: (d: Database.Database) => void
   retireWeakMetadataBindingsAndLookupCache: (d: Database.Database) => void
 }
 
@@ -44,6 +45,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
     migrateLegacyJobsToTaskRunsAndDrop,
     repairArtistResolutionCache,
     retireActivityEvents,
+    retireSyncState,
     retireWeakMetadataBindingsAndLookupCache,
   } = repairs
 
@@ -511,5 +513,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
   ensureDownloadWhenMediaMissingOverride,
   /* v48: remove the retired user-facing activity projection and its rows */
   retireActivityEvents,
+  /* v49: remove the unused persisted sync-state projection */
+  retireSyncState,
 ]
 }

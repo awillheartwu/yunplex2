@@ -38,7 +38,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     enabled: false,
     logRetentionDays: 30,
     jobRetentionSuccessDays: 7,
-    jobRetentionFailedDays: 90,
+    jobRetentionFailedDays: 30,
     downloadTaskRetentionDays: 30,
   },
   other: {

@@ -150,9 +150,6 @@ export function recordFailure(input: {
     VALUES (?, ?, ?)
   `).run(fingerprint, occurrenceKey, occurredAt)
   const isNewOccurrence = occurrenceResult.changes > 0
-  const occurrenceCount = (db.prepare(`
-    SELECT COUNT(*) AS count FROM failure_occurrences WHERE fingerprint = ?
-  `).get(fingerprint) as { count: number }).count
   const existing = db.prepare('SELECT * FROM failure_records WHERE fingerprint = ?').get(fingerprint) as Record<string, unknown> | undefined
   if (existing) {
     const current = rowToRecord(existing)
@@ -187,7 +184,7 @@ export function recordFailure(input: {
       firstSeenAt,
       lastSeenAt,
       isNewOccurrence ? 1 : 0,
-      occurrenceCount,
+      current.occurrenceCount + (isNewOccurrence ? 1 : 0),
       [...taskIds].join(','),
       fingerprint,
     )
@@ -214,7 +211,7 @@ export function recordFailure(input: {
       input.failureReason || '',
       occurredAt,
       occurredAt,
-      occurrenceCount,
+      1,
       input.downloadTaskId || null,
     )
   }

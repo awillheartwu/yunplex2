@@ -35,8 +35,8 @@ describe('task center page bindings', () => {
 
     expect(taskCenter).not.toContain("{ key: 'runs', label: '运行记录' }")
     expect(taskCenterPage).not.toContain("activeTab === 'runs'")
-    expect(systemPage).toContain('<SystemRunRecordsPanel />')
-    expect(systemPage).toContain('<SystemMaintenancePanel')
+    expect(systemPage).toContain('<SystemRunRecordsPanel v-else />')
+    expect(systemPage).not.toContain('<SystemMaintenancePanel')
     expect(runHistory).toContain('typeFilters')
     expect(runHistory).toContain('statusFilters')
   })

@@ -51,6 +51,15 @@
       </div>
     </section>
 
+    <section v-if="job.detailsExpired" class="section-card run-detail__expired" role="status">
+      <AppIcon name="archive" :size="18" />
+      <div>
+        <strong>逐歌曲详情已按保留策略压缩</strong>
+        <p>运行摘要和统计仍然保留；需要继续处理的问题请前往任务中心的异常处理。</p>
+      </div>
+      <NuxtLink to="/task-center?tab=failures" class="btn btn-secondary btn-xs">查看异常</NuxtLink>
+    </section>
+
     <section v-if="mediaPolicyItems.length > 0" class="section-card p-4" aria-label="缺失媒体策略统计">
       <div class="mb-3">
         <h3 class="text-sm font-semibold">缺失媒体策略</h3>
@@ -69,7 +78,7 @@
       </div>
     </section>
 
-    <section class="section-card overflow-hidden">
+    <section v-if="!job.detailsExpired" class="section-card overflow-hidden">
       <button
         type="button"
         class="run-detail__section-toggle"
@@ -89,7 +98,7 @@
     </section>
 
     <!-- Song results grouped by source -->
-    <section v-if="job.songs.length > 0" class="section-card overflow-hidden">
+    <section v-if="!job.detailsExpired && job.songs.length > 0" class="section-card overflow-hidden">
       <div class="run-detail__song-toolbar">
         <div class="run-detail__song-title">
           <h3>歌曲清单</h3>
@@ -187,7 +196,7 @@
     </section>
 
     <!-- Repair task: no per-song details -->
-    <section v-else-if="job.type === 'repair'" class="section-card overflow-hidden">
+    <section v-else-if="!job.detailsExpired && job.type === 'repair'" class="section-card overflow-hidden">
       <div class="px-5 py-3 border-b border-[var(--border-primary)]">
         <h3 class="text-sm font-semibold">歌曲清单</h3>
       </div>
@@ -471,6 +480,8 @@ onUnmounted(() => {
 .run-detail__back{display:inline-flex;min-height:2.75rem;align-items:center;gap:.45rem;padding:0;border:0;background:transparent;color:var(--text-secondary);font-size:.82rem;font-weight:650;cursor:pointer;transition:color 150ms ease}
 .run-detail__back:hover{color:var(--text-primary)}
 .run-detail__id{overflow:hidden;color:var(--text-tertiary);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.7rem;text-overflow:ellipsis;white-space:nowrap}
+.run-detail__expired{display:flex;align-items:center;gap:.85rem;padding:1rem;color:var(--text-secondary)}
+.run-detail__expired>div{min-width:0;flex:1}.run-detail__expired strong{display:block;color:var(--text-primary);font-size:.84rem}.run-detail__expired p{margin:.25rem 0 0;font-size:.76rem}
 .run-detail__hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:1rem;padding:1.25rem;overflow:hidden}
 .run-detail__hero::after{content:"";position:absolute;top:-5rem;right:-4rem;width:14rem;height:14rem;border-radius:999px;background:currentColor;filter:blur(1px);opacity:.035;pointer-events:none}
 .run-detail__hero--sync{color:var(--run-sync);background:linear-gradient(135deg,var(--run-sync-soft),transparent 46%),var(--bg-surface)}

@@ -18,7 +18,7 @@ describe('system workspace information architecture', () => {
     expect(composable).toContain("{ key: 'runs', label: '运行记录' }")
     expect(page).toContain("activeTab === 'monitor'")
     expect(page).toContain("activeTab === 'logs'")
-    expect(page).toContain('<SystemRunRecordsPanel />')
+    expect(page).toContain('<SystemRunRecordsPanel v-else />')
   })
 
   it('redirects retired list routes into their system tabs', () => {
