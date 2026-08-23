@@ -140,8 +140,6 @@ export function createSchema(db: Database.Database): void {
       cover_url               TEXT NOT NULL DEFAULT '',
       skip_plex_playlist      INTEGER,
       skip_remove_extra_tracks INTEGER,
-      copyright_restricted_ids TEXT,
-      ignored_failure_ids     TEXT,
       requires_match_reconcile INTEGER NOT NULL DEFAULT 0,
       created_at              TEXT NOT NULL,
       updated_at              TEXT NOT NULL

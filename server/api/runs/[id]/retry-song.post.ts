@@ -1,22 +1,15 @@
 import { success, fail } from '../../../lib/response'
 import { getSyncRun, saveSyncRun } from '../../../lib/run/store'
-import { getSource, updateSource } from '../../../lib/playlist/store'
+import { getSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { resolveSingleSongConfig } from '../../../lib/download/options'
 import { emitEvent } from '../../../lib/sync/events'
 import { appendLog } from '../../../lib/log/store'
 import { setArtistAliases } from '../../../lib/netease'
-import {
-  parseFailureMemory,
-  recordFailure,
-  removeFailures,
-  serializeFailureMemory,
-} from '../../../lib/sync/failure-memory'
 import { classifyDownloadFailure } from '../../../lib/sync/download-diagnostics'
 import { isTagWriteError } from '../../../lib/tag-writer'
 import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
-import { parsePersistedIntegerIds, serializePersistedIntegerIds } from '~~/lib/persisted-integer-ids'
 
 function refreshRunStats(run: NonNullable<ReturnType<typeof getSyncRun>>): void {
   run.failedSongs = run.songs.filter((song) =>
@@ -57,26 +50,6 @@ export default defineEventHandler(async (event) => {
   const cfg = readConfig()
   const dataDir = useRuntimeConfig(event).dataDir
   const retentionDays = cfg.sync.logRetentionDays ?? 30
-  const parsedRestricted = parsePersistedIntegerIds(source.copyrightRestrictedIds)
-  let restrictedIds = parsedRestricted.ids
-  if (parsedRestricted.issues.length > 0) {
-    appendLog(dataDir, {
-      level: 'warn',
-      message: `[重试] ${source.name} 的版权受限缓存包含损坏数据，已自动修复`,
-      detail: `copyrightRestrictedIds: ${parsedRestricted.issues.join(', ')}`,
-      stage: 'download',
-    }, retentionDays)
-  }
-  const failureMemory = parseFailureMemory(source.ignoredFailureIds)
-
-  restrictedIds = restrictedIds.filter((id) => id !== neteaseId)
-  const nextFailureMemory = removeFailures(failureMemory, [neteaseId])
-
-  updateSource(source.id, {
-    copyrightRestrictedIds: serializePersistedIntegerIds(restrictedIds),
-    ignoredFailureIds: serializeFailureMemory(nextFailureMemory),
-  })
-
   song.status = 'downloading'
   song.phase = 'download'
   delete song.error
@@ -145,39 +118,6 @@ export default defineEventHandler(async (event) => {
     const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
     const diagnosis = classifyDownloadFailure(msg, tagError?.filePath)
     appendLog(dataDir, { level: 'error', message: `[重试] 下载失败: ${song.songName} - ${song.artist}`, detail: msg, stage: diagnosis.phase }, retentionDays)
-
-    const currentSource = getSource(song.sourceId!)
-    if (currentSource) {
-      const currentRestricted = parsePersistedIntegerIds(currentSource.copyrightRestrictedIds)
-      const restricted = currentRestricted.ids
-      const memory = parseFailureMemory(currentSource.ignoredFailureIds)
-
-      if (currentRestricted.issues.length > 0) {
-        appendLog(dataDir, {
-          level: 'warn',
-          message: `[重试] ${currentSource.name} 的版权受限缓存包含损坏数据，已自动修复`,
-          detail: `copyrightRestrictedIds: ${currentRestricted.issues.join(', ')}`,
-          stage: diagnosis.phase,
-        }, retentionDays)
-        updateSource(currentSource.id, {
-          copyrightRestrictedIds: serializePersistedIntegerIds(restricted),
-        })
-      }
-
-      if (diagnosis.status === 'copyright_restricted') {
-        if (!restricted.includes(neteaseId)) restricted.push(neteaseId)
-        updateSource(currentSource.id, { copyrightRestrictedIds: serializePersistedIntegerIds(restricted) })
-      } else {
-        updateSource(currentSource.id, {
-          ignoredFailureIds: serializeFailureMemory(recordFailure(memory, neteaseId, {
-            status: diagnosis.status === 'failed_tags' ? 'failed_tags' : 'failed_download',
-            phase: diagnosis.phase,
-            message: msg,
-            suspectedCause: 'unknown',
-          })),
-        })
-      }
-    }
 
     const currentRun = getSyncRun(runId)
     const currentSong = currentRun?.songs.find((candidate) => candidate.id === songId)

@@ -2,14 +2,7 @@ import type { RunBuilder } from '../run/builder'
 import { getPlaylistUpdatedAt } from '../plex-client'
 import { updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
-import type { FailureMemory } from './failure-memory'
-import {
-  recordFailure,
-  removeFailures,
-  serializeFailureMemory,
-} from './failure-memory'
 import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
-import { serializePersistedIntegerIds } from '~~/lib/persisted-integer-ids'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -31,16 +24,14 @@ interface FinalizeSourceConvergenceInput {
   trackUpdateTime: number | null
   plexUpdatedAt: number | null
   plexPlaylist: PlexPlaylistIdentity | null | undefined
-  knownRestricted: number[]
-  failureMemory: FailureMemory
   log: (level: 'info' | 'warn' | 'error', message: string, detail?: string) => void
 }
 
 /**
  * Commit the durable result of one Source Convergence.
  *
- * Run-song outcomes are the single input to status and failure memory so those
- * durable results cannot drift between callers.
+ * Run-song outcomes are the single input to source status. The finalized run
+ * is projected into failure_records by saveSyncRun, outside this source update.
  */
 export async function finalizeSourceConvergence(
   input: FinalizeSourceConvergenceInput,
@@ -55,8 +46,6 @@ export async function finalizeSourceConvergence(
     trackUpdateTime,
     plexUpdatedAt,
     plexPlaylist,
-    knownRestricted,
-    failureMemory,
     log,
   } = input
   const sourceSongs = job.getRun().songs.filter(song => song.sourceId === source.id)
@@ -126,48 +115,6 @@ export async function finalizeSourceConvergence(
       sourceUpdate.requiresMatchReconcile = false
     }
     updateSource(source.id, sourceUpdate)
-  }
-
-  const newRestricted = sourceSongs
-    .filter(song => song.status === 'copyright_restricted')
-    .map(song => song.neteaseSongId)
-    .filter((songId): songId is number => typeof songId === 'number')
-  if (!dryRun && newRestricted.length > 0) {
-    const merged = [...new Set([...knownRestricted, ...newRestricted])]
-    updateSource(source.id, { copyrightRestrictedIds: serializePersistedIntegerIds(merged) })
-  }
-
-  const matchedSongIds = sourceSongs
-    .filter(song =>
-      typeof song.neteaseSongId === 'number'
-      && ['success', 'skipped_existing'].includes(song.status),
-    )
-    .map(song => song.neteaseSongId as number)
-  let nextFailureMemory = removeFailures(failureMemory, matchedSongIds)
-
-  const failedSongs = sourceSongs
-    .filter(song =>
-      ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(song.status),
-    )
-    .filter((song): song is typeof song & {
-      neteaseSongId: number
-      status: 'failed_download' | 'failed_tags' | 'failed_plex_match' | 'failed_plex_insert'
-      phase: 'download' | 'tags' | 'plex_match' | 'plex_insert'
-    } => typeof song.neteaseSongId === 'number' && song.phase !== 'done')
-
-  for (const failedSong of failedSongs) {
-    const cause = failedSong.error?.context?.cause
-    if (failedSong.status === 'failed_plex_match' && cause === 'library_visibility') continue
-
-    nextFailureMemory = recordFailure(nextFailureMemory, failedSong.neteaseSongId, {
-      status: failedSong.status,
-      phase: failedSong.phase,
-      message: failedSong.error?.message,
-      suspectedCause: cause === 'library_visibility' || cause === 'metadata_mismatch' ? cause : 'unknown',
-    })
-  }
-  if (!dryRun) {
-    updateSource(source.id, { ignoredFailureIds: serializeFailureMemory(nextFailureMemory) })
   }
 
   const parts = [`${succCount} 新增成功`, `${existingCount} 已存在`]

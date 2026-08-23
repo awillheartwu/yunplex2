@@ -37,8 +37,8 @@ function makeSource(overrides: Partial<PlaylistSource> = {}): PlaylistSource {
     lastComparedAt: null,
     skipPlexPlaylist: false,
     skipRemoveExtraTracks: false,
-    copyrightRestrictedIds: null,
-    ignoredFailureIds: null,
+    actionableFailureCount: 0,
+    copyrightRestrictedCount: 0,
     requiresMatchReconcile: false,
     sortOrder: 0,
     createdAt: '2026-06-10T10:00:00.000Z',
@@ -52,7 +52,7 @@ describe('buildSourceHealthSummary', () => {
     expect(buildSourceHealthSummary([
       makeSource({ id: 'ok', lastStatus: 'success' }),
       makeSource({ id: 'warn-1', lastStatus: 'partial' }),
-      makeSource({ id: 'warn-2', copyrightRestrictedIds: '["1"]' }),
+      makeSource({ id: 'warn-2', copyrightRestrictedCount: 1 }),
       makeSource({ id: 'failed', lastStatus: 'failed' }),
       makeSource({ id: 'idle', lastStatus: 'idle', lastSyncedAt: null }),
     ])).toEqual({ total: 5, normal: 1, warning: 2, failed: 1, unsynced: 1 })

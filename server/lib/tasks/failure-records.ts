@@ -1,7 +1,14 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import type { SongStatus, TaskRun, TaskRunType } from '../job/types'
 import { getDb } from '../db'
 import { dateEndBoundary, dateStartBoundary } from '../date-range'
+import {
+  failureFingerprint,
+  failureSubjectKey,
+  normalizeFailureIdentityPart,
+} from './failure-identity'
+
+export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
 export type FailureRecordStatus = 'open' | 'ignored' | 'resolved'
 
@@ -42,45 +49,29 @@ export interface FailureRecordFilter {
   offset?: number
 }
 
+export interface SourceFailurePolicyEntry {
+  failureKind: string
+  occurrenceCount: number
+  phase: 'download' | 'tags' | 'plex_match' | 'plex_insert'
+}
+
+export interface SourceFailurePolicy {
+  copyrightSongIds: number[]
+  failuresBySongId: Record<number, SourceFailurePolicyEntry>
+}
+
+export interface SourceFailureCounts {
+  actionable: number
+  copyrightRestricted: number
+}
+
 const FAILURE_STATUSES = new Set<SongStatus>([
   'failed_download',
   'failed_tags',
   'failed_plex_match',
   'failed_plex_insert',
   'copyright_restricted',
-  'ignored_failure',
 ])
-
-function normalizePart(value: string | number | null | undefined): string {
-  return String(value ?? '')
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-}
-
-export function failureSubjectKey(input: {
-  songId?: number | null
-  songName: string
-  artist?: string
-  sourceId?: string | null
-}): string {
-  const resource = input.songId
-    ? `netease:${input.songId}`
-    : `text:${normalizePart(input.songName)}:${normalizePart(input.artist)}`
-  return `${resource}:source:${normalizePart(input.sourceId || 'manual')}`
-}
-
-export function failureFingerprint(input: {
-  songId?: number | null
-  songName: string
-  artist?: string
-  sourceId?: string | null
-  failureKind: string
-}): string {
-  const raw = `${failureSubjectKey(input)}:kind:${normalizePart(input.failureKind)}`
-  return createHash('sha256').update(raw).digest('hex')
-}
 
 function rowToRecord(row: Record<string, unknown>): FailureRecord {
   const rawFirstSeenAt = String(row.first_seen_at)
@@ -144,7 +135,7 @@ export function recordFailure(input: {
     ? `run:${input.runId}`
     : input.downloadTaskId
       ? `download:${input.downloadTaskId}`
-      : `event:${occurredAt}:${normalizePart(input.failureReason)}`
+      : `event:${occurredAt}:${normalizeFailureIdentityPart(input.failureReason)}`
   const occurrenceResult = db.prepare(`
     INSERT OR IGNORE INTO failure_occurrences (fingerprint, occurrence_key, occurred_at)
     VALUES (?, ?, ?)
@@ -270,6 +261,72 @@ export function reconcileRunFailures(run: TaskRun): void {
   }
 }
 
+function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['phase'] {
+  if (failureKind === 'failed_tags') return 'tags'
+  if (failureKind === 'failed_plex_match') return 'plex_match'
+  if (failureKind === 'failed_plex_insert') return 'plex_insert'
+  return 'download'
+}
+
+export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
+  const rows = getDb().prepare(`
+    SELECT song_id, failure_kind, occurrence_count, last_seen_at
+    FROM failure_records
+    WHERE source_id = ?
+      AND status IN ('open', 'ignored')
+      AND song_id IS NOT NULL
+      AND failure_kind != 'ignored_failure'
+    ORDER BY last_seen_at DESC
+  `).all(sourceId) as Array<{
+    song_id: number
+    failure_kind: string
+    occurrence_count: number
+    last_seen_at: string
+  }>
+  const copyrightSongIds = new Set<number>()
+  const failuresBySongId: Record<number, SourceFailurePolicyEntry> = {}
+
+  for (const row of rows) {
+    if (row.failure_kind === 'copyright_restricted') {
+      copyrightSongIds.add(row.song_id)
+      continue
+    }
+    if (failuresBySongId[row.song_id]) continue
+    failuresBySongId[row.song_id] = {
+      failureKind: row.failure_kind,
+      occurrenceCount: row.occurrence_count,
+      phase: phaseForFailureKind(row.failure_kind),
+    }
+  }
+
+  return { copyrightSongIds: [...copyrightSongIds], failuresBySongId }
+}
+
+export function shouldPauseSourceFailure(
+  entry: SourceFailurePolicyEntry | undefined,
+  maxFailures: number,
+): boolean {
+  if (!entry || !maxFailures || maxFailures <= 0 || entry.occurrenceCount < maxFailures) return false
+  return entry.phase === 'download' || entry.phase === 'tags'
+}
+
+export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
+  const row = getDb().prepare(`
+    SELECT
+      SUM(CASE WHEN failure_kind = 'copyright_restricted' THEN 1 ELSE 0 END) AS copyright_restricted,
+      SUM(CASE
+        WHEN failure_kind NOT IN ('copyright_restricted', 'ignored_failure') THEN 1
+        ELSE 0
+      END) AS actionable
+    FROM failure_records
+    WHERE source_id = ? AND status = 'open'
+  `).get(sourceId) as { actionable: number | null; copyright_restricted: number | null }
+  return {
+    actionable: Number(row.actionable || 0),
+    copyrightRestricted: Number(row.copyright_restricted || 0),
+  }
+}
+
 export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   items: FailureRecord[]
   total: number
@@ -378,6 +435,7 @@ export function backfillFailureRecords(): number {
     FROM download_tasks dt
     LEFT JOIN playlist_sources ps ON ps.id = dt.source_id
     LEFT JOIN task_runs tr ON tr.id = COALESCE(dt.run_id, dt.job_id)
+    WHERE dt.source_id IS NULL
     ORDER BY dt.created_at ASC
   `).all() as Array<Record<string, unknown>>
   for (const task of downloads) {

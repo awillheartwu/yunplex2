@@ -28,7 +28,7 @@ describe('database migrations', () => {
 
     const version = getDb().prepare('PRAGMA user_version').get() as { user_version: number }
     const downloadColumns = getDb().prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
-    expect(version.user_version).toBe(48)
+    expect(version.user_version).toBe(49)
     expect(downloadColumns.map(column => column.name)).toEqual(expect.arrayContaining([
       'run_id',
       'idempotency_key',

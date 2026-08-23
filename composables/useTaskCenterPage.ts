@@ -296,7 +296,7 @@ export function useTaskCenterPage() {
       failed_plex_match: 'Plex 未在重试窗口内识别到已下载文件。',
       failed_plex_insert: 'Plex 已识别歌曲，但未能完成歌单更新。',
       copyright_restricted: '网易云未提供可下载音源，本次已按版权限制跳过。',
-      ignored_failure: '连续失败达到缓存阈值，系统已暂停自动重试。清除对应歌曲的失败缓存后可再次尝试。',
+      ignored_failure: '连续失败达到阈值，系统已暂停自动重试。可从异常处理或同步源主动重试。',
     }
     return fallbacks[record.failureKind] || '未提供具体失败原因'
   }

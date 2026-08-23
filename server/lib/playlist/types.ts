@@ -38,8 +38,8 @@ export interface PlaylistSource {
   lastComparedAt: string | null
   skipPlexPlaylist: boolean | null
   skipRemoveExtraTracks: boolean | null
-  copyrightRestrictedIds: string | null
-  ignoredFailureIds: string | null
+  actionableFailureCount: number
+  copyrightRestrictedCount: number
   requiresMatchReconcile: boolean
   sortOrder: number
   createdAt: string
@@ -81,8 +81,8 @@ export interface PlaylistSourceRow {
   last_compared_at: string | null
   skip_plex_playlist: number | null
   skip_remove_extra_tracks: number | null
-  copyright_restricted_ids: string | null
-  ignored_failure_ids: string | null
+  actionable_failure_count: number
+  copyright_restricted_count: number
   requires_match_reconcile: number
   sort_order: number
   created_at: string
@@ -124,8 +124,8 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     lastComparedAt: row.last_compared_at,
     skipPlexPlaylist: row.skip_plex_playlist === null ? null : row.skip_plex_playlist === 1,
     skipRemoveExtraTracks: row.skip_remove_extra_tracks === null ? null : row.skip_remove_extra_tracks === 1,
-    copyrightRestrictedIds: row.copyright_restricted_ids,
-    ignoredFailureIds: row.ignored_failure_ids,
+    actionableFailureCount: Number(row.actionable_failure_count || 0),
+    copyrightRestrictedCount: Number(row.copyright_restricted_count || 0),
     requiresMatchReconcile: row.requires_match_reconcile === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,

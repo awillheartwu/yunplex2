@@ -225,11 +225,15 @@ export function updateTaskState(id: string, updates: Partial<{
 function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: string | null) {
   const task = getDownloadTask(id)
   if (!task) return
+  // Source Convergence projects source-scoped outcomes from its finalized run.
+  // Manual downloads have no convergence boundary, so their task terminal is
+  // the sole writer of the current failure state.
+  if (task.sourceId) return
   const common = {
     songId: task.songId,
     songName: task.songName,
     artist: task.artist,
-    sourceId: task.sourceId,
+    sourceId: null,
   }
   if (status === 'done') {
     resolveFailures(common)
@@ -237,9 +241,9 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
     const reason = error || task.error || '下载失败'
     recordFailure({
       ...common,
-      sourceName: task.sourceId || '手动下载',
+      sourceName: '手动下载',
       runId: task.jobId || null,
-      runType: task.sourceId ? 'sync' : 'manual_download',
+      runType: 'manual_download',
       failureKind: /metadata|tag|标签/i.test(reason) ? 'failed_tags' : /copyright|版权/i.test(reason) ? 'copyright_restricted' : 'failed_download',
       failureReason: reason,
       downloadTaskId: task.id,

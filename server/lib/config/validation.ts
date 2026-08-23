@@ -153,7 +153,7 @@ export function validateFullConfig(input: unknown): AppConfig {
       skipPlexPlaylist: readBoolean(candidate.sync.skipPlexPlaylist, '默认不入 Plex 歌单'),
       skipRemoveExtraTracks: readBoolean(candidate.sync.skipRemoveExtraTracks, '不删除 Plex 多余歌曲'),
       extraTrackRemovalPolicy: readEnum(candidate.sync.extraTrackRemovalPolicy, EXTRA_TRACK_REMOVAL_POLICIES, '多余歌曲清理策略'),
-      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '连续失败缓存阈值', 1, 20),
+      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '连续失败阈值', 1, 20),
     },
     other: {
       multiArtistFormat: readEnum(candidate.other.multiArtistFormat, MULTI_ARTIST_FORMATS, '多歌手格式'),

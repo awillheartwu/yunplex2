@@ -47,12 +47,12 @@
 
         <!-- Ignored failure -->
         <template v-else-if="song.status === 'ignored_failure'">
-          <p class="text-2xs text-muted-deep">此歌曲已达到连续失败阈值，系统已暂停自动重试。重新尝试时会先清除该歌曲的失败缓存。</p>
+          <p class="text-2xs text-muted-deep">此歌曲已达到连续失败阈值，系统已暂停自动重试。可主动重新尝试。</p>
           <button
             v-if="showRetry"
             class="btn btn-secondary btn-sm mt-2"
             :disabled="retrying"
-            :aria-label="retrying ? `正在重新尝试 ${song.songName}` : `清除 ${song.songName} 的失败缓存并重新尝试`"
+            :aria-label="retrying ? `正在重新尝试 ${song.songName}` : `重新尝试 ${song.songName}`"
             @click.stop="$emit('retry')"
           >{{ retrying ? '重试中...' : '重新尝试' }}</button>
         </template>

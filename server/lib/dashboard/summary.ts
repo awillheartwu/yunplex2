@@ -33,18 +33,6 @@ function formatSignedDelta(delta: number): string {
   return `较昨日 ${delta > 0 ? '+' : ''}${delta}`
 }
 
-function hasSerializedIds(value: string | null | undefined): boolean {
-  if (!value) return false
-  const trimmed = value.trim()
-  if (!trimmed || trimmed === '[]') return false
-  try {
-    const parsed = JSON.parse(trimmed) as unknown
-    return Array.isArray(parsed) ? parsed.length > 0 : Boolean(parsed)
-  } catch {
-    return true
-  }
-}
-
 function resolveSyncState(): SyncState {
   try {
     return getSyncServiceInstance().getState()
@@ -77,13 +65,13 @@ export function buildSourceHealthSummary(sources: PlaylistSource[]): DashboardSo
   }
 
   for (const source of sources) {
-    const hasIgnored = hasSerializedIds(source.ignoredFailureIds)
-    const hasCopyright = hasSerializedIds(source.copyrightRestrictedIds)
+    const hasFailures = source.actionableFailureCount > 0
+    const hasCopyright = source.copyrightRestrictedCount > 0
     if (!source.lastSyncedAt || source.lastStatus === 'idle') {
       summary.unsynced++
     } else if (source.lastStatus === 'failed') {
       summary.failed++
-    } else if (source.lastStatus === 'partial' || hasIgnored || hasCopyright) {
+    } else if (source.lastStatus === 'partial' || hasFailures || hasCopyright) {
       summary.warning++
     } else {
       summary.normal++
