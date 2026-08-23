@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -32,9 +32,10 @@ describe('system workspace information architecture', () => {
     expect(composable).toContain('}, 10000)')
   })
 
-  it('redirects retired list routes into their system tabs', () => {
-    expect(readProjectFile('pages/logs.vue')).toContain("navigateTo('/system?tab=logs'")
-    expect(readProjectFile('pages/jobs.vue')).toContain("navigateTo('/system?tab=runs'")
+  it('removes retired list routes while keeping the active run detail compatibility', () => {
+    expect(existsSync(`${root}/pages/logs.vue`)).toBe(false)
+    expect(existsSync(`${root}/pages/jobs.vue`)).toBe(false)
+    expect(existsSync(`${root}/pages/sources.vue`)).toBe(false)
     expect(readProjectFile('pages/task-center/index.vue')).toContain("legacyRunTabs.has(requestedTab)")
   })
 })
