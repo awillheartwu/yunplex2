@@ -1,7 +1,7 @@
 <template>
   <div class="task-center-page">
     <PageHeader
-      description="查看正在执行的工作、运行结果和需要处理的问题"
+      description="查看正在执行的工作和需要处理的问题；历史结果统一保存在系统与运行"
     />
 
     <PageTabs
@@ -84,36 +84,13 @@
               <span class="task-idle-card__status-dot" />
               系统空闲
             </div>
-            <template v-if="latestRun">
-              <div class="task-idle-card__main">
-                <div>
-                  <p class="task-idle-card__eyebrow">最近一次运行</p>
-                  <h3>{{ runSummaryLabel(latestRun.summary, runTypeLabel(latestRun.type)) }}</h3>
-                  <p>{{ runTypeLabel(latestRun.type) }} · {{ formatTime(latestRun.startedAt) }} · {{ formatRunDuration(latestRun.durationMs) }}</p>
-                </div>
-                <StatusBadge :status="runBadgeStatus(latestRun.status)" />
-              </div>
-              <div class="task-idle-card__stats">
-                <span><strong>{{ latestRun.totalSongs }}</strong> 项</span>
-                <span><strong class="text-success">{{ latestRun.successSongs }}</strong> 成功</span>
-                <span v-if="latestRun.skippedSongs > 0" class="text-existing"><strong>{{ latestRun.skippedSongs }}</strong> 已存在</span>
-                <span v-if="latestRun.warnings > 0" class="text-ignored"><strong>{{ latestRun.warnings }}</strong> 需关注</span>
-                <span v-if="latestRun.removedSongs > 0" class="text-warning"><strong>{{ latestRun.removedSongs }}</strong> 已移除</span>
-                <span v-if="latestRun.failedSongs > 0"><strong class="text-danger">{{ latestRun.failedSongs }}</strong> 失败</span>
-              </div>
-            </template>
-            <div v-else class="task-idle-card__empty">
-              <h3>还没有运行记录</h3>
-              <p>触发同步或手动下载后，这里会显示最近结果。</p>
+            <div class="task-idle-card__empty">
+              <h3>当前没有正在执行的任务</h3>
+              <p>同步请从仪表盘或同步源发起，下载请从手动下载发起。</p>
             </div>
             <div class="task-idle-card__actions">
-              <button class="btn btn-primary btn-sm" type="button" :disabled="syncLoading" @click="handleTriggerSync">
-                <AppIcon :name="syncLoading ? 'loader' : 'sync'" :size="15" :class="{ 'animate-spin': syncLoading }" />
-                {{ syncLoading ? '启动中' : '立即同步' }}
-              </button>
-              <NuxtLink v-if="latestRun" :to="`/task-center/runs/${latestRun.id}`" class="btn btn-secondary btn-sm">查看详情</NuxtLink>
+              <NuxtLink to="/system?tab=runs" class="btn btn-secondary btn-sm">查看运行记录</NuxtLink>
             </div>
-            <p v-if="syncError" class="task-idle-card__error">{{ syncError }}</p>
           </article>
 
           <section class="section-card issue-summary" :class="{ 'has-issues': openFailureTotal > 0 }">
@@ -300,12 +277,12 @@ const {
   activeTab, applyFailureDraftFilters, batchIgnore, batchReopen, batchRetry, clearFailureFilters,
   draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType,
   downloadQueue, elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
-  failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed, formatRunDuration,
-  failureStatusTabs, failureTypeFilters, formatTime, handleCancelSync, handleTriggerSync, ignoreFailure, isRetryable, latestRun, liveDescription,
+  failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed,
+  failureStatusTabs, failureTypeFilters, formatTime, handleCancelSync, ignoreFailure, isRetryable, liveDescription,
   livePercent, liveTitle, onFailureSearch, onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters,
-  primaryActiveRun, removeFailureFilter, reopenFailure, resetFailureDraftFilters, retryFailure, runBadgeStatus,
+  primaryActiveRun, removeFailureFilter, reopenFailure, resetFailureDraftFilters, retryFailure,
   runTypeLabel, secondaryActiveRuns, selectedFailures, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions, switchTab,
-  syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
+  syncState, taskCenterTabs, toggleFailure,
 } = useTaskCenterPage()
 </script>
 

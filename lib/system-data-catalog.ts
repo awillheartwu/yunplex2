@@ -39,8 +39,8 @@ const TABLE_CATALOG: Record<string, CatalogEntry> = {
   sync_state: { desc: '同步运行时状态', group: 'sync' },
   logs: { desc: '同步日志', group: 'sync', href: '/system?tab=logs' },
 
-  download_tasks: { desc: '下载任务队列', group: 'operations', href: '/manual-download?view=queue' },
-  downloads: { desc: '历史下载记录', group: 'operations', href: '/manual-download' },
+  download_tasks: { desc: '下载任务队列', group: 'operations', href: '/task-center' },
+  downloads: { desc: '下载执行明细', group: 'operations', href: '/task-center' },
   failure_records: { desc: '异常生命周期', group: 'operations', href: '/task-center?tab=failures' },
   failure_occurrences: { desc: '异常出现记录', group: 'operations', href: '/task-center?tab=failures' },
 

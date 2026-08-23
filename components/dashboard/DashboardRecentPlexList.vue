@@ -4,7 +4,7 @@
       <h2 class="dashboard-section-title">最近添加到 Plex</h2>
     </div>
 
-    <NuxtLink :to="historyLink" class="dashboard-panel__content-link" aria-label="查看手动下载记录">
+    <NuxtLink :to="historyLink" class="dashboard-panel__content-link" aria-label="查看运行记录">
       <div v-if="items.length > 0" class="dashboard-plex-list">
         <div
           v-for="item in items"
@@ -50,7 +50,7 @@ defineProps<{
   items: PlexRecentItem[]
 }>()
 
-const historyLink = '/manual-download?view=history'
+const historyLink = '/system?tab=runs'
 </script>
 
 <style scoped>

@@ -6,7 +6,6 @@ import { closeDb, getDb, initDb } from '../db'
 import { TagWriteError } from '../tag-writer'
 import { getLocalMediaAsset, upsertLocalMediaAsset } from '../sync/local-media-store'
 import {
-  clearQueuedDownloadTasks,
   enqueueTask,
   getDownloadTask,
   listDownloadTasks,
@@ -39,27 +38,6 @@ describe('download queue cleanup', () => {
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
-
-  it('clears waiting and failed tasks without deleting running or historical records', () => {
-    setupDb()
-    insertTask('task-1', 'pending')
-    insertTask('task-2', 'failed')
-    insertTask('task-3', 'downloading')
-    insertTask('task-4', 'tagging')
-    insertTask('task-5', 'done')
-
-    expect(clearQueuedDownloadTasks()).toBe(2)
-
-    const remaining = getDb()
-      .prepare('SELECT id, status FROM download_tasks ORDER BY id')
-      .all() as Array<{ id: string; status: string }>
-
-    expect(remaining).toEqual([
-      { id: 'task-3', status: 'downloading' },
-      { id: 'task-4', status: 'tagging' },
-      { id: 'task-5', status: 'done' },
-    ])
   })
 
   it('reuses an active task with the same idempotency key', () => {

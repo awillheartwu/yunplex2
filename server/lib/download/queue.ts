@@ -617,33 +617,6 @@ export async function retryTask(
   return getDownloadTask(id)
 }
 
-export async function retryAllFailed(
-  processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
-): Promise<number> {
-  const db = getDb()
-  const rows = db.prepare("SELECT id FROM download_tasks WHERE status = 'failed'").all() as Array<{ id: string }>
-  await processAll(processor, undefined, 3, rows.map(row => row.id))
-  return rows.length
-}
-
-export function clearDownloadTasks(): void {
-  getDb().prepare('DELETE FROM download_tasks').run()
-}
-
-export function clearQueuedDownloadTasks(): number {
-  const result = getDb().prepare(
-    "DELETE FROM download_tasks WHERE status IN ('pending', 'failed')",
-  ).run()
-  return result.changes
-}
-
-export function deleteDownloadTask(id: string): boolean {
-  const result = getDb().prepare(
-    "DELETE FROM download_tasks WHERE id = ? AND status NOT IN ('downloading', 'tagging')",
-  ).run(id)
-  return result.changes > 0
-}
-
 export function cleanupOldDownloadTasks(retentionDays: number): number {
   if (!retentionDays || retentionDays <= 0) return 0
   const cutoff = new Date(Date.now() - retentionDays * 86400000).toISOString()

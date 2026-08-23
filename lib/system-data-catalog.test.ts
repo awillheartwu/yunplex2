@@ -53,4 +53,13 @@ describe('system data catalog', () => {
       'config',
     ])
   })
+
+  it('routes operational download data to the task center', () => {
+    const rows = buildSystemDataTableRows({ download_tasks: 4, downloads: 2 })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'download_tasks', href: '/task-center' }),
+      expect.objectContaining({ name: 'downloads', href: '/task-center' }),
+    ]))
+  })
 })

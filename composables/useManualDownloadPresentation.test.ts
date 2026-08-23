@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildManualQueueTabs,
-  canDeleteManualDownloadTask,
   formatManualDuration,
   formatManualRelativeTime,
   formatManualTotalDuration,
-  manualDownloadStatusLabel,
   manualDownloadStatusTone,
   manualQualityLabel,
   manualResourceTypeLabel,
@@ -19,8 +16,6 @@ describe('manual download presentation helpers', () => {
     expect(manualResourceTypeLabel(null)).toBe('未识别')
     expect(manualQualityLabel('jymaster')).toBe('臻品母带')
     expect(manualQualityLabel('lossless')).toBe('无损')
-    expect(manualDownloadStatusLabel('tagging')).toBe('写入标签')
-    expect(manualDownloadStatusLabel('failed')).toBe('失败')
   })
 
   it('maps download status tones', () => {
@@ -41,28 +36,5 @@ describe('manual download presentation helpers', () => {
     expect(formatManualRelativeTime('2026-06-16T11:59:30.000Z', now)).toBe('刚刚')
     expect(formatManualRelativeTime('2026-06-16T11:20:00.000Z', now)).toBe('40 分钟前')
     expect(formatManualRelativeTime('2026-06-16T09:00:00.000Z', now)).toBe('3 小时前')
-  })
-
-  it('builds queue tabs from status counts', () => {
-    expect(buildManualQueueTabs({
-      pending: 2,
-      downloading: 1,
-      tagging: 1,
-      done: 5,
-      failed: 3,
-      total: 12,
-    })).toEqual([
-      { key: 'running', label: '下载中', count: 2 },
-      { key: 'pending', label: '等待中', count: 2 },
-      { key: 'failed', label: '失败', count: 3 },
-    ])
-  })
-
-  it('does not allow deleting running tasks', () => {
-    expect(canDeleteManualDownloadTask({ status: 'pending' })).toBe(true)
-    expect(canDeleteManualDownloadTask({ status: 'done' })).toBe(true)
-    expect(canDeleteManualDownloadTask({ status: 'failed' })).toBe(true)
-    expect(canDeleteManualDownloadTask({ status: 'downloading' })).toBe(false)
-    expect(canDeleteManualDownloadTask({ status: 'tagging' })).toBe(false)
   })
 })

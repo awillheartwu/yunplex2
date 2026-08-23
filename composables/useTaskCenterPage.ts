@@ -1,6 +1,6 @@
 import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
 import type { FailureRecord, FailureRecordStatus } from '~~/server/lib/tasks/failure-records'
-import type { JobStatus, TaskRunSummary, TaskRunType } from '~~/server/lib/job/types'
+import type { TaskRunSummary, TaskRunType } from '~~/server/lib/job/types'
 import {
   countActiveFilters,
   formatDateFilterLabel,
@@ -19,7 +19,7 @@ export function useTaskCenterPage() {
   const api = useApi()
   const feedback = useFeedback()
   const tabs: Array<{ key: TaskCenterTab; label: string }> = [
-    { key: 'overview', label: '概览' },
+    { key: 'overview', label: '进行中' },
     { key: 'failures', label: '异常处理' },
   ]
   const legacyTabs: Record<string, TaskCenterTab> = {
@@ -29,14 +29,13 @@ export function useTaskCenterPage() {
   const requestedTab = String(route.query.tab || 'overview')
   const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'failures'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
 
-  const { state: syncState, loading: syncLoading, error: syncError, triggerSync, cancelSync } = useSync()
+  const { state: syncState, cancelSync } = useSync()
   const failures = useFailures()
   const sourceOptions = ref<TaskSourceOption[]>([])
-  const latestRun = ref<TaskRunSummary | null>(null)
   const activeRunItems = ref<TaskRunSummary[]>([])
   const primaryActiveRun = computed(() => activeRunItems.value.find(run => run.type === 'sync' || run.type === 'repair') || activeRunItems.value[0] || null)
   const primaryActiveRunId = computed(() => primaryActiveRun.value?.id || null)
-  const downloadQueue = useDownloadQueue({ includeHistory: false, liveRunId: primaryActiveRunId, liveLimit: 12 })
+  const downloadQueue = useDownloadQueue({ liveRunId: primaryActiveRunId, liveLimit: 12 })
   const secondaryActiveRuns = computed(() => activeRunItems.value.filter(run => run.id !== primaryActiveRun.value?.id))
   const openFailureTotal = ref(0)
   const taskCenterTabs = computed(() => tabs.map(tab => ({
@@ -266,15 +265,6 @@ export function useTaskCenterPage() {
     else feedback.warning(result.msg || '没有可处理项目')
   }
 
-  async function handleTriggerSync() {
-    try {
-      await triggerSync()
-      await refreshOverview()
-      feedback.success('同步已触发', '可在“系统与运行”的运行记录中查看后续结果。')
-    } catch (err) {
-      feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
   async function handleCancelSync() {
     try {
       await cancelSync()
@@ -282,9 +272,6 @@ export function useTaskCenterPage() {
     } catch (err) {
       feedback.error('取消同步失败', err instanceof Error ? err.message : '请稍后重试')
     }
-  }
-  function runBadgeStatus(status: JobStatus): 'ok' | 'error' | 'warning' | 'running' | 'idle' {
-    return status === 'success' ? 'ok' : status === 'failed' ? 'error' : status === 'partial' ? 'warning' : status === 'running' ? 'running' : 'idle'
   }
   function failureKindLabel(kind: string) {
     return failureKindFilters.find(item => item.value === kind)?.label || kind
@@ -328,12 +315,10 @@ export function useTaskCenterPage() {
     return formatRunDuration(Math.max(0, Date.now() - new Date(value).getTime()))
   }
   async function refreshOverview() {
-    const [runResponse, activeResponse, failureResponse] = await Promise.all([
-      api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '1' }),
+    const [activeResponse, failureResponse] = await Promise.all([
       api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '20', status: 'running' }),
       api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', { limit: '1', status: 'open' }),
     ])
-    latestRun.value = runResponse.items[0] || null
     activeRunItems.value = activeResponse.items
     openFailureTotal.value = failureResponse.total
   }
@@ -380,11 +365,11 @@ export function useTaskCenterPage() {
     downloadQueue, elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
-    formatElapsed, formatRunDuration, formatTime, handleCancelSync, handleTriggerSync, ignoreFailure,
-    isRetryable, latestRun, liveDescription, livePercent, liveTitle, onFailureSearch,
+    formatElapsed, formatRunDuration, formatTime, handleCancelSync, ignoreFailure,
+    isRetryable, liveDescription, livePercent, liveTitle, onFailureSearch,
     onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter,
-    reopenFailure, resetFailureDraftFilters, retryFailure, runBadgeStatus, runTypeLabel, secondaryActiveRuns, selectedFailures,
+    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel, secondaryActiveRuns, selectedFailures,
     semanticToneClass, setDraftFailureDate, setFailureStatus, showMutationResult, sourceOptionLabel, sourceOptions,
-    stageLabel, switchTab, syncError, syncLoading, syncState, taskCenterTabs, toggleFailure,
+    stageLabel, switchTab, syncState, taskCenterTabs, toggleFailure,
   }
 }

@@ -1,17 +1,10 @@
 <template>
   <div class="manual-page">
     <PageHeader
-      description="解析网易云链接或资源 ID，选择歌曲并跟踪下载批次"
+      description="解析网易云链接或资源 ID，选择歌曲并提交下载"
     />
 
-    <PageTabs
-      :model-value="manualView"
-      :tabs="manualPageTabs"
-      aria-label="手动下载视图"
-      @change="switchManualView"
-    />
-
-    <div v-if="manualView === 'workspace'" class="manual-workspace">
+    <div class="manual-workspace">
     <div class="manual-top-grid">
       <section class="section-card manual-input-card">
         <div class="manual-card-header">
@@ -57,7 +50,11 @@
             <AppIcon name="download" :size="16" />
             <div>
               <strong>下载已启动，共 {{ downloadResult.total }} 首歌曲</strong>
-              <span>任务已进入队列，下方会持续刷新执行状态。</span>
+              <span>
+                任务已提交，可前往
+                <NuxtLink class="manual-inline-link" to="/task-center">任务中心</NuxtLink>
+                查看执行状态。
+              </span>
             </div>
           </div>
 
@@ -359,116 +356,7 @@
 
     </section>
 
-    <section class="section-card manual-queue-card">
-      <div class="manual-tabs-header">
-        <div>
-          <h3>下载队列</h3>
-          <p>只展示真实可执行的队列动作；当前系统不承诺暂停正在写入的任务。</p>
-        </div>
-        <div class="manual-queue-actions">
-          <button class="btn btn-secondary btn-xs" type="button" :disabled="retrying || queueStatus.failed === 0" @click="retryAll">
-            <AppIcon :name="retrying ? 'loader' : 'refresh'" :size="13" :class="{ 'animate-spin': retrying }" />
-            <span>重试失败</span>
-          </button>
-          <button class="btn btn-danger btn-xs" type="button" :disabled="clearableQueueCount === 0" @click="clearQueue">
-            <AppIcon name="trash" :size="13" />
-            <span>清空等待与失败</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="manual-tab-strip" role="tablist" aria-label="下载队列分段">
-        <button
-          v-for="tabItem in queueTabs"
-          :key="tabItem.key"
-          class="manual-tab-button"
-          :class="{ 'manual-tab-button--active': activeQueueTab === tabItem.key }"
-          type="button"
-          role="tab"
-          :aria-selected="activeQueueTab === tabItem.key"
-          @click="activeQueueTab = tabItem.key"
-        >
-          {{ tabItem.label }}
-          <span>{{ tabItem.count }}</span>
-        </button>
-      </div>
-
-      <div class="manual-queue-panel">
-        <div v-if="visibleQueueTasks.length > 0" class="manual-task-list">
-          <article v-for="task in visibleQueueTasks" :key="task.id" class="manual-task-row">
-            <div class="manual-task-cover">
-              <AppIcon :name="task.status === 'failed' ? 'warn' : 'music'" :size="16" />
-            </div>
-            <div class="manual-task-main">
-              <div class="manual-task-title-row">
-                <strong>{{ task.songName }}</strong>
-                <span class="manual-status-badge" :class="`manual-status-badge--${manualDownloadStatusTone(task.status)}`">
-                  {{ manualDownloadStatusLabel(task.status) }}
-                </span>
-              </div>
-              <p>{{ task.artist || '未知艺人' }} · {{ task.album || '未知专辑' }} · {{ manualQualityLabel(task.quality) }}</p>
-              <p v-if="task.error" class="manual-task-error">{{ task.error }}</p>
-              <div v-if="task.status === 'downloading' || task.status === 'tagging'" class="manual-progress-line">
-                <div :style="{ width: `${task.progress}%` }" />
-              </div>
-            </div>
-            <div class="manual-task-side">
-              <span>{{ task.progress }}%</span>
-              <small>{{ formatManualRelativeTime(task.updatedAt) }}</small>
-            </div>
-            <div class="manual-task-actions">
-              <button
-                v-if="task.status === 'failed'"
-                class="manual-icon-action"
-                type="button"
-                :aria-label="`重试 ${task.songName}`"
-                :disabled="retryingOne === task.id"
-                @click="retryOne(task.id)"
-              >
-                <AppIcon :name="retryingOne === task.id ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': retryingOne === task.id }" />
-              </button>
-              <button
-                v-if="canDeleteManualDownloadTask(task)"
-                class="manual-icon-action"
-                type="button"
-                :aria-label="`删除 ${task.songName}`"
-                @click="deleteOne(task.id)"
-              >
-                <AppIcon name="x" :size="14" />
-              </button>
-            </div>
-          </article>
-        </div>
-
-        <div v-else class="manual-state-panel manual-state-panel--queue-empty">
-          <AppIcon name="archive" :size="22" />
-          <strong>{{ queueEmptyTitle }}</strong>
-          <span>{{ loading ? '正在刷新下载队列。' : '这一分段现在没有任务。' }}</span>
-        </div>
-      </div>
-    </section>
     </div>
-
-    <section v-else class="manual-history">
-      <div class="manual-history__header">
-        <div>
-          <h3>手动下载记录</h3>
-          <p>每次下载批次都是一个完整运行，失败项可从异常处理统一重试。</p>
-        </div>
-        <button class="btn btn-secondary btn-xs" type="button" :disabled="manualRuns.loading.value" @click="manualRuns.fetch()">
-          <AppIcon :name="manualRuns.loading.value ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': manualRuns.loading.value }" />
-          刷新
-        </button>
-      </div>
-      <div v-if="manualRuns.loading.value && manualRuns.items.value.length === 0" class="manual-state-panel">
-        <strong>正在加载下载记录</strong>
-      </div>
-      <EmptyState v-else-if="manualRuns.items.value.length === 0" title="暂无手动下载记录" description="从工作台启动下载后，批次记录会显示在这里。" />
-      <div v-else class="space-y-3">
-        <RunCard v-for="run in manualRuns.items.value" :key="run.id" :run="run" />
-        <Pagination :has-more="manualRuns.hasMore.value" :loading="manualRuns.loadingMore.value" :current-count="manualRuns.items.value.length" :total="manualRuns.total.value" @load-more="manualRuns.loadMore()" />
-      </div>
-    </section>
   </div>
 </template>
 
@@ -476,19 +364,16 @@
 import { useManualDownloadPage } from '~~/composables/useManualDownloadPage'
 
 const {
-  activeQueueTab, allSelected, artist, artistsLine, canDeleteManualDownloadTask, canSaveAsSource, clearableQueueCount, clearParseHistory,
-  clearQueue, coverUrl, deleteOne, detectHint, downloadImages, downloading, downloadLyrics, downloadResult,
+  allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, detectHint, downloadImages, downloading, downloadLyrics, downloadResult,
   embedMetadata, error, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse,
-  handlePrimaryAction, hideBrokenImage, inputValue, invertSelection, loading, manualDownloadStatusLabel, manualDownloadStatusTone, manualPageTabs,
-  manualResourceTypeLabel, manualRuns, manualView, onPaste, parsedTargetLine, parseHistory, parseState, placeholderText,
+  handlePrimaryAction, hideBrokenImage, inputValue, invertSelection, manualResourceTypeLabel, onPaste, parsedTargetLine, parseHistory, parseState, placeholderText,
   primaryActionDisabled, primaryActionIcon, primaryActionLabel, quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
-  queueEmptyTitle, queueStatus, queueTabs, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory,
-  resultEmptyTitle, resultMetaLine, retryAll, retrying, retryingOne, retryOne, saveError, selectedCount,
-  switchManualView, title, toggleAll, toggleTrack, totalDurationLabel, trackCount, tracks, visibleQueueTasks,
+  resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine, saveError, selectedCount,
+  title, toggleAll, toggleTrack, totalDurationLabel, trackCount, tracks,
 } = useManualDownloadPage()
 </script>
 
 <style scoped>
 @import '~/assets/css/pages/manual-download-workspace.css';
-@import '~/assets/css/pages/manual-download-queue.css';
+@import '~/assets/css/pages/manual-download-results.css';
 </style>
