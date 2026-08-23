@@ -13,7 +13,7 @@ import {
 } from '../lib/maintenance/data-lifecycle'
 
 const DOWNLOAD_LEASE_SWEEP_INTERVAL_MS = 60 * 1000
-const DATA_LIFECYCLE_INTERVAL_MS = 24 * 60 * 60 * 1000
+const DATA_LIFECYCLE_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig()

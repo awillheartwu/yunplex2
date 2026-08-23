@@ -129,9 +129,9 @@ describe('automatic data lifecycle maintenance', () => {
 
   it('compacts detail, removes expired summaries, and preserves protected facts', () => {
     setup()
-    insertRun('recent-failed', '2026-08-13T12:00:00.000Z', 'failed')
-    insertRun('compact-failed', '2026-08-03T12:00:00.000Z', 'partial')
-    insertRun('expired-failed', '2026-07-20T12:00:00.000Z', 'failed')
+    insertRun('recent-failed', '2026-08-20T12:00:00.000Z', 'failed')
+    insertRun('compact-failed', '2026-08-14T12:00:00.000Z', 'partial')
+    insertRun('expired-failed', '2026-08-01T12:00:00.000Z', 'failed')
     insertRun('expired-success', '2026-08-10T12:00:00.000Z', 'success')
     insertRun('old-running', '2026-01-01T00:00:00.000Z', 'running')
 
@@ -173,6 +173,32 @@ describe('automatic data lifecycle maintenance', () => {
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM song_identity_bindings').get()).toEqual({ count: 1 })
 
     expect(runDataLifecycleMaintenance(config, getDb(), NOW).compactedRuns).toBe(0)
+  })
+
+  it('caps recent failed and partial detail by bytes when scheduled runs are frequent', () => {
+    setup()
+    const payload = 'diagnostic'.repeat(120_000)
+    for (let index = 0; index < 10; index += 1) {
+      const id = `frequent-${String(index).padStart(2, '0')}`
+      const startedAt = `2026-08-22T${String(index).padStart(2, '0')}:00:00.000Z`
+      insertRun(id, startedAt, 'partial')
+      const run = getRun(id)!
+      getDb().prepare('UPDATE task_runs SET data = ? WHERE id = ?')
+        .run(JSON.stringify({ ...run, diagnosticPayload: payload }), id)
+    }
+
+    const result = runDataLifecycleMaintenance(config, getDb(), NOW)
+    const retained = getDb().prepare(`
+      SELECT COUNT(*) AS rows, COALESCE(SUM(LENGTH(CAST(data AS BLOB))), 0) AS bytes
+      FROM task_runs
+      WHERE COALESCE(json_extract(data, '$.detailsExpired'), 0) != 1
+    `).get() as { rows: number; bytes: number }
+
+    expect(result.compactedRuns).toBeGreaterThan(0)
+    expect(retained.rows).toBeGreaterThan(0)
+    expect(retained.bytes).toBeLessThanOrEqual(DATA_LIFECYCLE_LIMITS.runDetailMaxBytes)
+    expect(getRun('frequent-09')?.detailsExpired).toBeUndefined()
+    expect(getRun('frequent-00')).toMatchObject({ detailsExpired: true, songs: [], steps: [] })
   })
 
   it('bounds failure history and keeps retry inputs for unresolved failures', () => {
