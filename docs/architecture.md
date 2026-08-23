@@ -44,8 +44,8 @@ Nitro 单进程服务
 | `server/lib/playlist/` | Playlist Source CRUD、批量动作、来源状态 | 歌曲身份推断 |
 | `server/lib/download/` | 持久任务、lease、并发消费、单曲下载配置 | Plex 歌单删除授权 |
 | `server/lib/sync/` | Track Resolution、Identity Binding、Reconciliation Plan、Source Convergence | 第二套手动下载入口 |
-| `server/lib/run/` | 统一 task run 记录和清理 | 领域状态真相 |
-| `server/lib/log/`、`server/lib/run/` | 诊断日志、统一运行记录和清理 | 替代领域状态或身份事件 |
+| `server/lib/run/` | 统一 task run 记录、查询和清理 | 领域状态真相 |
+| `server/lib/log/` | 诊断日志和有界保留 | 替代领域状态或身份事件 |
 
 ## 关键调用链
 
