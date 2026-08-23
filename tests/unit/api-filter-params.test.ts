@@ -25,7 +25,7 @@ describe('api filter parameter parsing', () => {
       enabled: '1',
       subscribed: 'false',
       lastStatus: 'partial',
-      hasIgnored: 'true',
+      hasFailures: 'true',
       hasCopyright: '0',
     })).toEqual({
       search: 'mellow',
@@ -33,7 +33,7 @@ describe('api filter parameter parsing', () => {
       enabled: true,
       subscribed: false,
       lastStatus: 'partial',
-      hasIgnored: true,
+      hasFailures: true,
       hasCopyright: false,
     })
 

@@ -1,10 +1,4 @@
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
-import {
-  countCopyrightRestrictedEntries,
-  countFailureCacheEntries,
-  formatFailureCacheActionLabel,
-  formatFailureCacheSummary,
-} from '~~/lib/failure-cache-presentation'
 
 export function getSourceDisplayName(source: Pick<PlaylistSource, 'name'>): string {
   return source.name || '(待获取)'
@@ -37,30 +31,28 @@ export function getSyncSourceCoverUrl(url: string, size = 80): string {
   return `${url}${separator}param=${size}y${size}`
 }
 
-export function getCopyrightCount(source: Pick<PlaylistSource, 'copyrightRestrictedIds'>): number {
-  return countCopyrightRestrictedEntries(source.copyrightRestrictedIds)
+export function getCopyrightCount(source: Pick<PlaylistSource, 'copyrightRestrictedCount'>): number {
+  return source.copyrightRestrictedCount
 }
 
-export function getFailureCacheCount(source: Pick<PlaylistSource, 'ignoredFailureIds'>): number {
-  return countFailureCacheEntries(source.ignoredFailureIds)
+export function getActionableFailureCount(source: Pick<PlaylistSource, 'actionableFailureCount'>): number {
+  return source.actionableFailureCount
 }
 
-export function getIssueCount(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): number {
-  return getCopyrightCount(source) + getFailureCacheCount(source)
+export function getIssueCount(source: Pick<PlaylistSource, 'copyrightRestrictedCount' | 'actionableFailureCount'>): number {
+  return getCopyrightCount(source) + getActionableFailureCount(source)
 }
 
-export function getIssueSummaryLabel(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): string {
-  return formatFailureCacheSummary({
-    continuousFailure: getFailureCacheCount(source),
-    copyrightRestricted: getCopyrightCount(source),
-  })
+export function getIssueSummaryLabel(source: Pick<PlaylistSource, 'copyrightRestrictedCount' | 'actionableFailureCount'>): string {
+  const parts: string[] = []
+  if (getActionableFailureCount(source) > 0) parts.push(`待处理 ${getActionableFailureCount(source)}`)
+  if (getCopyrightCount(source) > 0) parts.push(`版权受限 ${getCopyrightCount(source)}`)
+  return parts.join(' · ') || '无待处理异常'
 }
 
-export function getIssueActionLabel(source: Pick<PlaylistSource, 'copyrightRestrictedIds' | 'ignoredFailureIds'>): string {
-  return formatFailureCacheActionLabel({
-    continuousFailure: getFailureCacheCount(source),
-    copyrightRestricted: getCopyrightCount(source),
-  })
+export function getIssueActionLabel(source: Pick<PlaylistSource, 'copyrightRestrictedCount' | 'actionableFailureCount'>): string {
+  const count = getIssueCount(source)
+  return count > 0 ? `重新尝试 ${count} 个来源异常` : '当前没有待处理异常'
 }
 
 export function getSourceStateLabel(source: Pick<PlaylistSource, 'type' | 'enabled'>): string {

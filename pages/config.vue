@@ -207,7 +207,7 @@
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="连续跳过上限（次）" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
             <FormField label="全量对比间隔（天）" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" /></FormField>
-            <FormField label="连续失败缓存阈值（次）" hint="下载或 Plex 匹配连续失败 N 次后加入失败缓存并暂停自动重试；清除失败缓存后可再次尝试"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
+            <FormField label="连续失败阈值（次）" hint="下载或标签连续失败 N 次后暂停自动重试；可从异常处理或同步源主动重试"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
           </div>
         </template>
         <ToggleField v-model="form.sync.skipRemoveExtraTracks" label="不删除 Plex 多余歌曲" hint="同步时只添加和重排，不删除 Plex 中网易云已移除的歌曲。单个歌单源可覆盖此设置" />

@@ -48,8 +48,8 @@ const source: PlaylistSource = {
   lastComparedAt: null,
   skipPlexPlaylist: null,
   skipRemoveExtraTracks: null,
-  copyrightRestrictedIds: null,
-  ignoredFailureIds: null,
+  actionableFailureCount: 0,
+  copyrightRestrictedCount: 0,
   requiresMatchReconcile: false,
   sortOrder: 0,
   createdAt: '',
@@ -147,8 +147,6 @@ describe('source finalization projection', () => {
         trackUpdateTime: 123,
         plexUpdatedAt: null,
         plexPlaylist: null,
-        knownRestricted: [],
-        failureMemory: {},
         log: () => undefined,
       })
 

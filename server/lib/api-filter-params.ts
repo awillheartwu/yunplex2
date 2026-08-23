@@ -78,7 +78,7 @@ export function parsePlaylistSourceFilters(query: QueryRecord): PlaylistSourceFi
     enabled: parseOptionalBoolean(query.enabled),
     subscribed: parseOptionalBoolean(query.subscribed),
     lastStatus: enumParam(query, 'lastStatus', SOURCE_STATUSES),
-    hasIgnored: parseOptionalBoolean(query.hasIgnored),
+    hasFailures: parseOptionalBoolean(query.hasFailures),
     hasCopyright: parseOptionalBoolean(query.hasCopyright),
   }
 }

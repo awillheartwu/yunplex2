@@ -47,14 +47,14 @@
       </article>
       <article
         class="section-card sync-summary-card"
-        :aria-label="`失败缓存：${totalFailureCache} 首。达到连续失败阈值后已暂停自动重试的歌曲`"
+        :aria-label="`待处理异常：${totalActionableFailures} 个`"
       >
         <div class="sync-summary-card__icon sync-summary-card__icon--ignored">
           <AppIcon name="warn" :size="18" />
         </div>
         <div>
-          <p class="sync-summary-card__label" title="达到连续失败阈值并暂停自动重试的歌曲">失败缓存</p>
-          <p class="sync-summary-card__value" :class="totalFailureCache > 0 ? 'text-ignored' : 'text-muted-deep'">{{ totalFailureCache }}</p>
+          <p class="sync-summary-card__label">待处理异常</p>
+          <p class="sync-summary-card__value" :class="totalActionableFailures > 0 ? 'text-ignored' : 'text-muted-deep'">{{ totalActionableFailures }}</p>
         </div>
       </article>
       <article class="section-card sync-summary-card">
@@ -112,7 +112,7 @@
           <p class="filter-sheet-group__label">特殊条件</p>
           <div class="filter-sheet-group__controls">
             <FilterChip :active="draftSubscribedFilter === 'subscribed'" @click="draftSubscribedFilter = draftSubscribedFilter === 'subscribed' ? '' : 'subscribed'">已绑定目标</FilterChip>
-            <FilterChip :active="draftIssueFilter === 'ignored'" @click="draftIssueFilter = draftIssueFilter === 'ignored' ? '' : 'ignored'">有失败缓存</FilterChip>
+            <FilterChip :active="draftIssueFilter === 'failures'" @click="draftIssueFilter = draftIssueFilter === 'failures' ? '' : 'failures'">有待处理异常</FilterChip>
             <FilterChip :active="draftIssueFilter === 'copyright'" @click="draftIssueFilter = draftIssueFilter === 'copyright' ? '' : 'copyright'">版权受限</FilterChip>
           </div>
         </div>
@@ -215,7 +215,7 @@
               <th>歌单 / 来源</th>
               <th>Plex 名称</th>
               <th class="text-right">歌曲数</th>
-              <th class="text-right" scope="col" title="连续失败缓存与版权受限歌曲" aria-label="连续失败缓存与版权受限歌曲">失败缓存 / 版权</th>
+              <th class="text-right" scope="col">待处理 / 版权</th>
               <th>{{ filterType === 'album' ? '下载信息' : '同步信息' }}</th>
               <th class="sync-table__actions-col">操作</th>
             </tr>
@@ -308,7 +308,7 @@
                       type="button"
                       :title="sourceIssueActionLabel(s)"
                       :aria-label="sourceIssueActionLabel(s)"
-                      @click.stop="clearIssueCache(s)"
+                      @click.stop="retrySourceIssues(s)"
                     >
                       <span class="sync-table__issue-value sync-table__issue-value--active">{{ sourceIssueCount(s) }}</span>
                       <span class="sync-table__issue-unit">{{ sourceIssueSummary(s) }}</span>
@@ -502,14 +502,14 @@
               <span class="sync-mobile-card__stat-value">{{ s.trackCount }} 首</span>
             </div>
             <div class="sync-mobile-card__stat">
-              <span class="sync-mobile-card__stat-label">失败缓存 / 版权</span>
+              <span class="sync-mobile-card__stat-label">待处理 / 版权</span>
               <button
                 class="sync-mobile-card__issue"
                 type="button"
                 :disabled="sourceIssueCount(s) === 0"
                 :title="sourceIssueActionLabel(s)"
                 :aria-label="sourceIssueActionLabel(s)"
-                @click.stop="sourceIssueCount(s) > 0 && clearIssueCache(s)"
+                @click.stop="sourceIssueCount(s) > 0 && retrySourceIssues(s)"
               >
                 {{ sourceIssueCount(s) }} 首
               </button>
@@ -715,7 +715,7 @@ import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
 
 const {
   advancedFilterCount, advancedFilterLabel, allSources, allVisibleSelected, applyDraftFilters, batchDeleting, batchLoading, batchToggling,
-  canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearIssueCache, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload,
+  canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload,
   clearHoverHideTimer, desktopActionDensity, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget,
   enabledCount, expandedId, expandedLoading, expandedSongs, filteredSources, filterType, forceFullId, formatRelative,
   handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, isAnySyncing, lastSyncTime, loading, moreMenuId,
@@ -724,9 +724,9 @@ const {
   prepareDraftFilters, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress, repairSource, resetDraftFilters,
   runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedSourceIds, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction,
   showSourceHover, someVisibleSelected, sourceCanClear, sourceCoverSrc, sourceDisplayName, sourceFilterChips,
-  sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
+  retrySourceIssues, sourceIssueActionLabel, sourceIssueCount, sourceIssueSummary, sourceMetaLabel, sourceOriginName, sourcePageTabs, sourceSearch,
   sourceStateClass, sourceStateLabel, statusFilterOptions, syncingSourceId, syncResultDotClass, syncResultLabel, syncResultTextClass, syncSource, tableShellRef,
-  toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright, totalFailureCache,
+  toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalActionableFailures, totalCopyright,
   takeOverExternal, totalSourceCount,
 } = useSyncSourcesPage()
 

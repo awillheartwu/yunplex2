@@ -9,13 +9,40 @@ export interface PlaylistSourceFilter {
   enabled?: boolean
   subscribed?: boolean
   lastStatus?: PlaylistSource['lastStatus']
-  hasIgnored?: boolean
+  hasFailures?: boolean
   hasCopyright?: boolean
 }
 
-function sourceHasDataCondition(column: string, hasData: boolean): string {
-  const nonEmpty = `${column} IS NOT NULL AND TRIM(${column}) != '' AND TRIM(${column}) != '[]'`
-  return hasData ? `(${nonEmpty})` : `NOT (${nonEmpty})`
+const SOURCE_SELECT = `
+  SELECT ps.*,
+    (
+      SELECT COUNT(*)
+      FROM failure_records fr
+      WHERE fr.source_id = ps.id
+        AND fr.status = 'open'
+        AND fr.failure_kind NOT IN ('copyright_restricted', 'ignored_failure')
+    ) AS actionable_failure_count,
+    (
+      SELECT COUNT(*)
+      FROM failure_records fr
+      WHERE fr.source_id = ps.id
+        AND fr.status = 'open'
+        AND fr.failure_kind = 'copyright_restricted'
+    ) AS copyright_restricted_count
+  FROM playlist_sources ps
+`
+
+function sourceFailureCondition(kind: 'actionable' | 'copyright', hasFailures: boolean): string {
+  const kindCondition = kind === 'copyright'
+    ? "fr.failure_kind = 'copyright_restricted'"
+    : "fr.failure_kind NOT IN ('copyright_restricted', 'ignored_failure')"
+  const exists = `EXISTS (
+    SELECT 1 FROM failure_records fr
+    WHERE fr.source_id = ps.id
+      AND fr.status = 'open'
+      AND ${kindCondition}
+  )`
+  return hasFailures ? exists : `NOT ${exists}`
 }
 
 export function listSources(filter: boolean | PlaylistSourceFilter = false): PlaylistSource[] {
@@ -52,21 +79,21 @@ export function listSources(filter: boolean | PlaylistSourceFilter = false): Pla
     conditions.push('last_status = ?')
     params.push(normalized.lastStatus)
   }
-  if (normalized.hasIgnored !== undefined) {
-    conditions.push(sourceHasDataCondition('ignored_failure_ids', normalized.hasIgnored))
+  if (normalized.hasFailures !== undefined) {
+    conditions.push(sourceFailureCondition('actionable', normalized.hasFailures))
   }
   if (normalized.hasCopyright !== undefined) {
-    conditions.push(sourceHasDataCondition('copyright_restricted_ids', normalized.hasCopyright))
+    conditions.push(sourceFailureCondition('copyright', normalized.hasCopyright))
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const rows = db.prepare(`SELECT * FROM playlist_sources ${where} ORDER BY sort_order ASC, created_at ASC`).all(...params) as PlaylistSourceRow[]
+  const rows = db.prepare(`${SOURCE_SELECT} ${where} ORDER BY ps.sort_order ASC, ps.created_at ASC`).all(...params) as PlaylistSourceRow[]
   return rows.map(rowToSource)
 }
 
 export function getSource(id: string): PlaylistSource | null {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM playlist_sources WHERE id = ?').get(id) as PlaylistSourceRow | undefined
+  const row = db.prepare(`${SOURCE_SELECT} WHERE ps.id = ?`).get(id) as PlaylistSourceRow | undefined
   return row ? rowToSource(row) : null
 }
 
@@ -118,8 +145,6 @@ export function updateSource(id: string, partial: Partial<{
   fullCompareAfterDays: number | null
   skipPlexPlaylist: boolean | null
   skipRemoveExtraTracks: boolean | null
-  copyrightRestrictedIds: string | null
-  ignoredFailureIds: string | null
   requiresMatchReconcile: boolean
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
@@ -155,8 +180,6 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.fullCompareAfterDays !== undefined) { sets.push('full_compare_after_days = ?'); vals.push(partial.fullCompareAfterDays) }
   if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(toNullableBoolean(partial.skipPlexPlaylist)) }
   if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(toNullableBoolean(partial.skipRemoveExtraTracks)) }
-  if (partial.copyrightRestrictedIds !== undefined) { sets.push('copyright_restricted_ids = ?'); vals.push(partial.copyrightRestrictedIds) }
-  if (partial.ignoredFailureIds !== undefined) { sets.push('ignored_failure_ids = ?'); vals.push(partial.ignoredFailureIds) }
   if (partial.requiresMatchReconcile !== undefined) { sets.push('requires_match_reconcile = ?'); vals.push(partial.requiresMatchReconcile ? 1 : 0) }
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
   if (partial.plexUpdatedAt !== undefined) { sets.push('plex_updated_at = ?'); vals.push(partial.plexUpdatedAt) }

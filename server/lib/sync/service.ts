@@ -19,7 +19,10 @@ import { resolveEffectiveSourceSyncSettings } from './effective-settings'
 import { resolveSyncModePolicy } from './mode-policy'
 import { observePlaylistSourceTracks } from './match-management-store'
 import { captureBindingVersions } from './identity-coordinator'
-import { getFailureMemoryEntry, inferFailurePhase, parseFailureMemory, shouldSkipSongDueToFailure } from './failure-memory'
+import {
+  getSourceFailurePolicy,
+  shouldPauseSourceFailure,
+} from '../tasks/failure-records'
 import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
 import { buildSyncRunSummary } from './service-summary'
 import {
@@ -32,7 +35,6 @@ import { finalizeSourceConvergence } from './source-finalization'
 import { applySourceDownloads } from './source-downloads'
 import { reconcilePlexPlaylist } from './source-plex-reconciliation'
 import { tryApplyPureSourceReorder } from './source-pure-reorder'
-import { parsePersistedIntegerIds, serializePersistedIntegerIds } from '~~/lib/persisted-integer-ids'
 
 export { STAGE_LABELS } from './service-state'
 
@@ -71,6 +73,7 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     const targetIds = options?.sourceIds
     const rebuildMatch = modePolicy.rebuildAutomaticBindings
     const redownloadAll = modePolicy.redownloadManagedMedia
+    const retrySourceFailures = options?.trigger === 'retry'
     const takeOverExternal = options?.takeOverExternal ?? false
     cancelRequested = false
     state = { ...createInitialState(), isRunning: true, startedAt: new Date().toISOString(), dryRun }
@@ -382,21 +385,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           // but it must never remove a desired song from reconciliation. If it
           // disappeared here, an existing Plex occurrence could be classified
           // as extra and deleted simply because a previous download failed.
-          const parsedRestricted = parsePersistedIntegerIds(source.copyrightRestrictedIds)
-          const knownRestricted = parsedRestricted.ids
-          if (parsedRestricted.issues.length > 0) {
-            log(
-              'warn',
-              `歌单源「${source.name || source.neteasePlaylistName}」的版权受限缓存包含损坏数据，已保留有效歌曲 ID 并忽略无效内容`,
-              `copyrightRestrictedIds: ${parsedRestricted.issues.join(', ')}`,
-            )
-            if (!dryRun) {
-              updateSource(source.id, {
-                copyrightRestrictedIds: serializePersistedIntegerIds(knownRestricted),
-              })
-            }
-          }
-          const failureMemory = parseFailureMemory(source.ignoredFailureIds)
+          const failurePolicy = getSourceFailurePolicy(source.id)
+          const knownRestricted = failurePolicy.copyrightSongIds
           const maxFailures = cfg.sync.maxFailureAttempts
 
           // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
@@ -428,11 +418,12 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           for (const r of resolutions) {
             if (r.plexRatingKey || !['needs_download', 'unavailable'].includes(r.resolution)) continue
             if (redownloadAll) continue
+            if (retrySourceFailures) continue
             if (knownRestricted.includes(r.song.id)) {
               r.resolution = 'copyright_restricted'
               continue
             }
-            if (shouldSkipSongDueToFailure(failureMemory, r.song.id, maxFailures)) {
+            if (shouldPauseSourceFailure(failurePolicy.failuresBySongId[r.song.id], maxFailures)) {
               r.resolution = 'ignored_failure'
             }
           }
@@ -452,8 +443,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             } else if (r.resolution === 'copyright_restricted') {
               job.updateSong(songId, { status: 'copyright_restricted', phase: 'download' })
             } else if (r.resolution === 'ignored_failure') {
-              const entry = getFailureMemoryEntry(failureMemory, r.song.id)
-              job.updateSong(songId, { status: 'ignored_failure', phase: inferFailurePhase(r.song.id, entry) })
+              const entry = failurePolicy.failuresBySongId[r.song.id]
+              job.updateSong(songId, { status: 'ignored_failure', phase: entry?.phase || 'download' })
             }
             // needs_download / found_on_disk stay pending
           }
@@ -540,8 +531,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             trackUpdateTime,
             plexUpdatedAt,
             plexPlaylist,
-            knownRestricted,
-            failureMemory,
             log,
           })
           totalFailed += sourceResult.failedSongs

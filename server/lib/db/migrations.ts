@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto'
 import { createHistoricalMigrations } from './migration-history'
 import { isIdempotentSchemaError, tableExists } from './introspection'
 import { normalizePlexPath, normalizePlexRelativePath } from '../sync/identity-normalization'
+import { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
+
+export { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
 
 // Historical migration helper only. The runtime review subsystem is retired.
 function buildMatchReviewCandidateKey(input: {
@@ -760,7 +763,8 @@ const MIGRATIONS = createHistoricalMigrations({
   ensurePlaylistExtraObservationTable, ensurePlaylistSourceSyncCursorColumns,
   ensureSongIdentityBindingMethods, ensureSongIdentityReviewSchema, ensureTaskRunSources,
   migrateLegacyJobsToTaskRunsAndDrop, repairArtistResolutionCache,
-  retireActivityEvents, retireSyncState, retireWeakMetadataBindingsAndLookupCache,
+  retireActivityEvents, retirePlaylistSourceFailureCaches, retireSyncState,
+  retireWeakMetadataBindingsAndLookupCache,
 })
 
 export function runMigrations(d: Database.Database): void {
@@ -789,6 +793,7 @@ export function runMigrations(d: Database.Database): void {
   ensureDownloadWhenMediaMissingOverride(d)
   retireActivityEvents(d)
   retireSyncState(d)
+  retirePlaylistSourceFailureCaches(d)
   retireWeakMetadataBindingsAndLookupCache(d)
   retireComplexMatchingData(d)
 }

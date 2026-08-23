@@ -137,6 +137,37 @@ describe('download queue cleanup', () => {
     })
   })
 
+  it('writes manual terminal failures but leaves source failures to Source Convergence', async () => {
+    setupDb()
+    const manualTask = enqueueTask({
+      songId: 20,
+      songName: 'Manual',
+      artist: 'Artist',
+      album: 'Album',
+      quality: 'lossless',
+    })
+    const sourceTask = enqueueTask({
+      sourceId: 'source-one',
+      songId: 21,
+      songName: 'Source',
+      artist: 'Artist',
+      album: 'Album',
+      quality: 'lossless',
+    })
+
+    await processAll(async () => { throw new Error('network') }, undefined, 1, [manualTask.id])
+    await processAll(async () => { throw new Error('network') }, undefined, 1, [sourceTask.id])
+
+    expect(getDb().prepare(`
+      SELECT song_id, source_id, failure_kind
+      FROM failure_records
+    `).all()).toEqual([{
+      song_id: 20,
+      source_id: null,
+      failure_kind: 'failed_download',
+    }])
+  })
+
   it('records audio bytes written by YunPlex as a managed local media asset', async () => {
     setupDb()
     const task = enqueueTask({

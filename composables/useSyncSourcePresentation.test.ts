@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   formatSyncSourceRelativeTime,
   getCopyrightCount,
-  getFailureCacheCount,
+  getActionableFailureCount,
   getIssueActionLabel,
   getIssueCount,
   getIssueSummaryLabel,
@@ -21,25 +21,25 @@ describe('sync source presentation helpers', () => {
     vi.useRealTimers()
   })
 
-  it('splits continuous-failure cache and copyright counts safely', () => {
+  it('combines derived actionable and copyright counts', () => {
     const source = {
-      copyrightRestrictedIds: '["1","2"]',
-      ignoredFailureIds: '{"task-1":true,"task-2":true,"task-3":true}',
+      copyrightRestrictedCount: 2,
+      actionableFailureCount: 3,
     }
 
     expect(getCopyrightCount(source)).toBe(2)
-    expect(getFailureCacheCount(source)).toBe(3)
+    expect(getActionableFailureCount(source)).toBe(3)
     expect(getIssueCount(source)).toBe(5)
   })
 
-  it('returns zero counts for malformed issue payloads', () => {
+  it('returns zero counts when the failure read model is empty', () => {
     const source = {
-      copyrightRestrictedIds: '{',
-      ignoredFailureIds: '[',
+      copyrightRestrictedCount: 0,
+      actionableFailureCount: 0,
     }
 
     expect(getCopyrightCount(source)).toBe(0)
-    expect(getFailureCacheCount(source)).toBe(0)
+    expect(getActionableFailureCount(source)).toBe(0)
     expect(getIssueCount(source)).toBe(0)
   })
 
@@ -68,19 +68,19 @@ describe('sync source presentation helpers', () => {
     })).toBe('告白 - Original Soundtrack (告白 电影原任务) · ID 433349401')
 
     expect(getIssueSummaryLabel({
-      copyrightRestrictedIds: '["1"]',
-      ignoredFailureIds: '{"task-1":true,"task-2":true}',
-    })).toBe('失败缓存 2 · 版权受限 1')
+      copyrightRestrictedCount: 1,
+      actionableFailureCount: 2,
+    })).toBe('待处理 2 · 版权受限 1')
 
     expect(getIssueActionLabel({
-      copyrightRestrictedIds: '["1"]',
-      ignoredFailureIds: '{"task-1":true,"task-2":true}',
-    })).toBe('当前记录：失败缓存 2 · 版权受限 1。点击清除这些记录；下次同步将重新尝试对应歌曲')
+      copyrightRestrictedCount: 1,
+      actionableFailureCount: 2,
+    })).toBe('重新尝试 3 个来源异常')
 
     expect(getIssueSummaryLabel({
-      copyrightRestrictedIds: '[]',
-      ignoredFailureIds: '',
-    })).toBe('无失败缓存或版权受限')
+      copyrightRestrictedCount: 0,
+      actionableFailureCount: 0,
+    })).toBe('无待处理异常')
   })
 
   it('adds a single Netease image size parameter', () => {

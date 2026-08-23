@@ -3,7 +3,7 @@ import { useDragReorder } from '~~/composables/useDragReorder'
 import {
   formatSyncSourceRelativeTime,
   getCopyrightCount,
-  getFailureCacheCount,
+  getActionableFailureCount,
   getIssueActionLabel,
   getIssueCount,
   getPlexTargetName,
@@ -18,7 +18,6 @@ import {
   getSyncResultTone,
   getSyncSourceCoverUrl,
 } from '~~/composables/useSyncSourcePresentation'
-import { formatFailureCacheClearedLabel } from '~~/lib/failure-cache-presentation'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 import { createLatestAsyncGuard, useDebounceFn, useRafThrottleFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
@@ -44,7 +43,7 @@ export function useSyncSourcesPage() {
   type SourceStatusFilter = '' | 'idle' | 'success' | 'partial' | 'failed'
   type EnabledFilter = '' | 'enabled' | 'disabled'
   type SubscribedFilter = '' | 'subscribed'
-  type IssueFilter = '' | 'ignored' | 'copyright'
+  type IssueFilter = '' | 'failures' | 'copyright'
   type SourceFilterChipKey = 'search' | 'type' | 'enabled' | 'subscribed' | 'status' | 'issue'
   type SourceBatchAction = 'enable' | 'disable' | 'delete' | 'sync'
 
@@ -120,7 +119,7 @@ export function useSyncSourcesPage() {
     if (enabledFilter.value) chips.push({ key: 'enabled', label: `状态：${enabledFilter.value === 'enabled' ? '已启用' : '已禁用'}` })
     if (statusFilter.value) chips.push({ key: 'status', label: `结果：${statusFilterOptions.find(option => option.value === statusFilter.value)?.label ?? statusFilter.value}` })
     if (subscribedFilter.value) chips.push({ key: 'subscribed', label: '特殊：已绑定目标' })
-    if (issueFilter.value) chips.push({ key: 'issue', label: `特殊：${issueFilter.value === 'ignored' ? '有失败缓存' : '版权受限'}` })
+    if (issueFilter.value) chips.push({ key: 'issue', label: `特殊：${issueFilter.value === 'failures' ? '有待处理异常' : '版权受限'}` })
     return chips
   })
 
@@ -136,7 +135,7 @@ export function useSyncSourcesPage() {
     enabledFilter.value = ['enabled', 'disabled'].includes(queryString('enabled')) ? queryString('enabled') as EnabledFilter : ''
     subscribedFilter.value = queryString('subscribed') === 'subscribed' ? 'subscribed' : ''
     statusFilter.value = ['idle', 'success', 'partial', 'failed'].includes(queryString('status')) ? queryString('status') as SourceStatusFilter : ''
-    issueFilter.value = ['ignored', 'copyright'].includes(queryString('issue')) ? queryString('issue') as IssueFilter : ''
+    issueFilter.value = ['failures', 'copyright'].includes(queryString('issue')) ? queryString('issue') as IssueFilter : ''
   }
 
   function syncSourceFilterQuery() {
@@ -160,7 +159,7 @@ export function useSyncSourcesPage() {
     if (enabledFilter.value) params.enabled = enabledFilter.value === 'enabled' ? '1' : '0'
     if (subscribedFilter.value === 'subscribed') params.subscribed = '1'
     if (statusFilter.value) params.lastStatus = statusFilter.value
-    if (issueFilter.value === 'ignored') params.hasIgnored = '1'
+    if (issueFilter.value === 'failures') params.hasFailures = '1'
     if (issueFilter.value === 'copyright') params.hasCopyright = '1'
     return params
   }
@@ -244,7 +243,7 @@ export function useSyncSourcesPage() {
     const latest = new Date(Math.max(...times))
     return formatSyncSourceRelativeTime(latest.toISOString())
   })
-  const totalFailureCache = computed(() => allSources.value.reduce((sum, s) => sum + getFailureCacheCount(s), 0))
+  const totalActionableFailures = computed(() => allSources.value.reduce((sum, s) => sum + getActionableFailureCount(s), 0))
   const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + getCopyrightCount(s), 0))
   const advancedFilterLabel = computed(() => advancedFilterCount.value > 0 ? '筛选' : '高级筛选')
 
@@ -463,17 +462,13 @@ export function useSyncSourcesPage() {
     }, 90)
   }
 
-  async function clearIssueCache(s: PlaylistSource) {
-    const counts = {
-      continuousFailure: getFailureCacheCount(s),
-      copyrightRestricted: getCopyrightCount(s),
-    }
+  async function retrySourceIssues(s: PlaylistSource) {
     try {
-      await api.put(`/playlist-sources/${s.id}`, { ignoredFailureIds: null, copyrightRestrictedIds: null })
+      await api.post(`/playlist-sources/${s.id}/retry-failed`)
       await refreshSources()
-      feedback.success(formatFailureCacheClearedLabel(counts))
+      feedback.success('已开始重新尝试来源异常', getSourceDisplayName(s))
     } catch (err) {
-      feedback.error('清除失败缓存与版权受限记录失败', err instanceof Error ? err.message : '请稍后重试')
+      feedback.error('重新尝试失败', err instanceof Error ? err.message : '请稍后重试')
     }
   }
 
@@ -737,7 +732,7 @@ export function useSyncSourcesPage() {
 
   return {
     advancedFilterCount, advancedFilterLabel, albumSourceCount, allSources, allVisibleSelected, applyDraftFilters, applySourceFilters, batchDeleting,
-    batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer, clearIssueCache,
+    batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer,
     clearSelection, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
     draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget, enabledCount, enabledFilter, expandedId,
     expandedLoading, expandedSongs, fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative: formatSyncSourceRelativeTime,
@@ -749,10 +744,10 @@ export function useSyncSourcesPage() {
     repairSource, resetDraftFilters, restoreSourceFiltersFromRoute, runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedHasAlbum, selectedHasDisabledPlaylist,
     selectedSourceIds, selectedSources, setSourceType, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction, showSourceHover,
     someVisibleSelected, sourceActiveCount, sourceCanClear, sourceCoverSrc, sourceDisplayName: getSourceDisplayName, sourceFilterChips,
-    sourceFilters, sourceIssueActionLabel: getIssueActionLabel, sourceIssueCount: getIssueCount, sourceIssueSummary: getIssueSummaryLabel, sourceMetaLabel: getSourceMetaLabel, sourceOriginName: getSourceOriginName, sourcePageTabs,
+    retrySourceIssues, sourceFilters, sourceIssueActionLabel: getIssueActionLabel, sourceIssueCount: getIssueCount, sourceIssueSummary: getIssueSummaryLabel, sourceMetaLabel: getSourceMetaLabel, sourceOriginName: getSourceOriginName, sourcePageTabs,
     sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel: getSourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
     syncingSourceId, syncResultDotClass, syncResultLabel: getSyncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver, takeOverExternal,
     tableShellWidth, toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright,
-    totalFailureCache, totalSourceCount, triggerSourceSync, updateTableShellWidth,
+    totalActionableFailures, totalSourceCount, triggerSourceSync, updateTableShellWidth,
   }
 }

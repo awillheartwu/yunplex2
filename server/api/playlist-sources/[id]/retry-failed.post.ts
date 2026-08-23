@@ -1,14 +1,9 @@
 import { success, fail } from '../../../lib/response'
 import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
-import { getSource, updateSource } from '../../../lib/playlist/store'
+import { getSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { appendLog } from '../../../lib/log/store'
-import {
-  countCopyrightRestrictedEntries,
-  countFailureCacheEntries,
-  failureCacheTotal,
-  formatFailureCacheRetryLabel,
-} from '~~/lib/failure-cache-presentation'
+import { getSourceFailureCounts } from '../../../lib/tasks/failure-records'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -21,27 +16,17 @@ export default defineEventHandler(async (event) => {
   if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
   if (isRepairRunning()) return fail('补全任务运行中，请等待完成')
 
-  // Count how many cached failures before clearing
-  const counts = {
-    continuousFailure: countFailureCacheEntries(source.ignoredFailureIds),
-    copyrightRestricted: countCopyrightRestrictedEntries(source.copyrightRestrictedIds),
-  }
-  const clearedCount = failureCacheTotal(counts)
+  const counts = getSourceFailureCounts(source.id)
+  const retryCount = counts.actionable + counts.copyrightRestricted
 
-  if (clearedCount === 0) return fail('该同步源没有失败缓存或版权受限记录')
-
-  // Clear all failure caches
-  updateSource(source.id, {
-    copyrightRestrictedIds: null,
-    ignoredFailureIds: null,
-  })
+  if (retryCount === 0) return fail('该同步源没有可重新尝试的异常')
 
   // Log
   const cfg = readConfig()
   const dataDir = useRuntimeConfig(event).dataDir
   appendLog(dataDir, {
     level: 'info',
-    message: `[批量重试] ${formatFailureCacheRetryLabel(counts)}：${source.name}`,
+    message: `[来源重试] 重新尝试 ${retryCount} 个异常：${source.name}`,
     stage: 'download',
   }, cfg.sync.logRetentionDays ?? 30)
 
@@ -52,9 +37,9 @@ export default defineEventHandler(async (event) => {
   return success({
     triggered: true,
     sourceId: id,
-    clearedCount,
-    continuousFailureCount: counts.continuousFailure,
+    retryCount,
+    actionableFailureCount: counts.actionable,
     copyrightRestrictedCount: counts.copyrightRestricted,
     runId,
-  }, formatFailureCacheRetryLabel(counts))
+  }, `已开始重新尝试 ${retryCount} 个异常`)
 })

@@ -18,6 +18,7 @@ export interface HistoricalMigrationRepairs {
   migrateLegacyJobsToTaskRunsAndDrop: (d: Database.Database) => void
   repairArtistResolutionCache: (d: Database.Database) => void
   retireActivityEvents: (d: Database.Database) => void
+  retirePlaylistSourceFailureCaches: (d: Database.Database) => void
   retireSyncState: (d: Database.Database) => void
   retireWeakMetadataBindingsAndLookupCache: (d: Database.Database) => void
 }
@@ -45,6 +46,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
     migrateLegacyJobsToTaskRunsAndDrop,
     repairArtistResolutionCache,
     retireActivityEvents,
+    retirePlaylistSourceFailureCaches,
     retireSyncState,
     retireWeakMetadataBindingsAndLookupCache,
   } = repairs
@@ -515,5 +517,7 @@ export function createHistoricalMigrations(repairs: HistoricalMigrationRepairs):
   retireActivityEvents,
   /* v49: remove the unused persisted sync-state projection */
   retireSyncState,
+  /* v50: migrate source failure caches into failure_records and remove duplicate columns */
+  retirePlaylistSourceFailureCaches,
 ]
 }

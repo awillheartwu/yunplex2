@@ -21,8 +21,6 @@ export default defineEventHandler(async (event) => {
     skipPlexPlaylist?: boolean | null
     skipRemoveExtraTracks?: boolean | null
     neteasePlaylistName?: string
-    copyrightRestrictedIds?: string | null
-    ignoredFailureIds?: string | null
   }>(event)
 
   const updated = updateSource(id, {
@@ -38,8 +36,6 @@ export default defineEventHandler(async (event) => {
     skipPlexPlaylist: body.skipPlexPlaylist,
     skipRemoveExtraTracks: body.skipRemoveExtraTracks,
     neteasePlaylistName: body.neteasePlaylistName,
-    copyrightRestrictedIds: body.copyrightRestrictedIds,
-    ignoredFailureIds: body.ignoredFailureIds,
   })
 
   return success(updated, '歌单源更新成功')

@@ -5,10 +5,13 @@ import { join } from 'node:path'
 import { getDb, initDb } from '../../server/lib/db'
 import {
   failureFingerprint,
+  getSourceFailureCounts,
+  getSourceFailurePolicy,
   queryFailureRecords,
   recordFailure,
   resolveFailures,
   setFailureRecordStatus,
+  shouldPauseSourceFailure,
 } from '../../server/lib/tasks/failure-records'
 import { saveRun } from '../../server/lib/run/store'
 import type { TaskRun } from '../../server/lib/job/types'
@@ -250,5 +253,40 @@ describe('failure records', () => {
 
     expect(queryFailureRecords({ status: 'open', type: 'repair' }).total).toBe(1)
     expect(queryFailureRecords({ status: 'open', type: 'sync' }).total).toBe(0)
+  })
+
+  it('derives source retry policy and source counts from the failure read model', () => {
+    setup()
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      recordFailure({
+        songId: 42,
+        songName: 'Download Failure',
+        sourceId: 'source-one',
+        runId: `run-${attempt}`,
+        runType: 'sync',
+        failureKind: 'failed_download',
+      })
+    }
+    recordFailure({
+      songId: 43,
+      songName: 'Restricted',
+      sourceId: 'source-one',
+      runType: 'sync',
+      failureKind: 'copyright_restricted',
+    })
+    recordFailure({
+      songId: 44,
+      songName: 'Plex Match',
+      sourceId: 'source-one',
+      runType: 'sync',
+      failureKind: 'failed_plex_match',
+    })
+
+    const policy = getSourceFailurePolicy('source-one')
+    expect(policy.copyrightSongIds).toEqual([43])
+    expect(policy.failuresBySongId[42]).toMatchObject({ occurrenceCount: 3, phase: 'download' })
+    expect(shouldPauseSourceFailure(policy.failuresBySongId[42], 3)).toBe(true)
+    expect(shouldPauseSourceFailure(policy.failuresBySongId[44], 1)).toBe(false)
+    expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 2, copyrightRestricted: 1 })
   })
 })
