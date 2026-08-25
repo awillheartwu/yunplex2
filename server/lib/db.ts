@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG } from './config/defaults'
 import { migrateConfig } from './config/validation'
 import { seedConfig, coerceValue } from './db/config-seed'
 import { createSchema } from './db/schema'
-import { migrateLegacyJobsToTaskRunsAndDrop, runMigrations } from './db/migrations'
+import { runMigrations } from './db/migrations'
 
 let db: Database.Database | null = null
 
@@ -27,7 +27,6 @@ export function initDb(dataDir: string): Database.Database {
 
   createSchema(db)
   runMigrations(db)
-  migrateLegacyJobsToTaskRunsAndDrop(db)
   seedConfig(db, dataDir)
 
   return db

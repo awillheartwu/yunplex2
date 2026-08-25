@@ -1,6 +1,8 @@
 import type {
   JobStatus,
+  JobStep,
   SyncJob,
+  SongStatus,
   SongTask,
   TaskRun,
   TaskRunFilter,
@@ -28,16 +30,53 @@ function normalizeRun(run: TaskRun): TaskRun {
   }
 }
 
+const UNCHANGED_SONG_STATUSES = new Set<SongStatus>(['pending', 'skipped_existing'])
+
+function parseJson<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function changedSongs(run: TaskRun): SongTask[] {
+  return run.status === 'running'
+    ? []
+    : run.songs.filter(song => !UNCHANGED_SONG_STATUSES.has(song.status))
+}
+
 export function saveRun(run: TaskRun): void {
   const normalized = normalizeRun(run)
+  const persistedSongs = changedSongs(normalized)
   const db = getDb()
   const persist = db.transaction(() => {
     db.prepare(`
-      INSERT OR REPLACE INTO task_runs (
+      INSERT INTO task_runs (
         id, type, trigger, started_at, finished_at, status, summary,
         total_items, success_items, failed_items, skipped_items, removed_items,
-        warnings, source, target, duration_ms, data
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        warnings, source, target, duration_ms, dry_run, details_expired, steps_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        type = excluded.type,
+        trigger = excluded.trigger,
+        started_at = excluded.started_at,
+        finished_at = excluded.finished_at,
+        status = excluded.status,
+        summary = excluded.summary,
+        total_items = excluded.total_items,
+        success_items = excluded.success_items,
+        failed_items = excluded.failed_items,
+        skipped_items = excluded.skipped_items,
+        removed_items = excluded.removed_items,
+        warnings = excluded.warnings,
+        source = excluded.source,
+        target = excluded.target,
+        duration_ms = excluded.duration_ms,
+        dry_run = excluded.dry_run,
+        details_expired = excluded.details_expired,
+        steps_json = excluded.steps_json
     `).run(
       normalized.id,
       normalized.type,
@@ -55,11 +94,42 @@ export function saveRun(run: TaskRun): void {
       normalized.source,
       normalized.target,
       normalized.durationMs,
-      JSON.stringify(normalized),
+      normalized.dryRun ? 1 : 0,
+      normalized.detailsExpired ? 1 : 0,
+      normalized.status === 'running' ? '[]' : JSON.stringify(normalized.steps),
     )
-    db.prepare('DELETE FROM task_run_sources WHERE run_id = ?').run(normalized.id)
-    const insertSource = db.prepare('INSERT INTO task_run_sources (run_id, source_id) VALUES (?, ?)')
+    const insertSource = db.prepare('INSERT OR IGNORE INTO task_run_sources (run_id, source_id) VALUES (?, ?)')
     for (const sourceId of normalized.sourceIds || []) insertSource.run(normalized.id, sourceId)
+
+    if (normalized.status !== 'running') {
+      db.prepare('DELETE FROM task_run_song_changes WHERE run_id = ?').run(normalized.id)
+      const insertSong = db.prepare(`
+        INSERT INTO task_run_song_changes (
+          run_id, item_id, source_id, netease_song_id, netease_index,
+          song_name, artist, album, status, phase, file_path, file_type,
+          error_json, metadata_json, ops_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      for (const song of persistedSongs) {
+        insertSong.run(
+          normalized.id,
+          song.id,
+          song.sourceId ?? null,
+          song.neteaseSongId ?? null,
+          song.neteaseIndex ?? null,
+          song.songName,
+          song.artist,
+          song.album,
+          song.status,
+          song.phase,
+          song.filePath ?? null,
+          song.fileType ?? null,
+          song.error ? JSON.stringify(song.error) : null,
+          song.metadata ? JSON.stringify(song.metadata) : null,
+          song.ops ? JSON.stringify(song.ops) : null,
+        )
+      }
+    }
   })
   persist()
 }
@@ -71,19 +141,104 @@ export function saveSyncRun(job: SyncJob, trigger?: TaskRunTrigger): TaskRun {
     trigger: trigger || existing?.trigger || 'system',
   }
   saveRun(run)
-  reconcileRunFailures(run)
+  if (run.status !== 'running') reconcileRunFailures(run)
   return run
 }
 
 export function getRun(id: string): TaskRun | null {
-  const row = getDb().prepare('SELECT data, trigger, type FROM task_runs WHERE id = ?').get(id) as {
-    data: string
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT id, type, trigger, started_at, finished_at, status, duration_ms,
+      summary, source, target, total_items, success_items, failed_items,
+      skipped_items, removed_items, warnings, dry_run, details_expired, steps_json
+    FROM task_runs
+    WHERE id = ?
+  `).get(id) as {
+    id: string
     trigger: TaskRunTrigger
     type: TaskRunType
+    started_at: string
+    finished_at: string | null
+    status: JobStatus
+    duration_ms: number
+    summary: string
+    source: string
+    target: string
+    total_items: number
+    success_items: number
+    failed_items: number
+    skipped_items: number
+    removed_items: number
+    warnings: number
+    dry_run: number
+    details_expired: number
+    steps_json: string
   } | undefined
   if (!row) return null
-  const parsed = JSON.parse(row.data) as TaskRun
-  return normalizeRun({ ...parsed, type: row.type, trigger: row.trigger })
+  const sourceIds = (db.prepare('SELECT source_id FROM task_run_sources WHERE run_id = ? ORDER BY source_id').all(id) as Array<{ source_id: string }>)
+    .map(item => item.source_id)
+  const songs = (db.prepare(`
+    SELECT item_id, source_id, netease_song_id, netease_index, song_name,
+      artist, album, status, phase, file_path, file_type, error_json,
+      metadata_json, ops_json
+    FROM task_run_song_changes
+    WHERE run_id = ?
+    ORDER BY COALESCE(netease_index, 2147483647), rowid
+  `).all(id) as Array<{
+    item_id: string
+    source_id: string | null
+    netease_song_id: number | null
+    netease_index: number | null
+    song_name: string
+    artist: string
+    album: string
+    status: SongStatus
+    phase: SongTask['phase']
+    file_path: string | null
+    file_type: string | null
+    error_json: string | null
+    metadata_json: string | null
+    ops_json: string | null
+  }>).map(song => ({
+    id: song.item_id,
+    sourceId: song.source_id ?? undefined,
+    neteaseSongId: song.netease_song_id ?? undefined,
+    neteaseIndex: song.netease_index ?? undefined,
+    songName: song.song_name,
+    artist: song.artist,
+    album: song.album,
+    status: song.status,
+    phase: song.phase,
+    filePath: song.file_path ?? undefined,
+    fileType: song.file_type ?? undefined,
+    error: parseJson(song.error_json, undefined),
+    metadata: parseJson(song.metadata_json, undefined),
+    ops: parseJson(song.ops_json, undefined),
+  }))
+  return normalizeRun({
+    id: row.id,
+    type: row.type,
+    trigger: row.trigger,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    status: row.status,
+    durationMs: row.duration_ms,
+    summary: row.summary,
+    source: row.source,
+    sourceIds,
+    target: row.target,
+    totalSongs: row.total_items,
+    successSongs: row.success_items,
+    failedSongs: row.failed_items,
+    skippedSongs: row.skipped_items,
+    removedSongs: row.removed_items,
+    warnings: row.warnings,
+    dryRun: Boolean(row.dry_run),
+    detailsExpired: Boolean(row.details_expired),
+    steps: parseJson<JobStep[]>(row.steps_json, []),
+    songs,
+    config: {},
+  })
 }
 
 export function getSyncRun(id: string): SyncJob | null {
@@ -130,10 +285,13 @@ export function listRuns(filter: TaskRunFilter = {}): {
       )
       OR EXISTS (
         SELECT 1
-        FROM json_each(task_runs.data, '$.songs') search_song
-        WHERE LOWER(COALESCE(json_extract(search_song.value, '$.songName'), '')) LIKE ?
-          OR LOWER(COALESCE(json_extract(search_song.value, '$.artist'), '')) LIKE ?
-          OR LOWER(COALESCE(json_extract(search_song.value, '$.album'), '')) LIKE ?
+        FROM task_run_song_changes search_song
+        WHERE search_song.run_id = task_runs.id
+          AND (
+            LOWER(search_song.song_name) LIKE ?
+            OR LOWER(search_song.artist) LIKE ?
+            OR LOWER(search_song.album) LIKE ?
+          )
       )
     )`)
     const query = `%${filter.search.trim().toLowerCase()}%`
@@ -158,7 +316,7 @@ export function listRuns(filter: TaskRunFilter = {}): {
   const rows = db.prepare(`
     SELECT id, type, trigger, started_at, finished_at, status, duration_ms,
       summary, source, total_items, success_items, failed_items, skipped_items,
-      removed_items, warnings, data
+      removed_items, warnings, dry_run
     FROM task_runs
     ${where}
     ORDER BY started_at DESC
@@ -179,7 +337,7 @@ export function listRuns(filter: TaskRunFilter = {}): {
     skipped_items: number
     removed_items: number
     warnings: number
-    data: string
+    dry_run: number
   }>
   const earliest = db.prepare(`SELECT MIN(started_at) AS date FROM task_runs ${where}`).get(...params) as { date: string | null }
 
@@ -200,7 +358,7 @@ export function listRuns(filter: TaskRunFilter = {}): {
       skippedSongs: row.skipped_items,
       removedSongs: row.removed_items,
       warnings: row.warnings,
-      dryRun: Boolean((JSON.parse(row.data) as Partial<TaskRun>).dryRun),
+      dryRun: Boolean(row.dry_run),
     })),
     total,
     earliestDate: earliest.date ? dateKeyInTimeZone(earliest.date, filter.timeZone) : null,
@@ -325,13 +483,22 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
       } : undefined,
     }
   })
-  const step = run.steps[0]
-  if (step) {
-    step.status = run.status === 'running' ? 'running' : run.status === 'success' ? 'success' : run.status
-    step.finishedAt = finishedAt
-    step.durationMs = run.durationMs
-    step.message = `成功 ${success} 首${failed > 0 ? `，失败 ${failed} 首` : ''}`
+  const step: JobStep = run.steps[0] || {
+    id: `${run.id}:download`,
+    type: 'download',
+    title: '下载并写入歌曲',
+    status: 'running',
+    startedAt: run.startedAt,
+    finishedAt: null,
+    durationMs: 0,
+    message: '',
+    children: [],
   }
+  if (run.steps.length === 0) run.steps.push(step)
+  step.status = run.status === 'running' ? 'running' : run.status === 'success' ? 'success' : run.status
+  step.finishedAt = finishedAt
+  step.durationMs = run.durationMs
+  step.message = `成功 ${success} 首${failed > 0 ? `，失败 ${failed} 首` : ''}`
   saveRun(run)
   return run
 }
@@ -378,10 +545,24 @@ export function recoverInterruptedRuns(): number {
     }
   }
 
-  const rows = getDb().prepare("SELECT id, data FROM task_runs WHERE status = 'running'").all() as Array<{ id: string; data: string }>
+  const db = getDb()
+  db.prepare(`
+    UPDATE task_run_song_changes
+    SET status = 'failed_download',
+      phase = 'download',
+      error_json = ?
+    WHERE status = 'downloading'
+  `).run(JSON.stringify({
+    title: '重试中断',
+    message: '任务因服务重启中断',
+    stage: 'download',
+  }))
+
+  const rows = db.prepare("SELECT id FROM task_runs WHERE status = 'running'").all() as Array<{ id: string }>
   let changed = interruptedDownloads.length
   for (const row of rows) {
-    const run = JSON.parse(row.data) as TaskRun
+    const run = getRun(row.id)
+    if (!run) continue
     if (run.type === 'manual_download') {
       const synced = syncManualDownloadRun(run.id)
       if (synced?.status !== 'running') changed += 1

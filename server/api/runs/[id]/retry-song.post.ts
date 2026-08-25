@@ -1,4 +1,5 @@
 import { success, fail } from '../../../lib/response'
+import type { SongStatus } from '../../../lib/job/types'
 import { getSyncRun, saveSyncRun } from '../../../lib/run/store'
 import { getSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
@@ -11,15 +12,30 @@ import { classifyDownloadFailure } from '../../../lib/sync/download-diagnostics'
 import { isTagWriteError } from '../../../lib/tag-writer'
 import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
 
-function refreshRunStats(run: NonNullable<ReturnType<typeof getSyncRun>>): void {
-  run.failedSongs = run.songs.filter((song) =>
-    ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(song.status),
-  ).length
-  run.successSongs = run.songs.filter((song) => song.status === 'success').length
-  run.skippedSongs = run.songs.filter((song) => song.status === 'skipped_existing').length
-  run.warnings = run.songs.filter((song) =>
-    ['copyright_restricted', 'ignored_failure'].includes(song.status),
-  ).length
+const RETRYABLE_STATUSES = new Set<SongStatus>([
+  'failed_download',
+  'failed_tags',
+  'failed_plex_match',
+  'failed_plex_insert',
+])
+
+function applyRetryOutcome(
+  run: NonNullable<ReturnType<typeof getSyncRun>>,
+  previousStatus: SongStatus,
+  nextStatus: SongStatus,
+): void {
+  if (RETRYABLE_STATUSES.has(previousStatus) && !RETRYABLE_STATUSES.has(nextStatus)) {
+    run.failedSongs = Math.max(0, run.failedSongs - 1)
+  }
+  if (!RETRYABLE_STATUSES.has(previousStatus) && RETRYABLE_STATUSES.has(nextStatus)) {
+    run.failedSongs += 1
+  }
+  if (previousStatus === 'success' && nextStatus !== 'success') {
+    run.successSongs = Math.max(0, run.successSongs - 1)
+  }
+  if (previousStatus !== 'success' && nextStatus === 'success') {
+    run.successSongs += 1
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -35,6 +51,7 @@ export default defineEventHandler(async (event) => {
 
   const song = run.songs.find((candidate) => candidate.id === songId)
   if (!song) return fail('歌曲不存在')
+  if (!RETRYABLE_STATUSES.has(song.status)) return fail('只有失败歌曲可以重试')
 
   if (!song.neteaseSongId) return fail('此歌曲缺少网易云歌曲 ID，无法直接重试')
   if (song.status === 'downloading') return fail('该歌曲正在下载中')
@@ -50,6 +67,7 @@ export default defineEventHandler(async (event) => {
   const cfg = readConfig()
   const dataDir = useRuntimeConfig(event).dataDir
   const retentionDays = cfg.sync.logRetentionDays ?? 30
+  const previousStatus = song.status
   song.status = 'downloading'
   song.phase = 'download'
   delete song.error
@@ -84,7 +102,7 @@ export default defineEventHandler(async (event) => {
         songName: song.songName,
         artist: song.artist,
       }
-      refreshRunStats(currentRun)
+      applyRetryOutcome(currentRun, previousStatus, currentSong.status)
       saveSyncRun(currentRun)
       appendLog(dataDir, { level: 'error', message: `[重试] 标签写入失败: ${song.songName} - ${song.artist}`, stage: 'tags' }, retentionDays)
       emitEvent({
@@ -101,7 +119,7 @@ export default defineEventHandler(async (event) => {
     currentSong.fileType = result.fileType
     currentSong.ops = result.ops
     delete currentSong.error
-    refreshRunStats(currentRun)
+    applyRetryOutcome(currentRun, previousStatus, currentSong.status)
     saveSyncRun(currentRun)
     appendLog(dataDir, { level: 'info', message: `[重试] 下载成功: ${song.songName} - ${song.artist} → ${result.filePath}`, stage: 'download' }, retentionDays)
     let syncRunId: string | undefined
@@ -128,7 +146,7 @@ export default defineEventHandler(async (event) => {
       if (tagError?.fileType) currentSong.fileType = tagError.fileType
       if (tagError?.ops) currentSong.ops = tagError.ops
       currentSong.error = { title: diagnosis.title, message: msg, stage: diagnosis.phase, songName: song.songName, artist: song.artist }
-      refreshRunStats(currentRun)
+      applyRetryOutcome(currentRun, previousStatus, currentSong.status)
       saveSyncRun(currentRun)
     }
     emitEvent({

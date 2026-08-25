@@ -54,7 +54,7 @@
     <section v-if="job.detailsExpired" class="section-card run-detail__expired" role="status">
       <AppIcon name="archive" :size="18" />
       <div>
-        <strong>逐歌曲详情已按保留策略压缩</strong>
+        <strong>变化明细已按保留策略清理</strong>
         <p>运行摘要和统计仍然保留；需要继续处理的问题请前往任务中心的异常处理。</p>
       </div>
       <NuxtLink to="/task-center?tab=failures" class="btn btn-secondary btn-xs">查看异常</NuxtLink>
@@ -88,7 +88,7 @@
       >
         <span>
           <strong>执行时间线</strong>
-          <small>按过程聚合关键结果，展开后仍可追溯来源和歌曲</small>
+          <small>按过程聚合关键结果</small>
         </span>
         <AppIcon name="chevronRight" :size="12" class="shrink-0 transition-transform" :class="timelineCollapsed ? '' : 'rotate-90'" />
       </button>
@@ -97,11 +97,19 @@
       </div>
     </section>
 
-    <!-- Song results grouped by source -->
+    <section
+      v-if="!job.detailsExpired && job.status !== 'running' && job.songs.length === 0"
+      class="section-card p-4 text-sm text-muted"
+      role="status"
+    >
+      本次运行没有需要记录的歌曲变化或异常；未变化歌曲只计入上方统计。
+    </section>
+
+    <!-- Changed and exceptional song results grouped by source -->
     <section v-if="!job.detailsExpired && job.songs.length > 0" class="section-card overflow-hidden">
       <div class="run-detail__song-toolbar">
         <div class="run-detail__song-title">
-          <h3>歌曲清单</h3>
+          <h3>变化与异常</h3>
           <button
             type="button"
             class="run-detail__collapse-all"

@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../db'
-import { getRun } from '../run/store'
+import type { JobStatus, TaskRun } from '../job/types'
+import { getRun, saveRun } from '../run/store'
 import {
   DATA_LIFECYCLE_LIMITS,
   resolveDataLifecyclePolicy,
@@ -24,8 +25,8 @@ function setup() {
   initDb(directory)
 }
 
-function insertRun(id: string, startedAt: string, status: string, songs = 2) {
-  const data = {
+function insertRun(id: string, startedAt: string, status: JobStatus, songs = 2) {
+  const data: TaskRun = {
     id,
     type: 'sync',
     trigger: 'system',
@@ -44,7 +45,10 @@ function insertRun(id: string, startedAt: string, status: string, songs = 2) {
     removedSongs: 0,
     warnings: 0,
     dryRun: false,
-    steps: [{ id: `${id}:step`, type: 'download', title: 'step', status, children: [] }],
+    steps: [{
+      id: `${id}:step`, type: 'download', title: 'step', status,
+      startedAt, finishedAt: startedAt, durationMs: 1000, message: id, children: [],
+    }],
     songs: Array.from({ length: songs }, (_, index) => ({
       id: `${id}:song:${index}`,
       songName: `Song ${index}`,
@@ -56,24 +60,7 @@ function insertRun(id: string, startedAt: string, status: string, songs = 2) {
     })),
     config: { server: 'http://plex.local', section: 'Music' },
   }
-  getDb().prepare(`
-    INSERT INTO task_runs (
-      id, type, trigger, started_at, finished_at, status, summary,
-      total_items, success_items, failed_items, skipped_items, removed_items,
-      warnings, source, target, duration_ms, data
-    ) VALUES (?, 'sync', 'system', ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'source', 'Plex', 1000, ?)
-  `).run(
-    id,
-    startedAt,
-    startedAt,
-    status,
-    id,
-    songs,
-    status === 'success' ? songs : 0,
-    status === 'failed' || status === 'partial' ? songs : 0,
-    JSON.stringify(data),
-  )
-  getDb().prepare('INSERT INTO task_run_sources (run_id, source_id) VALUES (?, ?)').run(id, 'source-one')
+  saveRun(data)
 }
 
 function insertDownloadTask(id: string, status: 'done' | 'failed', updatedAt: string) {
@@ -162,7 +149,7 @@ describe('automatic data lifecycle maintenance', () => {
     const result = runDataLifecycleMaintenance(config, getDb(), NOW)
 
     expect(result).toMatchObject({ compactedRuns: 1, deletedRuns: 2, clearedRunReferences: 2 })
-    expect(getRun('recent-failed')?.detailsExpired).toBeUndefined()
+    expect(getRun('recent-failed')?.detailsExpired).toBe(false)
     expect(getRun('compact-failed')).toMatchObject({ detailsExpired: true, songs: [], steps: [] })
     expect(getRun('expired-failed')).toBeNull()
     expect(getRun('expired-success')).toBeNull()
@@ -182,22 +169,28 @@ describe('automatic data lifecycle maintenance', () => {
       const id = `frequent-${String(index).padStart(2, '0')}`
       const startedAt = `2026-08-22T${String(index).padStart(2, '0')}:00:00.000Z`
       insertRun(id, startedAt, 'partial')
-      const run = getRun(id)!
-      getDb().prepare('UPDATE task_runs SET data = ? WHERE id = ?')
-        .run(JSON.stringify({ ...run, diagnosticPayload: payload }), id)
+      getDb().prepare('UPDATE task_run_song_changes SET error_json = ? WHERE run_id = ?')
+        .run(JSON.stringify({ title: 'failed', message: payload, stage: 'download' }), id)
     }
 
     const result = runDataLifecycleMaintenance(config, getDb(), NOW)
     const retained = getDb().prepare(`
-      SELECT COUNT(*) AS rows, COALESCE(SUM(LENGTH(CAST(data AS BLOB))), 0) AS bytes
-      FROM task_runs
-      WHERE COALESCE(json_extract(data, '$.detailsExpired'), 0) != 1
+      SELECT COUNT(*) AS rows, COALESCE(SUM(payload_bytes), 0) AS bytes
+      FROM (
+        SELECT task_runs.id,
+          LENGTH(CAST(task_runs.steps_json AS BLOB))
+          + COALESCE(SUM(LENGTH(CAST(COALESCE(change.error_json, '') AS BLOB))), 0) AS payload_bytes
+        FROM task_runs
+        LEFT JOIN task_run_song_changes change ON change.run_id = task_runs.id
+        WHERE task_runs.details_expired = 0
+        GROUP BY task_runs.id
+      )
     `).get() as { rows: number; bytes: number }
 
     expect(result.compactedRuns).toBeGreaterThan(0)
     expect(retained.rows).toBeGreaterThan(0)
     expect(retained.bytes).toBeLessThanOrEqual(DATA_LIFECYCLE_LIMITS.runDetailMaxBytes)
-    expect(getRun('frequent-09')?.detailsExpired).toBeUndefined()
+    expect(getRun('frequent-09')?.detailsExpired).toBe(false)
     expect(getRun('frequent-00')).toMatchObject({ detailsExpired: true, songs: [], steps: [] })
   })
 

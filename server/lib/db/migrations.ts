@@ -4,9 +4,9 @@ import { createHistoricalMigrations } from './migration-history'
 import { isIdempotentSchemaError, tableExists } from './introspection'
 import { normalizePlexPath, normalizePlexRelativePath } from '../sync/identity-normalization'
 import { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
+import { ensureSparseTaskRunSchema } from './task-run-sparse-migration'
 
 export { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
-
 // Historical migration helper only. The runtime review subsystem is retired.
 function buildMatchReviewCandidateKey(input: {
   neteaseSongId: number
@@ -50,7 +50,6 @@ export function ensurePlaylistSourceSyncCursorColumns(d: Database.Database): voi
     if (!columns.has(name)) d.prepare(`ALTER TABLE playlist_sources ADD COLUMN ${name} ${type}`).run()
   }
 }
-
 /** Convert historical one-way booleans into true nullable source overrides. */
 export function ensureNullableSourceSyncOverrides(d: Database.Database): void {
   if (!tableExists(d, 'playlist_sources')) return
@@ -77,7 +76,6 @@ export function ensureNullableSourceSyncOverrides(d: Database.Database): void {
     }
   })()
 }
-
 /** Add the nullable source override without changing existing source behavior. */
 export function ensureDownloadWhenMediaMissingOverride(d: Database.Database): void {
   if (!tableExists(d, 'playlist_sources')) return
@@ -356,10 +354,11 @@ export function ensureMatchManagementSchema(d: Database.Database): void {
     }
     let runSongs: Array<Record<string, unknown>> = []
     let sourceRunId = source.last_job_id
-    let run = sourceRunId
-      ? d.prepare('SELECT data FROM task_runs WHERE id = ?').get(sourceRunId) as { data: string } | undefined
-      : undefined
-    if (!run) {
+    let run: { data: string } | undefined
+    if (tableHasColumn(d, 'task_runs', 'data') && sourceRunId) {
+      run = d.prepare('SELECT data FROM task_runs WHERE id = ?').get(sourceRunId) as { data: string } | undefined
+    }
+    if (tableHasColumn(d, 'task_runs', 'data') && !run) {
       const latest = d.prepare(`
         SELECT task_runs.id, task_runs.data
         FROM task_runs
@@ -628,6 +627,7 @@ function ensureTaskRunSources(d: Database.Database): void {
   `).run()
   d.prepare('CREATE INDEX IF NOT EXISTS idx_task_run_sources_source ON task_run_sources(source_id, run_id)').run()
 
+  if (!tableHasColumn(d, 'task_runs', 'data')) return
   const rows = d.prepare('SELECT id, data FROM task_runs').all() as Array<{ id: string; data: string }>
   const insert = d.prepare('INSERT OR IGNORE INTO task_run_sources (run_id, source_id) VALUES (?, ?)')
   const backfill = d.transaction(() => {
@@ -755,8 +755,7 @@ export function migrateLegacyJobsToTaskRunsAndDrop(d: Database.Database): void {
   ensureTaskRunSources(d)
   d.prepare('DROP TABLE IF EXISTS jobs').run()
 }
-
-const MIGRATIONS = createHistoricalMigrations({
+const MIGRATIONS = [...createHistoricalMigrations({
   ensureAuthTables, ensureDownloadTaskProcessingColumns, ensureDownloadWhenMediaMissingOverride,
   ensureLocalMediaAssetOwnership, ensureMatchManagementSchema, ensureMusicBrainzIdMappingCache,
   ensureMusicBrainzRecordingCacheStatuses, ensureNullableSourceSyncOverrides,
@@ -765,7 +764,7 @@ const MIGRATIONS = createHistoricalMigrations({
   migrateLegacyJobsToTaskRunsAndDrop, repairArtistResolutionCache,
   retireActivityEvents, retirePlaylistSourceFailureCaches, retireSyncState,
   retireWeakMetadataBindingsAndLookupCache,
-})
+}), ensureSparseTaskRunSchema]
 
 export function runMigrations(d: Database.Database): void {
   const currentVersion = (d.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
@@ -796,4 +795,5 @@ export function runMigrations(d: Database.Database): void {
   retirePlaylistSourceFailureCaches(d)
   retireWeakMetadataBindingsAndLookupCache(d)
   retireComplexMatchingData(d)
+  ensureSparseTaskRunSchema(d)
 }

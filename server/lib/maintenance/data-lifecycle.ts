@@ -1,7 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { SyncStrategyConfig } from '../config/types'
 import { getDb } from '../db'
-import type { JobStatus, TaskRunTrigger, TaskRunType } from '../job/types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -78,85 +77,25 @@ function cutoff(now: Date, days: number): string {
 
 interface CompactableRunRow {
   id: string
-  type: TaskRunType
-  trigger: TaskRunTrigger
-  started_at: string
-  finished_at: string | null
-  status: JobStatus
-  summary: string
-  total_items: number
-  success_items: number
-  failed_items: number
-  skipped_items: number
-  removed_items: number
-  warnings: number
-  source: string
-  target: string
-  duration_ms: number
-  data: string
-  payload_bytes?: number
+  payload_bytes: number
 }
 
-function compactRunDetail(
-  row: CompactableRunRow,
-  update: Database.Statement,
-): boolean {
-  try {
-    const previous = JSON.parse(row.data) as { dryRun?: unknown; sourceIds?: unknown }
-    const sourceIds = Array.isArray(previous.sourceIds)
-      ? previous.sourceIds.filter((sourceId): sourceId is string => typeof sourceId === 'string')
-      : []
-    update.run(JSON.stringify({
-      id: row.id,
-      type: row.type,
-      trigger: row.trigger,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
-      status: row.status,
-      durationMs: row.duration_ms,
-      summary: row.summary,
-      source: row.source,
-      sourceIds,
-      target: row.target,
-      totalSongs: row.total_items,
-      successSongs: row.success_items,
-      failedSongs: row.failed_items,
-      skippedSongs: row.skipped_items,
-      removedSongs: row.removed_items,
-      warnings: row.warnings,
-      dryRun: Boolean(previous.dryRun),
-      steps: [],
-      songs: [],
-      config: {},
-      detailsExpired: true,
-    }), row.id)
-    return true
-  } catch {
-    // A malformed historical payload remains queryable by its summary columns.
-    return false
-  }
+function compactRunDetail(db: Database.Database, id: string): void {
+  db.prepare('DELETE FROM task_run_song_changes WHERE run_id = ?').run(id)
+  db.prepare("UPDATE task_runs SET details_expired = 1, steps_json = '[]' WHERE id = ?").run(id)
 }
 
 function compactRunDetailsByAge(db: Database.Database, before: string, retainAfter: string): number {
   const rows = db.prepare(`
-    SELECT id, type, trigger, started_at, finished_at, status, summary,
-      total_items, success_items, failed_items, skipped_items, removed_items,
-      warnings, source, target, duration_ms, data
+    SELECT id
     FROM task_runs
     WHERE status IN ('failed', 'partial')
       AND started_at < ?
       AND started_at >= ?
-      AND json_valid(data) = 1
-      AND COALESCE(json_extract(data, '$.detailsExpired'), 0) != 1
-  `).all(before, retainAfter) as CompactableRunRow[]
-  const update = db.prepare('UPDATE task_runs SET data = ? WHERE id = ?')
-  let compacted = 0
-
-  for (const row of rows) {
-    if (compactRunDetail(row, update)) compacted += 1
-  }
-
-  return compacted
+      AND details_expired = 0
+  `).all(before, retainAfter) as Array<{ id: string }>
+  for (const row of rows) compactRunDetail(db, row.id)
+  return rows.length
 }
 
 /**
@@ -166,30 +105,37 @@ function compactRunDetailsByAge(db: Database.Database, before: string, retainAft
  */
 function compactRunDetailsByBudget(db: Database.Database, maxBytes: number): number {
   const rows = db.prepare(`
-    SELECT id, type, trigger, started_at, finished_at, status, summary,
-      total_items, success_items, failed_items, skipped_items, removed_items,
-      warnings, source, target, duration_ms, data,
-      LENGTH(CAST(data AS BLOB)) AS payload_bytes
+    SELECT task_runs.id,
+      LENGTH(CAST(task_runs.steps_json AS BLOB))
+      + COALESCE(SUM(
+        LENGTH(CAST(change.song_name AS BLOB))
+        + LENGTH(CAST(change.artist AS BLOB))
+        + LENGTH(CAST(change.album AS BLOB))
+        + LENGTH(CAST(COALESCE(change.file_path, '') AS BLOB))
+        + LENGTH(CAST(COALESCE(change.error_json, '') AS BLOB))
+        + LENGTH(CAST(COALESCE(change.metadata_json, '') AS BLOB))
+        + LENGTH(CAST(COALESCE(change.ops_json, '') AS BLOB))
+      ), 0) AS payload_bytes
     FROM task_runs
-    WHERE status IN ('failed', 'partial')
-      AND json_valid(data) = 1
-      AND COALESCE(json_extract(data, '$.detailsExpired'), 0) != 1
-    ORDER BY started_at DESC, id DESC
+    LEFT JOIN task_run_song_changes change ON change.run_id = task_runs.id
+    WHERE task_runs.status != 'running'
+      AND task_runs.details_expired = 0
+    GROUP BY task_runs.id
+    ORDER BY task_runs.started_at DESC, task_runs.id DESC
   `).all() as CompactableRunRow[]
-  const update = db.prepare('UPDATE task_runs SET data = ? WHERE id = ?')
   let retainedBytes = 0
   let retainedRows = 0
   let compacted = 0
 
   for (const row of rows) {
-    const payloadBytes = row.payload_bytes ?? Buffer.byteLength(row.data)
-    const retain = retainedRows === 0 || retainedBytes + payloadBytes <= maxBytes
+    const retain = retainedRows === 0 || retainedBytes + row.payload_bytes <= maxBytes
     if (retain) {
-      retainedBytes += payloadBytes
+      retainedBytes += row.payload_bytes
       retainedRows += 1
       continue
     }
-    if (compactRunDetail(row, update)) compacted += 1
+    compactRunDetail(db, row.id)
+    compacted += 1
   }
 
   return compacted
