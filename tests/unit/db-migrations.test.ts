@@ -28,12 +28,68 @@ describe('database migrations', () => {
 
     const version = getDb().prepare('PRAGMA user_version').get() as { user_version: number }
     const downloadColumns = getDb().prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
-    expect(version.user_version).toBe(49)
+    const runColumns = getDb().prepare("PRAGMA table_info('task_runs')").all() as Array<{ name: string }>
+    const changeTable = getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_run_song_changes'").get()
+    expect(version.user_version).toBe(50)
+    expect(runColumns.map(column => column.name)).toEqual(expect.arrayContaining([
+      'dry_run',
+      'details_expired',
+      'steps_json',
+    ]))
+    expect(runColumns.map(column => column.name)).not.toContain('data')
+    expect(changeTable).toBeDefined()
     expect(downloadColumns.map(column => column.name)).toEqual(expect.arrayContaining([
       'run_id',
       'idempotency_key',
       'lease_owner',
     ]))
+  })
+
+  it('drops legacy run snapshots without translating their song detail', () => {
+    const dir = createTempDataDir()
+    const legacyDb = new Database(join(dir, 'data.db'))
+    legacyDb.exec(`
+      CREATE TABLE task_runs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        trigger TEXT NOT NULL DEFAULT 'system',
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        total_items INTEGER NOT NULL DEFAULT 0,
+        success_items INTEGER NOT NULL DEFAULT 0,
+        failed_items INTEGER NOT NULL DEFAULT 0,
+        skipped_items INTEGER NOT NULL DEFAULT 0,
+        removed_items INTEGER NOT NULL DEFAULT 0,
+        warnings INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT '',
+        target TEXT NOT NULL DEFAULT '',
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL DEFAULT '{}'
+      );
+      INSERT INTO task_runs (
+        id, type, trigger, started_at, finished_at, status, summary,
+        total_items, success_items, failed_items, skipped_items, removed_items,
+        warnings, source, target, duration_ms, data
+      ) VALUES (
+        'legacy-json', 'sync', 'system', '2026-08-01T00:00:00.000Z',
+        '2026-08-01T00:01:00.000Z', 'partial', '旧运行', 2, 0, 1, 1, 0,
+        0, '网易云音乐', 'Plex', 60000,
+        '{"dryRun":true,"songs":[{"id":"old-song","status":"failed_download"}]}'
+      );
+      PRAGMA user_version = 49;
+    `)
+    legacyDb.close()
+
+    initDb(dir)
+
+    const columns = getDb().prepare("PRAGMA table_info('task_runs')").all() as Array<{ name: string }>
+    expect(columns.map(column => column.name)).not.toContain('data')
+    expect(getDb().prepare(`
+      SELECT dry_run, details_expired, steps_json FROM task_runs WHERE id = 'legacy-json'
+    `).get()).toEqual({ dry_run: 1, details_expired: 1, steps_json: '[]' })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM task_run_song_changes').get()).toEqual({ count: 0 })
   })
 
   it('drops the retired activity projection and all stored rows', () => {

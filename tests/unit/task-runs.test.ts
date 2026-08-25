@@ -57,54 +57,6 @@ describe('task run store', () => {
     expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'").get()).toBeUndefined()
   })
 
-  it('migrates old legacy jobs into task_runs and drops the legacy table', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'reyunplex-legacy-runs-'))
-    directories.push(directory)
-    const db = new Database(join(directory, 'data.db'))
-    db.exec(`
-      CREATE TABLE jobs (
-        id TEXT PRIMARY KEY,
-        started_at TEXT NOT NULL,
-        finished_at TEXT,
-        status TEXT NOT NULL,
-        summary TEXT NOT NULL DEFAULT '',
-        total_songs INTEGER NOT NULL DEFAULT 0,
-        success_songs INTEGER NOT NULL DEFAULT 0,
-        failed_songs INTEGER NOT NULL DEFAULT 0,
-        skipped_songs INTEGER NOT NULL DEFAULT 0,
-        warnings INTEGER NOT NULL DEFAULT 0,
-        dry_run INTEGER NOT NULL DEFAULT 0,
-        source TEXT NOT NULL DEFAULT '网易云音乐',
-        target TEXT NOT NULL DEFAULT 'Plex',
-        duration_ms INTEGER NOT NULL DEFAULT 0,
-        data TEXT NOT NULL DEFAULT '{}'
-      );
-      INSERT INTO jobs (
-        id, started_at, finished_at, status, summary, total_songs,
-        success_songs, failed_songs, skipped_songs,
-        warnings, dry_run, source, target, duration_ms, data
-      ) VALUES (
-        'legacy-run', '2026-06-22T00:00:00.000Z', '2026-06-22T00:00:01.000Z',
-        'success', '旧同步完成', 1, 1, 0, 0, 0, 0, '网易云音乐', 'Plex', 1000,
-        '{"id":"legacy-run","type":"sync","trigger":"system","startedAt":"2026-06-22T00:00:00.000Z","finishedAt":"2026-06-22T00:00:01.000Z","status":"success","durationMs":1000,"summary":"旧同步完成","source":"网易云音乐","sourceIds":["source-legacy"],"target":"Plex","totalSongs":1,"successSongs":1,"failedSongs":0,"skippedSongs":0,"removedSongs":0,"warnings":0,"dryRun":false,"steps":[],"songs":[],"config":{}}'
-      );
-      PRAGMA user_version = 30;
-    `)
-    db.close()
-
-    initDb(directory)
-
-    const legacyTable = getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get()
-    expect(legacyTable).toBeUndefined()
-    expect(getRun('legacy-run')).toMatchObject({
-      id: 'legacy-run',
-      type: 'sync',
-      summary: '旧同步完成',
-      sourceIds: ['source-legacy'],
-    })
-    expect(listRuns({ sourceId: 'source-legacy' }).items.map(run => run.id)).toEqual(['legacy-run'])
-  })
-
   it('persists and completes a manual download run from its task results', () => {
     setup()
     createManualDownloadRun({ id: 'batch-1', total: 2, sourceLabel: '两首单曲' })
@@ -137,6 +89,11 @@ describe('task run store', () => {
         title: '标签写入失败',
         stage: 'tags',
       },
+    })
+    expect(getRun('batch-1')).toMatchObject({
+      status: 'partial',
+      songs: [{ id: 'one' }, { id: 'two' }],
+      steps: [{ id: 'batch-1:download', status: 'partial' }],
     })
   })
 
@@ -242,6 +199,54 @@ describe('task run store', () => {
     saveRun(run)
 
     expect(listRuns({ sourceId: 'source-from-song' }).items.map(item => item.id)).toEqual(['song-derived-run'])
+  })
+
+  it('persists only changed and exceptional songs after a terminal run', () => {
+    setup()
+    const run: TaskRun = {
+      id: 'sparse-run',
+      type: 'sync',
+      trigger: 'schedule',
+      startedAt: '2026-06-22T00:00:00.000Z',
+      finishedAt: '2026-06-22T00:00:01.000Z',
+      status: 'partial',
+      durationMs: 1000,
+      summary: '同步完成，1 首失败',
+      source: '网易云音乐',
+      sourceIds: ['source-a'],
+      target: 'Plex',
+      totalSongs: 3,
+      successSongs: 1,
+      failedSongs: 1,
+      skippedSongs: 1,
+      removedSongs: 0,
+      warnings: 0,
+      dryRun: false,
+      steps: [],
+      songs: [
+        { id: 'changed', sourceId: 'source-a', songName: 'Changed', artist: 'A', album: 'X', status: 'success', phase: 'done' },
+        { id: 'unchanged', sourceId: 'source-a', songName: 'Unchanged', artist: 'B', album: 'Y', status: 'skipped_existing', phase: 'done' },
+        { id: 'failed', sourceId: 'source-a', songName: 'Failed', artist: 'C', album: 'Z', status: 'failed_download', phase: 'download' },
+      ],
+      config: {},
+    }
+
+    saveRun({ ...run, status: 'running', finishedAt: null })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM task_run_song_changes').get()).toEqual({ count: 0 })
+
+    saveRun(run)
+    expect(getDb().prepare('SELECT item_id, status FROM task_run_song_changes ORDER BY item_id').all()).toEqual([
+      { item_id: 'changed', status: 'success' },
+      { item_id: 'failed', status: 'failed_download' },
+    ])
+    expect(getRun(run.id)).toMatchObject({
+      totalSongs: 3,
+      skippedSongs: 1,
+      songs: [
+        { id: 'changed', status: 'success' },
+        { id: 'failed', status: 'failed_download' },
+      ],
+    })
   })
 
   it('filters calendar dates in the client time zone with an inclusive end date', () => {

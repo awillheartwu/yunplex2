@@ -4,7 +4,6 @@ import { getSyncService } from '../lib/sync/service'
 import { startWorker } from '../lib/sync/worker'
 import { setSyncService, setSyncWorker } from '../lib/sync/instance'
 import { recoverInterruptedRuns } from '../lib/run/store'
-import { backfillFailureRecords } from '../lib/tasks/failure-records'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
 import { appendLog } from '../lib/log/store'
 import {
@@ -22,7 +21,6 @@ export default defineNitroPlugin((nitroApp) => {
 
   initDb(dataDir)
   recoverInterruptedRuns()
-  backfillFailureRecords()
 
   const maintainDataLifecycle = () => {
     try {
