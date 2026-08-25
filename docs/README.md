@@ -14,6 +14,10 @@
 
 这三份文档描述当前工作树。行为调整时必须和代码、测试一起更新。
 
+## 阶段报告
+
+- [2026-08-25 精简阶段报告](simplification-report-2026-08-25.md)：以第一次产品剪裁前为基线，量化产品入口、代码、API 和数据库的收敛结果。
+
 ## 架构决策
 
 - [ADR 0001：Playlist Reconciliation](adr/0001-playlist-reconciliation.md) — 已被 ADR 0004 取代，保留作历史背景。
