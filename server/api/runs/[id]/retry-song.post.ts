@@ -65,8 +65,6 @@ export default defineEventHandler(async (event) => {
 
   const neteaseId = song.neteaseSongId
   const cfg = readConfig()
-  const dataDir = useRuntimeConfig(event).dataDir
-  const retentionDays = cfg.sync.logRetentionDays ?? 30
   const previousStatus = song.status
   song.status = 'downloading'
   song.phase = 'download'
@@ -74,7 +72,6 @@ export default defineEventHandler(async (event) => {
   saveSyncRun(run)
 
   setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
-  appendLog(dataDir, { level: 'info', message: `[重试] 开始下载: ${song.songName} - ${song.artist}`, stage: 'download' }, retentionDays)
 
   downloadSingleSong(neteaseId, resolveSingleSongConfig(cfg, {
     downloadMode: 'full',
@@ -104,7 +101,7 @@ export default defineEventHandler(async (event) => {
       }
       applyRetryOutcome(currentRun, previousStatus, currentSong.status)
       saveSyncRun(currentRun)
-      appendLog(dataDir, { level: 'error', message: `[重试] 标签写入失败: ${song.songName} - ${song.artist}`, stage: 'tags' }, retentionDays)
+      appendLog({ level: 'error', message: `[重试] 标签写入失败: ${song.songName} - ${song.artist}`, stage: 'tags' })
       emitEvent({
         type: 'song-retry-progress',
         data: { jobId: runId, runId, songId, status: 'failed', filePath: result.filePath, fileType: result.fileType, ops: result.ops, error: { message: '标签写入失败' } },
@@ -121,7 +118,6 @@ export default defineEventHandler(async (event) => {
     delete currentSong.error
     applyRetryOutcome(currentRun, previousStatus, currentSong.status)
     saveSyncRun(currentRun)
-    appendLog(dataDir, { level: 'info', message: `[重试] 下载成功: ${song.songName} - ${song.artist} → ${result.filePath}`, stage: 'download' }, retentionDays)
     let syncRunId: string | undefined
     if (!syncService.getState().isRunning && !isRepairRunning()) {
       syncRunId = syncService.startSyncForSource(source.id, { mode: 'full', trigger: 'retry' }).runId
@@ -135,7 +131,7 @@ export default defineEventHandler(async (event) => {
     const tagError = isTagWriteError(err) ? err : null
     const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
     const diagnosis = classifyDownloadFailure(msg, tagError?.filePath)
-    appendLog(dataDir, { level: 'error', message: `[重试] 下载失败: ${song.songName} - ${song.artist}`, detail: msg, stage: diagnosis.phase }, retentionDays)
+    appendLog({ level: 'error', message: `[重试] 下载失败: ${song.songName} - ${song.artist}`, detail: msg, stage: diagnosis.phase })
 
     const currentRun = getSyncRun(runId)
     const currentSong = currentRun?.songs.find((candidate) => candidate.id === songId)

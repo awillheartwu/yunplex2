@@ -1,20 +1,17 @@
 import type { LogEntry, LogLevel } from '~~/server/lib/log/types'
 import { sseSubscribe } from '~~/composables/sse'
 import { createLatestAsyncGuard, useThrottleFn } from '~~/composables/useTiming'
-import { useFeedback } from '~~/composables/useFeedback'
 
 const PAGE_SIZE = 50
 
 export function useSystemLogs() {
   const api = useApi()
-  const feedback = useFeedback()
   const logs = ref<LogEntry[]>([])
   const total = ref(0)
   const offset = ref(0)
   const loading = ref(false)
   const loadingMore = ref(false)
   const activeFilter = ref<LogLevel | ''>('')
-  const showClearConfirm = ref(false)
   const fetchGuard = createLatestAsyncGuard()
   const pendingRealtimeLogs: LogEntry[] = []
   const hasMore = computed(() => logs.value.length < total.value)
@@ -24,7 +21,6 @@ export function useSystemLogs() {
     { label: '信息', value: 'info' },
     { label: '警告', value: 'warn' },
     { label: '错误', value: 'error' },
-    { label: '调试', value: 'debug' },
   ]
 
   async function fetchLogs() {
@@ -68,19 +64,6 @@ export function useSystemLogs() {
     void fetchLogs()
   }
 
-  async function clearLogs() {
-    showClearConfirm.value = false
-    try {
-      await api.del('/logs')
-      logs.value = []
-      total.value = 0
-      offset.value = 0
-      feedback.success('系统日志已清空')
-    } catch (error) {
-      feedback.error('清空日志失败', error instanceof Error ? error.message : '请稍后重试')
-    }
-  }
-
   function flushRealtimeLogs() {
     if (pendingRealtimeLogs.length === 0) return
     const nextLogs = pendingRealtimeLogs.splice(0).reverse()
@@ -99,7 +82,6 @@ export function useSystemLogs() {
   function levelClass(level: LogLevel): string {
     if (level === 'error') return 'system-log-row__level--error'
     if (level === 'warn') return 'system-log-row__level--warn'
-    if (level === 'debug') return 'system-log-row__level--debug'
     return 'system-log-row__level--info'
   }
 
@@ -129,7 +111,6 @@ export function useSystemLogs() {
 
   return {
     activeFilter,
-    clearLogs,
     fetchLogs,
     filters,
     formatTime,
@@ -140,7 +121,6 @@ export function useSystemLogs() {
     loadMore,
     logs,
     setFilter,
-    showClearConfirm,
     total,
   }
 }

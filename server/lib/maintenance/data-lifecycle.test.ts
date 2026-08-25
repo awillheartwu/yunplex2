@@ -14,6 +14,7 @@ import {
 const directories: string[] = []
 const NOW = new Date('2026-08-23T12:00:00.000Z')
 const config = {
+  logRetentionDays: 30,
   jobRetentionSuccessDays: 7,
   jobRetentionFailedDays: 90,
   downloadTaskRetentionDays: 30,
@@ -108,10 +109,39 @@ describe('automatic data lifecycle maintenance', () => {
   it('caps legacy settings so operational data cannot remain unbounded', () => {
     expect(resolveDataLifecyclePolicy(config)).toEqual(DATA_LIFECYCLE_LIMITS)
     expect(resolveDataLifecyclePolicy({
+      logRetentionDays: 365,
       jobRetentionSuccessDays: 365,
       jobRetentionFailedDays: 365,
       downloadTaskRetentionDays: 0,
     })).toEqual(DATA_LIFECYCLE_LIMITS)
+  })
+
+  it('keeps diagnostic logs within one centralized age and row budget', () => {
+    setup()
+    const insert = getDb().prepare(`
+      INSERT INTO logs (id, timestamp, level, message, detail, stage)
+      VALUES (?, ?, 'warn', ?, NULL, 'maintenance')
+    `)
+    for (let index = 0; index < 5; index += 1) {
+      insert.run(`old-${index}`, '2026-07-01T00:00:00.000Z', `old ${index}`)
+    }
+    for (let index = 0; index < 2005; index += 1) {
+      insert.run(
+        `recent-${String(index).padStart(4, '0')}`,
+        `2026-08-22T${String(index % 24).padStart(2, '0')}:00:${String(index % 60).padStart(2, '0')}.000Z`,
+        `recent ${index}`,
+      )
+    }
+
+    const result = runDataLifecycleMaintenance(config, getDb(), NOW)
+    const rows = getDb().prepare('SELECT COUNT(*) AS count, MIN(timestamp) AS oldest FROM logs').get() as {
+      count: number
+      oldest: string
+    }
+
+    expect(result.deletedLogs).toBe(10)
+    expect(rows.count).toBe(DATA_LIFECYCLE_LIMITS.logMaxRows)
+    expect(rows.oldest >= '2026-08-22T00:00:00.000Z').toBe(true)
   })
 
   it('compacts detail, removes expired summaries, and preserves protected facts', () => {

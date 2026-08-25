@@ -5,6 +5,8 @@ import { getDb } from '../db'
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export const DATA_LIFECYCLE_LIMITS = {
+  logDays: 30,
+  logMaxRows: 2000,
   runDetailDays: 7,
   runDetailMaxBytes: 8 * 1024 * 1024,
   successfulRunDays: 7,
@@ -17,10 +19,12 @@ export const DATA_LIFECYCLE_LIMITS = {
 
 type RetentionConfig = Pick<
   SyncStrategyConfig,
-  'jobRetentionSuccessDays' | 'jobRetentionFailedDays' | 'downloadTaskRetentionDays'
+  'logRetentionDays' | 'jobRetentionSuccessDays' | 'jobRetentionFailedDays' | 'downloadTaskRetentionDays'
 >
 
 export interface DataLifecyclePolicy {
+  logDays: number
+  logMaxRows: number
   runDetailDays: number
   runDetailMaxBytes: number
   successfulRunDays: number
@@ -32,6 +36,7 @@ export interface DataLifecyclePolicy {
 }
 
 export interface DataLifecycleResult {
+  deletedLogs: number
   compactedRuns: number
   deletedRuns: number
   clearedRunReferences: number
@@ -48,6 +53,12 @@ function boundedDays(value: number | undefined, fallback: number, maximum: numbe
 
 export function resolveDataLifecyclePolicy(config: RetentionConfig): DataLifecyclePolicy {
   return {
+    logDays: boundedDays(
+      config.logRetentionDays,
+      DATA_LIFECYCLE_LIMITS.logDays,
+      DATA_LIFECYCLE_LIMITS.logDays,
+    ),
+    logMaxRows: DATA_LIFECYCLE_LIMITS.logMaxRows,
     runDetailDays: DATA_LIFECYCLE_LIMITS.runDetailDays,
     runDetailMaxBytes: DATA_LIFECYCLE_LIMITS.runDetailMaxBytes,
     successfulRunDays: boundedDays(
@@ -169,6 +180,7 @@ export function runDataLifecycleMaintenance(
 ): DataLifecycleResult {
   const policy = resolveDataLifecyclePolicy(config)
   const detailCutoff = cutoff(now, policy.runDetailDays)
+  const logCutoff = cutoff(now, policy.logDays)
   const successfulRunCutoff = cutoff(now, policy.successfulRunDays)
   const failedRunCutoff = cutoff(now, policy.failedRunDays)
   const downloadCutoff = cutoff(now, policy.downloadTaskDays)
@@ -180,6 +192,15 @@ export function runDataLifecycleMaintenance(
   `
 
   return db.transaction(() => {
+    const deletedLogsByAge = db.prepare('DELETE FROM logs WHERE timestamp < ?').run(logCutoff).changes
+    const logCount = (db.prepare('SELECT COUNT(*) AS count FROM logs').get() as { count: number }).count
+    const overflowLogs = Math.max(0, logCount - policy.logMaxRows)
+    const deletedLogsByCount = overflowLogs > 0
+      ? db.prepare(`
+          DELETE FROM logs
+          WHERE id IN (SELECT id FROM logs ORDER BY timestamp ASC LIMIT ?)
+        `).run(overflowLogs).changes
+      : 0
     const compactedByAge = compactRunDetailsByAge(db, detailCutoff, failedRunCutoff)
     const runParams = [successfulRunCutoff, failedRunCutoff]
     const clearedSourceRuns = db.prepare(`
@@ -262,6 +283,7 @@ export function runDataLifecycleMaintenance(
     `).run(policy.failureOccurrencesPerFingerprint).changes
 
     return {
+      deletedLogs: deletedLogsByAge + deletedLogsByCount,
       compactedRuns: compactedByAge + compactedByBudget,
       deletedRuns,
       clearedRunReferences:

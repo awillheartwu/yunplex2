@@ -69,7 +69,6 @@ interface ReconcilePlexPlaylistInput {
   config: AppConfig
   job: RunBuilder
   stepContext: JobStepContext
-  playlistName: string
   plexPlaylist: PlexPlaylistIdentity
   sectionKey: string
   currentIdOrder: number[]
@@ -82,7 +81,7 @@ interface ReconcilePlexPlaylistInput {
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
   setStage: (stage: SyncState['currentStage']) => void
-  log: (level: 'info' | 'warn' | 'error', message: string, detail?: string) => void
+  log: (level: 'warn' | 'error', message: string, detail?: string) => void
 }
 
 /**
@@ -102,7 +101,6 @@ export async function reconcilePlexPlaylist(
     config,
     job,
     stepContext,
-    playlistName,
     plexPlaylist,
     sectionKey,
     currentIdOrder,
@@ -133,7 +131,6 @@ export async function reconcilePlexPlaylist(
     throwIfCancelled()
   }
 
-  log('info', '开始 Plex 查找重试')
   const plexMatchResults = new Map<number, Awaited<ReturnType<typeof findTrackWithRetryDetailed>>>()
   const failedPlexRetrySongIds: number[] = []
   const pendingVerifiedBindings: BindingInput[] = []
@@ -160,7 +157,6 @@ export async function reconcilePlexPlaylist(
     if (!result.ratingKey) {
       plexMatchResults.set(resolution.song.id, result)
       failedPlexRetrySongIds.push(resolution.song.id)
-      log('warn', `Plex 未找到: ${resolution.song.name}（请手动扫描 Plex）`)
       if (songId && currentSong?.status !== 'failed_tags') {
         job.updateSong(songId, { status: 'failed_plex_match', phase: 'plex_match' })
       }
@@ -229,7 +225,6 @@ export async function reconcilePlexPlaylist(
         filePath: effectiveFilePath ?? undefined,
       })
     }
-    log('info', `Plex 已索引: ${resolution.song.name}`)
   }
 
   for (const resolution of resolutions) {
@@ -338,10 +333,6 @@ export async function reconcilePlexPlaylist(
     extraTrackRemovalPolicy: config.sync.extraTrackRemovalPolicy,
     extraObservationCounts,
   })
-
-  if (reconciliationPlan.hasIncompleteTargetOrder) {
-    log('warn', `歌单「${playlistName}」仍有歌曲未建立 Plex 强身份，相关旧项将保留待确认`)
-  }
 
   for (const decision of reconciliationPlan.removalDecisions) {
     let extraSongId = extraTaskIds.get(decision.playlistItemId)

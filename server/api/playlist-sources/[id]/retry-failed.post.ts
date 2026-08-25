@@ -1,8 +1,6 @@
 import { success, fail } from '../../../lib/response'
 import { getSyncServiceInstance, isRepairRunning } from '../../../lib/sync/instance'
 import { getSource } from '../../../lib/playlist/store'
-import { readConfig } from '../../../lib/config/store'
-import { appendLog } from '../../../lib/log/store'
 import { getSourceFailureCounts } from '../../../lib/tasks/failure-records'
 
 export default defineEventHandler(async (event) => {
@@ -20,15 +18,6 @@ export default defineEventHandler(async (event) => {
   const retryCount = counts.actionable + counts.copyrightRestricted
 
   if (retryCount === 0) return fail('该同步源没有可重新尝试的异常')
-
-  // Log
-  const cfg = readConfig()
-  const dataDir = useRuntimeConfig(event).dataDir
-  appendLog(dataDir, {
-    level: 'info',
-    message: `[来源重试] 重新尝试 ${retryCount} 个异常：${source.name}`,
-    stage: 'download',
-  }, cfg.sync.logRetentionDays ?? 30)
 
   // Clearing failure memory must be followed by a real comparison even when
   // the Netease playlist timestamp itself has not changed.

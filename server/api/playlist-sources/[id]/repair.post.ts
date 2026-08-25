@@ -54,8 +54,6 @@ export default defineEventHandler(async (event) => {
   const totalSongs = songs.length
   const jobId = randomUUID().slice(0, 12)
   const now = new Date().toISOString()
-  const dataDir = useRuntimeConfig(event).dataDir
-  const retentionDays = cfg.sync.logRetentionDays ?? 30
 
   // Create repair job (wrapped in try — release lock if this fails)
   let job: SyncJob
@@ -88,7 +86,6 @@ export default defineEventHandler(async (event) => {
     }
     saveSyncRun(job, 'user')
 
-    appendLog(dataDir, { level: 'info', message: `[修复] 开始: ${source.name}，共 ${totalSongs} 首`, stage: 'download' }, retentionDays)
     emitEvent({ type: 'stage-change', data: { stage: 'repair', sourceId: id, jobId }, timestamp: now })
   } catch (err) {
     setRepairRunning(false)
@@ -164,7 +161,6 @@ export default defineEventHandler(async (event) => {
         job.successSongs = succeeded
         job.skippedSongs = skipped + alreadyExisted
         saveSyncRun(job)
-        appendLog(dataDir, { level: 'info', message: `[修复] ${source.name}: 已处理 ${processed}/${totalSongs} 首，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}`, stage: 'download' }, retentionDays)
         emitEvent({
           type: 'repair-progress',
           data: { jobId, sourceId: id, processed, totalSongs, succeeded, skipped, metadataRepaired },
@@ -181,11 +177,10 @@ export default defineEventHandler(async (event) => {
         if (!sectionKey) throw new Error(`未找到 Plex 音乐库「${cfg.plex.section}」`)
         await refreshLibrary(sectionKey)
         plexRefreshRequested = true
-        appendLog(dataDir, { level: 'info', message: `[修复] 已请求 Plex 刷新媒体库，等待识别更新后的标签`, stage: 'refreshing_plex' }, retentionDays)
       } catch (err) {
         job.warnings++
         const detail = err instanceof Error ? err.message : String(err)
-        appendLog(dataDir, { level: 'warn', message: `[修复] Plex 刷新请求失败`, detail, stage: 'refreshing_plex' }, retentionDays)
+        appendLog({ level: 'warn', message: `[修复] Plex 刷新请求失败`, detail, stage: 'refreshing_plex' })
       }
     }
 
@@ -207,7 +202,6 @@ export default defineEventHandler(async (event) => {
     saveSyncRun(job)
     updateSource(source.id, { lastStatus: job.status, lastSyncedAt: endTime })
 
-    appendLog(dataDir, { level: 'info', message: `[修复] 完成: ${source.name}，修复标签 ${metadataRepaired}，写入 ${succeeded}，跳过 ${skipped}${plexRefreshRequested ? '，已请求 Plex 刷新' : ''}`, stage: 'download' }, retentionDays)
     emitEvent({
       type: 'repair-progress',
       data: { jobId, sourceId: id, processed: totalSongs, totalSongs, succeeded, skipped, metadataRepaired, plexRefreshRequested, finished: true },
@@ -225,7 +219,7 @@ export default defineEventHandler(async (event) => {
     saveSyncRun(job)
     updateSource(source.id, { lastStatus: 'failed', lastError: msg })
     setRepairRunning(false)
-    appendLog(dataDir, { level: 'error', message: `[修复] 异常中断: ${source.name}`, detail: msg, stage: 'download' }, retentionDays)
+    appendLog({ level: 'error', message: `[修复] 异常中断: ${source.name}`, detail: msg, stage: 'download' })
     emitEvent({ type: 'stage-change', data: { stage: 'idle', sourceId: id }, timestamp: new Date().toISOString() })
   })
 

@@ -24,7 +24,6 @@ interface FinalizeSourceConvergenceInput {
   trackUpdateTime: number | null
   plexUpdatedAt: number | null
   plexPlaylist: PlexPlaylistIdentity | null | undefined
-  log: (level: 'info' | 'warn' | 'error', message: string, detail?: string) => void
 }
 
 /**
@@ -46,7 +45,6 @@ export async function finalizeSourceConvergence(
     trackUpdateTime,
     plexUpdatedAt,
     plexPlaylist,
-    log,
   } = input
   const sourceSongs = job.getRun().songs.filter(song => song.sourceId === source.id)
   const succCount = sourceSongs.filter(song => song.status === 'success').length
@@ -124,6 +122,5 @@ export async function finalizeSourceConvergence(
   if (!skipRemoveExtra && preservedExtraCount > 0) parts.push(`${preservedExtraCount} 保留待确认`)
 
   const summary = parts.join('，')
-  log('info', `歌单「${source.name || source.neteasePlaylistName}」: ${parts.join(', ')}`)
   return { status: sourceStatus, failedSongs: failCount, summary }
 }

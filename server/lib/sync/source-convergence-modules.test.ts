@@ -112,7 +112,7 @@ describe('source download convergence', () => {
       status: 'success',
       message: '[预览] 共 1 首',
     }])
-    expect(log).toHaveBeenCalledWith('info', '[预览] 将下载: Song 1')
+    expect(log).not.toHaveBeenCalled()
   })
 })
 

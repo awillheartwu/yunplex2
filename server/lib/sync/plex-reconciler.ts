@@ -44,7 +44,6 @@ export async function reconcileSource(
   job: RunBuilder,
   splitArtists: (artists: { name: string }[]) => [string, string],
   _cancelRequested: () => boolean,
-  _log: (level: string, msg: string) => void,
   skipPlexPlaylist = false,
   dryRun = false,
   options: { automaticMediaFallback?: boolean } = {},
