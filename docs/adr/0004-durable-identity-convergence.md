@@ -1,7 +1,7 @@
 # ADR 0004: Durable Identity Convergence
 
 **Date:** 2026-08-09
-**Status:** Superseded by ADR 0005
+**Status:** Superseded by [ADR 0005](0005-safe-media-reuse.md)
 
 ## Context
 

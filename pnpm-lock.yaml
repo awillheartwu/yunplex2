@@ -38,16 +38,10 @@ importers:
       vue:
         specifier: ^3.5.13
         version: 3.5.34(typescript@5.9.3)
-      vue-router:
-        specifier: ^4.5.0
-        version: 4.6.4(vue@3.5.34(typescript@5.9.3))
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.4.0(jiti@2.7.0))
-      '@nuxt/telemetry':
-        specifier: ^2.8.0
-        version: 2.8.0(@nuxt/kit@4.4.6(magicast@0.5.3))
       '@nuxt/test-utils':
         specifier: ^4.0.3
         version: 4.0.3(crossws@0.4.5(srvx@0.11.16))(happy-dom@20.9.0)(magicast@0.5.3)(typescript@5.9.3)(vite@7.3.3(@types/node@22.19.19)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))(vitest@4.1.7(@types/node@22.19.19)(happy-dom@20.9.0)(vite@7.3.3(@types/node@22.19.19)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0)))
@@ -1837,9 +1831,6 @@ packages:
 
   '@vue/compiler-ssr@3.5.34':
     resolution: {integrity: sha512-cDtTHKibkThKGHH1SP+WdccquNRYQDFH6rRjQCqT9G2ltFAfoR5pUftpab/z+aM5mW9HLLVQW7hfKKQe/1GBeQ==}
-
-  '@vue/devtools-api@6.6.4':
-    resolution: {integrity: sha512-sGhTPMuXqZ1rVOk32RylztWkfXTRhuS7vgAKv0zjqk8gbsHkJ7xfFf+jbySxt7tWObEJwyKaHMikV/WGDiQm8g==}
 
   '@vue/devtools-api@8.1.2':
     resolution: {integrity: sha512-vA0O112YqyDuNA1s7Yb2gCgToQ/OxOWiFDO5ThLCcDy0ldHnSd1dUTaSYhOldbqoNgumE4dxtGAoAaSUKUD1Zg==}
@@ -5809,11 +5800,6 @@ packages:
     peerDependencies:
       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
 
-  vue-router@4.6.4:
-    resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
-    peerDependencies:
-      vue: ^3.5.0
-
   vue-router@5.0.7:
     resolution: {integrity: sha512-dqfk8kvRbCutmCOCj/XLDqDEYxc1wBdAOGLuVy5M93ifYMsBd5fIjfaPN4tQAbxr5IprdBDIox1gr4wYyOx/SA==}
     peerDependencies:
@@ -7720,8 +7706,6 @@ snapshots:
     dependencies:
       '@vue/compiler-dom': 3.5.34
       '@vue/shared': 3.5.34
-
-  '@vue/devtools-api@6.6.4': {}
 
   '@vue/devtools-api@8.1.2':
     dependencies:
@@ -12137,11 +12121,6 @@ snapshots:
       semver: 7.8.1
     transitivePeerDependencies:
       - supports-color
-
-  vue-router@4.6.4(vue@3.5.34(typescript@5.9.3)):
-    dependencies:
-      '@vue/devtools-api': 6.6.4
-      vue: 3.5.34(typescript@5.9.3)
 
   vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(vue@3.5.34(typescript@5.9.3)):
     dependencies:

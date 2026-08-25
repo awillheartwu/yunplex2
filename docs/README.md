@@ -4,7 +4,6 @@
 
 - [项目 README](../README.md)：安装、运行、配置和公开 API 概览。
 - [项目路线图](../ROADMAP.md)：当前基线、优先级、里程碑和完成定义。
-- [精简计划](simplification-plan.md)：近期减法顺序、阶段依赖、保留/删除范围和验收门槛。
 - [领域词汇](../CONTEXT.md)：Playlist Source、Identity Binding、Source Convergence 等统一语言。
 
 ## 当前实现
