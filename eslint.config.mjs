@@ -39,7 +39,6 @@ export default ts.config(
         useApi: 'readonly',
         useSync: 'readonly',
         useSyncStatus: 'readonly',
-        useJobs: 'readonly',
         useDownloadQueue: 'readonly',
         useSourceSync: 'readonly',
         useManualDownload: 'readonly',

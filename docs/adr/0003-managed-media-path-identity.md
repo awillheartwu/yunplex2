@@ -1,7 +1,7 @@
 # ADR 0003: Managed Media Path Identity
 
 **Date:** 2026-07-24
-**Status:** Accepted; identity evidence order amended by [ADR 0004](0004-durable-identity-convergence.md)
+**Status:** Accepted; media ownership and continuity remain current, while identity evidence was amended by [ADR 0004](0004-durable-identity-convergence.md) and then replaced by [ADR 0005](0005-safe-media-reuse.md)
 
 ## Context
 
