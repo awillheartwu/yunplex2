@@ -38,7 +38,7 @@ import { tryApplyPureSourceReorder } from './source-pure-reorder'
 
 export { STAGE_LABELS } from './service-state'
 
-export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
+export function getSyncService(getConfig: () => AppConfig) {
   let state = createInitialState()
   let cancelRequested = false
   let currentSourceName = ''
@@ -52,9 +52,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     throw new CancellationError()
   }
 
-  function log(level: 'info' | 'warn' | 'error', message: string, detail?: string) {
-    const cfg = getConfig()
-    const entry = appendLog(dataDir, { level, message, detail, stage: state.currentStage }, cfg.sync.logRetentionDays ?? 30)
+  function log(level: 'warn' | 'error', message: string, detail?: string) {
+    const entry = appendLog({ level, message, detail, stage: state.currentStage })
     emitEvent({
       type: 'log',
       data: { id: entry.id, level, message, detail, stage: entry.stage, timestamp: entry.timestamp },
@@ -140,7 +139,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             context: stepContext,
           })
           setStage('fetching_playlist')
-          log('info', `获取${isAlbum ? '专辑' : '歌单'}: ${playlistName} (ID: ${playlistId})`)
 
           const cookieCheck = await checkCookie(cfg.netease.cookie)
           if (!cookieCheck.valid) {
@@ -157,7 +155,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           // Detect Netease playlist rename
           if (nePlaylistName && nePlaylistName !== source.neteasePlaylistName) {
-            log('info', `歌单名称已更改: 「${source.neteasePlaylistName}」→「${nePlaylistName}」`)
             if (!dryRun) updateSource(source.id, { neteasePlaylistName: nePlaylistName })
             source.neteasePlaylistName = nePlaylistName
           }
@@ -278,11 +275,10 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
           )
 
           if (rebuildMatch && !dryRun) {
-            const invalidated = markAutomaticSongIdentityBindingsStale(currentIdOrder, {
+            markAutomaticSongIdentityBindingsStale(currentIdOrder, {
               sourceId: source.id,
               runId: job.getId(),
             })
-            log('info', `歌单「${playlistName}」已保留人工绑定，并将 ${invalidated} 条自动绑定置为待重新评估`)
           }
 
           // Skip entirely if Netease unchanged
@@ -292,7 +288,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             && missingSongDetailIds.length === 0
             && !(authoritativeTrackCount === 0 && source.lastStatus !== 'success')
           ) {
-            log('info', `歌单「${playlistName}」未变化，跳过对比（连续跳过 ${(source.consecutiveSkips || 0) + 1} 次）`)
             const unchangedStatus = source.lastStatus === 'idle' ? 'success' : source.lastStatus
             updateSource(source.id, {
               lastSyncedAt: new Date().toISOString(), lastStatus: unchangedStatus, lastError: source.lastError,
@@ -306,19 +301,8 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             continue
           }
 
-          if (retryUnresolvedSnapshot) {
-            log('info', `歌单「${playlistName}」内容未变，但上次尚未收敛；本轮只做身份复核和一次 Plex 精确路径探测`)
-          }
-          if (missingMediaWorkDetected) {
-            log('info', `歌单「${playlistName}」检测到未登记、缺失或已变化的媒体，进入完整处理`)
-          }
-
-          if (det.autoForce) log('info', `歌单「${playlistName}」触发自动全量对比（超过${cfg.sync.fullCompareAfterSkips > 0 ? '跳过次数' : '时间间隔'}）`)
-          if (det.plexDriftDetected) log('info', `歌单「${playlistName}」检测到 Plex 侧更新，触发全量对齐`)
-
           // Pure reorder: skip download, just reorder Plex playlist
           if (det.isPureReorder && !det.needFullCompare && missingSongDetailIds.length === 0) {
-            log('info', `歌单「${playlistName}」仅顺序变化，跳过下载直接重排`)
             const reordered = await tryApplyPureSourceReorder({
               source,
               songs: yunSongs,
@@ -391,12 +375,9 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
 
           // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
           setStage('comparing')
-          log('info', '连接 Plex...')
-
           const { resolutions, plexPlaylist: plexPlaylistResult, sectionKey, extraTracks } = await reconcileSource(
             source, yunSongs, cfg, job, splitArtists,
             () => cancelRequested,
-            (lvl, msg) => log(lvl as 'info' | 'warn' | 'error', msg),
             skipPlexPL,
             dryRun,
             { automaticMediaFallback: missingMediaPolicyEnabled },
@@ -504,7 +485,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
               config: cfg,
               job,
               stepContext,
-              playlistName,
               plexPlaylist,
               sectionKey,
               currentIdOrder,
@@ -531,7 +511,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
             trackUpdateTime,
             plexUpdatedAt,
             plexPlaylist,
-            log,
           })
           totalFailed += sourceResult.failedSongs
           if (sourceResult.status === 'success') successfulSources++
@@ -568,7 +547,6 @@ export function getSyncService(dataDir: string, getConfig: () => AppConfig) {
     saveSyncRun(finishedJob)
   }
 
-  log('info', summary)
   finishState(finishedJob.status === 'success' ? 'success' : 'failure')
   return { ...state }
     } catch (err) {

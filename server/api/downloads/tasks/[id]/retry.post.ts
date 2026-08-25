@@ -17,16 +17,7 @@ export default defineEventHandler(async (event) => {
   const syncService = getSyncServiceInstance()
   if (syncService.getState().isRunning) return fail('已有同步任务在运行中，请等待完成')
 
-  const dataDir = useRuntimeConfig(event).dataDir
   const cfg = readConfig()
-  const retentionDays = cfg.sync.logRetentionDays ?? 30
-
-  // Log retry start
-  appendLog(dataDir, {
-    level: 'info',
-    message: `[重试] 开始下载: ${task.songName} - ${task.artist}`,
-    stage: 'download',
-  }, retentionDays)
 
   const processor = async (
     t: typeof task,
@@ -42,20 +33,15 @@ export default defineEventHandler(async (event) => {
   processAll(async (t, onProgress, signal) => {
     try {
       const result = await processor(t, onProgress, signal)
-      appendLog(dataDir, {
-        level: 'info',
-        message: `[重试] 下载成功: ${t.songName} - ${t.artist} → ${result.filePath}`,
-        stage: 'download',
-      }, retentionDays)
       return result
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '下载失败'
-      appendLog(dataDir, {
+      appendLog({
         level: 'error',
         message: `[重试] 下载失败: ${t.songName} - ${t.artist}`,
         detail: msg,
         stage: 'download',
-      }, retentionDays)
+      })
       throw err
     }
   }, undefined, 1, [id]).catch(() => { /* processAll records task failure and emits queue events */ })

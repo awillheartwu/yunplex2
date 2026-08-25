@@ -83,7 +83,7 @@ export async function applyFullReorder(
   currentItems: PlexItem[],
   sectionKey: string,
   cancelRequested: () => boolean,
-  log: (level: 'info' | 'warn' | 'error', msg: string) => void,
+  log: (level: 'warn' | 'error', msg: string) => void,
   options: ReorderOptions = {},
 ): Promise<ReorderResult> {
   const result: ReorderResult = {
@@ -263,7 +263,6 @@ export async function applyFullReorder(
       await removeTrackFromPlaylist(playlistRatingKey, item.playlistItemId)
       result.removed++
       result.mutations.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId })
-      log('info', `从歌单移除: ${item.ratingKey} (item ${item.playlistItemId})`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       result.failures.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId, message: msg })

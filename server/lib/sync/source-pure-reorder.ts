@@ -34,7 +34,7 @@ interface PureSourceReorderInput {
   currentIdOrder: number[]
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
-  log: (level: 'info' | 'warn' | 'error', message: string) => void
+  log: (level: 'warn' | 'error', message: string) => void
 }
 
 /**

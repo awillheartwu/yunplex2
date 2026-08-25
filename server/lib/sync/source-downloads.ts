@@ -32,7 +32,7 @@ interface ApplySourceDownloadsInput {
   throwIfCancelled: () => void
   setStage: (stage: SyncState['currentStage']) => void
   addFailure: (songName: string, reason: string) => void
-  log: (level: 'info' | 'warn' | 'error', message: string, detail?: string) => void
+  log: (level: 'warn' | 'error', message: string, detail?: string) => void
 }
 
 interface DownloadPlan {
@@ -88,7 +88,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
 
   if (redownloadManagedMedia) {
     const bindings = getActiveSongIdentityBindings(resolutions.map(item => item.song.id))
-    const skipped = { external: 0, manual: 0 }
     for (const resolution of resolutions) {
       if (downloadPlans.get(resolution.song.id)?.mode === 'replace') continue
       const decision = decideRedownload({
@@ -97,8 +96,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         takeOverExternal,
       })
       if (!decision.eligible) {
-        if (decision.disposition === 'skip_external') skipped.external++
-        if (decision.disposition === 'skip_manual_binding') skipped.manual++
         continue
       }
       downloadPlans.set(resolution.song.id, {
@@ -107,10 +104,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         audioPath: decision.audioPath,
       })
     }
-    log(
-      'info',
-      `强制重新下载计划：${downloadPlans.size} 首；保护跳过外部文件 ${skipped.external} 首、人工绑定 ${skipped.manual} 首`,
-    )
   }
 
   const songsToDownload = [...downloadPlans.values()].map(plan => plan.resolution)
@@ -125,7 +118,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       { context: stepContext },
     )
     setStage('downloading')
-    log('info', `开始下载 ${songsToDownload.length} 首歌曲`)
 
     for (const resolution of songsToDownload) {
       const [, trackArtist] = splitArtists(resolution.song.artists)
@@ -202,12 +194,10 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
             : {}),
         })
         if (task?.error) {
-          if (diagnosis.status === 'copyright_restricted') {
-            log('warn', `版权受限: ${resolution.song.name}`, task.error)
-          } else if (diagnosis.status === 'failed_tags') {
+          if (diagnosis.status === 'failed_tags') {
             addFailure(resolution.song.name, task.error)
             log('error', `标签写入失败: ${resolution.song.name}`, task.error)
-          } else {
+          } else if (diagnosis.status !== 'copyright_restricted') {
             addFailure(resolution.song.name, task.error)
             log('error', `下载失败: ${resolution.song.name}`, task.error)
           }
@@ -244,7 +234,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       return song?.status === 'success'
     }).length
     const failCount = songsToDownload.length - okCount
-    log('info', `${redownloadManagedMedia ? '重新下载' : '下载'}完成: ${okCount} 成功, ${failCount} 失败`)
     job.finishStep(downloadStep, failCount > 0 ? 'partial' : 'success', `${okCount} 首成功，${failCount} 首失败`)
   } else if (dryRun && songsToDownload.length > 0) {
     const downloadStep = job.startStep(
@@ -252,10 +241,6 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       redownloadManagedMedia ? '重新下载音频' : '下载歌曲',
       { context: stepContext },
     )
-    for (const resolution of songsToDownload) {
-      const mode = downloadPlans.get(resolution.song.id)?.mode === 'replace' ? '重新下载' : '下载'
-      log('info', `[预览] 将${mode}: ${resolution.song.name}`)
-    }
     job.finishStep(downloadStep, 'success', `[预览] 共 ${songsToDownload.length} 首`)
   }
 

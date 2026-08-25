@@ -144,7 +144,7 @@ async function main() {
   if (!source.plexPlaylistRatingKey) throw new Error('歌单源尚未关联 Plex 歌单')
 
   await initPlexClient(config.plex)
-  const service = getSyncService(options.dataDir, readConfig)
+  const service = getSyncService(readConfig)
   const observations: Observation[] = [
     { phase: 'before', playlist: await snapshotPlaylist(source.plexPlaylistRatingKey) },
   ]

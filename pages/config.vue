@@ -317,7 +317,7 @@
       <ConfigSection title="数据保留" description="控制各类历史数据的自动清理周期" :collapsed="!!collapsed.retention" @toggle="toggle('retention')">
         <template #icon><SidebarIcon name="database" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="日志保留天数" hint="超过该天数的日志将在下次写日志时自动清理。另有 5,000 行硬上限兜底"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="365" class="form-input" /></FormField>
+          <FormField label="诊断日志保留天数" hint="由系统维护定期清理，最长 30 天，最多保留 2,000 条"><input v-model.number="form.sync.logRetentionDays" type="number" min="1" max="30" class="form-input" /></FormField>
           <FormField label="成功运行保留天数" hint="成功或取消记录最多保留 7 天"><input v-model.number="form.sync.jobRetentionSuccessDays" type="number" min="1" max="7" class="form-input" /></FormField>
           <FormField label="失败运行保留天数" hint="完整歌曲详情保留 14 天，运行摘要最多保留 30 天"><input v-model.number="form.sync.jobRetentionFailedDays" type="number" min="14" max="30" class="form-input" /></FormField>
           <FormField label="下载任务保留天数" hint="已完成任务最多保留 30 天；未解决异常所需的重试任务不会被清理"><input v-model.number="form.sync.downloadTaskRetentionDays" type="number" min="1" max="30" class="form-input" /></FormField>

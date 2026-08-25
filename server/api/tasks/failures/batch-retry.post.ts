@@ -19,9 +19,7 @@ export default defineEventHandler(async (event) => {
     return fail('已有同步任务在运行中，请等待完成')
   }
 
-  const dataDir = useRuntimeConfig(event).dataDir
   const cfg = readConfig()
-  const retentionDays = cfg.sync.logRetentionDays ?? 30
 
   const records = getFailureRecords(body.ids)
   const taskIds = [...new Set(records.flatMap(record => record.downloadTaskIds))]
@@ -31,12 +29,6 @@ export default defineEventHandler(async (event) => {
 
   incrementFailureRetries(body.ids)
   setFailureRecordStatus(body.ids, 'open')
-
-  appendLog(dataDir, {
-    level: 'info',
-    message: `[批量重试] ${taskIds.length} 个失败项开始重试`,
-    stage: 'download',
-  }, retentionDays)
 
   // Build processor
   const processor = async (
@@ -53,20 +45,15 @@ export default defineEventHandler(async (event) => {
   processAll(async (t, onProgress, signal) => {
     try {
       const r = await processor(t, onProgress, signal)
-      appendLog(dataDir, {
-        level: 'info',
-        message: `[批量重试] 下载成功: ${t.songName} - ${t.artist} → ${r.filePath}`,
-        stage: 'download',
-      }, retentionDays)
       return r
     } catch (err) {
       const msg = err instanceof Error ? err.message : '下载失败'
-      appendLog(dataDir, {
+      appendLog({
         level: 'error',
         message: `[批量重试] 下载失败: ${t.songName} - ${t.artist}`,
         detail: msg,
         stage: 'download',
-      }, retentionDays)
+      })
       throw err
     }
   }, undefined, cfg.sync.downloadConcurrency || 3, taskIds).catch(() => { /* errors reported via SSE */ })
