@@ -38,7 +38,7 @@
         </button>
         <button
           v-else
-          class="btn btn-secondary btn-xs md:hidden"
+          class="btn btn-secondary btn-xs filter-mobile-trigger"
           type="button"
           :aria-expanded="mobileOpen"
           @click="mobileOpen = true"
@@ -105,7 +105,7 @@
         <div
           v-if="mobileOpen && (!advanced || isMobileViewport)"
           class="sheet-backdrop"
-          :class="{ 'md:hidden': !advanced, 'filter-panel-backdrop': advanced }"
+          :class="{ 'filter-mobile-backdrop': !advanced, 'filter-panel-backdrop': advanced }"
           :style="{ zIndex: OVERLAY_LAYERS.filterSheet }"
           @click.self="closePanel"
         >
@@ -218,8 +218,9 @@ function updatePopoverPosition() {
 
 function handleWindowChange() {
   syncViewportMode()
-  if (mobileOpen.value && props.advanced && !isMobileViewport.value) {
-    nextTick(() => updatePopoverPosition())
+  if (mobileOpen.value && !isMobileViewport.value) {
+    if (props.advanced) nextTick(() => updatePopoverPosition())
+    else closePanel()
   }
 }
 

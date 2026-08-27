@@ -35,6 +35,7 @@ const cfg: AppConfig = {
     skipRemoveExtraTracks: false,
     extraTrackRemovalPolicy: 'balanced',
     maxFailureAttempts: 3,
+    unverifiedMediaPolicy: 'download_managed',
   },
   other: {
     multiArtistFormat: 'ampersand',

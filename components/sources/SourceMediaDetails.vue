@@ -46,7 +46,14 @@
         <div class="source-media__binding">
           <span class="source-media__state" :class="`source-media__state--${item.state}`">{{ stateLabel(item.state) }}</span>
           <strong>{{ bindingLabel(item) }}</strong>
-          <small :title="item.localMedia?.filePath || item.binding?.plexRelativePath || ''">{{ mediaPath(item) }}</small>
+          <span v-if="staleReason(item)" class="source-media__reason">{{ staleReason(item) }}</span>
+          <span v-if="item.binding?.plexFilePath || item.binding?.plexRelativePath" class="source-media__path" :title="item.binding.plexFilePath || item.binding.plexRelativePath">
+            <em>Plex 关联</em>{{ item.binding.plexFilePath || item.binding.plexRelativePath }}
+          </span>
+          <span v-if="item.localMedia?.filePath" class="source-media__path" :title="item.localMedia.filePath">
+            <em>{{ item.localMedia.ownership === 'managed' ? '托管文件' : '本地外部文件' }}</em>{{ item.localMedia.filePath }}
+          </span>
+          <small v-if="!item.localMedia?.filePath && !item.binding?.plexFilePath && !item.binding?.plexRelativePath">尚无可验证路径</small>
         </div>
         <div class="source-media__actions">
           <button
@@ -57,7 +64,17 @@
             @click="searchPlex(item)"
           >
             <AppIcon name="search" :size="13" />
-            接管媒体
+            使用 Plex 媒体
+          </button>
+          <button
+            v-if="canDownloadManaged(item)"
+            class="btn btn-primary btn-xs"
+            type="button"
+            :disabled="managedDownloads.has(songId(item))"
+            @click="downloadManaged(item)"
+          >
+            <AppIcon :name="managedDownloads.has(songId(item)) ? 'loader' : 'download'" :size="13" :class="{ 'animate-spin': managedDownloads.has(songId(item)) }" />
+            下载并托管
           </button>
           <button
             v-if="item.binding && item.binding.status !== 'unbound' && (orphaned || item.binding.bindingMethod === 'manual')"
@@ -66,7 +83,7 @@
             :disabled="acting"
             @click="confirmUnbind(item)"
           >
-            {{ item.binding.bindingMethod === 'manual' ? '取消接管' : '移除关联' }}
+            {{ item.binding.bindingMethod === 'manual' ? '取消使用' : '移除关联' }}
           </button>
         </div>
 
@@ -80,7 +97,7 @@
             </div>
             <button class="btn btn-primary btn-xs" type="button" :disabled="!track.plexFilePath" @click="confirmRebind(item, track)">选择</button>
           </article>
-          <p v-if="!searching && !searchResults.length">没有找到可接管的 Plex 曲目。</p>
+          <p v-if="!searching && !searchResults.length">没有找到可使用的 Plex 曲目。</p>
         </div>
       </article>
     </div>
@@ -93,9 +110,9 @@
 
     <ConfirmDialog
       :visible="Boolean(pendingAction)"
-      :title="pendingAction?.kind === 'rebind' ? '确认接管 Plex 媒体' : '确认移除媒体关联'"
+      :title="pendingAction?.kind === 'rebind' ? '确认使用 Plex 媒体' : '确认移除媒体关联'"
       :message="pendingMessage"
-      :confirm-label="pendingAction?.kind === 'rebind' ? '保存接管' : '移除关联'"
+      :confirm-label="pendingAction?.kind === 'rebind' ? '保存关联' : '移除关联'"
       :variant="pendingAction?.kind === 'rebind' ? 'primary' : 'danger'"
       :busy="acting"
       @confirm="executePendingAction"
@@ -131,11 +148,13 @@ const notice = ref('')
 const searchItemKey = ref('')
 const searchResults = ref<PlexSearchTrack[]>([])
 const pendingAction = ref<PendingAction | null>(null)
+const managedDownloads = reactive(new Set<number>())
 
 const stateOptions: Array<{ value: MatchOverviewState; label: string }> = [
   { value: 'matched', label: '已关联' },
   { value: 'pending_alignment', label: '等待同步对齐' },
-  { value: 'unmatched', label: '待下载或接管' },
+  { value: 'awaiting_manual', label: '等待手动选择' },
+  { value: 'unmatched', label: '待处理' },
   { value: 'binding_stale', label: '关联失效' },
   { value: 'copyright_restricted', label: '版权受限' },
   { value: 'sync_failed', label: '同步失败' },
@@ -147,9 +166,21 @@ function itemKey(item: MatchOverviewItem) { return item.occurrence?.id ?? `orpha
 function stateLabel(value: MatchOverviewState) { return stateOptions.find(option => option.value === value)?.label ?? ({ historical_unverified: '历史待验证', removed: '已退出目标' } as Record<string, string>)[value] ?? value }
 function bindingLabel(item: MatchOverviewItem) {
   if (!item.binding || item.binding.status === 'unbound') return '未建立媒体关联'
-  return item.binding.bindingMethod === 'manual' ? `外部媒体 · Plex #${item.binding.plexRatingKey || '未知'}` : 'YunPlex 托管文件'
+  return item.binding.bindingMethod === 'manual' ? `Plex 现有媒体 · #${item.binding.plexRatingKey || '未知'}` : 'YunPlex 托管文件'
 }
-function mediaPath(item: MatchOverviewItem) { return item.localMedia?.filePath || item.binding?.plexRelativePath || '尚无可验证路径' }
+function staleReason(item: MatchOverviewItem): string {
+  if (item.state !== 'binding_stale') return ''
+  const reason = typeof item.binding?.evidence?.reason === 'string' ? item.binding.evidence.reason : ''
+  return ({
+    adopted_media_missing: 'Plex 已找不到原关联路径',
+    plex_validation_missing: 'Plex 已找不到原关联路径',
+    adopted_path_ambiguous: '原关联路径对应多个 Plex 媒体',
+    rebuild_managed_links: '托管关联等待重新验证',
+  } as Record<string, string>)[reason] ?? '原媒体关联未通过精确路径验证'
+}
+function canDownloadManaged(item: MatchOverviewItem): boolean {
+  return !orphaned.value && ['awaiting_manual', 'unmatched', 'binding_stale', 'sync_failed'].includes(item.state)
+}
 
 const pendingMessage = computed(() => {
   const action = pendingAction.value
@@ -157,9 +188,9 @@ const pendingMessage = computed(() => {
   const affected = action.item.affectedSources.map(source => source.name)
   const impact = affected.length ? affected.join('、') : '当前没有同步源引用'
   if (action.kind === 'rebind') {
-    return `将网易云歌曲 #${songId(action.item)} 全局接管为 Plex #${action.track.ratingKey}。这不是当前歌单的局部设置，将影响 ${affected.length} 个来源：${impact}。`
+    return `将网易云歌曲 #${songId(action.item)} 全局关联到 Plex #${action.track.ratingKey}。这不是当前歌单的局部设置，将影响 ${affected.length} 个来源：${impact}。`
   }
-  return `将移除网易云歌曲 #${songId(action.item)} 的全局媒体关联。受影响来源：${impact}；下次同步无法确认托管媒体时会下载独立副本。`
+  return `将移除网易云歌曲 #${songId(action.item)} 的全局媒体关联。受影响来源：${impact}；下次同步会按“未验证媒体”设置重新处理。`
 })
 
 async function load() {
@@ -178,6 +209,20 @@ async function load() {
     error.value = err instanceof Error ? err.message : '无法读取媒体状态'
   } finally {
     loading.value = false
+  }
+}
+async function downloadManaged(item: MatchOverviewItem) {
+  const id = songId(item)
+  managedDownloads.add(id)
+  error.value = ''
+  try {
+    await api.post(`/playlist-sources/${props.sourceId}/songs/${id}/download-managed`, {})
+    notice.value = '已加入托管下载队列；完成后相关同步源会自动等待重新对齐。'
+    emit('changed')
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '启动托管下载失败'
+  } finally {
+    managedDownloads.delete(id)
   }
 }
 
@@ -230,7 +275,7 @@ async function executePendingAction() {
         expectedBindingUpdatedAt: action.item.binding?.updatedAt ?? null,
         sourceId: orphaned.value ? undefined : props.sourceId,
       })
-      notice.value = '媒体接管已保存；所有引用这首网易云歌曲的来源会在下次同步时对齐。'
+      notice.value = 'Plex 媒体关联已保存；所有引用这首网易云歌曲的来源会在下次同步时对齐。'
     } else {
       await api.post(`/match-management/bindings/${songId(action.item)}/unbind`, {
         expectedBindingUpdatedAt: action.item.binding?.updatedAt,
@@ -270,11 +315,14 @@ watch(() => props.sourceId, () => { page.value = 1; void load() }, { immediate: 
 .source-media__target { display: flex; align-items: center; gap: .6rem; min-width: 0; }
 .source-media__target img { width: 36px; height: 36px; border-radius: .4rem; object-fit: cover; }
 .source-media__target div, .source-media__binding { display: grid; gap: .15rem; min-width: 0; }
-.source-media__target strong, .source-media__target span, .source-media__binding strong, .source-media__binding small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-media__target strong, .source-media__target span, .source-media__binding strong, .source-media__binding small, .source-media__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-media__target strong, .source-media__binding strong { color: var(--text-primary); font-size: .75rem; }
 .source-media__target span, .source-media__binding small { color: var(--text-muted); font-size: .68rem; }
+.source-media__reason { color: var(--warning); font-size: .68rem; line-height: 1.35; }
+.source-media__path { color: var(--text-muted); font-size: .66rem; }
+.source-media__path em { margin-right: .35rem; color: var(--text-secondary); font-style: normal; font-weight: 650; }
 .source-media__state { width: max-content; color: var(--accent); font-size: .65rem; }
-.source-media__state--binding_stale, .source-media__state--sync_failed, .source-media__state--copyright_restricted, .source-media__state--retry_paused { color: var(--warning); }
+.source-media__state--awaiting_manual, .source-media__state--binding_stale, .source-media__state--sync_failed, .source-media__state--copyright_restricted, .source-media__state--retry_paused { color: var(--warning); }
 .source-media__actions { justify-content: flex-end; gap: .35rem; flex-wrap: wrap; }
 .source-media__candidates { grid-column: 1 / -1; display: grid; gap: .4rem; padding-top: .55rem; border-top: 1px solid var(--border-primary); }
 .source-media__candidates > article { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .5rem; border-radius: .55rem; background: var(--bg-hover); }

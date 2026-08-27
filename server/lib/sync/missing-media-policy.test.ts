@@ -99,6 +99,20 @@ describe('missing media policy', () => {
       .toBe('download_missing')
   })
 
+  it('leaves unverified media for manual choice without forcing repeated policy work', () => {
+    const { dir, config } = setup()
+    const external = join(dir, 'external-wait.flac')
+    writeFlac(external)
+    upsertLocalMediaAsset({ neteaseSongId: 6, filePath: external, provenance: 'computed', ownership: 'external' })
+    config.sync.unverifiedMediaPolicy = 'wait_manual'
+
+    expect(planMissingMedia([song(6)], config, { validateAudio: true }).get(6)).toMatchObject({
+      disposition: 'wait_manual',
+      protectedAudioPath: external,
+    })
+    expect(hasMissingMediaPolicyWork([song(6)], config)).toBe(false)
+  })
+
   it('redownloads a managed asset changed outside a managed write', () => {
     const { dir, config } = setup()
     const filePath = join(dir, 'changed.flac')

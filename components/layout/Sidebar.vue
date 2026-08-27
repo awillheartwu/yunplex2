@@ -76,7 +76,7 @@ const navItems = [
   { icon: 'download', label: '手动下载', path: '/manual-download' },
   { icon: 'activity', label: '任务中心', path: '/task-center' },
   { icon: 'settings', label: '设置', path: '/config' },
-  { icon: 'info', label: '系统与运行', path: '/system' },
+  { icon: 'logs', label: '日志查看', path: '/logs' },
 ]
 </script>
 

@@ -264,6 +264,9 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
 .filter-actions--advanced {
   position: relative;
 }
+.filter-mobile-trigger {
+  display: none;
+}
 .filter-advanced-button {
   min-width: 7.75rem;
 }
@@ -358,6 +361,9 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: flex-end;
   background: var(--bg-overlay);
   backdrop-filter: blur(8px);
+}
+.filter-mobile-backdrop {
+  display: none;
 }
 .filter-sheet {
   width: 100%;
@@ -581,6 +587,8 @@ input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
     min-width: 2.75rem;
   }
   .filter-desktop { display: none; }
+  .filter-mobile-trigger { display: inline-flex; }
+  .filter-mobile-backdrop { display: flex; }
   .filter-row { align-items: stretch; }
   .filter-search { flex-basis: 100%; min-width: 0; }
   .filter-actions { width: 100%; margin-left: 0; justify-content: space-between; }

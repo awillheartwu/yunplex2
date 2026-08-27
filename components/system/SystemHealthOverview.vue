@@ -3,10 +3,14 @@
     <div class="system-health__header">
       <div>
         <p class="text-2xs text-muted-deep">健康概览</p>
-        <h3 :class="headlineClass">{{ headline }}</h3>
+        <h2 :class="headlineClass">{{ headline }}</h2>
         <p class="text-2xs text-muted">依赖检测于 {{ dependencyCheckedLabel }}</p>
       </div>
       <div class="system-health__actions">
+        <NuxtLink to="/logs" class="btn btn-secondary btn-xs">
+          <AppIcon name="logs" :size="14" />
+          查看日志
+        </NuxtLink>
         <button class="btn btn-secondary btn-xs" type="button" :disabled="refreshing" @click="$emit('refresh')">
           <AppIcon :name="refreshing ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': refreshing }" />
           重新检测
@@ -34,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import type { SystemHealthItem } from '~~/composables/useSystemPage'
+import type { SystemHealthItem } from '~~/composables/useSystemMonitor'
 
 const props = defineProps<{
   items: SystemHealthItem[]
@@ -76,7 +80,7 @@ const headlineClass = computed(() => ({
   gap: 1rem;
 }
 
-.system-health__header h3 {
+.system-health__header h2 {
   margin-top: 0.15rem;
   font-size: 1rem;
   font-weight: 700;
@@ -91,7 +95,7 @@ const headlineClass = computed(() => ({
 
 .system-health__grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -153,6 +157,10 @@ const headlineClass = computed(() => ({
   .system-health__header { flex-direction: column; }
   .system-health__actions { width: 100%; justify-content: stretch; }
   .system-health__actions .btn { flex: 1; }
+  .system-health__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 350px) {
   .system-health__grid { grid-template-columns: 1fr; }
 }
 </style>

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../db'
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
+import { commitCompletedMediaWrite } from '../download/media-write'
 import { getLocalMediaAsset, resolveLocalMediaAsset, upsertLocalMediaAsset } from './local-media-store'
 
 let tempDir: string | null = null
@@ -35,7 +36,7 @@ function config(downloadDir: string): AppConfig {
     netease: { cookie: '', quality: 'jymaster' },
     plex: { server: '', port: 32400, token: '', section: '音乐' },
     download: { dir: downloadDir, plexLibraryPathPrefix: '/music', downloadLyrics: true, embedMetadata: true, embedCover: true, saveAlbumCover: false, saveArtistImage: false },
-    sync: { intervalMinutes: 30, songLimit: 10, downloadConcurrency: 3, plexScanRetries: 5, plexScanRetryDelaySec: 15, enabled: false, logRetentionDays: 30, jobRetentionSuccessDays: 7, jobRetentionFailedDays: 30, downloadTaskRetentionDays: 30, forceFullCompare: false, downloadWhenMediaMissing: false, reconcileOnPlexDrift: true, fullCompareAfterSkips: 5, fullCompareAfterDays: 7, autoDownloadAlbum: false, skipPlexPlaylist: false, skipRemoveExtraTracks: false, extraTrackRemovalPolicy: 'balanced', maxFailureAttempts: 3 },
+    sync: { intervalMinutes: 30, songLimit: 10, downloadConcurrency: 3, plexScanRetries: 5, plexScanRetryDelaySec: 15, enabled: false, logRetentionDays: 30, jobRetentionSuccessDays: 7, jobRetentionFailedDays: 30, downloadTaskRetentionDays: 30, forceFullCompare: false, downloadWhenMediaMissing: false, reconcileOnPlexDrift: true, fullCompareAfterSkips: 5, fullCompareAfterDays: 7, autoDownloadAlbum: false, skipPlexPlaylist: false, skipRemoveExtraTracks: false, extraTrackRemovalPolicy: 'balanced', maxFailureAttempts: 3, unverifiedMediaPolicy: 'download_managed' },
     other: { multiArtistFormat: 'ampersand', lyricOrder: 'original_first', downloadTranslatedLyric: true, downloadRomajiLyric: false, artistAliases: {}, applyAliasToAlbum: false, pathFormat: '{artist}/{album} ({year})/{track:02d} - {title}', fontScale: 1, enableMusicBrainzResolver: false, musicBrainzMinScore: 90 },
   }
 }
@@ -103,5 +104,33 @@ describe('local media provenance', () => {
         observedFileSize: 17,
       }),
     })
+  })
+
+  it('marks every current source occurrence for exact-path reconciliation after a managed download', () => {
+    const root = setup()
+    const filePath = join(root, 'new-managed.flac')
+    writeFileSync(filePath, 'managed-audio')
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (id, netease_playlist_id, name, requires_match_reconcile, created_at, updated_at)
+      VALUES ('source-one', 1, '来源一', 0, ?, ?)
+    `).run(now, now)
+    getDb().prepare(`
+      INSERT INTO playlist_source_track_occurrences (
+        id, source_id, netease_song_id, occurrence, position, title,
+        artists_json, metadata_complete, membership_status, first_observed_at, last_observed_at
+      ) VALUES ('source-one:song:0', 'source-one', ?, 0, 0, '歌曲', '[]', 1, 'current', ?, ?)
+    `).run(song.id, now, now)
+
+    commitCompletedMediaWrite({
+      neteaseSongId: song.id,
+      filePath,
+      provenance: 'download_task',
+      taskId: 'manual-task',
+      audioDownloaded: true,
+    })
+
+    expect(getDb().prepare('SELECT requires_match_reconcile FROM playlist_sources WHERE id = ?')
+      .get('source-one')).toEqual({ requires_match_reconcile: 1 })
   })
 })

@@ -1,5 +1,5 @@
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
     <article v-for="card in cards" :key="card.label" class="section-card system-kpi" :class="`system-kpi--${card.tone}`">
       <p>{{ card.label }}</p>
       <strong>{{ card.value }}</strong>
@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import type { SystemKpiCard } from '~~/composables/useSystemPage'
+import type { SystemKpiCard } from '~~/composables/useSystemMonitor'
 
 defineProps<{ cards: SystemKpiCard[] }>()
 </script>

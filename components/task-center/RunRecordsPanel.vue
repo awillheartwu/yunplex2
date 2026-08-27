@@ -1,5 +1,5 @@
 <template>
-  <section class="system-run-records space-y-4">
+  <section class="run-records space-y-4">
     <FilterBar
       :search="runs.filter.value.search || ''"
       placeholder="搜索运行摘要、ID、来源或歌曲"
@@ -27,8 +27,8 @@
           </div>
         </div>
         <div class="filter-sheet-group">
-          <label class="filter-sheet-group__label" for="system-run-source-filter">来源</label>
-          <select id="system-run-source-filter" v-model="draftSource" class="form-input">
+          <label class="filter-sheet-group__label" for="run-source-filter">来源</label>
+          <select id="run-source-filter" v-model="draftSource" class="form-input">
             <option value="">全部来源</option>
             <option v-for="source in sourceOptions" :key="source.id" :value="source.id">{{ sourceOptionLabel(source) }}</option>
           </select>
@@ -57,7 +57,7 @@
       <template #summary><span v-if="runs.total.value > 0">共 {{ runs.total.value }} 次运行</span></template>
     </FilterBar>
 
-    <div v-if="runs.loading.value && runs.items.value.length === 0" class="system-run-records__loading">正在加载运行记录…</div>
+    <div v-if="runs.loading.value && runs.items.value.length === 0" class="run-records__loading">正在加载运行记录…</div>
     <EmptyState v-else-if="runs.items.value.length === 0" title="暂无运行记录" description="当前筛选条件下没有匹配的运行" />
     <div v-else class="run-groups">
       <section v-for="group in groupedRuns" :key="group.key" class="run-group">
@@ -82,6 +82,6 @@ const {
 
 <style scoped>
 @import '~/assets/css/pages/task-center.css';
-.system-run-records{padding-bottom:.5rem}
-.system-run-records__loading{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary);font-size:.85rem}
+.run-records{padding-bottom:.5rem}
+.run-records__loading{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary);font-size:.85rem}
 </style>

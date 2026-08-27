@@ -35,6 +35,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     skipRemoveExtraTracks: false,
     extraTrackRemovalPolicy: 'balanced',
     maxFailureAttempts: 3,
+    unverifiedMediaPolicy: 'download_managed',
     enabled: false,
     logRetentionDays: 30,
     jobRetentionSuccessDays: 7,

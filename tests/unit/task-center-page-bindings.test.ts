@@ -27,16 +27,16 @@ describe('task center page bindings', () => {
     expectTemplateBindingExposed(page, scriptSetup, returnBlock, 'overviewStageItems')
   })
 
-  it('moves the run list into the system workspace', () => {
+  it('keeps the run list inside the task center', () => {
     const taskCenterPage = readProjectFile('components/task-center/TaskCenterPage.vue')
     const taskCenter = readProjectFile('composables/useTaskCenterPage.ts')
-    const systemPage = readProjectFile('components/system/SystemPage.vue')
     const runHistory = readProjectFile('composables/useRunHistory.ts')
 
-    expect(taskCenter).not.toContain("{ key: 'runs', label: '运行记录' }")
-    expect(taskCenterPage).not.toContain("activeTab === 'runs'")
-    expect(systemPage).toContain('<SystemRunRecordsPanel v-else />')
-    expect(systemPage).not.toContain('<SystemMaintenancePanel')
+    expect(taskCenter).toContain("{ key: 'runs', label: '运行记录' }")
+    expect(taskCenter).toContain("tab === 'runs'")
+    expect(taskCenter.indexOf("{ key: 'runs', label: '运行记录' }")).toBeLessThan(taskCenter.indexOf("{ key: 'failures', label: '异常处理' }"))
+    expect(taskCenterPage).toContain('<RunRecordsPanel v-else />')
+    expect(taskCenterPage).toContain("switchTab('runs')")
     expect(runHistory).toContain('typeFilters')
     expect(runHistory).toContain('statusFilters')
   })
@@ -60,6 +60,8 @@ describe('task center page bindings', () => {
     expect(page).toContain(':active-run="primaryActiveRun"')
     expect(panel).toContain('role="progressbar"')
     expect(panel).toContain('歌曲处理进度')
+    expect(panel).toContain("'is-idle': !hasTrackedWork")
+    expect(panel).toContain('v-if="hasTrackedWork"')
     expect(panel).toContain('downstreamLabel')
     expect(panel).not.toContain('重试失败')
     expect(panel).not.toContain('role="tablist"')

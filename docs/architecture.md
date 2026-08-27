@@ -25,12 +25,12 @@ Nitro 单进程服务
 | 区域 | 页面/模块 | 责任 |
 |---|---|---|
 | 初始化与认证 | `pages/setup.vue`、`pages/login.vue`、`middleware/` | 初始管理员、连接配置、会话保护 |
-| 仪表盘 | `pages/index.vue`、`components/dashboard/` | 依赖状态、同步动作、当前任务、待处理事项和来源健康 |
+| 仪表盘 | `pages/index.vue`、`components/dashboard/`、`components/system/SystemMonitorPanel.vue` | 可行动摘要、同步操作、来源健康、依赖健康和当前资源 |
 | 来源管理 | `pages/sync-sources.vue`、`components/sources/`、`composables/useSyncSourcesPage.ts` | 歌单/专辑来源、过滤、批量操作、来源级策略、歌曲与媒体接管 |
 | 手动下载 | `pages/manual-download.vue`、`components/manual-download/` | 解析歌单/专辑/歌曲、勾选并创建下载任务 |
-| 任务中心 | `pages/task-center/`、`components/task-center/`、`components/jobs/` | 当前工作、实时进度、下载队列和异常处理 |
+| 任务中心 | `pages/task-center/`、`components/task-center/`、`components/jobs/` | 当前工作、实时进度、下载队列、异常处理和运行记录 |
 | 高级媒体关联 | `pages/match-reviews.vue`、`components/sources/SourceMediaDetails.vue` | 仅发现和清理未被当前来源引用的孤立关联，不是一级入口 |
-| 系统与运行 | `pages/system.vue`、`components/system/` | 依赖与资源监控、诊断日志和运行记录 |
+| 日志查看 | `pages/logs.vue`、`components/system/SystemLogsPanel.vue` | 警告、错误和系统诊断记录 |
 
 `composables/sse.ts` 是浏览器端共享 SSE 连接。下载队列和同步状态采用 SSE 优先、必要时轮询回退；订阅者离开页面时必须释放 listener、timer 和引用。
 
@@ -42,7 +42,7 @@ Nitro 单进程服务
 | `server/lib/config/` | 默认值、类型、迁移、校验、持久化、运行时应用 | 来源身份或 Plex mutation |
 | `server/lib/db/` | 当前 schema、历史迁移、幂等修复、结构探测 | 业务策略 |
 | `server/lib/playlist/` | Playlist Source CRUD、批量动作、来源状态 | 歌曲身份推断 |
-| `server/lib/download/` | 持久任务、lease、并发消费、单曲下载配置 | Plex 歌单删除授权 |
+| `server/lib/download/` | 持久任务、lease、并发消费、单曲文件执行、Managed Media Command 与一次资产提交 | Plex 歌单删除授权 |
 | `server/lib/sync/` | Track Resolution、Identity Binding、Reconciliation Plan、Source Convergence | 第二套手动下载入口 |
 | `server/lib/run/` | 统一 task run 记录、查询和清理 | 领域状态真相 |
 | `server/lib/log/` | 诊断日志和有界保留 | 替代领域状态或身份事件 |
@@ -76,9 +76,24 @@ pages/manual-download.vue
   -> server/lib/download/queue.ts
   -> server/lib/download/single-song.ts
   -> server/lib/tag-writer.ts
+  -> server/lib/download/media-write.ts（成功后一次提交 Local Media Asset）
 ```
 
-同步、补全和重试需要单曲下载配置时，统一通过 `server/lib/download/options.ts` 装配默认值和模式覆盖。全局下载并发由 queue 消费端控制。
+同步、补全和重试需要单曲下载配置时，统一通过 `server/lib/download/options.ts` 装配默认值、下载模式和目标意图。`single-song.ts` 只执行文件操作，不持久化身份；队列或直接调用者必须在标签成功后统一通过 `media-write.ts` 提交一次。全局下载并发由 queue 消费端控制。
+
+### 下载并托管
+
+```text
+同步源歌曲上下文
+  -> server/lib/download/managed-media-command.ts
+  -> 带 Playlist Source 上下文的 manual_download task run + download task
+  -> single-song.ts（安全规划独立托管路径并写文件）
+  -> media-write.ts（一次提交 Local Media Asset）
+  -> 标记所有引用该 Target Song 的来源待重新对齐
+  -> 后续 Source Convergence 按精确路径建立 path Media Link
+```
+
+Managed Media Command 不执行 Plex 歌单 mutation，也不复制 Source Convergence。来源上下文贯穿 task run、下载任务和失败记录。
 
 ### 媒体接管
 

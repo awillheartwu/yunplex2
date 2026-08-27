@@ -5,6 +5,7 @@ import { getSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { resolveSingleSongConfig } from '../../../lib/download/options'
+import { commitCompletedMediaWrite } from '../../../lib/download/media-write'
 import { emitEvent } from '../../../lib/sync/events'
 import { appendLog } from '../../../lib/log/store'
 import { setArtistAliases } from '../../../lib/netease'
@@ -110,6 +111,15 @@ export default defineEventHandler(async (event) => {
       return
     }
 
+    commitCompletedMediaWrite({
+      neteaseSongId: neteaseId,
+      filePath: result.filePath,
+      provenance: 'manual',
+      audioDownloaded: result.ops.download === 'ok',
+      audioOperation: result.audioOperation,
+      sourceId: source.id,
+      runId,
+    })
     currentSong.status = 'success'
     currentSong.phase = 'done'
     currentSong.filePath = result.filePath

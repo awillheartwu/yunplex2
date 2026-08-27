@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../db'
 import { TagWriteError } from '../tag-writer'
+import { createManualDownloadRun, getRun } from '../run/store'
 import { getLocalMediaAsset, upsertLocalMediaAsset } from '../sync/local-media-store'
 import {
   enqueueTask,
@@ -166,6 +167,43 @@ describe('download queue cleanup', () => {
       source_id: null,
       failure_kind: 'failed_download',
     }])
+  })
+
+  it('attributes a source-aware manual download failure to its Playlist Source', async () => {
+    setupDb()
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (id, netease_playlist_id, name, created_at, updated_at)
+      VALUES ('source-manual', 1001, '来源托管下载', ?, ?)
+    `).run(now, now)
+    createManualDownloadRun({
+      id: 'managed-run',
+      total: 1,
+      sourceLabel: '来源托管下载 · 下载并托管',
+      sourceIds: ['source-manual'],
+    })
+    const task = enqueueTask({
+      sourceId: 'source-manual',
+      songId: 22,
+      songName: 'Managed from source',
+      artist: 'Artist',
+      album: 'Album',
+      quality: 'lossless',
+      jobId: 'managed-run',
+    })
+
+    await processAll(async () => { throw new Error('network') }, 'managed-run', 1, [task.id])
+
+    expect(getDb().prepare(`
+      SELECT song_id, source_id, source_name, run_type
+      FROM failure_records
+    `).get()).toEqual({
+      song_id: 22,
+      source_id: 'source-manual',
+      source_name: '来源托管下载',
+      run_type: 'manual_download',
+    })
+    expect(getRun('managed-run')?.songs[0]?.sourceId).toBe('source-manual')
   })
 
   it('records audio bytes written by YunPlex as a managed local media asset', async () => {

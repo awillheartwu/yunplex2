@@ -124,6 +124,34 @@ describe('task run store', () => {
     expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(2)
   })
 
+  it('keeps source-aware manual download recovery classified as manual_download', () => {
+    setup()
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (id, netease_playlist_id, name, created_at, updated_at)
+      VALUES ('source-one', 1001, '来源一', ?, ?)
+    `).run(now, now)
+    createManualDownloadRun({
+      id: 'managed-interrupted',
+      total: 1,
+      sourceLabel: '来源一 · 下载并托管',
+      sourceIds: ['source-one'],
+    })
+    getDb().prepare(`
+      INSERT INTO download_tasks (
+        id, source_id, song_id, song_name, artist, album, status, progress,
+        job_id, run_id, created_at, updated_at
+      ) VALUES ('managed-task', 'source-one', 31, 'Managed', 'A', 'X', 'downloading', 50,
+        'managed-interrupted', 'managed-interrupted', ?, ?)
+    `).run(now, now)
+
+    recoverInterruptedRuns()
+
+    expect(getDb().prepare(`
+      SELECT source_id, run_type FROM failure_records WHERE song_id = 31
+    `).get()).toEqual({ source_id: 'source-one', run_type: 'manual_download' })
+  })
+
   it('filters unified runs by type', () => {
     setup()
     createManualDownloadRun({ id: 'batch-1', total: 1, sourceLabel: '单曲' })

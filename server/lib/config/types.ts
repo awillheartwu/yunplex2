@@ -49,9 +49,11 @@ export interface SyncStrategyConfig {
   skipRemoveExtraTracks: boolean
   extraTrackRemovalPolicy: ExtraTrackRemovalPolicy
   maxFailureAttempts: number
+  unverifiedMediaPolicy: UnverifiedMediaPolicy
 }
 
 export type ExtraTrackRemovalPolicy = 'strict' | 'balanced' | 'exact'
+export type UnverifiedMediaPolicy = 'download_managed' | 'wait_manual'
 
 export type MultiArtistFormat = 'feat' | 'ft' | 'featuring' | 'ampersand' | 'slash' | 'comma' | 'with' | 'and' | 'plus'
 

@@ -12,7 +12,12 @@ import {
   type LocalMediaInspection,
 } from './local-media-store'
 import { mapLocalPathToPlex, resolveAccessibleLocalPath } from './path-map'
-import { planMissingMedia, type MissingMediaPlan } from './missing-media-policy'
+import {
+  decideUnverifiedMedia,
+  planMissingMedia,
+  type MissingMediaPlan,
+  type UnverifiedMediaDecision,
+} from './missing-media-policy'
 import {
   getSongIdentityBinding,
   markSongIdentityBindingStale,
@@ -82,20 +87,22 @@ export async function resolveTracks(
       mediaPlan,
       previewInspection: previewInspections.get(song.id),
     })
-    if (mediaPlan) annotateMediaPolicy(resolution, mediaPlan)
+    if (mediaPlan && !resolution.mediaPolicy) annotateMediaPolicy(resolution, mediaPlan)
 
     const ratingKey = resolution.plexRatingKey
     const ownerSongId = ratingKey ? claimedRatingKeys.get(ratingKey) : undefined
     if (ratingKey && ownerSongId !== undefined && ownerSongId !== song.id) {
-      resolutions.push({
-        neteaseIndex: index,
-        song,
-        resolution: 'needs_download',
-        matchTrace: trace('dedupe_conflict', {
-          conflictReason: `Plex #${ratingKey} 已明确关联网易云歌曲 ${ownerSongId}`,
-          message: '同一个 Plex 媒体不能自动代表两首不同的网易云歌曲，将下载独立副本',
+      const conflictReason = `Plex #${ratingKey} 已明确关联网易云歌曲 ${ownerSongId}`
+      resolutions.push(unverifiedResolution(
+        { neteaseIndex: index, song },
+        null,
+        null,
+        decideUnverifiedMedia(cfg, {
+          waitMessage: `${conflictReason}，请手动选择其他媒体`,
+          downloadMessage: '同一个 Plex 媒体不能自动代表两首不同的网易云歌曲，将下载独立副本',
         }),
-      })
+        { source: 'dedupe_conflict', conflictReason },
+      ))
       continue
     }
     if (ratingKey) {
@@ -197,9 +204,24 @@ async function resolveOne(input: {
         conflictingRatingKeys: recovered.map(item => item.track.ratingKey),
       })
     }
-    return downloadResolution(base, expectedLocalPath, localAsset, recovered.length > 1
-      ? '已接管路径对应多个 Plex 媒体，无法安全选择，将下载独立副本'
-      : '已接管的 Plex 媒体已失效，将下载新的托管副本')
+    const message = recovered.length > 1
+      ? '已接管路径对应多个 Plex 媒体，无法安全选择'
+      : '已接管的 Plex 媒体已失效'
+    return unverifiedResolution(
+      base,
+      expectedLocalPath,
+      localAsset,
+      decideUnverifiedMedia(cfg, {
+        waitMessage: `${message}，等待手动选择`,
+        downloadMessage: `${message}，将下载新的托管副本`,
+        existingPath: expectedLocalPath,
+        protectExisting: localAsset?.ownership !== 'managed',
+      }),
+    )
+  }
+
+  if (mediaPlan?.disposition === 'wait_manual') {
+    return awaitingManualResolution(base, mediaPlan.filePath ?? expectedLocalPath, localAsset, mediaPlan.message)
   }
 
   const policyRequiresDownload = mediaPlan?.disposition === 'download_missing'
@@ -269,14 +291,57 @@ async function resolveOne(input: {
     return downloadResolution(base, expectedLocalPath, localAsset, validation.reason || '托管文件无效，将重新下载')
   }
 
-  return downloadResolution(
+  const message = expectedLocalPath
+    ? '发现未接管的现有文件'
+    : '没有可验证的托管媒体或明确接管'
+  return unverifiedResolution(
     base,
     expectedLocalPath,
     localAsset,
-    expectedLocalPath
-      ? '发现未接管的现有文件，将下载独立托管副本'
-      : '没有可验证的托管媒体或明确接管，将自动下载',
+    decideUnverifiedMedia(cfg, {
+      waitMessage: `${message}，等待手动选择`,
+      downloadMessage: `${message}，将自动下载`,
+      existingPath: expectedLocalPath,
+      protectExisting: localAsset?.ownership !== 'managed',
+    }),
   )
+}
+
+function unverifiedResolution(
+  base: { neteaseIndex: number; song: NeteaseSong },
+  existingPath: string | null,
+  asset: LocalMediaAsset | null,
+  decision: UnverifiedMediaDecision,
+  traceOverride?: { source: MatchTrace['source']; conflictReason?: string },
+): TrackResolution {
+  if (decision.disposition === 'wait_manual') {
+    return awaitingManualResolution(base, existingPath, asset, decision.message, traceOverride)
+  }
+  return downloadResolution(base, existingPath, asset, decision.message, traceOverride)
+}
+
+function awaitingManualResolution(
+  base: { neteaseIndex: number; song: NeteaseSong },
+  existingPath: string | null,
+  asset: LocalMediaAsset | null,
+  message = '等待手动选择 Plex 媒体或下载托管副本',
+  traceOverride?: { source: MatchTrace['source']; conflictReason?: string },
+): TrackResolution {
+  return {
+    ...base,
+    resolution: 'awaiting_manual',
+    ...(existingPath ? { filePath: existingPath } : {}),
+    mediaPolicy: {
+      disposition: 'wait_manual',
+      ...(existingPath && asset?.ownership !== 'managed' ? { protectedAudioPath: existingPath } : {}),
+    },
+    matchTrace: trace(traceOverride?.source ?? 'media_policy', {
+      message,
+      ...(traceOverride?.conflictReason ? { conflictReason: traceOverride.conflictReason } : {}),
+      deletionProtectionReason: '未建立强身份，等待用户选择；本轮不修改对应 Plex 条目',
+      evidence: { existingPath, existingOwnership: asset?.ownership ?? null, fallback: 'wait_manual' },
+    }),
+  }
 }
 
 function downloadResolution(
@@ -284,6 +349,7 @@ function downloadResolution(
   existingPath: string | null,
   asset: LocalMediaAsset | null,
   message = '需要下载托管副本',
+  traceOverride?: { source: MatchTrace['source']; conflictReason?: string },
 ): TrackResolution {
   const protectExternal = Boolean(existingPath && asset?.ownership !== 'managed')
   return {
@@ -296,8 +362,9 @@ function downloadResolution(
       ...(asset?.ownership === 'managed' && existingPath ? { audioPath: existingPath } : {}),
       ...(protectExternal && existingPath ? { protectedAudioPath: existingPath } : {}),
     },
-    matchTrace: trace('download_required', {
+    matchTrace: trace(traceOverride?.source ?? 'download_required', {
       message,
+      ...(traceOverride?.conflictReason ? { conflictReason: traceOverride.conflictReason } : {}),
       evidence: { existingPath, existingOwnership: asset?.ownership ?? null, fallback: 'managed_download' },
     }),
   }

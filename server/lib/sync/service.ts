@@ -6,6 +6,7 @@ import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
 import { saveSyncRun } from '../run/store'
 import type { SongStatus } from '../job/types'
+import { projectStaticResolutionStatus } from '../../../lib/media-status-projection'
 import {
   getEnabledSources, listSources,
   recordSourceComparison, recordSourceObservation, updateSource,
@@ -417,15 +418,14 @@ export function getSyncService(getConfig: () => AppConfig) {
             if (r.matchTrace) {
               job.updateSong(songId, { metadata: { matchTrace: { ...r.matchTrace } } })
             }
-            if (r.resolution === 'matched_plex_playlist' || r.resolution === 'found_in_plex_library') {
-              job.updateSong(songId, { status: 'skipped_existing', phase: 'done' })
-            } else if (r.resolution === 'unavailable') {
+            if (r.resolution === 'unavailable') {
               job.updateSong(songId, { status: 'failed_download', phase: 'download', error: { title: '歌曲不可用', message: '网易云无下载链接', stage: 'download', songName: r.song.name, artist: splitArtists(r.song.artists)[0] } })
-            } else if (r.resolution === 'copyright_restricted') {
-              job.updateSong(songId, { status: 'copyright_restricted', phase: 'download' })
             } else if (r.resolution === 'ignored_failure') {
               const entry = failurePolicy.failuresBySongId[r.song.id]
               job.updateSong(songId, { status: 'ignored_failure', phase: entry?.phase || 'download' })
+            } else {
+              const projection = projectStaticResolutionStatus(r.resolution)
+              if (projection) job.updateSong(songId, projection)
             }
             // needs_download / found_on_disk stay pending
           }

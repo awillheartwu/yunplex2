@@ -284,45 +284,6 @@ export function upsertLocalMediaAsset(input: {
   return getLocalMediaAsset(input.neteaseSongId)!
 }
 
-export function recordCompletedLocalMediaAsset(input: {
-  neteaseSongId: number
-  filePath: string
-  sourceTaskId: string
-  audioDownloaded: boolean
-  audioOperation?: 'downloaded' | 'redownloaded' | 'reused'
-  sourceId?: string | null
-  runId?: string | null
-}): LocalMediaAsset {
-  const previous = getLocalMediaAsset(input.neteaseSongId)
-  const normalizedPath = normalize(input.filePath)
-  const reusesManagedAsset = !input.audioDownloaded
-    && previous?.ownership === 'managed'
-    && normalize(previous.filePath) === normalizedPath
-  const ownership: LocalMediaOwnership = input.audioDownloaded || reusesManagedAsset
-    ? 'managed'
-    : 'external'
-  const audioOperation = input.audioDownloaded
-    ? input.audioOperation === 'redownloaded' ? 'redownloaded' : 'downloaded'
-    : reusesManagedAsset
-      ? 'reused_managed'
-      : 'adopted_existing'
-
-  return upsertLocalMediaAsset({
-    neteaseSongId: input.neteaseSongId,
-    filePath: normalizedPath,
-    provenance: reusesManagedAsset ? previous!.provenance : 'download_task',
-    ownership,
-    sourceTaskId: reusesManagedAsset ? previous!.sourceTaskId : input.sourceTaskId,
-    evidence: {
-      ...(reusesManagedAsset ? previous!.evidence : {}),
-      runId: input.runId ?? null,
-      sourceId: input.sourceId ?? null,
-      lastTaskId: input.sourceTaskId,
-      audioOperation,
-    },
-  })
-}
-
 function markMissing(neteaseSongId: number): void {
   getDb().prepare(`UPDATE local_media_assets SET status = 'missing', updated_at = ?, last_verified_at = ? WHERE netease_song_id = ?`)
     .run(new Date().toISOString(), new Date().toISOString(), neteaseSongId)

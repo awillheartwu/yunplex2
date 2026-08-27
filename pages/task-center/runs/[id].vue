@@ -2,7 +2,7 @@
   <div class="run-detail-page">
     <div v-if="loading" class="run-detail-state">正在加载运行详情…</div>
     <EmptyState v-else-if="!run" title="运行记录不存在" description="这条记录可能已被保留策略清理。">
-      <NuxtLink to="/system?tab=runs" class="btn btn-secondary">返回运行记录</NuxtLink>
+      <NuxtLink to="/task-center?tab=runs" class="btn btn-secondary">返回运行记录</NuxtLink>
     </EmptyState>
     <template v-else>
       <div class="run-detail-page__title">
@@ -15,7 +15,7 @@
           实时更新
         </span>
       </div>
-      <JobDetail :job="run" @back="navigateTo('/system?tab=runs')" />
+      <JobDetail :job="run" @back="navigateTo('/task-center?tab=runs')" />
     </template>
   </div>
 </template>

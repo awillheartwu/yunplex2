@@ -6,6 +6,7 @@ import { getSource, updateSource } from '../../../lib/playlist/store'
 import { readConfig } from '../../../lib/config/store'
 import { downloadSingleSong } from '../../../lib/download/single-song'
 import { resolveSingleSongConfig } from '../../../lib/download/options'
+import { commitCompletedMediaWrite } from '../../../lib/download/media-write'
 import { fetchPlaylistSongs, fetchAlbumSongs, setArtistAliases } from '../../../lib/netease'
 import { saveSyncRun } from '../../../lib/run/store'
 import { appendLog } from '../../../lib/log/store'
@@ -143,8 +144,19 @@ export default defineEventHandler(async (event) => {
           embedMetadata: true,
           embedCover: false,
           downloadMode: 'missing',
-          audioPath,
+          target: { kind: 'existing', path: audioPath },
         }))
+        if (result.ops.tags !== 'failed') {
+          commitCompletedMediaWrite({
+            neteaseSongId: song.id,
+            filePath: result.filePath,
+            provenance: 'manual',
+            audioDownloaded: result.ops.download === 'ok',
+            audioOperation: result.audioOperation,
+            sourceId: source.id,
+            runId: jobId,
+          })
+        }
         // Distinguish actual writes from pure skips
         if (result.ops.tags === 'ok') metadataRepaired++
         if (result.ops.tags === 'ok' || result.ops.lyric === 'ok' || result.ops.cover === 'ok') {

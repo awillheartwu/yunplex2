@@ -249,7 +249,7 @@ describe('downloadSingleSong', () => {
 
     const result = await downloadSingleSong(123456, {
       ...mockConfig,
-      audioPath: overridePath,
+      target: { kind: 'existing', path: overridePath },
       downloadMode: 'replace',
     })
 
@@ -273,7 +273,7 @@ describe('downloadSingleSong', () => {
 
     await downloadSingleSong(123456, {
       ...mockConfig,
-      audioPath: overridePath,
+      target: { kind: 'existing', path: overridePath },
       downloadMode: 'replace',
     })
 
@@ -293,7 +293,7 @@ describe('downloadSingleSong', () => {
 
     await downloadSingleSong(123456, {
       ...mockConfig,
-      protectedAudioPath: protectedPath,
+      target: { kind: 'computed', protectedPath },
     })
 
     expect(downloadSong).toHaveBeenCalledWith(
@@ -313,7 +313,7 @@ describe('downloadSingleSong', () => {
 
     await downloadSingleSong(123456, {
       ...mockConfig,
-      audioPath: overridePath,
+      target: { kind: 'existing', path: overridePath },
       downloadMode: 'missing',
     })
 
@@ -335,7 +335,7 @@ describe('downloadSingleSong', () => {
 
     await downloadSingleSong(123456, {
       ...mockConfig,
-      audioPath: overridePath,
+      target: { kind: 'existing', path: overridePath },
       downloadMode: 'missing',
     })
 
@@ -358,7 +358,7 @@ describe('downloadSingleSong', () => {
 
     await downloadSingleSong(123456, {
       ...mockConfig,
-      audioPath: overridePath,
+      target: { kind: 'existing', path: overridePath },
       downloadMode: 'missing',
     })
 
@@ -374,17 +374,12 @@ describe('downloadSingleSong', () => {
     )
   })
 
-  it('records the managed local media identity after a successful download', async () => {
+  it('leaves Local Media Asset persistence to the completion module', async () => {
     const { upsertLocalMediaAsset } = await import('../../server/lib/sync/local-media-store')
 
     await downloadSingleSong(123456, mockConfig)
 
-    expect(upsertLocalMediaAsset).toHaveBeenCalledWith(expect.objectContaining({
-      neteaseSongId: 123456,
-      filePath: '/tmp/music/Artist A/Test Album (2023)/Test Song.flac',
-      provenance: 'manual',
-      ownership: 'managed',
-    }))
+    expect(upsertLocalMediaAsset).not.toHaveBeenCalled()
   })
 
   it('passes lyrics disabled correctly', async () => {

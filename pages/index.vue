@@ -2,12 +2,7 @@
   <div class="dashboard-page">
     <section v-if="summary" class="section-card dashboard-toolbar" aria-label="首页状态与同步操作">
       <div class="dashboard-toolbar__status">
-        <div class="dashboard-status-list">
-          <span v-for="item in summary.status.items" :key="item.key" class="dashboard-status-item">
-            <span class="dashboard-status-item__dot" :class="item.ok ? 'dashboard-status-item__dot--ok' : 'dashboard-status-item__dot--error'" />
-            {{ item.label }}
-          </span>
-        </div>
+        <strong>同步概览</strong>
         <span class="dashboard-toolbar__timestamp">{{ formatDashboardLastSyncLabel(summary.status.lastSyncAt) }}</span>
       </div>
 
@@ -20,6 +15,18 @@
           {{ syncState?.isRunning || syncLoading ? '同步中...' : '立即同步' }}
         </button>
       </div>
+    </section>
+
+    <section class="dashboard-monitor" aria-label="系统状态">
+      <SystemMonitorPanel
+        :dependency-checked-label="dependencyCheckedLabel"
+        :health-items="healthItems"
+        :health-refreshing="healthRefreshing"
+        :kpi-cards="kpiCards"
+        :overall-tone="overallTone"
+        @refresh-health="refreshDependencyHealth"
+        @copy-diagnostics="copyDiagnostics"
+      />
     </section>
 
     <div v-if="dashboardLoading" class="section-card dashboard-feedback"><p>加载中</p></div>
@@ -44,6 +51,7 @@
         <DashboardSourceHealth :summary="summary.sourceHealth" />
       </div>
     </template>
+
   </div>
 </template>
 
@@ -52,6 +60,7 @@ import type { AppConfig } from '~~/server/lib/config/types'
 import type { DashboardSummary } from '~~/types/dashboard'
 import { formatDashboardLastSyncLabel } from '~~/composables/useDashboardFormat'
 import { useFeedback } from '~~/composables/useFeedback'
+import { useSystemMonitor } from '~~/composables/useSystemMonitor'
 
 const api = useApi()
 const feedback = useFeedback()
@@ -61,6 +70,15 @@ const dashboardLoading = ref(true)
 const dashboardError = ref<string | null>(null)
 const autoSyncLoading = ref(false)
 const config = ref<AppConfig | null>(null)
+const {
+  copyDiagnostics,
+  dependencyCheckedLabel,
+  healthItems,
+  healthRefreshing,
+  kpiCards,
+  overallTone,
+  refreshDependencyHealth,
+} = useSystemMonitor()
 
 async function refreshDashboard() {
   dashboardLoading.value = true
@@ -128,13 +146,9 @@ onUnmounted(() => {
 <style scoped>
 .dashboard-page { display: grid; gap: .85rem; }
 .dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem; }
-.dashboard-toolbar__status, .dashboard-status-list, .dashboard-toolbar__actions, .dashboard-current-task { display: flex; align-items: center; }
+.dashboard-toolbar__status, .dashboard-toolbar__actions, .dashboard-current-task { display: flex; align-items: center; }
 .dashboard-toolbar__status { flex-wrap: wrap; gap: .8rem; min-width: 0; }
-.dashboard-status-list { flex-wrap: wrap; gap: .4rem .85rem; }
-.dashboard-status-item { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-secondary); font-size: .76rem; }
-.dashboard-status-item__dot { width: .45rem; height: .45rem; border-radius: 999px; background: var(--text-muted); }
-.dashboard-status-item__dot--ok { background: var(--success); }
-.dashboard-status-item__dot--error { background: var(--danger); }
+.dashboard-toolbar__status strong { color: var(--text-primary); font-size: .8rem; }
 .dashboard-toolbar__timestamp { color: var(--text-muted); font-size: .76rem; white-space: nowrap; }
 .dashboard-toolbar__actions { gap: .6rem; }
 .dashboard-toggle { display: inline-flex; align-items: center; gap: .65rem; min-height: 2.4rem; padding: 0 .75rem; border: 1px solid var(--border-primary); border-radius: .8rem; background: var(--bg-input); color: var(--text-secondary); font-size: .76rem; white-space: nowrap; }
@@ -152,6 +166,7 @@ onUnmounted(() => {
 .dashboard-current-task > span:last-child { display: inline-flex; align-items: center; gap: .35rem; color: var(--accent); font-size: .75rem; white-space: nowrap; }
 .dashboard-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .85rem; align-items: stretch; }
 .dashboard-workspace > :deep(*) { min-height: 100%; }
+.dashboard-monitor { display: grid; }
 .dashboard-feedback { display: grid; place-items: center; min-height: 10rem; padding: 1rem; text-align: center; }
 .dashboard-feedback--error { gap: .7rem; }
 .dashboard-feedback p { margin: 0; color: var(--text-muted); }

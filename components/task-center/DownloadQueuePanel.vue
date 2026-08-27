@@ -1,5 +1,5 @@
 <template>
-  <section class="section-card download-queue-panel" aria-labelledby="download-queue-title">
+  <section class="section-card download-queue-panel" :class="{ 'is-idle': !hasTrackedWork }" aria-labelledby="download-queue-title">
     <header class="download-queue-panel__header">
       <div class="download-queue-panel__heading">
         <p class="download-queue-panel__eyebrow">流程追踪</p>
@@ -17,7 +17,7 @@
       </div>
     </header>
 
-    <div class="download-queue-panel__overview">
+    <div v-if="hasTrackedWork" class="download-queue-panel__overview">
       <div class="download-queue-panel__stage-card">
         <div class="download-queue-panel__stage-copy">
           <span class="download-queue-panel__stage-badge" :class="`is-${stageBadgeTone}`">{{ stageBadge }}</span>
@@ -111,8 +111,10 @@
 
     <div v-else class="download-queue-empty">
       <span><AppIcon name="archive" :size="22" /></span>
-      <strong>{{ emptyTitle }}</strong>
-      <p>{{ emptyDescription }}</p>
+      <div class="download-queue-empty__copy">
+        <strong>{{ emptyTitle }}</strong>
+        <p>{{ emptyDescription }}</p>
+      </div>
     </div>
   </section>
 </template>
@@ -161,6 +163,14 @@ const flowStages = computed(() => buildFlowStages({
 }))
 const metrics = computed(() => buildQueueMetrics(props.status, resolvedRunType.value))
 const visibleTasks = computed(() => sortLiveTasks(props.liveTasks))
+const hasTrackedWork = computed(() => Boolean(
+  props.activeRun?.id
+  || props.syncState?.isRunning
+  || visibleTasks.value.length > 0
+  || props.status.pending > 0
+  || props.status.downloading > 0
+  || props.status.tagging > 0,
+))
 const showRunProgress = computed(() => Boolean(props.syncState?.progress?.total))
 const runProgressPercent = computed(() => {
   const progress = props.syncState?.progress
@@ -174,6 +184,7 @@ const progressLabel = computed(() => {
 })
 const downstreamLabel = computed(() => syncLikeRun.value ? '进入 Plex 阶段' : '已完成')
 const panelDescription = computed(() => {
+  if (!hasTrackedWork.value) return '跟踪歌曲从下载、标签写入到 Plex 更新的实时阶段。'
   if (syncLikeRun.value) return '不再区分执行中和等待中，直接查看歌曲当前所在阶段，以及后续 Plex 流程推进到哪里。'
   return '查看当前歌曲从下载到写入完成的处理进度。'
 })

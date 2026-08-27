@@ -106,7 +106,7 @@ const titles: Record<string, string> = {
   '/manual-download': '手动下载',
   '/task-center': '任务中心',
   '/config': '设置',
-  '/system': '系统与运行',
+  '/logs': '日志查看',
 }
 
 const pageTitle = computed(() => {

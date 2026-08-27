@@ -6,6 +6,7 @@ export type Resolution =
   | 'found_in_plex_library'
   | 'found_on_disk'
   | 'needs_download'
+  | 'awaiting_manual'
   | 'copyright_restricted'
   | 'ignored_failure'
   | 'unavailable'

@@ -9,6 +9,7 @@ export type MatchOverviewState =
   | 'pending_alignment'
   | 'historical_unverified'
   | 'unmatched'
+  | 'awaiting_manual'
   | 'binding_stale'
   | 'copyright_restricted'
   | 'sync_failed'

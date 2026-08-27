@@ -2,7 +2,6 @@ import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
 import { useIntervalFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
 
-type SystemTab = 'monitor' | 'logs' | 'runs'
 type Tone = 'ok' | 'warning' | 'error' | 'idle'
 
 export interface SystemStats {
@@ -80,19 +79,10 @@ async function writeClipboard(text: string) {
   document.body.removeChild(textarea)
 }
 
-export function useSystemPage() {
+export function useSystemMonitor() {
   const api = useApi()
-  const route = useRoute()
-  const router = useRouter()
   const feedback = useFeedback()
   const { state: syncState } = useSync()
-  const tabs = [
-    { key: 'monitor', label: '系统监控' },
-    { key: 'logs', label: '系统日志' },
-    { key: 'runs', label: '运行记录' },
-  ]
-  const requestedTab = route.query.tab === 'maintenance' ? 'runs' : route.query.tab
-  const activeTab = ref<SystemTab>(requestedTab === 'logs' || requestedTab === 'runs' ? requestedTab : 'monitor')
   const stats = ref<SystemStats | null>(null)
   const info = ref<SystemInfo | null>(null)
   const healthRefreshing = ref(false)
@@ -118,12 +108,6 @@ export function useSystemPage() {
     if (healthItems.value.some(item => item.tone === 'warning') || kpiCards.value.some(item => item.tone === 'warning')) return 'warning'
     return 'ok'
   })
-
-  function switchSystemTab(tab: string) {
-    if (tab !== 'monitor' && tab !== 'logs' && tab !== 'runs') return
-    activeTab.value = tab
-    void router.replace({ query: { ...route.query, tab: tab === 'monitor' ? undefined : tab } })
-  }
 
   async function fetchStats() {
     try {
@@ -157,24 +141,12 @@ export function useSystemPage() {
   }
 
   const statsPolling = useIntervalFn(() => { void fetchStats() }, 10000)
-  async function startMonitor() {
-    if (!info.value) {
-      try { info.value = await api.get<SystemInfo>('/system/info') } catch { /* diagnostics remain partially available */ }
-    }
+  onMounted(async () => {
+    try { info.value = await api.get<SystemInfo>('/system/info') } catch { /* diagnostics remain partially available */ }
     await fetchStats()
     statsPolling.start()
-  }
-
-  onMounted(async () => {
-    if (route.query.tab === 'maintenance') await router.replace({ query: { ...route.query, tab: 'runs' } })
-    if (activeTab.value === 'monitor') await startMonitor()
-  })
-  watch(activeTab, tab => tab === 'monitor' ? void startMonitor() : statsPolling.stop())
-  watch(() => route.query.tab, (tab) => {
-    const next: SystemTab = tab === 'maintenance' || tab === 'runs' ? 'runs' : tab === 'logs' ? 'logs' : 'monitor'
-    if (activeTab.value !== next) activeTab.value = next
   })
   onUnmounted(() => statsPolling.stop())
 
-  return { activeTab, copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, overallTone, refreshDependencyHealth, switchSystemTab, tabs }
+  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, overallTone, refreshDependencyHealth }
 }

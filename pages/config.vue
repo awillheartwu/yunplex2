@@ -245,6 +245,38 @@
         </fieldset>
       </ConfigSection>
 
+      <ConfigSection v-if="activeTab === 'media'" title="未验证媒体" description="没有强身份可复用时，决定自动下载还是留给人工选择" :collapsed="!!collapsed.mediaPolicy" @toggle="toggle('mediaPolicy')">
+        <template #icon><SidebarIcon name="search" :active="true" /></template>
+        <fieldset class="removal-policy" aria-describedby="unverified-media-policy-help">
+          <legend class="removal-policy__legend">默认处理方式</legend>
+          <p id="unverified-media-policy-help" class="removal-policy__help">
+            自动匹配仍只接受人工关联或 YunPlex 托管文件的精确路径；这里不调整匹配宽容度。
+          </p>
+          <div class="removal-policy__options removal-policy__options--two">
+            <label
+              v-for="option in unverifiedMediaPolicyOptions"
+              :key="option.value"
+              class="removal-policy__option"
+              :class="{ 'removal-policy__option--selected': form.sync.unverifiedMediaPolicy === option.value }"
+            >
+              <input
+                v-model="form.sync.unverifiedMediaPolicy"
+                type="radio"
+                name="unverified-media-policy"
+                :value="option.value"
+              >
+              <span class="removal-policy__content">
+                <span class="removal-policy__title-row">
+                  <strong>{{ option.label }}</strong>
+                  <span v-if="option.recommended" class="removal-policy__badge">推荐</span>
+                </span>
+                <span class="removal-policy__description">{{ option.description }}</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      </ConfigSection>
+
       <!-- Album Sync -->
       <ConfigSection v-if="activeTab === 'media'" title="专辑同步" description="收藏专辑的下载行为与默认产物" :collapsed="!!collapsed.album" @toggle="toggle('album')">
         <template #icon><SidebarIcon name="album" :active="true" /></template>
@@ -456,6 +488,21 @@ const extraTrackRemovalPolicyOptions = [
   },
 ] as const
 
+const unverifiedMediaPolicyOptions = [
+  {
+    value: 'download_managed',
+    label: '自动下载并托管',
+    description: '未找到强身份时下载独立副本；Plex 按精确路径索引后自动建立托管关联。',
+    recommended: true,
+  },
+  {
+    value: 'wait_manual',
+    label: '等待手动选择',
+    description: '不自动下载，留在同步源详情中；可选择 Plex 现有媒体，或单独下载并托管。',
+    recommended: false,
+  },
+] as const
+
 const pathVarHelp = [
   { key: 'artist', desc: '专辑艺人，如 Don Toliver' },
   { key: 'album', desc: '专辑名，如 Love Sick' },
@@ -563,7 +610,7 @@ const tabs = [
 ]
 
 // ── Collapsible sections ──
-type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'aliases' | 'schedule' | 'sync' | 'album' | 'security' | 'retention' | 'other' | 'import' | 'danger'
+type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'aliases' | 'schedule' | 'sync' | 'mediaPolicy' | 'album' | 'security' | 'retention' | 'other' | 'import' | 'danger'
 const collapsed = ref<Partial<Record<SectionKey, boolean>>>({})
 
 function toggle(key: SectionKey) {
