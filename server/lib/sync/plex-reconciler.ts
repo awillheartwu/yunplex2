@@ -89,6 +89,7 @@ export async function reconcileSource(
   ).length
   const existingCount = resolutions.filter((r) => r.resolution === 'matched_plex_playlist').length
   const unavailableCount = resolutions.filter((r) => r.resolution === 'unavailable').length
+  const awaitingManualCount = resolutions.filter((r) => r.resolution === 'awaiting_manual').length
   const policyCounts = new Map<string, number>()
   for (const resolution of resolutions) {
     const disposition = resolution.mediaPolicy?.disposition
@@ -109,6 +110,7 @@ export async function reconcileSource(
   const parts = [`待下载 ${newCount} 首${existingCount > 0 ? `，已存在 ${existingCount} 首` : ''}`]
   if (extraTracks.length > 0) parts.push(`${extraTracks.length} 首待清理`)
   if (unavailableCount > 0) parts.push(`${unavailableCount} 首不可用`)
+  if (awaitingManualCount > 0) parts.push(`${awaitingManualCount} 首等待手动选择`)
   const manualExempt = policyCounts.get('manual_exempt') ?? 0
   const reusedManaged = policyCounts.get('reuse_managed') ?? 0
   const plannedDownloads = (policyCounts.get('download_missing') ?? 0)

@@ -45,6 +45,7 @@ describe('settings config validation and migration', () => {
     expect(() => writeConfig({ download: { dir: '   ' } })).toThrow('下载目录不能为空')
     expect(() => writeConfig({ other: { pathFormat: '{artist}/{album}' } })).toThrow('存储路径格式必须包含 {title} 或 {track} 变量')
     expect(() => writeConfig({ sync: { extraTrackRemovalPolicy: 'reckless' } })).toThrow('多余歌曲清理策略不是有效选项')
+    expect(() => writeConfig({ sync: { unverifiedMediaPolicy: 'fuzzy' } })).toThrow('未验证媒体处理方式不是有效选项')
   })
 
   it('migrates old configs to the balanced extra-track removal policy', () => {
@@ -57,6 +58,18 @@ describe('settings config validation and migration', () => {
     } as any)
 
     expect(readConfig().sync.extraTrackRemovalPolicy).toBe('balanced')
+  })
+
+  it('migrates old configs to automatic managed download', () => {
+    setupDb()
+    writeConfigToDb({
+      ...DEFAULT_CONFIG,
+      sync: Object.fromEntries(
+        Object.entries(DEFAULT_CONFIG.sync).filter(([key]) => key !== 'unverifiedMediaPolicy'),
+      ),
+    } as any)
+
+    expect(readConfig().sync.unverifiedMediaPolicy).toBe('download_managed')
   })
 
   it('removes retired metadata-binding settings from persisted legacy config', () => {
@@ -85,6 +98,15 @@ describe('settings config validation and migration', () => {
     for (const policy of ['strict', 'balanced', 'exact'] as const) {
       writeConfig({ sync: { extraTrackRemovalPolicy: policy } })
       expect(readConfig().sync.extraTrackRemovalPolicy).toBe(policy)
+    }
+  })
+
+  it('persists both unverified-media policies', () => {
+    setupDb()
+
+    for (const policy of ['download_managed', 'wait_manual'] as const) {
+      writeConfig({ sync: { unverifiedMediaPolicy: policy } })
+      expect(readConfig().sync.unverifiedMediaPolicy).toBe(policy)
     }
   })
 

@@ -69,6 +69,15 @@ describe('RunBuilder source/song indexing', () => {
     expect(finished.warnings).toBe(1)
   })
 
+  it('counts songs awaiting manual choice as attention warnings', () => {
+    const run = new RunBuilder(false)
+    run.addSongs('source-1', [
+      { songName: 'Waiting', artist: 'Artist', album: 'Album', status: 'awaiting_manual_match', neteaseSongId: 101 },
+    ])
+
+    expect(run.finish('success', 'done').warnings).toBe(1)
+  })
+
   it('keeps duplicate occurrences of the same Netease song independently addressable', () => {
     const run = new RunBuilder(false)
     const ids = run.addSongs('source-1', [

@@ -1,7 +1,7 @@
 <template>
   <div class="task-center-page">
     <PageHeader
-      description="查看正在执行的工作和需要处理的问题；历史结果统一保存在系统与运行"
+      description="集中查看正在执行的工作、历史运行结果和需要处理的问题"
     />
 
     <PageTabs
@@ -89,7 +89,7 @@
               <p>同步请从仪表盘或同步源发起，下载请从手动下载发起。</p>
             </div>
             <div class="task-idle-card__actions">
-              <NuxtLink to="/system?tab=runs" class="btn btn-secondary btn-sm">查看运行记录</NuxtLink>
+              <button class="btn btn-secondary btn-sm" type="button" @click="switchTab('runs')">查看运行记录</button>
             </div>
           </article>
 
@@ -133,7 +133,7 @@
         />
       </section>
 
-      <section v-else class="space-y-4">
+      <section v-else-if="activeTab === 'failures'" class="space-y-4">
         <div class="failure-status-tabs" role="tablist" aria-label="异常状态">
           <button v-for="item in failureStatusTabs" :key="item.value" role="tab" type="button" :aria-selected="failures.filter.value.status === item.value" :class="{ 'is-active': failures.filter.value.status === item.value }" @click="setFailureStatus(item.value)">
             {{ item.label }}
@@ -265,6 +265,8 @@
           <Pagination :has-more="failures.hasMore.value" :loading="failures.loadingMore.value" :current-count="failures.items.value.length" :total="failures.total.value" @load-more="failures.loadMore()" />
         </div>
       </section>
+
+      <RunRecordsPanel v-else />
     </main>
   </div>
 </template>

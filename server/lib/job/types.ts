@@ -17,6 +17,7 @@ export type SongStatus =
   | 'failed_plex_insert'
   | 'copyright_restricted'
   | 'ignored_failure'
+  | 'awaiting_manual_match'
 
 // ── Core entities ──
 

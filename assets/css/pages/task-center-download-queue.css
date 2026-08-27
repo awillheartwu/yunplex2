@@ -6,6 +6,10 @@
     linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 72%, white 28%), var(--bg-surface));
 }
 
+.download-queue-panel.is-idle {
+  padding: 1.1rem 1.25rem;
+}
+
 .download-queue-panel__header {
   display: flex;
   align-items: flex-start;
@@ -415,6 +419,19 @@
   text-align: center;
 }
 
+.download-queue-panel.is-idle .download-queue-empty {
+  min-height: 5.5rem;
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.download-queue-panel.is-idle .download-queue-empty > span {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+}
+
 .download-queue-empty > span {
   display: flex;
   width: 3rem;
@@ -424,6 +441,11 @@
   border-radius: 0.9rem;
   background: var(--bg-input);
   color: var(--text-tertiary);
+}
+
+.download-queue-empty__copy {
+  display: grid;
+  gap: 0.46rem;
 }
 
 .download-queue-empty strong {

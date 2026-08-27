@@ -19,7 +19,7 @@ function cfg(): AppConfig {
   return {
     netease: { cookie: '', quality: 'jymaster' }, plex: { server: '', port: 32400, token: '', section: '音乐' },
     download: { dir: root, plexLibraryPathPrefix: '/music', downloadLyrics: true, embedMetadata: true, embedCover: true, saveAlbumCover: false, saveArtistImage: false },
-    sync: { intervalMinutes: 30, songLimit: 10, downloadConcurrency: 3, plexScanRetries: 5, plexScanRetryDelaySec: 15, enabled: false, logRetentionDays: 30, jobRetentionSuccessDays: 7, jobRetentionFailedDays: 30, downloadTaskRetentionDays: 30, forceFullCompare: false, downloadWhenMediaMissing: false, reconcileOnPlexDrift: true, fullCompareAfterSkips: 5, fullCompareAfterDays: 7, autoDownloadAlbum: false, skipPlexPlaylist: false, skipRemoveExtraTracks: false, extraTrackRemovalPolicy: 'balanced', maxFailureAttempts: 3 },
+    sync: { intervalMinutes: 30, songLimit: 10, downloadConcurrency: 3, plexScanRetries: 5, plexScanRetryDelaySec: 15, enabled: false, logRetentionDays: 30, jobRetentionSuccessDays: 7, jobRetentionFailedDays: 30, downloadTaskRetentionDays: 30, forceFullCompare: false, downloadWhenMediaMissing: false, reconcileOnPlexDrift: true, fullCompareAfterSkips: 5, fullCompareAfterDays: 7, autoDownloadAlbum: false, skipPlexPlaylist: false, skipRemoveExtraTracks: false, extraTrackRemovalPolicy: 'balanced', maxFailureAttempts: 3, unverifiedMediaPolicy: 'download_managed' },
     other: { multiArtistFormat: 'ampersand', lyricOrder: 'original_first', downloadTranslatedLyric: true, downloadRomajiLyric: false, artistAliases: {}, applyAliasToAlbum: false, pathFormat: '{artist}/{album}/{title} [netease-{songId}]', fontScale: 1 },
   }
 }
@@ -50,6 +50,17 @@ describe('safe media reuse', () => {
   it('downloads when there is no verified identity instead of guessing metadata', async () => {
     const { resolveTracks } = await import('./lookup')
     expect((await resolveTracks([song], '', '12', cfg())).resolutions[0]).toMatchObject({ resolution: 'needs_download', matchTrace: { source: 'download_required' } })
+  })
+
+  it('waits for an explicit choice when the unverified-media policy requests it', async () => {
+    const config = cfg()
+    config.sync.unverifiedMediaPolicy = 'wait_manual'
+    const { resolveTracks } = await import('./lookup')
+    expect((await resolveTracks([song], '', '12', config)).resolutions[0]).toMatchObject({
+      resolution: 'awaiting_manual',
+      mediaPolicy: { disposition: 'wait_manual' },
+      matchTrace: { source: 'media_policy' },
+    })
   })
 
   it('stops when multiple Plex items claim one managed path', async () => {

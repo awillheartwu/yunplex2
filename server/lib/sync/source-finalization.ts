@@ -3,6 +3,7 @@ import { getPlaylistUpdatedAt } from '../plex-client'
 import { updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
+import { isAwaitingManualSongStatus } from '../../../lib/media-status-projection'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -56,6 +57,7 @@ export async function finalizeSourceConvergence(
   const restrictedCount = sourceSongs.filter(song => song.status === 'copyright_restricted').length
   const ignoredCount = sourceSongs.filter(song => song.status === 'ignored_failure').length
   const preservedExtraCount = sourceSongs.filter(song => song.status === 'extra_skipped').length
+  const awaitingManualCount = sourceSongs.filter(song => isAwaitingManualSongStatus(song.status)).length
 
   let sourceStatus: PlaylistSource['lastStatus'] = 'success'
   if (failCount > 0 && resolvedTargetCount === 0) {
@@ -119,6 +121,7 @@ export async function finalizeSourceConvergence(
   if (failCount > 0) parts.push(`${failCount} 失败`)
   if (restrictedCount > 0) parts.push(`${restrictedCount} 版权受限`)
   if (ignoredCount > 0) parts.push(`${ignoredCount} 已暂停重试`)
+  if (awaitingManualCount > 0) parts.push(`${awaitingManualCount} 等待手动选择`)
   if (!skipRemoveExtra && preservedExtraCount > 0) parts.push(`${preservedExtraCount} 保留待确认`)
 
   const summary = parts.join('，')

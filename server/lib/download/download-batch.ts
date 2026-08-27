@@ -24,6 +24,7 @@ export interface DownloadBatchInput {
   type: 'playlist' | 'album' | 'songs'
   neteaseId?: number
   songIds?: number[]
+  sourceContext?: { id: string; name: string }
   config: DownloadBatchConfig
 }
 
@@ -88,28 +89,14 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
     ? `网易云歌单 ${input.neteaseId || ''}`.trim()
     : input.type === 'album'
       ? `网易云专辑 ${input.neteaseId || ''}`.trim()
-      : `${songs.length} 首单曲`
-  createManualDownloadRun({
-    id: batchId,
-    total: songs.length,
-    sourceLabel,
-    config: { quality: config.quality },
-    songs: songs.map(song => ({
-      id: `${batchId}:${song.id}`,
-      neteaseSongId: song.id,
-      songName: song.name,
-      artist: song.artists?.map(artist => artist.name).join(' / ') || '',
-      album: song.album?.name || '',
-      status: 'pending',
-      phase: 'download',
-    })),
-  })
-
+      : input.sourceContext?.name || `${songs.length} 首单曲`
   // ── 2. Enqueue ──
+  const ownedTasks: Array<{ task: DownloadTask; song: typeof songs[number] }> = []
+  const activeTasks: DownloadTask[] = []
   for (const song of songs) {
     const [albumArtist] = splitArtists(song.artists ?? [])
-    enqueueTask({
-      sourceId: null,
+    const task = enqueueTask({
+      sourceId: input.sourceContext?.id ?? null,
       songId: song.id,
       songName: song.name,
       artist: albumArtist,
@@ -118,12 +105,42 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
       jobId: batchId,
       idempotencyKey: buildDownloadTaskIdempotencyKey({
         songId: song.id,
+        operation: config.target?.kind === 'computed' && config.target.requireManagedCopy
+          ? 'managed_copy'
+          : 'download',
         quality: config.quality,
         downloadDir: config.downloadDir,
         pathFormat: config.pathFormat,
       }),
     })
+    if (task.jobId === batchId) ownedTasks.push({ task, song })
+    else activeTasks.push(task)
   }
+
+  // Idempotent repeat clicks reuse the active run instead of creating an empty,
+  // permanently-running task run with no owned download tasks.
+  if (ownedTasks.length === 0) {
+    const activeRunId = activeTasks.find(task => task.jobId)?.jobId
+    return { batchId: activeRunId ?? batchId, total: 0 }
+  }
+
+  createManualDownloadRun({
+    id: batchId,
+    total: ownedTasks.length,
+    sourceLabel,
+    sourceIds: input.sourceContext ? [input.sourceContext.id] : undefined,
+    config: { quality: config.quality },
+    songs: ownedTasks.map(({ song }) => ({
+      id: `${batchId}:${song.id}`,
+      sourceId: input.sourceContext?.id,
+      neteaseSongId: song.id,
+      songName: song.name,
+      artist: song.artists?.map(artist => artist.name).join(' / ') || '',
+      album: song.album?.name || '',
+      status: 'pending',
+      phase: 'download',
+    })),
+  })
 
   // ── 3. Processor ──
   const processor = async (
@@ -135,7 +152,7 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
   }
 
   // ── 4. Fire-and-forget processing ──
-  processAll(processor, batchId, config.downloadConcurrency)
+  processAll(processor, undefined, config.downloadConcurrency, ownedTasks.map(({ task }) => task.id))
     .then((failed) => {
       syncManualDownloadRun(batchId)
       const status = getQueueStatus()
@@ -144,9 +161,9 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
         data: {
           type: 'batch-complete',
           batchId,
-          batchTotal: songs.length,
+          batchTotal: ownedTasks.length,
           batchFailed: failed,
-          batchDone: songs.length - failed,
+          batchDone: ownedTasks.length - failed,
           ...status,
         },
         timestamp: new Date().toISOString(),
@@ -158,5 +175,5 @@ export async function runDownloadBatch(input: DownloadBatchInput): Promise<Downl
     })
 
   // ── 5. Return immediately ──
-  return { batchId, total: songs.length }
+  return { batchId, total: ownedTasks.length }
 }

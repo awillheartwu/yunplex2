@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import { emitEvent } from '../sync/events'
 import { recordFailure, resolveFailures } from '../tasks/failure-records'
-import { syncManualDownloadRun } from '../run/store'
+import { getRun, syncManualDownloadRun } from '../run/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { isTagWriteError } from '../tag-writer'
-import { recordCompletedLocalMediaAsset } from '../sync/local-media-store'
+import { commitCompletedMediaWrite } from './media-write'
 
 export interface DownloadTask {
   id: string
@@ -226,14 +226,15 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
   const task = getDownloadTask(id)
   if (!task) return
   // Source Convergence projects source-scoped outcomes from its finalized run.
-  // Manual downloads have no convergence boundary, so their task terminal is
-  // the sole writer of the current failure state.
-  if (task.sourceId) return
+  // Source-aware manual downloads have no convergence finalizer, so the queue
+  // remains their terminal failure writer.
+  const run = task.jobId ? getRun(task.jobId) : null
+  if (task.sourceId && run?.type !== 'manual_download') return
   const common = {
     songId: task.songId,
     songName: task.songName,
     artist: task.artist,
-    sourceId: null,
+    sourceId: task.sourceId,
   }
   if (status === 'done') {
     resolveFailures(common)
@@ -241,7 +242,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
     const reason = error || task.error || '下载失败'
     recordFailure({
       ...common,
-      sourceName: '手动下载',
+      sourceName: task.sourceName || (task.sourceId ? '' : '手动下载'),
       runId: task.jobId || null,
       runType: 'manual_download',
       failureKind: /metadata|tag|标签/i.test(reason) ? 'failed_tags' : /copyright|版权/i.test(reason) ? 'copyright_restricted' : 'failed_download',
@@ -344,7 +345,7 @@ export function buildDownloadTaskIdempotencyKey(input: {
   quality?: string | null
   downloadDir?: string | null
   pathFormat?: string | null
-  operation?: 'download' | 'replace'
+  operation?: 'download' | 'replace' | 'managed_copy'
 }): string {
   return [
     'song',
@@ -519,10 +520,11 @@ export async function processAll(
           leaseExpiresAt: null,
         }, { leaseOwner })
         if (!updated) continue
-        recordCompletedLocalMediaAsset({
+        commitCompletedMediaWrite({
           neteaseSongId: task.songId,
           filePath: result.filePath,
-          sourceTaskId: task.id,
+          provenance: 'download_task',
+          taskId: task.id,
           audioDownloaded: result.ops?.download === 'ok',
           audioOperation: result.audioOperation,
           runId: task.jobId ?? null,

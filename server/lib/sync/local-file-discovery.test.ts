@@ -40,6 +40,7 @@ function buildConfig(downloadDir: string): AppConfig {
       skipRemoveExtraTracks: false,
       extraTrackRemovalPolicy: 'balanced',
       maxFailureAttempts: 1,
+      unverifiedMediaPolicy: 'download_managed',
     },
     other: {
       multiArtistFormat: 'ampersand',

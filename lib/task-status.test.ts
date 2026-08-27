@@ -23,6 +23,7 @@ describe('task status semantics', () => {
   it('classifies attention and failed states without overlap', () => {
     expect(isAttentionSongStatus('ignored_failure')).toBe(true)
     expect(isAttentionSongStatus('copyright_restricted')).toBe(true)
+    expect(isAttentionSongStatus('awaiting_manual_match')).toBe(true)
     expect(isIgnoredSongStatus('ignored_failure')).toBe(true)
     expect(isIgnoredSongStatus('copyright_restricted')).toBe(true)
     expect(isFailedSongStatus('failed_download')).toBe(true)
@@ -38,6 +39,7 @@ describe('task status semantics', () => {
     expect(songMatchesStatusBucket('removed', 'removed')).toBe(true)
     expect(songMatchesStatusBucket('copyright_restricted', 'ignored')).toBe(true)
     expect(songMatchesStatusBucket('ignored_failure', 'ignored')).toBe(true)
+    expect(songMatchesStatusBucket('awaiting_manual_match', 'ignored')).toBe(true)
     expect(songMatchesStatusBucket('copyright_restricted', 'failure')).toBe(false)
   })
 

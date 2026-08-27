@@ -1,4 +1,5 @@
 import type { SongStatus, TaskRun } from '~~/server/lib/job/types'
+import { isAttentionSongStatusProjection } from './media-status-projection'
 
 export type TaskSemanticTone =
   | 'success'
@@ -28,6 +29,7 @@ const SONG_STATUS_PRESENTATION: Record<SongStatus, SongStatusPresentation> = {
   failed_plex_insert: { label: 'Plex 插入失败', tone: 'warning', icon: 'warn' },
   copyright_restricted: { label: '版权受限', tone: 'ignored', icon: 'ignored' },
   ignored_failure: { label: '已暂停重试', tone: 'ignored', icon: 'ignored' },
+  awaiting_manual_match: { label: '等待手动选择', tone: 'ignored', icon: 'search' },
 }
 
 export function songStatusPresentation(status: SongStatus): SongStatusPresentation {
@@ -43,7 +45,7 @@ export function isFailedSongStatus(status: SongStatus): boolean {
 }
 
 export function isAttentionSongStatus(status: SongStatus): boolean {
-  return status === 'copyright_restricted' || status === 'ignored_failure'
+  return isAttentionSongStatusProjection(status)
 }
 
 /** @deprecated Kept for compatibility with callers using the legacy bucket name. */

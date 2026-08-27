@@ -8,6 +8,7 @@ import type {
   PlaylistSourceTrackOccurrence,
 } from '../../../types/match-management'
 import type { SongIdentityBinding } from '../../../types/match-review'
+import { projectMatchOverviewState } from '../../../lib/media-status-projection'
 
 type OverviewBindingRow = {
   netease_song_id: number
@@ -67,8 +68,8 @@ function overviewState(
   if (occurrence?.membershipStatus === 'removed') return 'removed'
   if (binding?.status === 'stale') return 'binding_stale'
   if (!binding || binding.status !== 'active') {
-    if (occurrence?.lastSongStatus === 'copyright_restricted') return 'copyright_restricted'
-    if (occurrence?.lastSongStatus === 'ignored_failure') return 'retry_paused'
+    const projected = projectMatchOverviewState(occurrence?.lastSongStatus)
+    if (projected) return projected
     if (occurrence?.alignmentStatus === 'missing') return 'sync_failed'
     return 'unmatched'
   }

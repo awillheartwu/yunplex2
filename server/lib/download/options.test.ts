@@ -23,8 +23,7 @@ describe('resolveSingleSongConfig', () => {
       downloadMode: 'missing',
       embedMetadata: true,
       embedCover: false,
-      audioPath: '/music/song.flac',
-      protectedAudioPath: '/external/song.flac',
+      target: { kind: 'existing', path: '/music/song.flac' },
     })
 
     expect(resolved).toMatchObject({
@@ -33,8 +32,7 @@ describe('resolveSingleSongConfig', () => {
       downloadMode: 'missing',
       embedMetadata: true,
       embedCover: false,
-      audioPath: '/music/song.flac',
-      protectedAudioPath: '/external/song.flac',
+      target: { kind: 'existing', path: '/music/song.flac' },
     })
     expect(resolved.downloadLyrics).toBe(false)
     expect(resolved.saveAlbumCover).toBe(DEFAULT_CONFIG.download.saveAlbumCover)

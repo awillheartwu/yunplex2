@@ -8,7 +8,7 @@ import { validateLocalAudioFile } from '../media-validation'
 import { createSplitArtists } from '../sync/artist-utils'
 import type { DownloadMode } from './types'
 import type { LyricOrder, MultiArtistFormat } from '../config/types'
-import { getLocalMediaAsset, upsertLocalMediaAsset } from '../sync/local-media-store'
+import { getLocalMediaAsset } from '../sync/local-media-store'
 import { plexPathsExactlyEqual } from '../sync/identity-normalization'
 
 export interface SingleSongConfig {
@@ -26,11 +26,12 @@ export interface SingleSongConfig {
   downloadTranslatedLyric: boolean
   downloadRomajiLyric: boolean
   downloadMode?: DownloadMode
-  /** Override computed path — used by repair to write next to existing file. */
-  audioPath?: string
-  /** Existing external media that must never be overwritten. */
-  protectedAudioPath?: string
+  target?: AudioTargetIntent
 }
+
+export type AudioTargetIntent =
+  | { kind: 'computed'; protectedPath?: string; requireManagedCopy?: boolean }
+  | { kind: 'existing'; path: string }
 
 /**
  * Download a single song from Netease with full metadata tagging.
@@ -52,15 +53,17 @@ export async function downloadSingleSong(
   audioOperation: 'downloaded' | 'redownloaded' | 'reused'
 }> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
+  const previousAsset = getLocalMediaAsset(songId)
 
   // 1. Fetch song detail
   const song = await fetchSongDetail(songId, config.cookie)
   signal?.throwIfAborted()
 
-  const existingAudioPath = config.audioPath
-    && !relative(config.downloadDir, config.audioPath).startsWith('..')
-    && existsSync(config.audioPath)
-    ? config.audioPath
+  const configuredAudioPath = config.target?.kind === 'existing' ? config.target.path : undefined
+  const existingAudioPath = configuredAudioPath
+    && !relative(config.downloadDir, configuredAudioPath).startsWith('..')
+    && existsSync(configuredAudioPath)
+    ? configuredAudioPath
     : null
   const existingAudioIsValid = !existingAudioPath || validateLocalAudioFile(existingAudioPath).valid
 
@@ -91,16 +94,16 @@ export async function downloadSingleSong(
   let targetPath: string
   let relativePath: string
 
-  const shouldReuseAudioPath = Boolean(config.audioPath)
+  const shouldReuseAudioPath = Boolean(configuredAudioPath)
     && (
       mode === 'replace'
-        ? inferFileTypeFromPath(config.audioPath!) === fileType
-        : (!existingAudioPath || existingAudioIsValid || inferFileTypeFromPath(config.audioPath!) === fileType)
+        ? inferFileTypeFromPath(configuredAudioPath!) === fileType
+        : (!existingAudioPath || existingAudioIsValid || inferFileTypeFromPath(configuredAudioPath!) === fileType)
     )
 
-  if (shouldReuseAudioPath && config.audioPath) {
-    targetPath = config.audioPath
-    relativePath = relative(config.downloadDir, config.audioPath)
+  if (shouldReuseAudioPath && configuredAudioPath) {
+    targetPath = configuredAudioPath
+    relativePath = relative(config.downloadDir, configuredAudioPath)
     if (relativePath.startsWith('..')) {
       // audioPath is outside downloadDir — fall back to computed path
       relativePath = buildDownloadPath(config.pathFormat, {
@@ -128,12 +131,26 @@ export async function downloadSingleSong(
     targetPath = join(config.downloadDir, relativePath)
   }
   if (
-    config.protectedAudioPath
-    && plexPathsExactlyEqual(targetPath, config.protectedAudioPath)
+    config.target?.kind === 'computed'
+    && config.target.protectedPath
+    && plexPathsExactlyEqual(targetPath, config.target.protectedPath)
   ) {
     const extension = extname(targetPath)
     const protectedName = `${basename(targetPath, extension)} (YunPlex)${extension}`
     targetPath = join(dirname(targetPath), protectedName)
+    relativePath = relative(config.downloadDir, targetPath)
+  }
+  const targetIsKnownManaged = previousAsset?.ownership === 'managed'
+    && plexPathsExactlyEqual(previousAsset.filePath, targetPath)
+  if (config.target?.kind === 'computed' && config.target.requireManagedCopy && !targetIsKnownManaged && existsSync(targetPath)) {
+    const extension = extname(targetPath)
+    const baseName = basename(targetPath, extension)
+    let suffix = 1
+    do {
+      const label = suffix === 1 ? 'YunPlex' : `YunPlex ${suffix}`
+      targetPath = join(dirname(targetPath), `${baseName} (${label})${extension}`)
+      suffix++
+    } while (existsSync(targetPath))
     relativePath = relative(config.downloadDir, targetPath)
   }
   const audioExists = existsSync(targetPath) && validateLocalAudioFile(targetPath).valid
@@ -211,28 +228,6 @@ export async function downloadSingleSong(
   const result = signal
     ? await downloadSong(...downloadArgs, signal)
     : await downloadSong(...downloadArgs)
-
-  // 9. Persist the local media identity; lookup caches are not identity.
-  if (result.ops.download !== 'failed') {
-    try {
-      const previous = getLocalMediaAsset(songId)
-      const audioDownloaded = result.ops.download === 'ok'
-      upsertLocalMediaAsset({
-        neteaseSongId: songId,
-        filePath: result.filePath,
-        provenance: audioDownloaded ? 'manual' : previous?.provenance ?? 'manual',
-        ownership: audioDownloaded ? 'managed' : previous?.ownership ?? 'external',
-        sourceTaskId: previous?.sourceTaskId,
-        evidence: {
-          ...previous?.evidence,
-          source: 'single_song',
-          audioOperation: audioDownloaded
-            ? mode === 'replace' ? 'redownloaded' : 'downloaded'
-            : 'reused',
-        },
-      })
-    } catch { /* non-critical */ }
-  }
 
   return {
     filePath: result.filePath,

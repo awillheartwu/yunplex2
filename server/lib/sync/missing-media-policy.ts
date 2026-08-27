@@ -13,6 +13,7 @@ export type MissingMediaDisposition =
   | 'register_managed'
   | 'download_missing'
   | 'redownload_replaced'
+  | 'wait_manual'
 
 export interface MissingMediaPlan {
   songId: number
@@ -22,6 +23,31 @@ export interface MissingMediaPlan {
   audioPath?: string
   protectedAudioPath?: string
   message: string
+}
+
+export interface UnverifiedMediaDecision {
+  disposition: Extract<MissingMediaDisposition, 'download_missing' | 'wait_manual'>
+  message: string
+  protectedAudioPath?: string
+}
+
+export function decideUnverifiedMedia(
+  cfg: AppConfig,
+  input: {
+    waitMessage: string
+    downloadMessage: string
+    existingPath?: string | null
+    protectExisting?: boolean
+  },
+): UnverifiedMediaDecision {
+  const wait = cfg.sync.unverifiedMediaPolicy === 'wait_manual'
+  return {
+    disposition: wait ? 'wait_manual' : 'download_missing',
+    message: wait ? input.waitMessage : input.downloadMessage,
+    ...(input.protectExisting && input.existingPath
+      ? { protectedAudioPath: input.existingPath }
+      : {}),
+  }
 }
 
 export function planMissingMedia(
@@ -49,22 +75,23 @@ export function planMissingMedia(
         const managed = inspection.state === 'active_managed'
         plans.set(song.id, managed
           ? plan(song.id, 'reuse_managed', inspection, '复用已验证的 YunPlex 托管媒体')
-          : {
-              ...plan(song.id, 'download_missing', inspection, '外部媒体未被明确接管，将下载独立托管副本'),
-              ...(inspection.filePath ? { protectedAudioPath: inspection.filePath } : {}),
-            })
+          : unverifiedPlan(song.id, inspection, cfg, {
+              waitMessage: '外部媒体未被明确接管，等待手动选择',
+              downloadMessage: '外部媒体未被明确接管，将下载独立托管副本',
+              protectExisting: true,
+            }))
       } else {
         const managed = inspection.state === 'active_managed'
-        plans.set(song.id, {
-          ...plan(
-            song.id,
-            managed ? 'redownload_replaced' : 'download_missing',
-            inspection,
-            managed ? '托管音频无效，将重新下载' : '外部音频无效，将下载新的托管副本',
-          ),
-          ...(managed && inspection.filePath ? { audioPath: inspection.filePath } : {}),
-          ...(!managed && inspection.filePath ? { protectedAudioPath: inspection.filePath } : {}),
-        })
+        plans.set(song.id, managed
+          ? {
+              ...plan(song.id, 'redownload_replaced', inspection, '托管音频无效，将重新下载'),
+              ...(inspection.filePath ? { audioPath: inspection.filePath } : {}),
+            }
+          : unverifiedPlan(song.id, inspection, cfg, {
+              waitMessage: '外部音频无效，等待手动选择',
+              downloadMessage: '外部音频无效，将下载新的托管副本',
+              protectExisting: true,
+            }))
       }
       continue
     }
@@ -82,29 +109,31 @@ export function planMissingMedia(
     }
     if (inspection.state === 'unregistered_external') {
       if (options.validateAudio && inspection.filePath && !validateLocalAudioFile(inspection.filePath).valid) {
-        plans.set(song.id, {
-          ...plan(song.id, 'download_missing', inspection, '未登记文件无效，将下载新的托管副本'),
-          protectedAudioPath: inspection.filePath,
-        })
+        plans.set(song.id, unverifiedPlan(song.id, inspection, cfg, {
+          waitMessage: '未登记外部文件无效，等待手动选择',
+          downloadMessage: '未登记文件无效，将下载新的托管副本',
+          protectExisting: true,
+        }))
         continue
       }
-      plans.set(song.id, {
-        ...plan(song.id, 'download_missing', inspection, '未登记外部文件不会自动复用，将下载独立托管副本'),
-        ...(inspection.filePath ? { protectedAudioPath: inspection.filePath } : {}),
-      })
+      plans.set(song.id, unverifiedPlan(song.id, inspection, cfg, {
+        waitMessage: '未登记外部文件等待手动选择',
+        downloadMessage: '未登记外部文件不会自动复用，将下载独立托管副本',
+        protectExisting: true,
+      }))
       continue
     }
 
     const replaced = inspection.state === 'replaced' && inspection.asset?.ownership === 'managed'
-    plans.set(song.id, {
-      ...plan(
-        song.id,
-        replaced ? 'redownload_replaced' : 'download_missing',
-        inspection,
-        replaced ? '托管文件已变化，将安全重新下载' : '缺少有效已登记媒体，将直接下载',
-      ),
-      ...(replaced && inspection.filePath ? { audioPath: inspection.filePath } : {}),
-    })
+    plans.set(song.id, replaced
+      ? {
+          ...plan(song.id, 'redownload_replaced', inspection, '托管文件已变化，将安全重新下载'),
+          ...(inspection.filePath ? { audioPath: inspection.filePath } : {}),
+        }
+      : unverifiedPlan(song.id, inspection, cfg, {
+          waitMessage: '缺少可验证媒体，等待手动选择',
+          downloadMessage: '缺少有效已登记媒体，将直接下载',
+        }))
   }
 
   return plans
@@ -116,7 +145,7 @@ export function hasMissingMediaPolicyWork(
 ): boolean {
   const plans = planMissingMedia(songs, cfg, { validateAudio: false })
   return [...plans.values()].some(item =>
-    !['manual_exempt', 'reuse_managed'].includes(item.disposition),
+    !['manual_exempt', 'reuse_managed', 'wait_manual'].includes(item.disposition),
   )
 }
 
@@ -132,5 +161,21 @@ function plan(
     inspection,
     filePath: inspection.filePath,
     message,
+  }
+}
+
+function unverifiedPlan(
+  songId: number,
+  inspection: LocalMediaInspection,
+  cfg: AppConfig,
+  messages: Omit<Parameters<typeof decideUnverifiedMedia>[1], 'existingPath'>,
+): MissingMediaPlan {
+  const decision = decideUnverifiedMedia(cfg, {
+    ...messages,
+    existingPath: inspection.filePath,
+  })
+  return {
+    ...plan(songId, decision.disposition, inspection, decision.message),
+    ...(decision.protectedAudioPath ? { protectedAudioPath: decision.protectedAudioPath } : {}),
   }
 }

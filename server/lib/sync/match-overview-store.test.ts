@@ -71,4 +71,17 @@ describe('match overview read model', () => {
     expect(page.items[0]?.occurrence).toBeNull()
     expect(page.items[0]?.affectedSources).toEqual([])
   })
+
+  it('exposes an intentional waiting state separately from sync failure', () => {
+    setup()
+    getDb().prepare(`
+      UPDATE playlist_source_track_occurrences
+      SET last_song_status = 'awaiting_manual_match'
+      WHERE id = 'source-one:1:0'
+    `).run()
+
+    const page = queryMatchOverview({ sourceId: 'source-one' })
+
+    expect(page.items[0]?.state).toBe('awaiting_manual')
+  })
 })

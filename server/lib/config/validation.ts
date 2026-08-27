@@ -1,4 +1,4 @@
-import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat } from './types'
+import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat, UnverifiedMediaPolicy } from './types'
 import { DEFAULT_CONFIG } from './defaults'
 import { deepMerge } from './merge'
 
@@ -47,6 +47,11 @@ const EXTRA_TRACK_REMOVAL_POLICIES = new Set<ExtraTrackRemovalPolicy>([
   'exact',
 ])
 
+const UNVERIFIED_MEDIA_POLICIES = new Set<UnverifiedMediaPolicy>([
+  'download_managed',
+  'wait_manual',
+])
+
 const TOP_LEVEL_KEYS = new Set(['netease', 'plex', 'download', 'sync', 'other'])
 
 const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
@@ -81,6 +86,7 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'skipRemoveExtraTracks',
     'extraTrackRemovalPolicy',
     'maxFailureAttempts',
+    'unverifiedMediaPolicy',
   ]),
   other: new Set([
     'multiArtistFormat',
@@ -154,6 +160,7 @@ export function validateFullConfig(input: unknown): AppConfig {
       skipRemoveExtraTracks: readBoolean(candidate.sync.skipRemoveExtraTracks, '不删除 Plex 多余歌曲'),
       extraTrackRemovalPolicy: readEnum(candidate.sync.extraTrackRemovalPolicy, EXTRA_TRACK_REMOVAL_POLICIES, '多余歌曲清理策略'),
       maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '连续失败阈值', 1, 20),
+      unverifiedMediaPolicy: readEnum(candidate.sync.unverifiedMediaPolicy, UNVERIFIED_MEDIA_POLICIES, '未验证媒体处理方式'),
     },
     other: {
       multiArtistFormat: readEnum(candidate.other.multiArtistFormat, MULTI_ARTIST_FORMATS, '多歌手格式'),
@@ -214,6 +221,11 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
         DEFAULT_CONFIG.sync.extraTrackRemovalPolicy,
       ),
       maxFailureAttempts: coerceInteger(get(source, 'sync', 'maxFailureAttempts'), DEFAULT_CONFIG.sync.maxFailureAttempts, 1, 20),
+      unverifiedMediaPolicy: coerceEnum(
+        get(source, 'sync', 'unverifiedMediaPolicy'),
+        UNVERIFIED_MEDIA_POLICIES,
+        DEFAULT_CONFIG.sync.unverifiedMediaPolicy,
+      ),
     },
     other: {
       multiArtistFormat: coerceEnum(get(source, 'other', 'multiArtistFormat'), MULTI_ARTIST_FORMATS, DEFAULT_CONFIG.other.multiArtistFormat),

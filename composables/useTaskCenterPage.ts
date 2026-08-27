@@ -13,21 +13,25 @@ import { formatRunDuration, runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
 
 export function useTaskCenterPage() {
-  type TaskCenterTab = 'overview' | 'failures'
+  type TaskCenterTab = 'overview' | 'failures' | 'runs'
   const route = useRoute()
   const router = useRouter()
   const api = useApi()
   const feedback = useFeedback()
   const tabs: Array<{ key: TaskCenterTab; label: string }> = [
     { key: 'overview', label: '进行中' },
+    { key: 'runs', label: '运行记录' },
     { key: 'failures', label: '异常处理' },
   ]
   const legacyTabs: Record<string, TaskCenterTab> = {
     downloads: 'overview',
     failures: 'failures',
+    activities: 'runs',
+    'sync-history': 'runs',
+    'download-history': 'runs',
   }
   const requestedTab = String(route.query.tab || 'overview')
-  const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'failures'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
+  const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'failures', 'runs'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
 
   const { state: syncState, cancelSync } = useSync()
   const failures = useFailures()
@@ -179,7 +183,7 @@ export function useTaskCenterPage() {
     void router.replace({ query: { ...route.query, tab: tab === 'overview' ? undefined : tab, id: undefined } })
   }
   function onTaskCenterTabChange(tab: string) {
-    if (tab === 'overview' || tab === 'failures') switchTab(tab)
+    if (tab === 'overview' || tab === 'failures' || tab === 'runs') switchTab(tab)
   }
 
   function syncFailureQuery() {

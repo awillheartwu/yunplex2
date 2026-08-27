@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import type { SystemHealthItem, SystemKpiCard } from '~~/composables/useSystemPage'
+import type { SystemHealthItem, SystemKpiCard } from '~~/composables/useSystemMonitor'
 
 defineProps<{
   dependencyCheckedLabel: string

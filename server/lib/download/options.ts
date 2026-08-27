@@ -6,8 +6,7 @@ export type SingleSongConfigOverrides = Partial<
     SingleSongConfig,
     | 'quality'
     | 'downloadMode'
-    | 'audioPath'
-    | 'protectedAudioPath'
+    | 'target'
     | 'downloadLyrics'
     | 'embedMetadata'
     | 'embedCover'
@@ -39,7 +38,6 @@ export function resolveSingleSongConfig(
     downloadTranslatedLyric: config.other?.downloadTranslatedLyric ?? true,
     downloadRomajiLyric: config.other?.downloadRomajiLyric ?? false,
     ...(overrides.downloadMode ? { downloadMode: overrides.downloadMode } : {}),
-    ...(overrides.audioPath ? { audioPath: overrides.audioPath } : {}),
-    ...(overrides.protectedAudioPath ? { protectedAudioPath: overrides.protectedAudioPath } : {}),
+    ...(overrides.target ? { target: overrides.target } : {}),
   }
 }

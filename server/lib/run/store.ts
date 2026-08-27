@@ -369,6 +369,7 @@ export function createManualDownloadRun(input: {
   id: string
   total: number
   sourceLabel: string
+  sourceIds?: string[]
   config?: TaskRun['config']
   songs?: SongTask[]
 }): TaskRun {
@@ -383,6 +384,7 @@ export function createManualDownloadRun(input: {
     durationMs: 0,
     summary: `手动下载 ${input.total} 首歌曲`,
     source: input.sourceLabel,
+    sourceIds: input.sourceIds,
     target: '本地磁盘',
     totalSongs: input.total,
     successSongs: 0,
@@ -453,6 +455,7 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
       : null
     return {
       id: row.id,
+      sourceId: row.source_id ?? undefined,
       neteaseSongId: row.song_id,
       songName: row.song_name,
       artist: row.artist,
@@ -530,13 +533,14 @@ export function recoverInterruptedRuns(): number {
       WHERE status IN ('downloading','tagging')
     `).run('任务因服务重启中断', now)
     for (const task of interruptedDownloads) {
+      const runType = task.run_id ? getRun(task.run_id)?.type : undefined
       recordFailure({
         songId: task.song_id,
         songName: task.song_name,
         artist: task.artist,
         sourceId: task.source_id,
         runId: task.run_id,
-        runType: task.source_id ? 'sync' : 'manual_download',
+        runType: runType ?? (task.source_id ? 'sync' : 'manual_download'),
         failureKind: task.status === 'tagging' ? 'failed_tags' : 'failed_download',
         failureReason: '任务因服务重启中断',
         occurredAt: now,

@@ -298,6 +298,7 @@ const mediaPolicyItems = computed(() => {
     register_external: '登记外部',
     download_missing: '缺失下载',
     redownload_replaced: '替换下载',
+    wait_manual: '等待手动选择',
   }
   const counts = new Map<string, number>()
   for (const song of props.job.songs) {

@@ -38,8 +38,7 @@ interface ApplySourceDownloadsInput {
 interface DownloadPlan {
   resolution: TrackResolution
   mode: 'full' | 'replace'
-  audioPath?: string
-  protectedAudioPath?: string
+  target?: import('../download/single-song').AudioTargetIntent
 }
 
 function sameLocalFilePath(first: string, second: string): boolean {
@@ -79,10 +78,11 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     downloadPlans.set(resolution.song.id, {
       resolution,
       mode: replace ? 'replace' : 'full',
-      ...(resolution.mediaPolicy?.audioPath ? { audioPath: resolution.mediaPolicy.audioPath } : {}),
-      ...(resolution.mediaPolicy?.protectedAudioPath
-        ? { protectedAudioPath: resolution.mediaPolicy.protectedAudioPath }
-        : {}),
+      ...(resolution.mediaPolicy?.audioPath
+        ? { target: { kind: 'existing' as const, path: resolution.mediaPolicy.audioPath } }
+        : resolution.mediaPolicy?.protectedAudioPath
+          ? { target: { kind: 'computed' as const, protectedPath: resolution.mediaPolicy.protectedAudioPath } }
+          : {}),
     })
   }
 
@@ -101,7 +101,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       downloadPlans.set(resolution.song.id, {
         resolution,
         mode: 'replace',
-        audioPath: decision.audioPath,
+        ...(decision.audioPath ? { target: { kind: 'existing' as const, path: decision.audioPath } } : {}),
       })
     }
   }
@@ -149,8 +149,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       const plan = downloadPlans.get(task.songId)
       return downloadSingleSong(task.songId, resolveSingleSongConfig(config, {
         downloadMode: plan?.mode ?? 'full',
-        audioPath: plan?.audioPath,
-        protectedAudioPath: plan?.protectedAudioPath,
+        target: plan?.target,
       }), onProgress, signal)
     }
 
