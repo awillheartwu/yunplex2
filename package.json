@@ -20,6 +20,8 @@
     "typecheck": "tsc --noEmit",
     "check:repo-size": "node scripts/check-repo-size.mjs",
     "diagnose:sync-source": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-sync-source.ts",
+    "diagnose:auto-sync": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-auto-sync.ts",
+    "acceptance:auto-sync": "vitest run tests/unit/auto-sync-acceptance.test.ts server/lib/sync/source-schedule-store.test.ts server/lib/sync/worker.test.ts --reporter=verbose",
     "format": "prettier --write .",
     "prepare": "husky"
   },
