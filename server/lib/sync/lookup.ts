@@ -8,6 +8,7 @@ import {
   inspectLocalMediaAssets,
   persistLocalMediaInspection,
   resolveLocalMediaAsset,
+  upsertLocalMediaAsset,
   type LocalMediaAsset,
   type LocalMediaInspection,
 } from './local-media-store'
@@ -20,6 +21,7 @@ import {
 } from './missing-media-policy'
 import {
   getSongIdentityBinding,
+  getSongIdentityBindings,
   markSongIdentityBindingStale,
   upsertVerifiedSongIdentityBinding,
 } from './identity-store'
@@ -39,6 +41,7 @@ export interface ExtraTrack {
   artist: string
   album: string
   plexFilePaths: string[]
+  relatedNeteaseSongId?: number
   protectionReason?: string
 }
 
@@ -73,6 +76,8 @@ export async function resolveTracks(
   const resolutions: TrackResolution[] = []
   const claimedRatingKeys = new Map<string, number>()
   const usedRatingKeys = new Set<string>()
+  const targetBindings = [...getSongIdentityBindings(yunSongs.map(song => song.id)).values()]
+    .filter(binding => binding.status !== 'unbound')
 
   for (const [index, song] of yunSongs.entries()) {
     const mediaPlan = mediaPlans.get(song.id)
@@ -114,6 +119,11 @@ export async function resolveTracks(
 
   const extraTracks = playlistTracks.flatMap((track): ExtraTrack[] => {
     if (!track.playlistItemID || usedRatingKeys.has(track.ratingKey)) return []
+    const normalizedTrackPaths = new Set(trackPaths(track).map(normalizePlexPath))
+    const relatedBindings = targetBindings.filter(binding =>
+      binding.plexRatingKey === track.ratingKey
+      || normalizedTrackPaths.has(normalizePlexPath(binding.plexFilePath)),
+    )
     return [{
       playlistItemId: track.playlistItemID,
       ratingKey: track.ratingKey,
@@ -121,6 +131,9 @@ export async function resolveTracks(
       artist: track.grandparentTitle || '',
       album: track.parentTitle || '',
       plexFilePaths: trackPaths(track).map(normalizePlexPath),
+      ...(relatedBindings.length === 1
+        ? { relatedNeteaseSongId: relatedBindings[0]!.neteaseSongId }
+        : {}),
       protectionReason: '该 Plex 项不属于当前已验证目标，按播放列表所有权策略处理',
     }]
   })
@@ -155,7 +168,7 @@ async function resolveOne(input: {
 
   // Explicit adoption is the only external-media identity. Verify by ratingKey
   // plus exact path, then recover by exact path if Plex changes the ratingKey.
-  if (bound?.status === 'active' && bound.bindingMethod === 'manual') {
+  if (bound && bound.status !== 'unbound' && bound.bindingMethod === 'manual') {
     const boundPlexPath = resolvePlexIdentityPath({
       relativePath: bound.plexRelativePath,
       currentSectionRoot: cfg.download.plexLibraryPathPrefix,
@@ -169,16 +182,30 @@ async function resolveOne(input: {
 
     if (recovered.length === 1) {
       const { track, path } = recovered[0]!
+      const accessiblePath = resolveAccessibleLocalPath(path, cfg)
       if (!dryRun) {
         upsertVerifiedSongIdentityBinding({
           neteaseSongId: song.id,
           plexSectionKey: sectionKey,
+          plexSectionRoot: cfg.download.plexLibraryPathPrefix,
           plexFilePath: path,
           plexRatingKey: track.ratingKey,
           bindingMethod: 'manual',
           status: 'active',
           evidence: { source: 'explicit_adoption', verifiedBy: 'plex_file_path', ...identityContext },
         })
+        if (accessiblePath) {
+          upsertLocalMediaAsset({
+            neteaseSongId: song.id,
+            filePath: accessiblePath,
+            provenance: 'manual',
+            ownership: 'external',
+            evidence: {
+              adoptedFrom: 'explicit_binding',
+              plexFilePath: normalizePlexPath(path),
+            },
+          })
+        }
       }
       const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
       return {
@@ -186,7 +213,7 @@ async function resolveOne(input: {
         resolution: playlistItemId ? 'matched_plex_playlist' : 'found_in_plex_library',
         plexRatingKey: track.ratingKey,
         playlistItemId,
-        filePath: resolveAccessibleLocalPath(path, cfg) ?? undefined,
+        filePath: accessiblePath ?? undefined,
         matchTrace: trace('identity_binding', {
           ratingKey: track.ratingKey,
           filePath: path,
@@ -197,7 +224,7 @@ async function resolveOne(input: {
       }
     }
 
-    if (!dryRun) {
+    if (!dryRun && bound.status === 'active') {
       markSongIdentityBindingStale(song.id, {
         reason: recovered.length > 1 ? 'adopted_path_ambiguous' : 'adopted_media_missing',
         plexFilePath: boundPlexPath,
@@ -220,6 +247,97 @@ async function resolveOne(input: {
     )
   }
 
+  // A path binding is only created after a YunPlex-managed file has been
+  // observed at an exact Plex path. If Plex later moves that same managed
+  // media, the durable asset can still point at the old path. Re-verify the
+  // binding before the missing-media policy downloads a duplicate, and repair
+  // the local asset only when the Plex path maps to an accessible file.
+  if (bound?.status === 'active' && bound.bindingMethod === 'path' && localAsset?.ownership === 'managed') {
+    const boundPlexPath = resolvePlexIdentityPath({
+      relativePath: bound.plexRelativePath,
+      currentSectionRoot: cfg.download.plexLibraryPathPrefix,
+      lastObservedPath: bound.plexFilePath,
+    })
+    const directTrack = bound.plexRatingKey ? await getTrackByRatingKey(bound.plexRatingKey) : null
+    const directPath = matchingTrackPath(directTrack, boundPlexPath)
+    const recovered = directTrack && directPath
+      ? [{ track: directTrack, path: directPath }]
+      : await exactPathMatches(sectionKey, boundPlexPath)
+
+    if (recovered.length === 1) {
+      const { track, path } = recovered[0]!
+      const accessiblePath = resolveAccessibleLocalPath(path, cfg)
+      if (!dryRun) {
+        upsertVerifiedSongIdentityBinding({
+          neteaseSongId: song.id,
+          plexSectionKey: sectionKey,
+          plexSectionRoot: cfg.download.plexLibraryPathPrefix,
+          plexFilePath: path,
+          plexRatingKey: track.ratingKey,
+          bindingMethod: 'path',
+          status: 'active',
+          evidence: {
+            ...bound.evidence,
+            source: 'managed_binding_revalidated',
+            ownership: 'managed',
+            verifiedBy: 'plex_file_path',
+            ...identityContext,
+          },
+        })
+        if (accessiblePath) {
+          upsertLocalMediaAsset({
+            neteaseSongId: song.id,
+            filePath: accessiblePath,
+            provenance: localAsset.provenance,
+            ownership: 'managed',
+            sourceTaskId: localAsset.sourceTaskId,
+            evidence: {
+              ...localAsset.evidence,
+              recoveredFrom: 'active_path_binding',
+              plexFilePath: normalizePlexPath(path),
+            },
+          })
+        }
+      }
+      const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
+      return {
+        ...base,
+        resolution: playlistItemId ? 'matched_plex_playlist' : 'found_in_plex_library',
+        plexRatingKey: track.ratingKey,
+        playlistItemId,
+        filePath: accessiblePath ?? undefined,
+        matchTrace: trace('identity_binding', {
+          ratingKey: track.ratingKey,
+          filePath: accessiblePath ?? normalizePlexPath(path),
+          decision: 'bound',
+          identity: { method: 'path', plexFilePath: normalizePlexPath(path), bindingStatus: 'active' },
+          evidence: { kind: 'managed', verifiedBy: 'persisted_exact_path' },
+        }),
+      }
+    }
+
+    if (recovered.length > 1) {
+      return {
+        ...base,
+        resolution: 'unavailable',
+        filePath: localAsset.filePath,
+        matchTrace: trace('identity_conflict', {
+          filePath: boundPlexPath,
+          message: '托管绑定路径对应多个 Plex 媒体，无法安全复用',
+          conflictReason: recovered.map(item => item.track.ratingKey).join(', '),
+          deletionProtectionReason: '托管绑定存在多个 Plex 身份，本轮不修改播放列表',
+        }),
+      }
+    }
+
+    if (!dryRun) {
+      markSongIdentityBindingStale(song.id, {
+        reason: 'managed_binding_media_missing',
+        plexFilePath: boundPlexPath,
+      })
+    }
+  }
+
   if (mediaPlan?.disposition === 'wait_manual') {
     return awaitingManualResolution(base, mediaPlan.filePath ?? expectedLocalPath, localAsset, mediaPlan.message)
   }
@@ -238,7 +356,7 @@ async function resolveOne(input: {
     if (matches.length === 1) {
       const { track, path } = matches[0]!
       if (!dryRun) {
-        bindResolvedIdentity(song.id, sectionKey, track.ratingKey, path, {
+        bindResolvedIdentity(song.id, sectionKey, cfg.download.plexLibraryPathPrefix, track.ratingKey, path, {
           source: 'managed_exact_path',
           ownership: 'managed',
           sourceId: identityContext.sourceId,

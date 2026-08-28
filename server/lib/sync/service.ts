@@ -453,6 +453,9 @@ export function getSyncService(getConfig: () => AppConfig) {
                   plexPlaylistItemId: xt.playlistItemId,
                   matchTrace: {
                     decision: 'preserved',
+                    ...(xt.relatedNeteaseSongId !== undefined
+                      ? { relatedNeteaseSongId: xt.relatedNeteaseSongId }
+                      : {}),
                     deletionProtectionReason: xt.protectionReason,
                   },
                 },
@@ -547,7 +550,11 @@ export function getSyncService(getConfig: () => AppConfig) {
     saveSyncRun(finishedJob)
   }
 
-  finishState(finishedJob.status === 'success' ? 'success' : 'failure')
+  finishState(finishedJob.status === 'failed'
+    ? 'failure'
+    : finishedJob.status === 'partial'
+      ? 'partial'
+      : 'success')
   return { ...state }
     } catch (err) {
       if (err instanceof CancellationError) {
@@ -614,12 +621,12 @@ export function getSyncService(getConfig: () => AppConfig) {
   function addFailure(songName: string, reason: string) {
     state.failures.push({ songName, reason, timestamp: new Date().toISOString() })
   }
-  function finishState(result: 'success' | 'failure') {
+  function finishState(result: 'success' | 'partial' | 'failure') {
     state.lastSyncAt = new Date().toISOString()
     state.lastSyncResult = result
     state.syncCount++
     if (result === 'success') state.successCount++
-    else state.failureCount++
+    else if (result === 'failure') state.failureCount++
     state.isRunning = false
     state.currentStage = 'idle'
     state.currentSourceName = null

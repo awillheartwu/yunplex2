@@ -29,6 +29,17 @@ export function normalizePlexRelativePath(path: string, sectionRoot?: string | n
     return normalizedPath.slice(normalizedRoot.length + 1)
   }
 
+  // Older verification callers omitted the section root while persisting an
+  // absolute Plex path. That produced a slash-less value such as
+  // `volume1/music/Artist/Song.flac`, which was later prefixed with the root a
+  // second time. Accept and repair that shape at every read boundary.
+  const rootWithoutLeadingSlash = normalizedRoot.replace(/^\/+/, '')
+  const pathWithoutLeadingSlash = normalizedPath.replace(/^\/+/, '')
+  if (rootWithoutLeadingSlash && pathWithoutLeadingSlash === rootWithoutLeadingSlash) return ''
+  if (rootWithoutLeadingSlash && pathWithoutLeadingSlash.startsWith(`${rootWithoutLeadingSlash}/`)) {
+    return pathWithoutLeadingSlash.slice(rootWithoutLeadingSlash.length + 1)
+  }
+
   return normalizedPath.replace(/^\.\//, '').replace(/^\/+/, '')
 }
 
@@ -38,8 +49,8 @@ export function resolvePlexIdentityPath(input: {
   currentSectionRoot?: string | null
   lastObservedPath?: string | null
 }): string {
-  const relativePath = normalizePlexRelativePath(input.relativePath ?? '')
   const sectionRoot = normalizePlexPath(input.currentSectionRoot ?? '')
+  const relativePath = normalizePlexRelativePath(input.relativePath ?? '', sectionRoot)
   if (relativePath && sectionRoot) return normalizePlexPath(`${sectionRoot}/${relativePath}`)
   if (input.lastObservedPath) return normalizePlexPath(input.lastObservedPath)
   return relativePath

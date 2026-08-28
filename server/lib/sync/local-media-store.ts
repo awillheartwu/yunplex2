@@ -116,10 +116,6 @@ export function inspectLocalMediaAssets(
         result.set(song.id, inspection(song.id, asset.status === 'replaced' ? 'replaced' : 'missing', asset, asset.filePath))
         continue
       }
-      if (asset.status !== 'active') {
-        result.set(song.id, inspection(song.id, asset.status, asset, asset.filePath))
-        continue
-      }
       const replaced = asset.ownership === 'managed'
         && asset.fileSize !== null
         && asset.fileMtimeMs !== null

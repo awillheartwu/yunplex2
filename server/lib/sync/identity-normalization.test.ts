@@ -3,6 +3,7 @@ import {
   foldPlexPath,
   normalizePlexPath,
   plexPathsExactlyEqual,
+  resolvePlexIdentityPath,
 } from './identity-normalization'
 
 describe('Plex identity path normalization', () => {
@@ -17,5 +18,13 @@ describe('Plex identity path normalization', () => {
 
   it('uses folding only as a recovery lookup key', () => {
     expect(foldPlexPath('/music/Song.flac')).toBe(foldPlexPath('\\music\\song.flac'))
+  })
+
+  it('repairs a stored relative path that accidentally includes the section root', () => {
+    expect(resolvePlexIdentityPath({
+      relativePath: 'volume1/06_Music/Artist/Album/Song.flac',
+      currentSectionRoot: '/volume1/06_Music',
+      lastObservedPath: '/volume1/06_Music/Artist/Album/Song.flac',
+    })).toBe('/volume1/06_Music/Artist/Album/Song.flac')
   })
 })

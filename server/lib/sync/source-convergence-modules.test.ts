@@ -162,6 +162,53 @@ describe('source finalization projection', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('treats copyright-only exclusions as a successful source with warnings', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reyunplex-source-copyright-'))
+    initDb(dir)
+    try {
+      const persistedSource = await createSource(43, '', {
+        type: 'album',
+        name: 'Copyright Source',
+      })
+      const job = new RunBuilder(false)
+      const restricted = resolution(2, 'copyright_restricted')
+      const songId = job.addSongs(persistedSource.id, [{
+        songName: restricted.song.name,
+        artist: restricted.song.artists[0]!.name,
+        album: restricted.song.album.name,
+        status: 'pending',
+        neteaseSongId: restricted.song.id,
+        neteaseIndex: restricted.neteaseIndex,
+      }])[0]!
+      job.updateSong(songId, { status: 'copyright_restricted', phase: 'download' })
+
+      const result = await finalizeSourceConvergence({
+        source: { ...persistedSource, requiresMatchReconcile: true },
+        job,
+        dryRun: false,
+        skipRemoveExtra: false,
+        authoritativeTrackCount: 1,
+        currentIdOrder: [2],
+        trackUpdateTime: 456,
+        plexUpdatedAt: null,
+        plexPlaylist: null,
+      })
+
+      expect(result).toMatchObject({ status: 'success', failedSongs: 0 })
+      expect(result.summary).toContain('1 版权受限')
+      expect(getSource(persistedSource.id)).toMatchObject({
+        lastStatus: 'success',
+        lastError: null,
+        lastTrackUpdateTime: 456,
+        trackIdSnapshot: '[2]',
+        requiresMatchReconcile: false,
+      })
+    } finally {
+      closeDb()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('Plex mutation identity gate', () => {

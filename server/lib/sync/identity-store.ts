@@ -115,7 +115,11 @@ export function upsertSongIdentityBinding(input: BindingInput): SongIdentityBind
   const now = nextTimestamp(previous?.updatedAt)
   const plexFilePath = normalizePlexPath(input.plexFilePath)
   const plexRelativePath = input.plexRelativePath === undefined
-    ? relativePath(plexFilePath, input.plexSectionRoot)
+    ? input.plexSectionRoot
+      ? relativePath(plexFilePath, input.plexSectionRoot)
+      : previous && normalizePlexPath(previous.plexFilePath) === plexFilePath
+        ? previous.plexRelativePath
+        : relativePath(plexFilePath)
     : normalizePlexRelativePath(input.plexRelativePath)
   const lastVerifiedAt = Object.prototype.hasOwnProperty.call(input, 'lastVerifiedAt')
     ? input.lastVerifiedAt ?? null

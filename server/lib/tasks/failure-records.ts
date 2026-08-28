@@ -237,6 +237,16 @@ export function reconcileRunFailures(run: TaskRun): void {
   for (const song of run.songs || []) {
     const sourceName = song.sourceId || run.source
     if (FAILURE_STATUSES.has(song.status)) {
+      if (song.status === 'copyright_restricted') {
+        resolveFailures({
+          songId: song.neteaseSongId,
+          songName: song.songName,
+          artist: song.artist,
+          sourceId: song.sourceId,
+          failureKinds: ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'],
+          resolvedAt: run.finishedAt || new Date().toISOString(),
+        })
+      }
       recordFailure({
         songId: song.neteaseSongId,
         songName: song.songName,

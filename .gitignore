@@ -5,6 +5,7 @@ dist/
 data/data.db
 data/data.db-wal
 data/data.db-shm
+data/backups/
 data/seed.json
 *.log
 .env

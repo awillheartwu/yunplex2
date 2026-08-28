@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, initDb } from '../db'
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
 import { upsertSongIdentityBinding } from './identity-store'
-import { upsertLocalMediaAsset } from './local-media-store'
+import { getLocalMediaAsset, upsertLocalMediaAsset } from './local-media-store'
 
 const getPlaylistTracks = vi.fn()
 const getTrackByRatingKey = vi.fn()
@@ -38,6 +38,54 @@ describe('safe media reuse', () => {
     expect((await resolveTracks([song], '', '12', cfg())).resolutions[0]).toMatchObject({ resolution: 'found_in_plex_library', plexRatingKey: 'rk', matchTrace: { identity: { method: 'path' } } })
   })
 
+  it('repairs a moved managed asset from an active path binding before downloading', async () => {
+    const oldLocal = join(root, 'old-managed.flac')
+    const movedLocal = join(root, 'Moved', 'managed.flac')
+    mkdirSync(join(root, 'Moved'))
+    writeFileSync(movedLocal, 'audio')
+    upsertLocalMediaAsset({
+      neteaseSongId: song.id,
+      filePath: oldLocal,
+      provenance: 'download_task',
+      ownership: 'managed',
+      evidence: { audioOperation: 'downloaded' },
+    })
+    upsertSongIdentityBinding({
+      neteaseSongId: song.id,
+      plexSectionKey: '12',
+      plexSectionRoot: '/music',
+      plexFilePath: '/music/Moved/managed.flac',
+      plexRatingKey: 'managed-moved',
+      bindingMethod: 'path',
+      status: 'active',
+      evidence: { source: 'managed_exact_path', ownership: 'managed' },
+    })
+    getTrackByRatingKey.mockResolvedValue(track('managed-moved', '/music/Moved/managed.flac', 7))
+    getPlaylistTracks.mockResolvedValue([track('managed-moved', '/music/Moved/managed.flac', 7)])
+
+    const { resolveTracks } = await import('./lookup')
+    const result = await resolveTracks(
+      [song],
+      'playlist',
+      '12',
+      cfg(),
+      false,
+      {},
+      { automaticMediaFallback: true },
+    )
+
+    expect(result.resolutions[0]).toMatchObject({
+      resolution: 'matched_plex_playlist',
+      plexRatingKey: 'managed-moved',
+      matchTrace: { identity: { method: 'path' } },
+    })
+    expect(getLocalMediaAsset(song.id)).toMatchObject({
+      filePath: movedLocal,
+      ownership: 'managed',
+      status: 'active',
+    })
+  })
+
   it('reuses external media only after explicit adoption', async () => {
     writeFileSync(join(root, 'external.flac'), 'audio')
     upsertSongIdentityBinding({ neteaseSongId: song.id, plexSectionKey: '12', plexSectionRoot: '/music', plexFilePath: '/music/external.flac', plexRatingKey: 'adopted', bindingMethod: 'manual', status: 'active', evidence: {} })
@@ -45,6 +93,12 @@ describe('safe media reuse', () => {
     getPlaylistTracks.mockResolvedValue([track('adopted', '/music/external.flac', 7)])
     const { resolveTracks } = await import('./lookup')
     expect((await resolveTracks([song], 'playlist', '12', cfg())).resolutions[0]).toMatchObject({ resolution: 'matched_plex_playlist', plexRatingKey: 'adopted', matchTrace: { identity: { method: 'manual' } } })
+    expect(getLocalMediaAsset(song.id)).toMatchObject({
+      filePath: join(root, 'external.flac'),
+      provenance: 'manual',
+      ownership: 'external',
+      status: 'active',
+    })
   })
 
   it('downloads when there is no verified identity instead of guessing metadata', async () => {
