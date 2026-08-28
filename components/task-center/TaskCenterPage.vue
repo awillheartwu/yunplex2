@@ -227,9 +227,9 @@
               <div class="failure-row__title">
                 <strong>{{ record.songName }}</strong>
                 <span>{{ record.artist }}</span>
-                <span class="failure-kind" :class="semanticToneClass(failureKindTone(record.failureKind))">
-                  <AppIcon :name="failureKindIcon(record.failureKind)" :size="11" />
-                  {{ failureKindLabel(record.failureKind) }}
+                <span class="failure-kind" :class="semanticToneClass(failureKindTone(record.errorCode || record.failureKind))">
+                  <AppIcon :name="failureKindIcon(record.errorCode || record.failureKind)" :size="11" />
+                  {{ failureKindLabel(record.errorCode || record.failureKind) }}
                 </span>
               </div>
               <p>{{ failureReasonLabel(record) }}</p>

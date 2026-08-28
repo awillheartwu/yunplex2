@@ -26,7 +26,15 @@ describe('diagnostic log store', () => {
 
     expect(readLogs({ level: 'error' })).toMatchObject({
       total: 1,
-      items: [{ level: 'error', message: '标签写入失败', detail: 'EIO', stage: 'tags' }],
+      items: [{
+        level: 'error',
+        message: '标签写入失败',
+        detail: 'EIO',
+        stage: 'tags',
+        errorCode: 'failed_tags',
+        errorCategory: 'media',
+        retryable: true,
+      }],
     })
     expect(readLogs().total).toBe(2)
 

@@ -11,6 +11,6 @@ export default defineEventHandler(async () => {
     const playlists = await listPlaylists()
     return success(playlists)
   } catch (err) {
-    return fail(err instanceof Error ? err.message : '获取 Plex 歌单失败')
+    return fail(err, 1, 'plex_unavailable')
   }
 })

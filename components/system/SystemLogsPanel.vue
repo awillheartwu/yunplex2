@@ -30,7 +30,12 @@
         <span class="system-log-row__level" :class="levelClass(log.level)">{{ log.level.toUpperCase() }}</span>
         <span v-if="log.stage && log.stage !== 'idle'" class="system-log-row__stage">[{{ log.stage }}]</span>
         <div class="system-log-row__content">
-          <p class="system-log-row__message">{{ log.message }}</p>
+          <div class="system-log-row__summary">
+            <p class="system-log-row__message">{{ log.message }}</p>
+            <span v-if="log.errorCode" class="system-log-row__error-code">
+              {{ errorLabel(log.errorCode) }} · {{ log.retryable ? '可重试' : '不可自动重试' }}
+            </span>
+          </div>
           <details v-if="log.detail" class="system-log-row__detail">
             <summary>查看详情</summary>
             <pre>{{ log.detail }}</pre>
@@ -53,11 +58,16 @@
 
 <script setup lang="ts">
 import { useSystemLogs } from '~~/composables/useSystemLogs'
+import { getDomainErrorDefinition } from '~~/shared/domain-errors'
 
 const {
   activeFilter, fetchLogs, filters, formatTime, hasMore, levelClass,
   loading, loadingMore, loadMore, logs, setFilter, total,
 } = useSystemLogs()
+
+function errorLabel(code: string) {
+  return getDomainErrorDefinition(code).label
+}
 </script>
 
 <style scoped>
@@ -75,7 +85,9 @@ const {
 .system-log-row__level--warn{color:var(--warning);background:var(--warning-soft);border-color:var(--warning-border)}
 .system-log-row__level--error{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-border)}
 .system-log-row__content{min-width:0}
+.system-log-row__summary{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
 .system-log-row__message{min-width:0;margin:0;color:var(--text-secondary);font-size:.78rem;line-height:1.55;overflow-wrap:anywhere}
+.system-log-row__error-code{display:inline-flex;align-items:center;border:1px solid var(--border-primary);border-radius:999px;padding:.12rem .45rem;color:var(--text-tertiary);background:var(--bg-app);font-size:.65rem;white-space:nowrap}
 .system-log-row__detail{margin-top:.35rem;color:var(--text-tertiary);font-size:.72rem}.system-log-row__detail summary{cursor:pointer;color:var(--text-secondary)}.system-log-row__detail pre{max-height:16rem;margin:.4rem 0 0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:var(--radius-md);background:var(--bg-app);padding:.6rem}
 .system-logs-panel__state{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary)}
 @media(max-width:760px){.system-log-row{grid-template-columns:1fr;gap:.35rem}.system-log-row__level{justify-self:start;padding:0 .55rem}}

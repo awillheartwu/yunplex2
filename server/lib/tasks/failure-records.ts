@@ -7,6 +7,9 @@ import {
   failureSubjectKey,
   normalizeFailureIdentityPart,
 } from './failure-identity'
+import type { DomainErrorCategory, DomainErrorCode, DomainErrorSeverity } from '../../../shared/domain-errors'
+import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
+import { sanitizeDiagnosticMessage } from '../domain-error'
 
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
@@ -25,6 +28,11 @@ export interface FailureRecord {
   runType: TaskRunType
   failureKind: string
   failureReason: string
+  errorCode: DomainErrorCode
+  errorCategory: DomainErrorCategory
+  errorSeverity: DomainErrorSeverity
+  retryable: boolean
+  userMessage: string
   status: FailureRecordStatus
   firstSeenAt: string
   lastSeenAt: string
@@ -79,6 +87,9 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
   const firstSeenAt = rawFirstSeenAt <= rawLastSeenAt ? rawFirstSeenAt : rawLastSeenAt
   const lastSeenAt = rawFirstSeenAt <= rawLastSeenAt ? rawLastSeenAt : rawFirstSeenAt
 
+  const failureKind = String(row.failure_kind)
+  const failureReason = sanitizeDiagnosticMessage(row.failure_reason) || ''
+  const definition = resolveDomainErrorDefinition(failureKind, failureReason)
   return {
     id: String(row.id),
     fingerprint: String(row.fingerprint),
@@ -90,8 +101,13 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
     sourceName: String(row.source_name || ''),
     runId: row.run_id === null ? null : String(row.run_id),
     runType: String(row.run_type) as TaskRunType,
-    failureKind: String(row.failure_kind),
-    failureReason: String(row.failure_reason || ''),
+    failureKind,
+    failureReason,
+    errorCode: definition.code,
+    errorCategory: definition.category,
+    errorSeverity: definition.severity,
+    retryable: definition.retryable,
+    userMessage: definition.userMessage,
     status: String(row.status) as FailureRecordStatus,
     firstSeenAt,
     lastSeenAt,
@@ -130,7 +146,10 @@ export function recordFailure(input: {
   const sourceName = source?.name || input.sourceName || input.sourceId || (input.runType === 'manual_download' ? '手动下载' : '')
   const runType = run?.type || input.runType
   const occurredAt = input.occurredAt || new Date().toISOString()
-  const fingerprint = failureFingerprint(input)
+  const definition = resolveDomainErrorDefinition(input.failureKind, input.failureReason)
+  const failureReason = sanitizeDiagnosticMessage(input.failureReason) || ''
+  const normalizedInput = { ...input, failureKind: definition.code }
+  const fingerprint = failureFingerprint(normalizedInput)
   const occurrenceKey = input.runId
     ? `run:${input.runId}`
     : input.downloadTaskId
@@ -153,7 +172,7 @@ export function recordFailure(input: {
       : current.status === 'resolved' && !isNewOccurrence
         ? 'resolved'
         : 'open'
-    const reason = input.failureReason || ''
+    const reason = failureReason
     db.prepare(`
       UPDATE failure_records
       SET song_id = ?, song_name = ?, artist = ?, source_id = ?, source_name = ?,
@@ -198,8 +217,8 @@ export function recordFailure(input: {
       sourceName,
       input.runId ?? null,
       runType,
-      input.failureKind,
-      input.failureReason || '',
+      definition.code,
+      failureReason,
       occurredAt,
       occurredAt,
       1,
@@ -243,7 +262,6 @@ export function reconcileRunFailures(run: TaskRun): void {
           songName: song.songName,
           artist: song.artist,
           sourceId: song.sourceId,
-          failureKinds: ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'],
           resolvedAt: run.finishedAt || new Date().toISOString(),
         })
       }

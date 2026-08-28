@@ -1,6 +1,8 @@
 import type { DownloadTask } from '../download/queue'
 import type { SongStatus, SongTask } from '../job/types'
 import type { TrackResolution } from './types'
+import type { DomainErrorCode } from '../../../shared/domain-errors'
+import { classifyDomainErrorCode, getDomainErrorDefinition } from '../../../shared/domain-errors'
 
 type DownloadFailureStatus = Extract<SongStatus, 'failed_download' | 'failed_tags' | 'copyright_restricted'>
 type DownloadFailurePhase = Extract<SongTask['phase'], 'download' | 'tags'>
@@ -11,6 +13,8 @@ export interface DownloadFailureDiagnosis {
   title: string
   shouldRecordFailure: boolean
   shouldAttemptPlexRetry: boolean
+  errorCode: DomainErrorCode
+  retryable: boolean
 }
 
 function includesAny(message: string, patterns: string[]) {
@@ -38,6 +42,8 @@ export function classifyDownloadFailure(
       title: '歌曲不可用',
       shouldRecordFailure: false,
       shouldAttemptPlexRetry: false,
+      errorCode: 'copyright_restricted',
+      retryable: false,
     }
   }
 
@@ -48,15 +54,20 @@ export function classifyDownloadFailure(
       title: '标签写入失败',
       shouldRecordFailure: true,
       shouldAttemptPlexRetry: Boolean(filePath),
+      errorCode: 'failed_tags',
+      retryable: true,
     }
   }
 
+  const errorCode = classifyDomainErrorCode(message, 'failed_download')
   return {
     status: 'failed_download',
     phase: 'download',
     title: '下载失败',
     shouldRecordFailure: true,
     shouldAttemptPlexRetry: false,
+    errorCode,
+    retryable: getDomainErrorDefinition(errorCode).retryable,
   }
 }
 

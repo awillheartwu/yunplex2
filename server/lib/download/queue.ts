@@ -6,6 +6,7 @@ import { getRun, syncManualDownloadRun } from '../run/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { isTagWriteError } from '../tag-writer'
 import { commitCompletedMediaWrite } from './media-write'
+import { classifyDomainErrorCode } from '../../../shared/domain-errors'
 
 export interface DownloadTask {
   id: string
@@ -245,7 +246,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
       sourceName: task.sourceName || (task.sourceId ? '' : '手动下载'),
       runId: task.jobId || null,
       runType: 'manual_download',
-      failureKind: /metadata|tag|标签/i.test(reason) ? 'failed_tags' : /copyright|版权/i.test(reason) ? 'copyright_restricted' : 'failed_download',
+      failureKind: classifyDomainErrorCode(reason, 'failed_download'),
       failureReason: reason,
       downloadTaskId: task.id,
     })

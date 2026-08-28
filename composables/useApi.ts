@@ -2,6 +2,22 @@ interface ApiResponse<T> {
   code: number
   msg: string
   data: T
+  error?: {
+    code: string
+    category: string
+    severity: 'info' | 'warning' | 'error'
+    retryable: boolean
+  }
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly detail?: ApiResponse<unknown>['error'],
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
 }
 
 interface RequestOptions {
@@ -39,12 +55,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const res = await fetch(url, fetchOptions)
   if (!res.ok) {
     await handleAuthStatus(res)
-    throw new Error(await readErrorMessage(res))
+    const payload = await readErrorPayload(res)
+    throw new ApiError(payload.msg || `HTTP ${res.status}`, payload.error)
   }
 
   const json = (await res.json()) as ApiResponse<T>
   if (json.code !== 0) {
-    throw new Error(json.msg || '请求失败')
+    throw new ApiError(json.msg || '请求失败', json.error)
   }
 
   return json.data
@@ -94,8 +111,8 @@ async function handleAuthStatus(res: Response): Promise<void> {
   }
 }
 
-async function readErrorMessage(res: Response): Promise<string> {
+async function readErrorPayload(res: Response): Promise<Partial<ApiResponse<unknown>>> {
   const cloned = res.clone()
   const json = await cloned.json().catch(() => null) as Partial<ApiResponse<unknown>> | null
-  return json?.msg || `HTTP ${res.status}`
+  return json || { msg: `HTTP ${res.status}` }
 }

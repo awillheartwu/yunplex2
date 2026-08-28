@@ -16,6 +16,8 @@ describe('download diagnostics', () => {
       phase: 'tags',
       shouldRecordFailure: true,
       shouldAttemptPlexRetry: true,
+      errorCode: 'failed_tags',
+      retryable: true,
     })
     expect(shouldAttemptPlexRetryForResolution('needs_download', 'failed_tags', '/music/温室.flac')).toBe(true)
   })
@@ -28,6 +30,8 @@ describe('download diagnostics', () => {
       phase: 'download',
       shouldRecordFailure: false,
       shouldAttemptPlexRetry: false,
+      errorCode: 'copyright_restricted',
+      retryable: false,
     })
     expect(shouldAttemptPlexRetryForResolution('needs_download', 'copyright_restricted')).toBe(false)
   })
