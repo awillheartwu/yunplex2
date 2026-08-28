@@ -1,4 +1,5 @@
 export type SourceType = 'playlist' | 'album'
+export type SourceScheduleStatus = 'idle' | 'queued' | 'running' | 'success' | 'partial' | 'failed'
 
 export interface PlaylistSource {
   id: string
@@ -41,6 +42,11 @@ export interface PlaylistSource {
   actionableFailureCount: number
   copyrightRestrictedCount: number
   requiresMatchReconcile: boolean
+  syncIntervalMinutes: number | null
+  nextSyncAt: string | null
+  lastScheduleStatus: SourceScheduleStatus
+  lastScheduledAt: string | null
+  lastScheduleError: string | null
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -84,6 +90,11 @@ export interface PlaylistSourceRow {
   actionable_failure_count: number
   copyright_restricted_count: number
   requires_match_reconcile: number
+  sync_interval_minutes: number | null
+  next_sync_at: string | null
+  last_schedule_status: string
+  last_scheduled_at: string | null
+  last_schedule_error: string | null
   sort_order: number
   created_at: string
   updated_at: string
@@ -127,6 +138,11 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     actionableFailureCount: Number(row.actionable_failure_count || 0),
     copyrightRestrictedCount: Number(row.copyright_restricted_count || 0),
     requiresMatchReconcile: row.requires_match_reconcile === 1,
+    syncIntervalMinutes: row.sync_interval_minutes,
+    nextSyncAt: row.next_sync_at,
+    lastScheduleStatus: row.last_schedule_status as SourceScheduleStatus,
+    lastScheduledAt: row.last_scheduled_at,
+    lastScheduleError: row.last_schedule_error,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

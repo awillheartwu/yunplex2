@@ -1,7 +1,7 @@
 import { success, fail } from '../../lib/response'
 import { listSources, createSource } from '../../lib/playlist/store'
 import { readConfig } from '../../lib/config/store'
-import { getSyncServiceInstance, isRepairRunning } from '../../lib/sync/instance'
+import { getSyncServiceInstance, getSyncWorker, isRepairRunning } from '../../lib/sync/instance'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -32,6 +32,7 @@ export default defineEventHandler(async (event) => {
       artist: body.artist,
       coverUrl: body.coverUrl,
     })
+    getSyncWorker()?.update()
     let autoSyncRunId: string | null = null
     // Auto-sync album if enabled
     if (body.type === 'album' && cfg.sync.autoDownloadAlbum) {

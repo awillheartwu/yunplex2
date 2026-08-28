@@ -3,6 +3,8 @@ import { resolve } from 'node:path'
 import { checkCookie } from './netease'
 import { readConfig, getDataDir } from './config/store'
 import os from 'node:os'
+import { getSyncWorker } from './sync/instance'
+import type { SourceSchedulerStatus } from './sync/worker'
 
 export const DEPENDENCY_HEALTH_TTL_MS = 60_000
 
@@ -57,6 +59,7 @@ export interface SystemHealthSnapshot {
   dependencyCheckedAt: number
   dependencyCacheExpiresAt: number
   dependencyCacheTtlMs: number
+  scheduler: SourceSchedulerStatus | null
   timestamp: number
 }
 
@@ -180,6 +183,7 @@ export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
     pid: process.pid,
     dbSize,
     ...dependencyHealth,
+    scheduler: getSyncWorker()?.getStatus() ?? null,
     timestamp: Date.now(),
   }
 }

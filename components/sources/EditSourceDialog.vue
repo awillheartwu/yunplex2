@@ -1,14 +1,14 @@
 <template>
   <Teleport to="body">
     <div v-if="source" class="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="$emit('close')">
-      <div class="w-[460px] max-w-[92vw] rounded-xl border shadow-xl overflow-hidden" style="background:var(--bg-surface);border-color:var(--border-primary)">
+      <div class="w-[460px] max-w-[92vw] max-h-[calc(100vh-1.5rem)] rounded-xl border shadow-xl overflow-hidden flex flex-col" style="background:var(--bg-surface);border-color:var(--border-primary)">
         <!-- Header -->
         <div class="flex items-center gap-2 px-5 py-4" style="border-bottom:1px solid var(--border-primary)">
           <AppIcon name="edit" :size="16" class="text-accent" />
           <h3 class="text-sm font-semibold" style="color:var(--text-primary)">{{ source.type === 'album' ? '编辑专辑源' : '编辑歌单源' }}</h3>
         </div>
 
-        <div class="px-5 py-4 space-y-4">
+        <div class="px-5 py-4 space-y-4 overflow-y-auto">
           <!-- Netease source name (read-only) -->
           <div>
             <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">{{ source.type === 'album' ? '网易云专辑' : '网易云歌单' }}</label>
@@ -22,6 +22,19 @@
           <div>
             <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">任务名称</label>
             <input v-model="form.name" type="text" class="form-input w-full text-sm" />
+          </div>
+
+          <div>
+            <label class="text-2xs font-medium block mb-1.5" style="color:var(--text-tertiary)">自动同步间隔（分钟）</label>
+            <input
+              v-model.number="form.syncIntervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              :placeholder="`留空继承全局（${globalSyncSettings.intervalMinutes} 分钟）`"
+              class="form-input w-full text-sm"
+            />
+            <p class="text-2xs mt-1" style="color:var(--text-muted)">每个来源独立排期；手动同步仍可随时执行。</p>
           </div>
           <p v-if="saveError" class="text-2xs text-danger">{{ saveError }}</p>
 
@@ -114,6 +127,7 @@ const plexPlaylists = ref<PlexPlaylistItem[]>([])
 const plexError = ref('')
 const saveError = ref('')
 const globalSyncSettings = reactive({
+  intervalMinutes: 30,
   forceFullCompare: false,
   skipPlexPlaylist: false,
   skipRemoveExtraTracks: false,
@@ -123,6 +137,7 @@ const form = reactive({
   name: '',
   plexPlaylistName: '',
   syncLimit: null as number | null,
+  syncIntervalMinutes: null as number | null,
   enabled: true,
   autoCreatePlexPlaylist: true,
   forceFullCompare: null as boolean | null,
@@ -139,6 +154,7 @@ watch(() => props.source, (s) => {
   form.name = s.name
   form.plexPlaylistName = s.plexPlaylistName || s.neteasePlaylistName
   form.syncLimit = s.syncLimit
+  form.syncIntervalMinutes = s.syncIntervalMinutes
   form.enabled = s.enabled
   form.autoCreatePlexPlaylist = s.autoCreatePlexPlaylist ?? true
   form.forceFullCompare = s.forceFullCompare
@@ -162,6 +178,7 @@ function effectiveBoolean(override: boolean | null, globalValue: boolean): boole
 async function fetchGlobalSettings() {
   try {
     const config = await api.get<AppConfig>('/config')
+    globalSyncSettings.intervalMinutes = config.sync.intervalMinutes
     globalSyncSettings.forceFullCompare = config.sync.forceFullCompare
     globalSyncSettings.skipPlexPlaylist = config.sync.skipPlexPlaylist
     globalSyncSettings.skipRemoveExtraTracks = config.sync.skipRemoveExtraTracks
@@ -185,6 +202,7 @@ async function handleSave() {
       name: form.name,
       plexPlaylistName: form.plexPlaylistName || '',
       syncLimit: form.syncLimit,
+      syncIntervalMinutes: form.syncIntervalMinutes || null,
       enabled: form.enabled,
       autoCreatePlexPlaylist: form.autoCreatePlexPlaylist,
       forceFullCompare: form.forceFullCompare,

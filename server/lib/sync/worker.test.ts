@@ -1,73 +1,124 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AppConfig } from '../config/types'
 import { cloneConfig } from '../config/validation'
 import { DEFAULT_CONFIG } from '../config/defaults'
+import { closeDb, getDb, initDb } from '../db'
 import { startWorker, stopWorker } from './worker'
 
-function makeConfig(overrides: Partial<AppConfig['sync']> = {}): AppConfig {
+let directory = ''
+
+function makeConfig(enabled = false): AppConfig {
   const config = cloneConfig(DEFAULT_CONFIG)
-  config.sync = { ...config.sync, ...overrides }
+  config.sync.enabled = enabled
+  config.sync.intervalMinutes = 30
   return config
 }
 
-function makeService() {
+function insertSource(id: string, order: number) {
+  const now = new Date('2026-08-28T00:00:00.000Z').toISOString()
+  getDb().prepare(`
+    INSERT INTO playlist_sources (
+      id, netease_playlist_id, name, enabled, netease_playlist_name,
+      sort_order, next_sync_at, created_at, updated_at
+    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+  `).run(id, order + 1, id, id, order, now, now, now)
+}
+
+function makeService(runSyncForSource = vi.fn(async () => ({
+  isRunning: false,
+  lastSyncResult: 'success',
+  failures: [],
+}))) {
   return {
     getState: vi.fn(() => ({ isRunning: false })),
-    runSync: vi.fn(async () => ({ isRunning: false }) as any),
+    runSyncForSource,
     cancelSync: vi.fn(() => false),
   }
 }
 
-describe('sync worker scheduling', () => {
-  afterEach(() => {
-    stopWorker()
-    vi.useRealTimers()
-    vi.restoreAllMocks()
-  })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'reyunplex-worker-'))
+  initDb(directory)
+})
 
-  it('stops the timer when auto sync is disabled through update', async () => {
-    vi.useFakeTimers()
-    let config = makeConfig({ enabled: true, intervalMinutes: 1 })
+afterEach(async () => {
+  await stopWorker()
+  closeDb()
+  rmSync(directory, { recursive: true, force: true })
+  vi.restoreAllMocks()
+})
+
+describe('source scheduler worker', () => {
+  it('stops polling and clears pending requests when disabled', () => {
+    let config = makeConfig(true)
+    insertSource('source-1', 0)
     const service = makeService()
-
-    const worker = startWorker(() => config, service, './data')
+    const worker = startWorker(() => config, service as never, directory)
     expect(worker.isScheduled()).toBe(true)
 
-    config = makeConfig({ enabled: false, intervalMinutes: 1 })
+    config = makeConfig(false)
     worker.update()
 
     expect(worker.isScheduled()).toBe(false)
-    await vi.advanceTimersByTimeAsync(61_000)
-    expect(service.runSync).not.toHaveBeenCalled()
+    expect(worker.getStatus().queueDepth).toBe(0)
   })
 
-  it('starts scheduling when auto sync is enabled through update', async () => {
-    vi.useFakeTimers()
-    let config = makeConfig({ enabled: false, intervalMinutes: 1 })
+  it('consumes due sources when enabled', async () => {
+    let config = makeConfig(false)
+    insertSource('source-1', 0)
     const service = makeService()
+    const worker = startWorker(() => config, service as never, directory)
 
-    const worker = startWorker(() => config, service, './data')
-    expect(worker.isScheduled()).toBe(false)
+    config = makeConfig(true)
+    await worker.runOnce()
 
-    config = makeConfig({ enabled: true, intervalMinutes: 1 })
-    worker.update()
-
-    expect(worker.isScheduled()).toBe(true)
-    await vi.advanceTimersByTimeAsync(61_000)
-    expect(service.runSync).toHaveBeenCalledWith({ mode: 'normal', trigger: 'schedule' })
+    expect(service.runSyncForSource).toHaveBeenCalledWith('source-1', {
+      mode: 'normal',
+      trigger: 'schedule',
+    })
+    expect(worker.getStatus().queueDepth).toBe(0)
   })
 
-  it('rechecks the latest enabled flag before running scheduled sync', async () => {
-    vi.useFakeTimers()
-    let config = makeConfig({ enabled: true, intervalMinutes: 1 })
+  it('runs multiple due sources serially through Source Convergence', async () => {
+    const config = makeConfig(false)
+    insertSource('source-1', 0)
+    insertSource('source-2', 1)
+    const calls: string[] = []
+    let active = 0
+    let maxActive = 0
+    const run = vi.fn(async (sourceId: string) => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      calls.push(sourceId)
+      await Promise.resolve()
+      active--
+      return { isRunning: false, lastSyncResult: 'success', failures: [] }
+    })
+    const service = makeService(run)
+    const worker = startWorker(() => config, service as never, directory)
+
+    config.sync.enabled = true
+    await worker.runOnce()
+
+    expect(calls).toEqual(['source-1', 'source-2'])
+    expect(maxActive).toBe(1)
+    expect(worker.getStatus().runningCount).toBe(0)
+  })
+
+  it('queues due work but waits while the sync service is already busy', async () => {
+    const config = makeConfig(false)
+    insertSource('source-1', 0)
     const service = makeService()
+    service.getState.mockReturnValue({ isRunning: true } as never)
+    const worker = startWorker(() => config, service as never, directory)
 
-    const worker = startWorker(() => config, service, './data')
-    config = makeConfig({ enabled: false, intervalMinutes: 1 })
+    config.sync.enabled = true
+    await worker.runOnce()
 
-    await vi.advanceTimersByTimeAsync(61_000)
-
-    expect(service.runSync).not.toHaveBeenCalled()
-    expect(worker.isScheduled()).toBe(false)
+    expect(service.runSyncForSource).not.toHaveBeenCalled()
+    expect(worker.getStatus().queueDepth).toBe(1)
   })
 })

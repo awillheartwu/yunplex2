@@ -13,12 +13,12 @@ Nitro 单进程服务
   HTTP API
   SQLite data/data.db
   Source Convergence 单实例
-  全局自动同步 timer
+  来源级持久调度队列 + 单消费者
   持久下载队列 + 全局下载并发
   Plex / 网易云外部调用
 ```
 
-当前部署模型是单进程、单数据库。同步服务用 `isRunning` 防止并行 Source Convergence；下载队列可以并发，但并发数来自全局配置。来源级持久调度队列属于 roadmap P0，尚不是当前行为。
+当前部署模型是单进程、单数据库。来源调度器按每个 Playlist Source 的独立间隔幂等写入 Source Convergence Request，单消费者严格串行领取；同步服务继续用 `isRunning` 作为第二层互斥。下载队列可以并发，但并发数仍来自全局配置。
 
 ## 前端边界
 
@@ -40,7 +40,7 @@ Nitro 单进程服务
 |---|---|---|
 | `server/api/` | HTTP 参数、鉴权边界、调用领域服务、统一响应 | 复制同步或下载主流程 |
 | `server/lib/config/` | 默认值、类型、迁移、校验、持久化、运行时应用 | 来源身份或 Plex mutation |
-| `server/lib/db/` | 当前 schema、历史迁移、幂等修复、结构探测 | 业务策略 |
+| `server/lib/db/` | 当前 schema 基线、结构初始化和配置种子 | 业务策略与旧版本兼容迁移 |
 | `server/lib/playlist/` | Playlist Source CRUD、批量动作、来源状态 | 歌曲身份推断 |
 | `server/lib/download/` | 持久任务、lease、并发消费、单曲文件执行、Managed Media Command 与一次资产提交 | Plex 歌单删除授权 |
 | `server/lib/sync/` | Track Resolution、Identity Binding、Reconciliation Plan、Source Convergence | 第二套手动下载入口 |
@@ -52,7 +52,7 @@ Nitro 单进程服务
 ### Source Convergence
 
 ```text
-全局/单源/批量/重试/定时入口
+手动全局/单源/批量/重试入口
   -> server/lib/sync/service.ts
   -> 获取 NetEase Target Song snapshot
   -> change-detection.ts
@@ -65,7 +65,20 @@ Nitro 单进程服务
        来源游标、当前异常投影和 task run
 ```
 
-`service.ts` 是唯一编排入口。API handler、补全动作或未来 worker 不应自行拼接“查找—下载—扫描—重排”第二条链路。
+`service.ts` 是唯一编排入口。API handler、补全动作或调度 worker 不应自行拼接“查找—下载—扫描—重排”第二条链路。
+
+### 来源级自动调度
+
+```text
+playlist_sources.next_sync_at + 来源/全局间隔
+  -> source-schedule-store.ts（计算到期、幂等入队、lease、恢复与保留）
+  -> source_sync_queue（Source Convergence Request）
+  -> worker.ts 单消费者
+  -> service.runSyncForSource(..., trigger: schedule)
+  -> Source Convergence
+```
+
+来源间隔为空时继承全局间隔。手动同步直接走 Source Convergence，不等待队列；若它在待执行请求之后完成，调度存储会取消被手动结果取代的旧请求。进程启动时运行中的请求回到等待态，关闭时停止领取新请求并等待当前请求结束。
 
 ### 手动下载
 
@@ -110,13 +123,14 @@ Managed Media Command 不执行 Plex 歌单 mutation，也不复制 Source Conve
 ## 数据责任
 
 - `playlist_sources` 及 occurrence 表：来源配置、目标快照、顺序和同步游标。
+- `source_sync_queue`：有界保留、可恢复的 Source Convergence Request；不是第二套同步流程。
 - `song_identity_bindings`：托管路径或人工接管形成的当前媒体关联。
 - `local_media_assets`：本地路径、managed/external 归属、连续性和替换状态。
 - `download_tasks`：可保留和恢复的下载队列；不是长期歌曲身份事实。
 - `task_runs`、failure records：运行结果和可操作失败。
 - `logs`：诊断记录；面向用户的执行历史统一由 `task_runs` 表达。
 
-`server/lib/db/schema.ts` 是全新数据库的当前结构；`migration-history.ts` 保留旧版本升级步骤；`migrations.ts` 运行历史迁移和当前幂等修复。历史迁移中出现已退役表不代表当前运行时仍使用它。
+`server/lib/db/schema.ts` 是全新数据库的唯一当前结构。本项目尚未对外发布，因此旧版本兼容迁移已经退役；结构变化直接形成新的开发期 schema 基线，测试数据库应重新创建。
 
 ## 系统不变量
 
@@ -128,3 +142,4 @@ Managed Media Command 不执行 Plex 歌单 mutation，也不复制 Source Conve
 6. Plex mutation 前检查身份版本，写入后必须 read-back。
 7. 配置的来源级布尔覆盖是三态值，`null` 表示继承，不能用普通 truthy 合并。
 8. 外部服务、文件系统、重启和长时间运行验证必须与单元测试/构建结果分开陈述。
+9. 调度器只创建 Source Convergence Request；只有单消费者可以把请求从等待态变为运行态，实际业务仍只由 Source Convergence 执行。

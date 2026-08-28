@@ -1,6 +1,7 @@
 import { success, fail } from '../../lib/response'
 import { readConfig } from '../../lib/config/store'
 import { createSource } from '../../lib/playlist/store'
+import { getSyncWorker } from '../../lib/sync/instance'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -32,6 +33,7 @@ export default defineEventHandler(async (event) => {
       name: body.name,
       coverUrl: body.coverUrl,
     })
+    getSyncWorker()?.update()
 
     return success(source, '已保存为同步源')
   } catch (err) {

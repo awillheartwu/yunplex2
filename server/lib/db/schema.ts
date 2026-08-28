@@ -172,11 +172,41 @@ export function createSchema(db: Database.Database): void {
       skip_plex_playlist      INTEGER,
       skip_remove_extra_tracks INTEGER,
       requires_match_reconcile INTEGER NOT NULL DEFAULT 0,
+      sync_interval_minutes   INTEGER CHECK(sync_interval_minutes IS NULL OR sync_interval_minutes BETWEEN 1 AND 1440),
+      next_sync_at            TEXT,
+      last_schedule_status    TEXT NOT NULL DEFAULT 'idle'
+        CHECK(last_schedule_status IN ('idle','queued','running','success','partial','failed')),
+      last_scheduled_at       TEXT,
+      last_schedule_error     TEXT,
       created_at              TEXT NOT NULL,
       updated_at              TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_playlist_sources_enabled ON playlist_sources(enabled);
+    CREATE INDEX IF NOT EXISTS idx_playlist_sources_next_sync ON playlist_sources(enabled, next_sync_at);
+
+    CREATE TABLE IF NOT EXISTS source_sync_queue (
+      id              TEXT PRIMARY KEY,
+      source_id       TEXT NOT NULL REFERENCES playlist_sources(id) ON DELETE CASCADE,
+      schedule_window TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','running','completed','failed','cancelled')),
+      available_at    TEXT NOT NULL,
+      lease_owner     TEXT,
+      lease_expires_at TEXT,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      run_id          TEXT,
+      last_error      TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL,
+      started_at      TEXT,
+      finished_at     TEXT,
+      UNIQUE(source_id, schedule_window)
+    );
+    CREATE INDEX IF NOT EXISTS idx_source_sync_queue_pending
+      ON source_sync_queue(status, available_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_source_sync_queue_source
+      ON source_sync_queue(source_id, status);
 
     -- Durable provenance for files written or adopted by YunPlex. Unlike the
     -- download queue this table is not retention-pruned, so path identity can

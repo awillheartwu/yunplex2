@@ -34,6 +34,12 @@ _Avoid_: Diff, removal list
 **Source Convergence**: One attempt to bring a Playlist Source, Local Media Assets, Media Links, and Plex playlist to the current NetEase snapshot.
 _Avoid_: Source job, sync step
 
+**Source Schedule**: The persisted next due time and latest scheduling outcome for one Playlist Source. A null source interval inherits the global interval.
+_Avoid_: Global scan timer, cron flag
+
+**Source Convergence Request**: One persisted, idempotent request for the single consumer to run Source Convergence for a Playlist Source in a specific schedule window.
+_Avoid_: Source job, background callback
+
 ## Invariants
 
 - Plex title, artist, album, GUID and scraper-provided MusicBrainz data are presentation, never automatic identity.
