@@ -56,7 +56,8 @@ export default defineNitroPlugin((nitroApp) => {
   leaseSweep.unref()
   const lifecycleSweep = setInterval(maintainDataLifecycle, DATA_LIFECYCLE_INTERVAL_MS)
   lifecycleSweep.unref()
-  nitroApp.hooks.hookOnce('close', () => {
+  nitroApp.hooks.hookOnce('close', async () => {
+    await worker.stop()
     clearInterval(leaseSweep)
     clearInterval(lifecycleSweep)
   })

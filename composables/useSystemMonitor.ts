@@ -16,6 +16,16 @@ export interface SystemStats {
   dependencyCheckedAt?: number
   dependencyCacheExpiresAt?: number
   dependencyCacheTtlMs?: number
+  scheduler: {
+    enabled: boolean
+    scheduled: boolean
+    heartbeatAt: string | null
+    queueDepth: number
+    runningCount: number
+    oldestQueuedAt: string | null
+    nextSyncAt: string | null
+    lastError: string | null
+  } | null
   timestamp: number
 }
 
@@ -54,6 +64,27 @@ function toneForDb(size?: number): Tone {
 function formatDateTime(ts?: number): string {
   if (!ts) return '尚未检测'
   return new Date(ts).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function schedulerHealth(stats: SystemStats | null): SystemHealthItem {
+  const scheduler = stats?.scheduler
+  if (!scheduler?.enabled) {
+    return { key: 'scheduler', label: '自动同步', value: '已关闭', detail: '可在设置中启用', tone: 'idle' }
+  }
+  if (scheduler.lastError) {
+    return { key: 'scheduler', label: '自动同步', value: '需关注', detail: scheduler.lastError, tone: 'warning' }
+  }
+  if (scheduler.runningCount > 0) {
+    const oldest = scheduler.oldestQueuedAt ? formatDateTime(new Date(scheduler.oldestQueuedAt).getTime()) : '无等待'
+    return { key: 'scheduler', label: '自动同步', value: '执行中', detail: `运行 ${scheduler.runningCount} · 等待 ${scheduler.queueDepth} · 最早 ${oldest}`, tone: 'warning' }
+  }
+  if (scheduler.queueDepth > 0) {
+    const oldest = scheduler.oldestQueuedAt ? formatDateTime(new Date(scheduler.oldestQueuedAt).getTime()) : '刚刚'
+    return { key: 'scheduler', label: '自动同步', value: '等待执行', detail: `${scheduler.queueDepth} 个来源 · 最早 ${oldest}`, tone: 'warning' }
+  }
+  const next = scheduler.nextSyncAt ? formatDateTime(new Date(scheduler.nextSyncAt).getTime()) : '等待来源排期'
+  const heartbeat = scheduler.heartbeatAt ? formatDateTime(new Date(scheduler.heartbeatAt).getTime()) : '尚无心跳'
+  return { key: 'scheduler', label: '自动同步', value: scheduler.scheduled ? '已计划' : '未运行', detail: `下次 ${next} · 心跳 ${heartbeat}`, tone: scheduler.scheduled ? 'ok' : 'warning' }
 }
 
 function formatUptime(seconds: number): string {
@@ -102,6 +133,7 @@ export function useSystemMonitor() {
     { key: 'netease', label: '网易云', value: stats.value?.neteaseOk ? '已登录' : '未登录/失效', detail: '歌单与下载链接', tone: stats.value?.neteaseOk ? 'ok' : 'error' },
     { key: 'download-dir', label: '下载目录', value: stats.value?.dirWritable ? '可写入' : '不可写', detail: '音频与标签写入', tone: stats.value?.dirWritable ? 'ok' : 'error' },
     { key: 'sync', label: '同步', value: syncState.value?.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : syncState.value?.lastSyncResult === 'partial' ? '需关注' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: syncState.value?.isRunning || syncState.value?.lastSyncResult === 'partial' ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
+    schedulerHealth(stats.value),
   ])
 
   const overallTone = computed<Tone>(() => {

@@ -146,6 +146,11 @@ export function updateSource(id: string, partial: Partial<{
   skipPlexPlaylist: boolean | null
   skipRemoveExtraTracks: boolean | null
   requiresMatchReconcile: boolean
+  syncIntervalMinutes: number | null
+  nextSyncAt: string | null
+  lastScheduleStatus: PlaylistSource['lastScheduleStatus']
+  lastScheduledAt: string | null
+  lastScheduleError: string | null
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
@@ -181,6 +186,11 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.skipPlexPlaylist !== undefined) { sets.push('skip_plex_playlist = ?'); vals.push(toNullableBoolean(partial.skipPlexPlaylist)) }
   if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(toNullableBoolean(partial.skipRemoveExtraTracks)) }
   if (partial.requiresMatchReconcile !== undefined) { sets.push('requires_match_reconcile = ?'); vals.push(partial.requiresMatchReconcile ? 1 : 0) }
+  if (partial.syncIntervalMinutes !== undefined) { sets.push('sync_interval_minutes = ?'); vals.push(partial.syncIntervalMinutes) }
+  if (partial.nextSyncAt !== undefined) { sets.push('next_sync_at = ?'); vals.push(partial.nextSyncAt) }
+  if (partial.lastScheduleStatus !== undefined) { sets.push('last_schedule_status = ?'); vals.push(partial.lastScheduleStatus) }
+  if (partial.lastScheduledAt !== undefined) { sets.push('last_scheduled_at = ?'); vals.push(partial.lastScheduledAt) }
+  if (partial.lastScheduleError !== undefined) { sets.push('last_schedule_error = ?'); vals.push(partial.lastScheduleError) }
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
   if (partial.plexUpdatedAt !== undefined) { sets.push('plex_updated_at = ?'); vals.push(partial.plexUpdatedAt) }
   if (partial.trackIdSnapshot !== undefined) { sets.push('track_id_snapshot = ?'); vals.push(partial.trackIdSnapshot) }

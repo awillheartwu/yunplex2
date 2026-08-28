@@ -1,6 +1,6 @@
 import { success, fail } from '../../lib/response'
 import { applyPlaylistSourceBatchAction } from '../../lib/playlist/batch-actions'
-import { getSyncServiceInstance, isRepairRunning } from '../../lib/sync/instance'
+import { getSyncServiceInstance, getSyncWorker, isRepairRunning } from '../../lib/sync/instance'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ action?: unknown; ids?: unknown }>(event)
@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
         return syncService.startSync({ mode: 'normal', sourceIds: ids, trigger: 'user' })
       },
     })
+    if (result.action !== 'sync') getSyncWorker()?.update()
 
     const messages = {
       enable: `已启用 ${result.count} 个同步源`,

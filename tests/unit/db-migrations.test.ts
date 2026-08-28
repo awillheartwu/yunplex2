@@ -32,13 +32,14 @@ const EXPECTED_TABLES = [
   'playlist_source_track_occurrences',
   'playlist_sources',
   'song_identity_bindings',
+  'source_sync_queue',
   'task_run_song_changes',
   'task_run_sources',
   'task_runs',
 ] as const
 
 describe('current database schema baseline', () => {
-  it('creates exactly the 16 current product tables', () => {
+  it('creates exactly the 17 current product tables', () => {
     initDb(createTempDataDir())
 
     const tables = getDb().prepare(`
