@@ -104,12 +104,12 @@ describe('api filter parameter parsing', () => {
     expect(parseFailureRecordFilters({
       status: 'ignored',
       type: 'repair',
-      failureKind: 'ignored_failure',
+      failureKind: 'rate_limited',
       limit: '500',
     })).toMatchObject({
       status: 'ignored',
       type: 'repair',
-      failureKind: 'ignored_failure',
+      failureKind: 'rate_limited',
       limit: 100,
     })
 

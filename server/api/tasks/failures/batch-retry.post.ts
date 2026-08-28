@@ -22,13 +22,18 @@ export default defineEventHandler(async (event) => {
   const cfg = readConfig()
 
   const records = getFailureRecords(body.ids)
-  const taskIds = [...new Set(records.flatMap(record => record.downloadTaskIds))]
+  const retryableRecords = records.filter(record => record.retryable)
+  const retryableRecordIds = retryableRecords.map(record => record.id)
+  const taskIds = [...new Set(retryableRecords.flatMap(record => record.downloadTaskIds))]
   if (taskIds.length === 0) {
-    return success({ count: 0 }, '这些问题需要从对应运行或同步源重新执行')
+    const hasPolicyBlockedRecord = records.some(record => !record.retryable)
+    return success({ count: 0 }, hasPolicyBlockedRecord
+      ? '所选问题的错误策略不允许直接重试'
+      : '这些问题需要从对应运行或同步源重新执行')
   }
 
-  incrementFailureRetries(body.ids)
-  setFailureRecordStatus(body.ids, 'open')
+  incrementFailureRetries(retryableRecordIds)
+  setFailureRecordStatus(retryableRecordIds, 'open')
 
   // Build processor
   const processor = async (

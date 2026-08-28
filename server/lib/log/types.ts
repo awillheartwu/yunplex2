@@ -7,6 +7,9 @@ export interface LogEntry {
   message: string
   detail?: string
   stage?: SyncStage
+  errorCode?: import('../../../shared/domain-errors').DomainErrorCode
+  errorCategory?: import('../../../shared/domain-errors').DomainErrorCategory
+  retryable?: boolean
 }
 
 export type SyncStage =

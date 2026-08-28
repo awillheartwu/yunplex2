@@ -18,6 +18,15 @@ const FAILURE_KINDS = new Set([
   'failed_plex_insert',
   'copyright_restricted',
   'ignored_failure',
+  'authentication_failed',
+  'rate_limited',
+  'plex_unavailable',
+  'filesystem_failed',
+  'media_identity_conflict',
+  'scheduler_interrupted',
+  'concurrent_operation',
+  'validation_failed',
+  'unknown_error',
 ])
 const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatus>(['open', 'ignored', 'resolved'])
 

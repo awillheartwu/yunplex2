@@ -28,6 +28,40 @@ describe('failure records', () => {
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
   })
 
+  it('projects a shared structured error policy without migrating the table', () => {
+    setup()
+    const record = recordFailure({
+      songId: 42,
+      songName: 'Song',
+      runType: 'sync',
+      failureKind: 'failed_download',
+      failureReason: 'HTTP 429 too many requests',
+    })
+
+    expect(record).toMatchObject({
+      failureKind: 'rate_limited',
+      errorCode: 'rate_limited',
+      errorCategory: 'netease',
+      errorSeverity: 'warning',
+      retryable: true,
+    })
+  })
+
+  it('redacts credentials in new and historical failure reasons', () => {
+    setup()
+    const record = recordFailure({
+      songName: 'Secret',
+      runType: 'manual_download',
+      failureKind: 'failed_download',
+      failureReason: 'request failed token=secret',
+    })
+    expect(record.failureReason).toBe('request failed token=[REDACTED]')
+
+    getDb().prepare('UPDATE failure_records SET failure_reason = ? WHERE id = ?')
+      .run('Cookie: old-secret', record.id)
+    expect(queryFailureRecords({ status: 'open' }).items[0]?.failureReason).toBe('Cookie: [REDACTED]')
+  })
+
   it('uses the song identity, source, and failure stage as its fingerprint', () => {
     expect(failureFingerprint({
       songId: 42,

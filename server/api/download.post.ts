@@ -53,7 +53,6 @@ export default defineEventHandler(async (event) => {
       total: result.total,
     }, `下载已启动，共 ${result.total} 首歌曲`)
   } catch (err) {
-    const message = err instanceof Error ? err.message : '启动下载失败'
-    return fail(message)
+    return fail(err, 1, 'failed_download')
   }
 })

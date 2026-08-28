@@ -541,7 +541,7 @@ export function recoverInterruptedRuns(): number {
         sourceId: task.source_id,
         runId: task.run_id,
         runType: runType ?? (task.source_id ? 'sync' : 'manual_download'),
-        failureKind: task.status === 'tagging' ? 'failed_tags' : 'failed_download',
+        failureKind: 'scheduler_interrupted',
         failureReason: '任务因服务重启中断',
         occurredAt: now,
         downloadTaskId: task.id,

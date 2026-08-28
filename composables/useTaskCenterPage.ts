@@ -11,6 +11,7 @@ import { useFeedback } from '~~/composables/useFeedback'
 import { useDebounceFn } from '~~/composables/useTiming'
 import { formatRunDuration, runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
+import { getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
 
 export function useTaskCenterPage() {
   type TaskCenterTab = 'overview' | 'failures' | 'runs'
@@ -143,6 +144,14 @@ export function useTaskCenterPage() {
     { label: 'Plex 更新失败', value: 'failed_plex_insert' },
     { label: '版权受限', value: 'copyright_restricted' },
     { label: '连续失败', value: 'ignored_failure' },
+    { label: '认证失效', value: 'authentication_failed' },
+    { label: '请求受限', value: 'rate_limited' },
+    { label: 'Plex 不可用', value: 'plex_unavailable' },
+    { label: '文件写入失败', value: 'filesystem_failed' },
+    { label: '媒体身份冲突', value: 'media_identity_conflict' },
+    { label: '任务被中断', value: 'scheduler_interrupted' },
+    { label: '任务占用中', value: 'concurrent_operation' },
+    { label: '未知错误', value: 'unknown_error' },
   ]
   type FailureFilterChipKey = 'search' | 'type' | 'kind' | 'source' | 'date'
   const draftFailureType = ref<TaskRunType | ''>('')
@@ -252,9 +261,9 @@ export function useTaskCenterPage() {
     else next.add(id)
     selectedFailures.value = next
   }
-  function isRetryable(record: FailureRecord) { return record.downloadTaskIds.length > 0 && record.failureKind !== 'copyright_restricted' }
+  function isRetryable(record: FailureRecord) { return record.downloadTaskIds.length > 0 && record.retryable }
   function failureRetryUnavailableReason(record: FailureRecord): string {
-    if (record.failureKind === 'copyright_restricted') return '版权受限无法在异常列表直接重试，请从运行或同步源重新执行。'
+    if (!record.retryable) return `${record.userMessage} 当前错误策略不允许直接重试。`
     if (record.downloadTaskIds.length === 0) return '这条异常没有可直接重试的下载任务，请从运行或同步源重新执行。'
     return '请从运行或同步源重新执行。'
   }
@@ -278,11 +287,12 @@ export function useTaskCenterPage() {
     }
   }
   function failureKindLabel(kind: string) {
-    return failureKindFilters.find(item => item.value === kind)?.label || kind
+    return isDomainErrorCode(kind) ? getDomainErrorDefinition(kind).label : failureKindFilters.find(item => item.value === kind)?.label || kind
   }
   function failureKindTone(kind: string): TaskSemanticTone {
-    if (kind === 'copyright_restricted' || kind === 'ignored_failure') return 'ignored'
-    if (kind === 'failed_plex_match' || kind === 'failed_plex_insert') return 'warning'
+    const definition = getDomainErrorDefinition(kind)
+    if (definition.severity === 'info') return 'ignored'
+    if (definition.severity === 'warning') return 'warning'
     return 'failure'
   }
   function failureKindIcon(kind: string): string {
@@ -294,15 +304,7 @@ export function useTaskCenterPage() {
   function failureReasonLabel(record: FailureRecord): string {
     const rawReason = record.failureReason?.trim()
     if (rawReason && rawReason !== record.failureKind) return rawReason
-    const fallbacks: Record<string, string> = {
-      failed_download: '歌曲在下载阶段失败，可重试或查看关联运行获取更多上下文。',
-      failed_tags: '音频已下载，但元数据或标签写入未完成。',
-      failed_plex_match: 'Plex 未在重试窗口内识别到已下载文件。',
-      failed_plex_insert: 'Plex 已识别歌曲，但未能完成歌单更新。',
-      copyright_restricted: '网易云未提供可下载音源，本次已按版权限制跳过。',
-      ignored_failure: '连续失败达到阈值，系统已暂停自动重试。可从异常处理或同步源主动重试。',
-    }
-    return fallbacks[record.failureKind] || '未提供具体失败原因'
+    return record.userMessage || getDomainErrorDefinition(record.errorCode || record.failureKind).userMessage
   }
   function sourceLabel(sourceId: string) {
     const source = sourceOptions.value.find(item => item.id === sourceId)
