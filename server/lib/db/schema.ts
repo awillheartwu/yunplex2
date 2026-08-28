@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3'
 
+export const CURRENT_SCHEMA_VERSION = 1
+
 export function createSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS config (
@@ -63,8 +65,7 @@ export function createSchema(db: Database.Database): void {
       duration_ms    INTEGER NOT NULL DEFAULT 0,
       dry_run        INTEGER NOT NULL DEFAULT 0,
       details_expired INTEGER NOT NULL DEFAULT 0,
-      steps_json     TEXT NOT NULL DEFAULT '[]',
-      data           TEXT NOT NULL DEFAULT '{}'
+      steps_json     TEXT NOT NULL DEFAULT '[]'
     );
 
     CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at DESC);
@@ -132,6 +133,7 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_download_tasks_status ON download_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_source ON download_tasks(source_id);
     CREATE INDEX IF NOT EXISTS idx_download_tasks_run ON download_tasks(run_id);
+    CREATE INDEX IF NOT EXISTS idx_download_tasks_time ON download_tasks(updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS playlist_sources (
       id                      TEXT PRIMARY KEY,
@@ -202,7 +204,6 @@ export function createSchema(db: Database.Database): void {
       plex_file_path TEXT NOT NULL,
       plex_relative_path TEXT NOT NULL DEFAULT '',
       plex_rating_key TEXT,
-      mb_recording_id TEXT,
       binding_method TEXT NOT NULL CHECK(binding_method IN ('path','manual')),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
       evidence_json TEXT NOT NULL DEFAULT '{}',
@@ -317,4 +318,6 @@ export function createSchema(db: Database.Database): void {
       WHERE idempotency_key IS NOT NULL AND status IN ('pending','downloading','tagging')
     `).run()
   }
+
+  db.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`)
 }

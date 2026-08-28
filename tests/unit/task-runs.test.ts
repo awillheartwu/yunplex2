@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import Database from 'better-sqlite3'
 import { closeDb, getDb, initDb } from '../../server/lib/db'
 import {
   createManualDownloadRun,
@@ -35,25 +34,6 @@ describe('task run store', () => {
     `).all() as Array<{ name: string }>
 
     expect(tables.map(table => table.name).sort()).toEqual(['failure_records', 'task_runs'])
-    expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'").get()).toBeUndefined()
-  })
-
-  it('drops the unused persisted sync state from an upgraded database', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'reyunplex-legacy-sync-state-'))
-    directories.push(directory)
-    const db = new Database(join(directory, 'data.db'))
-    db.exec(`
-      CREATE TABLE sync_state (
-        id INTEGER PRIMARY KEY,
-        is_running INTEGER NOT NULL DEFAULT 0
-      );
-      INSERT INTO sync_state (id, is_running) VALUES (1, 0);
-      PRAGMA user_version = 47;
-    `)
-    db.close()
-
-    initDb(directory)
-
     expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'").get()).toBeUndefined()
   })
 
