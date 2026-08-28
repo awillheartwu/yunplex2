@@ -27,6 +27,32 @@ describe('media identity store', () => {
     expect(verified.plexRatingKey).toBe('new')
   })
 
+  it('preserves a canonical relative path when a verifier omits the section root', () => {
+    setup()
+    upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 1,
+      plexSectionKey: '12',
+      plexSectionRoot: '/volume1/06_Music',
+      plexFilePath: '/volume1/06_Music/Artist/Song.flac',
+      plexRatingKey: 'old',
+      bindingMethod: 'manual',
+      status: 'active',
+      evidence: {},
+    })
+
+    const verified = upsertVerifiedSongIdentityBinding({
+      neteaseSongId: 1,
+      plexSectionKey: '12',
+      plexFilePath: '/volume1/06_Music/Artist/Song.flac',
+      plexRatingKey: 'new',
+      bindingMethod: 'manual',
+      status: 'active',
+      evidence: { verified: true },
+    })
+
+    expect(verified.plexRelativePath).toBe('Artist/Song.flac')
+  })
+
   it('rebuild invalidates automatic links but preserves explicit adoption', () => {
     setup()
     upsertSongIdentityBinding({ neteaseSongId: 1, plexSectionKey: '12', plexFilePath: '/music/a.flac', plexRatingKey: 'a', bindingMethod: 'path', status: 'active', evidence: {} })

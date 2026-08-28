@@ -1,7 +1,7 @@
 import pkg from 'NeteaseCloudMusicApi'
 import type { LyricOrder } from './config/types'
 
-const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist } = pkg
+const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist, playlist_detail } = pkg
 
 type NeteaseQualityLevel = Parameters<typeof song_url_v1>[0]['level']
 
@@ -125,12 +125,32 @@ export async function fetchPlaylistSongs(
     updateTime: number | null
   } | null
 }> {
-  const url = `https://music.163.com/api/v1/playlist/detail?id=${playlistId}`
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`获取网易云歌单失败（HTTP ${res.status}）`)
+  const response = await playlist_detail({ id: playlistId, cookie })
+  const body = (response as {
+    status?: number
+    body?: {
+      code?: number
+      playlist?: {
+        name?: string
+        coverImgUrl?: string
+        creator?: { nickname?: string }
+        description?: string
+        trackCount?: number
+        trackIds: { id: number }[]
+        trackUpdateTime?: number
+        updateTime?: number
+      }
+    }
+  }).body
+  const status = (response as { status?: number }).status
+  if ((typeof status === 'number' && status >= 400) || (body?.code && body.code !== 200)) {
+    throw new Error(`获取网易云歌单失败（HTTP ${status ?? body?.code ?? 'unknown'}）`)
   }
-  const body = (await res.json()) as {
+  if (!body?.playlist || !Array.isArray(body.playlist.trackIds)) {
+    throw new Error('网易云歌单响应不完整：缺少 playlist.trackIds，已中止同步以防误删')
+  }
+  const playlistBody = body as {
+    code?: number
     playlist?: {
       name?: string
       coverImgUrl?: string
@@ -142,20 +162,17 @@ export async function fetchPlaylistSongs(
       updateTime?: number
     }
   }
-  if (!body.playlist || !Array.isArray(body.playlist.trackIds)) {
-    throw new Error('网易云歌单响应不完整：缺少 playlist.trackIds，已中止同步以防误删')
-  }
-  const allIds = body.playlist?.trackIds ?? []
-  const trackUpdateTime = body.playlist?.trackUpdateTime ?? null
-  const playlistName = body.playlist?.name ?? null
-  const playlist = body.playlist
+  const allIds = playlistBody.playlist?.trackIds ?? []
+  const trackUpdateTime = playlistBody.playlist?.trackUpdateTime ?? null
+  const playlistName = playlistBody.playlist?.name ?? null
+  const playlist = playlistBody.playlist
     ? {
-        name: body.playlist.name ?? `歌单 ${playlistId}`,
-        coverUrl: body.playlist.coverImgUrl ?? '',
-        creatorName: body.playlist.creator?.nickname ?? '',
-        description: body.playlist.description ?? '',
-        trackCount: body.playlist.trackCount ?? allIds.length,
-        updateTime: body.playlist.updateTime ?? trackUpdateTime,
+        name: playlistBody.playlist.name ?? `歌单 ${playlistId}`,
+        coverUrl: playlistBody.playlist.coverImgUrl ?? '',
+        creatorName: playlistBody.playlist.creator?.nickname ?? '',
+        description: playlistBody.playlist.description ?? '',
+        trackCount: playlistBody.playlist.trackCount ?? allIds.length,
+        updateTime: playlistBody.playlist.updateTime ?? trackUpdateTime,
       }
     : null
   const slicedIds = limit && limit > 0 ? allIds.slice(0, limit) : allIds

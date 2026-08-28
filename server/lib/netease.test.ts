@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const songDetail = vi.hoisted(() => vi.fn())
+const playlistDetail = vi.hoisted(() => vi.fn())
 
 vi.mock('NeteaseCloudMusicApi', () => ({
   default: {
@@ -11,6 +12,7 @@ vi.mock('NeteaseCloudMusicApi', () => ({
     album: vi.fn(),
     user_playlist: vi.fn(),
     album_sublist: vi.fn(),
+    playlist_detail: playlistDetail,
   },
 }))
 
@@ -30,6 +32,7 @@ describe('fetchPlaylistSongs safety', () => {
   beforeEach(() => {
     vi.resetModules()
     songDetail.mockReset()
+    playlistDetail.mockReset()
   })
 
   afterEach(() => {
@@ -37,14 +40,18 @@ describe('fetchPlaylistSongs safety', () => {
   })
 
   it('reconstructs authoritative order, preserves duplicates, and exposes missing detail IDs', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({
+    playlistDetail.mockResolvedValue({
+      status: 200,
+      body: {
+        code: 200,
         playlist: {
           name: 'Test',
           trackIds: [{ id: 1 }, { id: 2 }, { id: 1 }, { id: 3 }],
           trackUpdateTime: 123,
         },
-      }), { status: 200 }))
+      },
+    })
+    const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ songs: [] }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     songDetail.mockResolvedValue({ body: { songs: [rawSong(3, 'Three'), rawSong(1, 'One')] } })
@@ -56,10 +63,11 @@ describe('fetchPlaylistSongs safety', () => {
     expect(result.songs.map(song => song.id)).toEqual([1, 1, 3])
     expect(result.songs[0]?.artists[0]?.id).toBe(2116)
     expect(result.songs[0]?.album.artist?.id).toBe(2116)
+    expect(playlistDetail).toHaveBeenCalledWith({ id: 100, cookie: 'cookie' })
   })
 
   it('rejects an HTTP failure instead of presenting an empty destructive target', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('upstream down', { status: 503 })))
+    playlistDetail.mockResolvedValue({ status: 503, body: { code: 503 } })
     const { fetchPlaylistSongs } = await import('./netease')
 
     await expect(fetchPlaylistSongs(100, undefined, 'cookie')).rejects.toThrow('HTTP 503')
@@ -67,7 +75,7 @@ describe('fetchPlaylistSongs safety', () => {
   })
 
   it('rejects a successful-looking response without playlist.trackIds', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 200 }), { status: 200 })))
+    playlistDetail.mockResolvedValue({ status: 200, body: { code: 200 } })
     const { fetchPlaylistSongs } = await import('./netease')
 
     await expect(fetchPlaylistSongs(100, undefined, 'cookie')).rejects.toThrow('playlist.trackIds')

@@ -101,7 +101,7 @@ describe('RunBuilder source/song indexing', () => {
       songName: 'Target',
       artist: 'Artist',
       album: 'Album',
-      status: 'match_pending_review',
+      status: 'ignored_failure',
       neteaseSongId: 101,
       neteaseIndex: 0,
     }])

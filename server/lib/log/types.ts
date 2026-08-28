@@ -33,7 +33,7 @@ export interface SyncState {
   startedAt: string | null
   currentSourceName: string | null
   lastSyncAt: string | null
-  lastSyncResult: 'success' | 'failure' | null
+  lastSyncResult: 'success' | 'partial' | 'failure' | null
   syncCount: number
   successCount: number
   failureCount: number

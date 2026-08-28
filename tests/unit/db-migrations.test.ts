@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../../server/lib/db'
+import { repairMediaIdentityData } from '../../server/lib/db/migrations'
 
 const tempDirs: string[] = []
 
@@ -366,5 +367,41 @@ describe('database migrations', () => {
       { netease_song_id: 2, ownership: 'external' },
       { netease_song_id: 3, ownership: 'external' },
     ])
+  })
+
+  it('repairs malformed identity paths and removes unusable failure rows', () => {
+    const dir = createTempDataDir()
+    initDb(dir)
+    const db = getDb()
+    const now = new Date().toISOString()
+    const config = JSON.parse((db.prepare("SELECT value FROM config WHERE key = 'app'").get() as { value: string }).value)
+    config.download.plexLibraryPathPrefix = '/volume1/06_Music'
+    db.prepare("UPDATE config SET value = ? WHERE key = 'app'").run(JSON.stringify(config))
+    db.prepare(`
+      INSERT INTO song_identity_bindings (
+        netease_song_id, plex_section_key, plex_file_path, plex_relative_path,
+        plex_rating_key, binding_method, status, evidence_json,
+        created_at, updated_at, last_verified_at
+      ) VALUES (1, '12', '/volume1/06_Music/Artist/Song.flac',
+        'volume1/06_Music/Artist/Song.flac', '10', 'manual', 'stale', '{}', ?, ?, ?)
+    `).run(now, now, now)
+    db.prepare(`
+      INSERT INTO failure_records (
+        id, fingerprint, subject_key, song_id, song_name, source_id, run_type,
+        failure_kind, status, first_seen_at, last_seen_at
+      ) VALUES ('orphan', 'orphan-fingerprint', 'song:1', 1, 'Song', 'missing-source',
+        'sync', 'failed_download', 'open', ?, ?)
+    `).run(now, now)
+    db.prepare(`
+      INSERT INTO failure_occurrences (fingerprint, occurrence_key, occurred_at)
+      VALUES ('orphan-fingerprint', 'run:1', ?)
+    `).run(now)
+
+    repairMediaIdentityData(db)
+
+    expect(db.prepare('SELECT plex_relative_path FROM song_identity_bindings WHERE netease_song_id = 1').get())
+      .toEqual({ plex_relative_path: 'Artist/Song.flac' })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM failure_records').get()).toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM failure_occurrences').get()).toEqual({ count: 0 })
   })
 })

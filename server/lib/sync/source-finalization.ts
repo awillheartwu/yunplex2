@@ -64,7 +64,6 @@ export async function finalizeSourceConvergence(
     sourceStatus = 'failed'
   } else if (
     failCount > 0
-    || restrictedCount > 0
     || ignoredCount > 0
     || (!skipRemoveExtra && preservedExtraCount > 0)
   ) {

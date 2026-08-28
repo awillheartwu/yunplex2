@@ -280,10 +280,18 @@ export function reorderSources(orderedIds: string[]): void {
 
 export function deleteSource(id: string): boolean {
   const db = getDb()
-  // Cascade: clean up orphaned download tasks
-  db.prepare('DELETE FROM download_tasks WHERE source_id = ?').run(id)
-  const result = db.prepare('DELETE FROM playlist_sources WHERE id = ?').run(id)
-  return result.changes > 0
+  return db.transaction(() => {
+    const fingerprints = db.prepare('SELECT fingerprint FROM failure_records WHERE source_id = ?')
+      .all(id) as Array<{ fingerprint: string }>
+    if (fingerprints.length > 0) {
+      db.prepare(`DELETE FROM failure_occurrences WHERE fingerprint IN (${fingerprints.map(() => '?').join(', ')})`)
+        .run(...fingerprints.map(row => row.fingerprint))
+      db.prepare('DELETE FROM failure_records WHERE source_id = ?').run(id)
+    }
+    db.prepare('DELETE FROM download_tasks WHERE source_id = ?').run(id)
+    const result = db.prepare('DELETE FROM playlist_sources WHERE id = ?').run(id)
+    return result.changes > 0
+  })()
 }
 
 async function fetchPlaylistName(playlistId: number): Promise<string | null> {

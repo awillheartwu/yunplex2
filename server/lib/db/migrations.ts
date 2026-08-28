@@ -4,9 +4,10 @@ import { createHistoricalMigrations } from './migration-history'
 import { isIdempotentSchemaError, tableExists } from './introspection'
 import { normalizePlexPath, normalizePlexRelativePath } from '../sync/identity-normalization'
 import { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
+import { repairMediaIdentityData } from './media-identity-repair'
 import { ensureSparseTaskRunSchema } from './task-run-sparse-migration'
-
 export { retirePlaylistSourceFailureCaches } from './failure-cache-retirement'
+export { repairMediaIdentityData } from './media-identity-repair'
 // Historical migration helper only. The runtime review subsystem is retired.
 function buildMatchReviewCandidateKey(input: {
   neteaseSongId: number
@@ -25,7 +26,6 @@ function buildMatchReviewCandidateKey(input: {
     ? createHash('sha256').update(JSON.stringify([input.neteaseSongId, ...identity])).digest('hex')
     : ''
 }
-
 /**
  * Safe on every boot. Some installations can have an advanced user_version
  * while still missing columns from a partially applied migration, so columns
@@ -87,7 +87,6 @@ export function ensureDownloadWhenMediaMissingOverride(d: Database.Database): vo
     d.prepare('ALTER TABLE playlist_sources ADD COLUMN download_when_media_missing INTEGER').run()
   }
 }
-
 /** Remove weak automatic identities and the obsolete lookup cache. */
 export function retireWeakMetadataBindingsAndLookupCache(d: Database.Database): void {
   const now = new Date().toISOString()
@@ -796,4 +795,5 @@ export function runMigrations(d: Database.Database): void {
   retireWeakMetadataBindingsAndLookupCache(d)
   retireComplexMatchingData(d)
   ensureSparseTaskRunSchema(d)
+  repairMediaIdentityData(d)
 }

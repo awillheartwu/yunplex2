@@ -6,7 +6,7 @@ import { closeDb, getDb, initDb } from '../db'
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
 import { commitCompletedMediaWrite } from '../download/media-write'
-import { getLocalMediaAsset, resolveLocalMediaAsset, upsertLocalMediaAsset } from './local-media-store'
+import { getLocalMediaAsset, inspectLocalMediaAssets, persistLocalMediaInspection, resolveLocalMediaAsset, upsertLocalMediaAsset } from './local-media-store'
 
 let tempDir: string | null = null
 afterEach(() => {
@@ -104,6 +104,24 @@ describe('local media provenance', () => {
         observedFileSize: 17,
       }),
     })
+  })
+
+  it('reactivates a missing managed asset when the same file becomes visible again', () => {
+    const root = setup()
+    const filePath = join(root, 'temporarily-unavailable.flac')
+    writeFileSync(filePath, 'audio')
+    upsertLocalMediaAsset({
+      neteaseSongId: song.id,
+      filePath,
+      provenance: 'download_task',
+      ownership: 'managed',
+      evidence: { audioOperation: 'downloaded' },
+    })
+    getDb().prepare("UPDATE local_media_assets SET status = 'missing' WHERE netease_song_id = ?").run(song.id)
+
+    const inspection = inspectLocalMediaAssets([song], config(root)).get(song.id)
+    expect(inspection?.state).toBe('active_managed')
+    expect(inspection && persistLocalMediaInspection(inspection)).toMatchObject({ status: 'active' })
   })
 
   it('marks every current source occurrence for exact-path reconciliation after a managed download', () => {
