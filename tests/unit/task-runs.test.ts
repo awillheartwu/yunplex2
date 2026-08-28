@@ -132,6 +132,70 @@ describe('task run store', () => {
     `).get()).toEqual({ source_id: 'source-one', run_type: 'manual_download' })
   })
 
+  it('marks an interrupted scheduled convergence as cancelled rather than failed', () => {
+    setup()
+    const startedAt = new Date(Date.now() - 1000).toISOString()
+    saveRun({
+      id: 'scheduled-interrupted',
+      type: 'sync',
+      trigger: 'schedule',
+      startedAt,
+      finishedAt: null,
+      status: 'running',
+      durationMs: 0,
+      summary: '',
+      source: '网易云音乐',
+      sourceIds: ['source-one'],
+      target: 'Plex',
+      totalSongs: 0,
+      successSongs: 0,
+      failedSongs: 0,
+      skippedSongs: 0,
+      removedSongs: 0,
+      warnings: 0,
+      dryRun: false,
+      steps: [],
+      songs: [],
+      config: {},
+    })
+
+    recoverInterruptedRuns()
+
+    expect(getRun('scheduled-interrupted')).toMatchObject({
+      status: 'cancelled',
+      summary: '服务重启，已交由自动调度重新执行',
+    })
+  })
+
+  it('does not cancel a scheduled run that still owns a valid queue lease', () => {
+    setup()
+    const now = new Date()
+    const startedAt = new Date(now.getTime() - 1000).toISOString()
+    const leaseExpiresAt = new Date(now.getTime() + 60_000).toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (id, netease_playlist_id, name, created_at, updated_at)
+      VALUES ('source-one', 1001, '来源一', ?, ?)
+    `).run(startedAt, startedAt)
+    saveRun({
+      id: 'scheduled-active', type: 'sync', trigger: 'schedule', startedAt,
+      finishedAt: null, status: 'running', durationMs: 0, summary: '',
+      source: '网易云音乐', sourceIds: ['source-one'], target: 'Plex',
+      totalSongs: 0, successSongs: 0, failedSongs: 0, skippedSongs: 0,
+      removedSongs: 0, warnings: 0, dryRun: false, steps: [], songs: [], config: {},
+    })
+    getDb().prepare(`
+      INSERT INTO source_sync_queue (
+        id, source_id, schedule_window, status, available_at, lease_owner,
+        lease_expires_at, attempts, run_id, created_at, updated_at, started_at
+      ) VALUES ('request-one', 'source-one', ?, 'running', ?, 'source-scheduler:1:test',
+        ?, 1, 'scheduled-active', ?, ?, ?)
+    `).run(startedAt, startedAt, leaseExpiresAt, startedAt, startedAt, startedAt)
+
+    recoverInterruptedRuns()
+
+    expect(getRun('scheduled-active')?.status).toBe('running')
+  })
+
   it('filters unified runs by type', () => {
     setup()
     createManualDownloadRun({ id: 'batch-1', total: 1, sourceLabel: '单曲' })

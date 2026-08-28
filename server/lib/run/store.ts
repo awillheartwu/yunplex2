@@ -567,15 +567,27 @@ export function recoverInterruptedRuns(): number {
   for (const row of rows) {
     const run = getRun(row.id)
     if (!run) continue
+    if (run.trigger === 'schedule') {
+      const activeRequest = db.prepare(`
+        SELECT 1 FROM source_sync_queue
+        WHERE run_id = ? AND status = 'running'
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+        LIMIT 1
+      `).get(run.id, now)
+      if (activeRequest) continue
+    }
     if (run.type === 'manual_download') {
       const synced = syncManualDownloadRun(run.id)
       if (synced?.status !== 'running') changed += 1
       continue
     }
-    run.status = 'failed'
+    const automaticallyRetried = run.trigger === 'schedule'
+    run.status = automaticallyRetried ? 'cancelled' : 'failed'
     run.finishedAt = now
     run.durationMs = Math.max(0, Date.now() - new Date(run.startedAt).getTime())
-    run.summary = run.summary ? `${run.summary}（服务重启后中断）` : '任务因服务重启中断'
+    run.summary = automaticallyRetried
+      ? '服务重启，已交由自动调度重新执行'
+      : run.summary ? `${run.summary}（服务重启后中断）` : '任务因服务重启中断'
     for (const step of run.steps) {
       if (step.status === 'running' || step.status === 'pending') {
         step.status = 'cancelled'

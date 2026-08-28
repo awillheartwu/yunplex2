@@ -207,6 +207,8 @@ export function createSchema(db: Database.Database): void {
       ON source_sync_queue(status, available_at, created_at);
     CREATE INDEX IF NOT EXISTS idx_source_sync_queue_source
       ON source_sync_queue(source_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_source_sync_queue_single_running
+      ON source_sync_queue((1)) WHERE status = 'running';
 
     -- Durable provenance for files written or adopted by YunPlex. Unlike the
     -- download queue this table is not retention-pruned, so path identity can

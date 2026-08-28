@@ -3,6 +3,7 @@ import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import {
   claimNextSourceRequest,
+  attachSourceRequestRun,
   finishSourceRequest,
   getSourceScheduleSnapshot,
   reconcileSourceSchedules,
@@ -34,7 +35,10 @@ let worker: WorkerHandle | null = null
 
 interface SyncServiceHandle {
   getState: () => SyncState
-  runSyncForSource: (sourceId: string, options?: { mode?: 'normal'; trigger?: 'schedule' }) => Promise<SyncState>
+  prepareSyncForSource: (sourceId: string, options?: { mode?: 'normal'; trigger?: 'schedule' }) => {
+    runId: string
+    run: () => Promise<SyncState>
+  }
   cancelSync: () => boolean
 }
 
@@ -52,7 +56,7 @@ export function startWorker(
   syncService: SyncServiceHandle,
   _dataDir: string,
 ): WorkerHandle {
-  if (worker) throw new Error('Source scheduler is already started')
+  if (worker) return worker
 
   const workerId = `source-scheduler:${process.pid}:${randomUUID().slice(0, 8)}`
   let timer: ReturnType<typeof setInterval> | null = null
@@ -77,10 +81,14 @@ export function startWorker(
       }, LEASE_HEARTBEAT_MS)
       leaseHeartbeat.unref()
       try {
-        const state = await syncService.runSyncForSource(request.sourceId, {
+        const prepared = syncService.prepareSyncForSource(request.sourceId, {
           mode: 'normal',
           trigger: 'schedule',
         })
+        if (!attachSourceRequestRun(request, prepared.runId)) {
+          throw new Error('调度请求租约已失效，未启动来源同步')
+        }
+        const state = await prepared.run()
         const result = state.lastSyncResult ?? 'failure'
         finishSourceRequest(
           request,

@@ -34,7 +34,10 @@ function makeService(runSyncForSource = vi.fn(async () => ({
 }))) {
   return {
     getState: vi.fn(() => ({ isRunning: false })),
-    runSyncForSource,
+    prepareSyncForSource: vi.fn((sourceId: string, options?: { mode?: 'normal'; trigger?: 'schedule' }) => ({
+      runId: `run-${sourceId}`,
+      run: () => runSyncForSource(sourceId, options),
+    })),
     cancelSync: vi.fn(() => false),
   }
 }
@@ -52,6 +55,14 @@ afterEach(async () => {
 })
 
 describe('source scheduler worker', () => {
+  it('reuses the process worker when the daemon plugin initializes twice', () => {
+    const config = makeConfig(false)
+    const first = startWorker(() => config, makeService() as never, directory)
+    const second = startWorker(() => config, makeService() as never, directory)
+
+    expect(second).toBe(first)
+  })
+
   it('stops polling and clears pending requests when disabled', () => {
     let config = makeConfig(true)
     insertSource('source-1', 0)
@@ -75,7 +86,7 @@ describe('source scheduler worker', () => {
     config = makeConfig(true)
     await worker.runOnce()
 
-    expect(service.runSyncForSource).toHaveBeenCalledWith('source-1', {
+    expect(service.prepareSyncForSource).toHaveBeenCalledWith('source-1', {
       mode: 'normal',
       trigger: 'schedule',
     })
@@ -118,7 +129,7 @@ describe('source scheduler worker', () => {
     config.sync.enabled = true
     await worker.runOnce()
 
-    expect(service.runSyncForSource).not.toHaveBeenCalled()
+    expect(service.prepareSyncForSource).not.toHaveBeenCalled()
     expect(worker.getStatus().queueDepth).toBe(1)
   })
 })

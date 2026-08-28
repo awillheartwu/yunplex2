@@ -1,7 +1,8 @@
 import { readConfig, setDataDir } from '../lib/config/store'
 import { initDb } from '../lib/db'
 import { getSyncService } from '../lib/sync/service'
-import { startWorker } from '../lib/sync/worker'
+import { startWorker, stopWorker } from '../lib/sync/worker'
+import { recoverInterruptedSourceRequests } from '../lib/sync/source-schedule-store'
 import { setSyncService, setSyncWorker } from '../lib/sync/instance'
 import { recoverInterruptedRuns } from '../lib/run/store'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
@@ -13,13 +14,17 @@ import {
 
 const DOWNLOAD_LEASE_SWEEP_INTERVAL_MS = 60 * 1000
 const DATA_LIFECYCLE_INTERVAL_MS = 6 * 60 * 60 * 1000
+let daemonInitialized = false
 
 export default defineNitroPlugin((nitroApp) => {
+  if (daemonInitialized) return
+  daemonInitialized = true
   const config = useRuntimeConfig()
   const dataDir = config.dataDir as string
   setDataDir(dataDir)
 
   initDb(dataDir)
+  recoverInterruptedSourceRequests()
   recoverInterruptedRuns()
 
   const maintainDataLifecycle = () => {
@@ -57,8 +62,11 @@ export default defineNitroPlugin((nitroApp) => {
   const lifecycleSweep = setInterval(maintainDataLifecycle, DATA_LIFECYCLE_INTERVAL_MS)
   lifecycleSweep.unref()
   nitroApp.hooks.hookOnce('close', async () => {
-    await worker.stop()
-    clearInterval(leaseSweep)
-    clearInterval(lifecycleSweep)
+    if (!import.meta.dev) {
+      daemonInitialized = false
+      await stopWorker()
+      clearInterval(leaseSweep)
+      clearInterval(lifecycleSweep)
+    }
   })
 })
