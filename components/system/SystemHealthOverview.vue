@@ -144,9 +144,9 @@ const headlineClass = computed(() => ({
   border-radius: 999px;
 }
 
-.system-health__item--ok .system-health__icon { color: var(--success); background: rgba(34, 197, 94, 0.12); }
-.system-health__item--warning .system-health__icon { color: var(--warning); background: rgba(245, 158, 11, 0.12); }
-.system-health__item--error .system-health__icon { color: var(--danger); background: rgba(239, 68, 68, 0.12); }
+.system-health__item--ok .system-health__icon { color: var(--success); background: var(--success-soft); }
+.system-health__item--warning .system-health__icon { color: var(--warning); background: var(--warning-soft); }
+.system-health__item--error .system-health__icon { color: var(--danger); background: var(--danger-soft); }
 .system-health__item--idle .system-health__icon { color: var(--text-tertiary); background: var(--bg-muted); }
 
 @media (max-width: 1024px) {

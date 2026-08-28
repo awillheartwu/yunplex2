@@ -131,9 +131,9 @@
 }
 
 :global(.dark .manual-workspace) {
-  --manual-page-bg: #020617;
-  --manual-card-bg: #0f172a;
-  --manual-input-bg: #111827;
+  --manual-page-bg: var(--bg-app);
+  --manual-card-bg: var(--bg-surface);
+  --manual-input-bg: var(--bg-input);
 }
 
 :global(.dark .manual-workspace)::before {
@@ -147,7 +147,7 @@
 }
 
 :global(.dark .manual-workspace .manual-config-card) {
-  background: #0b1324 !important;
+  background: var(--bg-surface) !important;
 }
 
 :global(.dark .manual-workspace .manual-textarea),

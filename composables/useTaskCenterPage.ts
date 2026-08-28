@@ -174,7 +174,7 @@ export function useTaskCenterPage() {
     to: failures.filter.value.to,
   }))
   const failureCanClear = computed(() => failureActiveFilterCount.value > 0)
-  const failureAdvancedFilterLabel = computed(() => failureAdvancedFilterCount.value > 0 ? '筛选' : '高级筛选')
+  const failureAdvancedFilterLabel = computed(() => '筛选')
   const failureFilterChips = computed<Array<{ key: FailureFilterChipKey; label: string }>>(() => {
     const chips: Array<{ key: FailureFilterChipKey; label: string }> = []
     if (failures.filter.value.search) chips.push({ key: 'search', label: `搜索：${failures.filter.value.search}` })

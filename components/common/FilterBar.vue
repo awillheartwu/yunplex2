@@ -166,7 +166,7 @@ const props = withDefaults(defineProps<{
   activeCount: 0,
   canClear: false,
   advanced: false,
-  advancedLabel: '高级筛选',
+  advancedLabel: '筛选',
   advancedTitle: '筛选',
 })
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="mt-2 bg-[#e74c3c08] border border-[#e74c3c20] rounded-lg p-3">
+  <div class="mt-2 border rounded-lg p-3" style="background: var(--danger-soft); border-color: var(--danger-border)">
     <div class="flex items-start gap-2">
       <AppIcon name="warn" :size="14" class="shrink-0 mt-0.5 text-danger" />
       <div class="flex-1 min-w-0">

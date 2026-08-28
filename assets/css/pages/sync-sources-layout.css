@@ -6,15 +6,15 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.85rem;
-  padding: 1rem 1.1rem;
-  min-height: 5.75rem;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  min-height: 4.75rem;
 }
 
 .sync-summary-card__icon {
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 999px;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -44,14 +44,18 @@
 
 .sync-summary-card__value {
   margin: 0;
-  font-size: 1.9rem;
+  font-size: 1.5rem;
   line-height: 1;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .sync-summary-card__value--status {
-  font-size: 1.2rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 639px) {
+  .sync-summary-card--last { grid-column: 1 / -1; }
 }
 
 .sync-batch-bar {
@@ -150,19 +154,19 @@
 }
 
 .sync-table thead th {
-  padding: 0.95rem 1rem;
+  padding: 0.75rem 1rem;
   text-align: left;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-tertiary);
   border-bottom: 1px solid var(--border-primary);
-  background: rgba(255, 255, 255, 0.34);
+  background: var(--bg-input);
 }
 
 .sync-table tbody td {
-  padding: 0.95rem 1rem;
+  padding: 0.8rem 1rem;
   vertical-align: middle;
-  border-top: 1px solid rgba(49, 73, 113, 0.1);
+  border-top: 1px solid var(--border-primary);
 }
 
 .sync-table tbody tr:first-child td {
@@ -174,7 +178,7 @@
 }
 
 .sync-table__row:hover {
-  background: rgba(52, 87, 213, 0.035);
+  background: var(--bg-hover);
 }
 
 .sync-table__row--drag-over td {
@@ -183,7 +187,7 @@
 }
 
 .sync-table__row--expanded {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--bg-input);
 }
 
 .sync-table__control-col {
@@ -461,7 +465,7 @@
 
 .sync-pill--ghost {
   border-color: var(--border-primary);
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--bg-input);
 }
 
 .sync-pill--success {

@@ -5,24 +5,24 @@
 :root {
   color-scheme: light;
   --font-scale: 1;
-  --bg-app: #f2f0ea;
-  --bg-sidebar: rgba(248, 247, 242, 0.96);
-  --bg-surface: rgba(255, 254, 250, 0.96);
+  --bg-app: #f5f6f8;
+  --bg-sidebar: rgba(249, 250, 252, 0.96);
+  --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-overlay: rgba(21, 33, 61, 0.62);
-  --bg-input: rgba(250, 250, 247, 0.96);
-  --bg-hover: rgba(38, 75, 158, 0.075);
-  --bg-tooltip: #17213d;
-  --text-primary: #18233d;
-  --text-secondary: #4e5b72;
-  --text-tertiary: #778196;
-  --border-primary: rgba(38, 56, 91, 0.13);
-  --border-secondary: rgba(38, 56, 91, 0.22);
-  --accent: #3159c7;
-  --accent-strong: #21439e;
-  --accent-soft: #5d82e5;
-  --accent-muted: rgba(49, 89, 199, 0.105);
-  --accent-glow: rgba(49, 89, 199, 0.17);
+  --bg-overlay: rgba(15, 23, 42, 0.58);
+  --bg-input: #f7f8fa;
+  --bg-hover: rgba(79, 95, 196, 0.07);
+  --bg-tooltip: #182033;
+  --text-primary: #172033;
+  --text-secondary: #4b566b;
+  --text-tertiary: #6b7689;
+  --border-primary: rgba(42, 55, 83, 0.12);
+  --border-secondary: rgba(42, 55, 83, 0.2);
+  --accent: #5368d8;
+  --accent-strong: #4054be;
+  --accent-soft: #7184e8;
+  --accent-muted: rgba(83, 104, 216, 0.1);
+  --accent-glow: rgba(83, 104, 216, 0.16);
   --success: #16a34a;
   --existing: #64748b;
   --ignored: #a16207;
@@ -50,21 +50,26 @@
   --run-repair: #7c3aed;
   --run-repair-soft: rgba(124, 58, 237, 0.12);
   --run-repair-border: rgba(124, 58, 237, 0.25);
-  --shadow-xs: 0 1px 2px rgba(28, 40, 68, 0.055);
-  --shadow-sm: 0 5px 16px rgba(28, 40, 68, 0.055), 0 1px 2px rgba(28, 40, 68, 0.035);
-  --shadow-md: 0 14px 34px rgba(28, 40, 68, 0.09), 0 2px 6px rgba(28, 40, 68, 0.04);
-  --shadow-lg: 0 28px 70px rgba(15, 23, 42, 0.17), 0 8px 18px rgba(15, 23, 42, 0.07);
-  --radius-sm: 0.45rem;
-  --radius-md: 0.7rem;
-  --radius-lg: 0.9rem;
-  --radius-xl: 1.05rem;
-  --font-ui: "Avenir Next", "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-display: "Avenir Next", "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.035), 0 6px 18px rgba(15, 23, 42, 0.035);
+  --shadow-md: 0 12px 30px rgba(15, 23, 42, 0.09);
+  --shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.16);
+  --radius-sm: 0.4rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.875rem;
+  --font-ui: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "Cascadia Code", monospace;
+  --control-height: 2.5rem;
+  --control-height-sm: 2.125rem;
+  --page-gap: 1.125rem;
+  --panel-padding: 1rem;
+  --row-height: 3.75rem;
   --app-shell-min-block-size: 100dvh;
-  --app-topbar-block-size: 4.25rem;
-  --app-content-max-width: 160rem;
-  --dashboard-content-max-width: 220rem;
+  --app-topbar-block-size: 4rem;
+  --app-content-max-width: 96rem;
+  --dashboard-content-max-width: 96rem;
   --panel-fluid-min-block-size: clamp(12rem, 32dvh, 20rem);
   --panel-scroll-max-block-size: min(62dvh, 100%);
   --chart-card-min-block-size: clamp(12rem, 26dvh, 18rem);
@@ -73,24 +78,24 @@
 
 .dark {
   color-scheme: dark;
-  --bg-app: #080d16;
-  --bg-sidebar: #0b111c;
-  --bg-surface: #111927;
-  --bg-elevated: #182235;
+  --bg-app: #0a0e15;
+  --bg-sidebar: #0d121b;
+  --bg-surface: #121925;
+  --bg-elevated: #182130;
   --bg-overlay: rgba(0, 8, 20, 0.74);
-  --bg-input: #0c1421;
-  --bg-hover: rgba(120, 146, 255, 0.09);
+  --bg-input: #0e151f;
+  --bg-hover: rgba(129, 146, 255, 0.08);
   --bg-tooltip: #eaf1ff;
-  --text-primary: #f0f3f8;
-  --text-secondary: #aeb8c8;
-  --text-tertiary: #748095;
-  --border-primary: rgba(151, 163, 184, 0.13);
-  --border-secondary: rgba(151, 163, 184, 0.22);
-  --accent: #7892ff;
-  --accent-strong: #9aabff;
-  --accent-soft: #96a8ff;
-  --accent-muted: rgba(120, 146, 255, 0.14);
-  --accent-glow: rgba(120, 146, 255, 0.2);
+  --text-primary: #edf1f7;
+  --text-secondary: #aab4c4;
+  --text-tertiary: #778397;
+  --border-primary: rgba(159, 174, 197, 0.13);
+  --border-secondary: rgba(159, 174, 197, 0.22);
+  --accent: #8192ff;
+  --accent-strong: #9aa7ff;
+  --accent-soft: #a5b0ff;
+  --accent-muted: rgba(129, 146, 255, 0.13);
+  --accent-glow: rgba(129, 146, 255, 0.18);
   --success: #4ade80;
   --existing: #a8b4c7;
   --ignored: #facc15;
@@ -140,19 +145,11 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100%;
-  background:
-    radial-gradient(circle at 12% -10%, rgba(74, 111, 214, 0.13), transparent 30rem),
-    radial-gradient(circle at 88% 3%, rgba(211, 153, 70, 0.075), transparent 25rem),
-    repeating-linear-gradient(90deg, transparent 0, transparent 79px, rgba(32, 53, 91, 0.018) 80px),
-    var(--bg-app);
+  background: var(--bg-app);
   color: var(--text-primary);
 }
 
-.dark body {
-  background:
-    radial-gradient(ellipse 68% 24rem at 54% -14rem, rgba(120, 146, 255, 0.11), transparent 74%),
-    var(--bg-app);
-}
+.dark body { background: var(--bg-app); }
 
 #__nuxt {
   min-height: 100vh;
@@ -268,7 +265,7 @@ pre,
 
 .form-input {
   width: 100%;
-  min-height: 2.625rem;
+  min-height: var(--control-height);
   padding: 0.625rem 0.85rem;
   font-size: 0.875rem;
   background: var(--bg-input);

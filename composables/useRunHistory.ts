@@ -46,7 +46,7 @@ export function useRunHistory() {
     from: runs.filter.value.from,
     to: runs.filter.value.to,
   }) > 0)
-  const advancedFilterLabel = computed(() => advancedFilterCount.value > 0 ? '筛选' : '高级筛选')
+  const advancedFilterLabel = computed(() => '筛选')
 
   function sourceOptionLabel(source: TaskSourceOption) {
     if (!source.deleted) return source.name

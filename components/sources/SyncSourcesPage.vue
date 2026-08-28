@@ -1,5 +1,5 @@
 <template>
-  <div class="sync-sources-page space-y-6">
+  <div class="sync-sources-page page-stack">
     <PageHeader
       description="长期管理网易云歌单同步源，支持自动同步、增量比较与排序修复"
     >
@@ -57,7 +57,7 @@
           <p class="sync-summary-card__value" :class="totalActionableFailures > 0 ? 'text-ignored' : 'text-muted-deep'">{{ totalActionableFailures }}</p>
         </div>
       </article>
-      <article class="section-card sync-summary-card">
+      <article class="section-card sync-summary-card sync-summary-card--last">
         <div class="sync-summary-card__icon sync-summary-card__icon--ignored">
           <AppIcon name="shield" :size="18" />
         </div>
@@ -83,7 +83,7 @@
       :can-clear="sourceCanClear"
       advanced
       :advanced-label="advancedFilterLabel"
-      advanced-title="高级筛选"
+      advanced-title="筛选条件"
       @update:search="onSourceSearchInput"
       @clear="clearSourceFilters"
       @advanced-open="prepareDraftFilters"
