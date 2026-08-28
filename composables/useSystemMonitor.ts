@@ -28,6 +28,7 @@ export interface SystemInfo {
 
 export interface SystemKpiCard { label: string; value: string; detail: string; tone: Tone }
 export interface SystemHealthItem { key: string; label: string; value: string; detail: string; tone: Tone }
+export interface SystemResourceTrendPoint { timestamp: number; cpu: number; memory: number }
 
 function toneForCpu(value?: number): Tone {
   if (value === undefined) return 'idle'
@@ -86,6 +87,7 @@ export function useSystemMonitor() {
   const stats = ref<SystemStats | null>(null)
   const info = ref<SystemInfo | null>(null)
   const healthRefreshing = ref(false)
+  const resourceTrend = ref<SystemResourceTrendPoint[]>([])
   const dependencyCheckedLabel = computed(() => formatDateTime(stats.value?.dependencyCheckedAt))
 
   const kpiCards = computed<SystemKpiCard[]>(() => [
@@ -99,7 +101,7 @@ export function useSystemMonitor() {
     { key: 'plex', label: 'Plex', value: stats.value?.plexOk ? '可连接' : '无法连接', detail: '媒体库与歌单更新', tone: stats.value?.plexOk ? 'ok' : 'error' },
     { key: 'netease', label: '网易云', value: stats.value?.neteaseOk ? '已登录' : '未登录/失效', detail: '歌单与下载链接', tone: stats.value?.neteaseOk ? 'ok' : 'error' },
     { key: 'download-dir', label: '下载目录', value: stats.value?.dirWritable ? '可写入' : '不可写', detail: '音频与标签写入', tone: stats.value?.dirWritable ? 'ok' : 'error' },
-    { key: 'sync', label: '同步', value: syncState.value?.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: syncState.value?.isRunning ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
+    { key: 'sync', label: '同步', value: syncState.value?.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : syncState.value?.lastSyncResult === 'partial' ? '需关注' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: syncState.value?.isRunning || syncState.value?.lastSyncResult === 'partial' ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
   ])
 
   const overallTone = computed<Tone>(() => {
@@ -111,7 +113,15 @@ export function useSystemMonitor() {
 
   async function fetchStats() {
     try {
-      stats.value = await api.get<SystemStats>('/system/stats')
+      const next = await api.get<SystemStats>('/system/stats')
+      stats.value = next
+      const previous = resourceTrend.value.at(-1)
+      if (previous?.timestamp !== next.timestamp) {
+        resourceTrend.value = [
+          ...resourceTrend.value,
+          { timestamp: next.timestamp, cpu: next.cpu, memory: next.mem.rss },
+        ].slice(-30)
+      }
     } catch {
       feedback.warning('系统状态更新失败', '稍后会自动重试。')
     }
@@ -148,5 +158,5 @@ export function useSystemMonitor() {
   })
   onUnmounted(() => statsPolling.stop())
 
-  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, overallTone, refreshDependencyHealth }
+  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, overallTone, refreshDependencyHealth, resourceTrend }
 }

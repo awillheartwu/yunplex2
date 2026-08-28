@@ -2,6 +2,7 @@ import type { PlaylistSource } from '../playlist/types'
 import type { SyncState } from '../log/types'
 import {
   type DashboardPendingItem,
+  type DashboardDownloadTrendPoint,
   type DashboardSourceHealthSummary,
   type DashboardSummary,
   type DashboardTone,
@@ -11,6 +12,47 @@ import { readConfig } from '../config/store'
 import { listSources } from '../playlist/store'
 import { queryFailureRecords } from '../tasks/failure-records'
 import { getSyncServiceInstance } from '../sync/instance'
+import { getDb } from '../db'
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function buildSevenDayDownloadTrend(
+  completedAt: readonly string[],
+  now = new Date(),
+): DashboardDownloadTrendPoint[] {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index))
+    return {
+      date: localDateKey(date),
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      count: 0,
+    }
+  })
+  const byDate = new Map(days.map(day => [day.date, day]))
+  for (const timestamp of completedAt) {
+    const parsed = new Date(timestamp)
+    if (!Number.isFinite(parsed.getTime())) continue
+    const bucket = byDate.get(localDateKey(parsed))
+    if (bucket) bucket.count++
+  }
+  return days
+}
+
+function getSevenDayDownloadTrend(now = new Date()): DashboardDownloadTrendPoint[] {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
+  const rows = getDb().prepare(`
+    SELECT updated_at
+    FROM download_tasks
+    WHERE status = 'done' AND updated_at >= ?
+    ORDER BY updated_at ASC
+  `).all(start.toISOString()) as Array<{ updated_at: string }>
+  return buildSevenDayDownloadTrend(rows.map(row => row.updated_at), now)
+}
 
 function resolveSyncState(): SyncState {
   try {
@@ -45,12 +87,11 @@ export function buildSourceHealthSummary(sources: PlaylistSource[]): DashboardSo
 
   for (const source of sources) {
     const hasFailures = source.actionableFailureCount > 0
-    const hasCopyright = source.copyrightRestrictedCount > 0
     if (!source.lastSyncedAt || source.lastStatus === 'idle') {
       summary.unsynced++
     } else if (source.lastStatus === 'failed') {
       summary.failed++
-    } else if (source.lastStatus === 'partial' || hasFailures || hasCopyright) {
+    } else if (source.lastStatus === 'partial' || hasFailures) {
       summary.warning++
     } else {
       summary.normal++
@@ -109,11 +150,12 @@ export function buildPendingItems(input: {
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const config = readConfig()
   const syncState = resolveSyncState()
-  const [health, sources, copyrightFailures, downloadFailures] = await Promise.all([
+  const [health, sources, copyrightFailures, downloadFailures, downloadTrend] = await Promise.all([
     getSystemHealthSnapshot(),
     Promise.resolve(listSources()),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'copyright_restricted', limit: 1 })),
     Promise.resolve(queryFailureRecords({ status: 'open', failureKind: 'failed_download', limit: 1 })),
+    Promise.resolve(getSevenDayDownloadTrend()),
   ])
 
   const healthSummary = buildSourceHealthSummary(sources)
@@ -154,5 +196,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     },
     pendingItems,
     sourceHealth: healthSummary,
+    downloadTrend,
   }
 }

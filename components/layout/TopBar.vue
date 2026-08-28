@@ -16,7 +16,7 @@
       <StatusBadge
         v-if="syncState"
         class="hidden sm:inline-flex"
-        :status="syncState.isRunning || (syncState.currentStage && syncState.currentStage !== 'idle') ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
+        :status="syncState.isRunning || (syncState.currentStage && syncState.currentStage !== 'idle') ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'partial' ? 'warning' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
       />
     </div>
     <div class="flex shrink-0 items-center gap-2 sm:gap-3">

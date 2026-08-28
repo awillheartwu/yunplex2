@@ -52,10 +52,10 @@ describe('buildSourceHealthSummary', () => {
     expect(buildSourceHealthSummary([
       makeSource({ id: 'ok', lastStatus: 'success' }),
       makeSource({ id: 'warn-1', lastStatus: 'partial' }),
-      makeSource({ id: 'warn-2', copyrightRestrictedCount: 1 }),
+      makeSource({ id: 'copyright-only', copyrightRestrictedCount: 1 }),
       makeSource({ id: 'failed', lastStatus: 'failed' }),
       makeSource({ id: 'idle', lastStatus: 'idle', lastSyncedAt: null }),
-    ])).toEqual({ total: 5, normal: 1, warning: 2, failed: 1, unsynced: 1 })
+    ])).toEqual({ total: 5, normal: 2, warning: 1, failed: 1, unsynced: 1 })
   })
 })
 

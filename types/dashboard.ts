@@ -24,6 +24,12 @@ export interface DashboardSourceHealthSummary {
   unsynced: number
 }
 
+export interface DashboardDownloadTrendPoint {
+  date: string
+  label: string
+  count: number
+}
+
 export interface DashboardSummary {
   status: {
     overallTone: DashboardTone
@@ -35,4 +41,5 @@ export interface DashboardSummary {
   }
   pendingItems: DashboardPendingItem[]
   sourceHealth: DashboardSourceHealthSummary
+  downloadTrend: DashboardDownloadTrendPoint[]
 }
