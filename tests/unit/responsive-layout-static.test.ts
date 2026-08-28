@@ -47,11 +47,18 @@ describe('responsive layout sizing', () => {
     expect(workspaceCss).not.toContain('height: 160px')
   })
 
-  it('does not keep decorative dashboard or system charts', () => {
+  it('keeps only the requested lightweight operational dashboard charts', () => {
     expect(existsSync(resolve(root, 'components/charts/SystemLineChart.vue'))).toBe(false)
     expect(existsSync(resolve(root, 'components/charts/DownloadChart.vue'))).toBe(false)
     expect(existsSync(resolve(root, 'components/system/SystemCharts.vue'))).toBe(false)
-    expect(readProjectFile('pages/index.vue')).not.toContain('summary.trend')
+    const dashboard = readProjectFile('pages/index.vue')
+    const charts = readProjectFile('components/dashboard/DashboardCharts.vue')
+    expect(dashboard).toContain('<DashboardCharts')
+    expect(dashboard.indexOf('<DashboardCharts')).toBeLessThan(dashboard.indexOf('<DashboardPendingList'))
+    expect(charts).toContain('近七日下载')
+    expect(charts).toContain('CPU 与内存')
+    expect(charts).toContain('@media (max-width: 900px)')
+    expect(charts).not.toContain('vue-echarts')
   })
 
   it('keeps text sizing stable and avoids compressed tracking in UI chrome', () => {

@@ -46,6 +46,11 @@
         <span>查看任务中心 <AppIcon name="arrowRight" :size="14" /></span>
       </NuxtLink>
 
+      <DashboardCharts
+        :download-trend="summary.downloadTrend"
+        :resource-trend="resourceTrend"
+      />
+
       <div class="dashboard-workspace">
         <DashboardPendingList :items="summary.pendingItems" />
         <DashboardSourceHealth :summary="summary.sourceHealth" />
@@ -78,6 +83,7 @@ const {
   kpiCards,
   overallTone,
   refreshDependencyHealth,
+  resourceTrend,
 } = useSystemMonitor()
 
 async function refreshDashboard() {
