@@ -582,6 +582,18 @@ export function getSyncService(getConfig: () => AppConfig) {
     return runSync({ ...options, sourceIds: [sourceId] })
   }
 
+  function prepareSyncForSource(sourceId: string, options?: SyncRunOptions): {
+    runId: string
+    run: () => Promise<SyncState>
+  } {
+    if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
+    const job = new RunBuilder(options?.mode === 'preview')
+    return {
+      runId: job.getId(),
+      run: () => runSync({ ...options, sourceIds: [sourceId] }, job),
+    }
+  }
+
   function startSync(options?: SyncRunOptions): { runId: string } {
     if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
     const job = new RunBuilder(options?.mode === 'preview')
@@ -639,5 +651,5 @@ export function getSyncService(getConfig: () => AppConfig) {
     })
   }
 
-  return { getState, runSync, runSyncForSource, startSync, startSyncForSource, cancelSync }
+  return { getState, runSync, runSyncForSource, prepareSyncForSource, startSync, startSyncForSource, cancelSync }
 }

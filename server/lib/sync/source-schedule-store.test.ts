@@ -65,6 +65,16 @@ describe('source schedule store', () => {
     expect(getSource('source-2')?.nextSyncAt).toBe('2026-08-28T00:05:00.000Z')
   })
 
+  it('allows only one globally running request across competing consumers', () => {
+    const now = new Date('2026-08-28T00:00:00.000Z')
+    insertSource('source-1', now)
+    insertSource('source-2', now)
+    reconcileSourceSchedules(config(), now)
+
+    expect(claimNextSourceRequest('worker-a', now)).not.toBeNull()
+    expect(claimNextSourceRequest('worker-b', now)).toBeNull()
+  })
+
   it('keeps one idempotent request for the same schedule window', () => {
     const now = new Date('2026-08-28T00:00:00.000Z')
     insertSource('source-1', now)
@@ -99,6 +109,21 @@ describe('source schedule store', () => {
     const restartedAt = new Date(now.getTime() + 1000)
     expect(recoverInterruptedSourceRequests(restartedAt)).toBe(1)
     expect(claimNextSourceRequest('new-worker', restartedAt)?.id).toBe(first?.id)
+  })
+
+  it('reclaims an expired lease created after the new worker startup check', () => {
+    const now = new Date('2026-08-28T00:00:00.000Z')
+    insertSource('source-1', now)
+    reconcileSourceSchedules(config(), now)
+    const stale = claimNextSourceRequest('old-worker', now, 1000)
+    expect(stale).not.toBeNull()
+
+    const afterExpiry = new Date(now.getTime() + 2000)
+    reconcileSourceSchedules(config(), afterExpiry)
+
+    const recovered = claimNextSourceRequest('new-worker', afterExpiry)
+    expect(recovered?.id).toBe(stale?.id)
+    expect(recovered?.attempts).toBe(2)
   })
 
   it('records failure without starving the next queued source', () => {

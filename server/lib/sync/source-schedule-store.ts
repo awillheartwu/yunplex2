@@ -11,6 +11,7 @@ export interface SourceConvergenceRequest {
   sourceId: string
   scheduleWindow: string
   attempts: number
+  leaseOwner: string
 }
 
 export interface SourceScheduleSnapshot {
@@ -30,6 +31,7 @@ interface QueueRow {
 
 const COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const FAILED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+export const SOURCE_REQUEST_LEASE_MS = 90 * 1000
 
 function validDate(value: string | null | undefined): Date | null {
   if (!value) return null
@@ -65,12 +67,50 @@ function pruneFinishedRequests(now: Date): void {
   `).run(new Date(now.getTime() - FAILED_RETENTION_MS).toISOString())
 }
 
+function recoverExpiredSourceRequests(now: Date): number {
+  const db = getDb()
+  const nowIso = now.toISOString()
+  const rows = db.prepare(`
+    SELECT id, source_id
+    FROM source_sync_queue
+    WHERE status = 'running'
+      AND lease_expires_at IS NOT NULL
+      AND lease_expires_at <= ?
+  `).all(nowIso) as Array<{ id: string; source_id: string }>
+  if (rows.length === 0) return 0
+
+  const recover = db.prepare(`
+    UPDATE source_sync_queue
+    SET status = 'pending', available_at = ?, updated_at = ?,
+        lease_owner = NULL, lease_expires_at = NULL,
+        last_error = '执行租约过期，已重新排队'
+    WHERE id = ? AND status = 'running'
+      AND lease_expires_at IS NOT NULL
+      AND lease_expires_at <= ?
+  `)
+  let recovered = 0
+  const sourceIds = new Set<string>()
+  for (const row of rows) {
+    if (recover.run(nowIso, nowIso, row.id, nowIso).changes === 0) continue
+    recovered++
+    sourceIds.add(row.source_id)
+  }
+  for (const sourceId of sourceIds) {
+    updateSource(sourceId, {
+      lastScheduleStatus: 'queued',
+      lastScheduleError: '上次执行中断，已重新排队',
+    })
+  }
+  return recovered
+}
+
 /** Persist one idempotent Source Convergence Request for every due Playlist Source. */
 export function reconcileSourceSchedules(config: AppConfig, now = new Date()): number {
   const db = getDb()
   const nowIso = now.toISOString()
   return db.transaction(() => {
     pruneFinishedRequests(now)
+    recoverExpiredSourceRequests(now)
     let enqueued = 0
     const sources = listSources()
 
@@ -162,10 +202,13 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
 export function recoverInterruptedSourceRequests(now = new Date()): number {
   const db = getDb()
   const nowIso = now.toISOString()
+  const currentOwnerPrefix = `source-scheduler:${process.pid}:%`
   return db.transaction(() => {
     const rows = db.prepare(`
-      SELECT id, source_id FROM source_sync_queue WHERE status = 'running'
-    `).all() as Array<{ id: string; source_id: string }>
+      SELECT id, source_id FROM source_sync_queue
+      WHERE status = 'running'
+        AND (lease_owner IS NULL OR lease_owner NOT LIKE ?)
+    `).all(currentOwnerPrefix) as Array<{ id: string; source_id: string }>
     if (rows.length === 0) return 0
     db.prepare(`
       UPDATE source_sync_queue
@@ -173,7 +216,8 @@ export function recoverInterruptedSourceRequests(now = new Date()): number {
           lease_owner = NULL, lease_expires_at = NULL,
           last_error = '服务重启后恢复等待'
       WHERE status = 'running'
-    `).run(nowIso, nowIso)
+        AND (lease_owner IS NULL OR lease_owner NOT LIKE ?)
+    `).run(nowIso, nowIso, currentOwnerPrefix)
     for (const sourceId of new Set(rows.map(row => row.source_id))) {
       updateSource(sourceId, {
         lastScheduleStatus: 'queued',
@@ -188,7 +232,7 @@ export function recoverInterruptedSourceRequests(now = new Date()): number {
 export function claimNextSourceRequest(
   leaseOwner: string,
   now = new Date(),
-  leaseMs = 2 * 60 * 60 * 1000,
+  leaseMs = SOURCE_REQUEST_LEASE_MS,
 ): SourceConvergenceRequest | null {
   const db = getDb()
   const nowIso = now.toISOString()
@@ -206,13 +250,14 @@ export function claimNextSourceRequest(
       FROM source_sync_queue queue
       JOIN playlist_sources source ON source.id = queue.source_id
       WHERE queue.status = 'pending' AND queue.available_at <= ? AND source.enabled = 1
+        AND NOT EXISTS (SELECT 1 FROM source_sync_queue WHERE status = 'running')
       ORDER BY queue.available_at ASC, queue.created_at ASC
       LIMIT 1
     `).get(nowIso) as QueueRow | undefined
     if (!row) return null
 
     const result = db.prepare(`
-      UPDATE source_sync_queue
+      UPDATE OR IGNORE source_sync_queue
       SET status = 'running', lease_owner = ?, lease_expires_at = ?,
           attempts = attempts + 1, started_at = COALESCE(started_at, ?), updated_at = ?
       WHERE id = ? AND status = 'pending'
@@ -233,15 +278,24 @@ export function claimNextSourceRequest(
       sourceId: row.source_id,
       scheduleWindow: row.schedule_window,
       attempts: row.attempts + 1,
+      leaseOwner,
     }
   })()
+}
+
+export function attachSourceRequestRun(request: SourceConvergenceRequest, runId: string): boolean {
+  return getDb().prepare(`
+    UPDATE source_sync_queue
+    SET run_id = ?, updated_at = ?
+    WHERE id = ? AND status = 'running' AND lease_owner = ?
+  `).run(runId, new Date().toISOString(), request.id, request.leaseOwner).changes > 0
 }
 
 export function renewSourceRequestLease(
   requestId: string,
   leaseOwner: string,
   now = new Date(),
-  leaseMs = 2 * 60 * 60 * 1000,
+  leaseMs = SOURCE_REQUEST_LEASE_MS,
 ): boolean {
   return getDb().prepare(`
     UPDATE source_sync_queue
@@ -284,8 +338,8 @@ export function finishSourceRequest(
       UPDATE source_sync_queue
       SET status = ?, run_id = ?, last_error = ?, finished_at = ?, updated_at = ?,
           lease_owner = NULL, lease_expires_at = NULL
-      WHERE id = ? AND status = 'running'
-    `).run(queueStatus, source.lastJobId, error, nowIso, nowIso, request.id)
+      WHERE id = ? AND status = 'running' AND lease_owner = ?
+    `).run(queueStatus, source.lastJobId, error, nowIso, nowIso, request.id, request.leaseOwner)
     if (queueUpdate.changes === 0) return
     updateSource(source.id, {
       nextSyncAt,
