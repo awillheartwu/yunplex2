@@ -95,16 +95,20 @@ reYunPlex 要把网易云歌单或专辑的目标状态，安全、可审计地�
 
 #### R3. 最小 CI 门禁
 
+状态：**仓库侧已交付，待 Forgejo 平台验收**。
+
 目标：所有合并请求自动执行与本地一致的质量门禁。
 
 范围：
 
-- 固定 Node 22 与 pnpm lockfile 安装。
+- 按仓库 `.nvmrc` 固定 Node 24，并按 `packageManager` 固定 pnpm 10.33.0，使用 lockfile 冻结安装。
 - 执行 `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm check:repo-size` 和 `git diff --check`。
 - 增加全新 SQLite 数据库迁移测试；缓存依赖但不缓存运行时数据库。
 - 明确 Forgejo/GitHub 目标平台后再添加部署流水线；部署、备份和回滚不能与基础 CI 混为一项。
 
 验收：默认分支受门禁保护，失败日志能定位到具体命令，CI 与本地命令无分叉脚本。
+
+证据：`.forgejo/workflows/ci.yml` 调用本地同一 `pnpm check:ci` 门禁；[CI 运行手册](docs/ci-runbook.md) 记录本地复现、runner 标签确认和分支保护步骤。平台侧 Actions 启用与分支保护仍需在 Forgejo 仓库设置中完成。
 
 ### P1 — 媒体质量与可解释失败
 
