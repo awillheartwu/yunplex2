@@ -150,7 +150,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.dashboard-page { display: grid; gap: .85rem; }
+.dashboard-page { display: grid; gap: var(--page-gap); padding-bottom: 1.5rem; }
 .dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem; }
 .dashboard-toolbar__status, .dashboard-toolbar__actions, .dashboard-current-task { display: flex; align-items: center; }
 .dashboard-toolbar__status { flex-wrap: wrap; gap: .8rem; min-width: 0; }

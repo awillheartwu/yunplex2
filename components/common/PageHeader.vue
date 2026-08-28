@@ -19,7 +19,7 @@ defineProps<{
 .page-header {
   display: flex;
   min-width: 0;
-  min-height: 2.625rem;
+  min-height: 2.25rem;
   align-items: center;
   justify-content: space-between;
   gap: 1.25rem;
@@ -32,21 +32,12 @@ defineProps<{
   min-width: 0;
 }
 
-.page-header__copy::before {
-  width: 3px;
-  height: 1.6rem;
-  flex: none;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-soft));
-  content: "";
-}
-
 .page-header__description {
   max-width: 48rem;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 550;
+  font-size: 0.8125rem;
+  font-weight: 500;
   line-height: 1.55;
 }
 

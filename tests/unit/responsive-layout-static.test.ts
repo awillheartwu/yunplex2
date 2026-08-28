@@ -84,8 +84,9 @@ describe('responsive layout sizing', () => {
     const layout = readProjectFile('layouts/default.vue')
 
     expect(globals).toContain('--font-scale: 1')
-    expect(globals).toContain('--app-content-max-width: 160rem')
-    expect(globals).toContain('--dashboard-content-max-width: 220rem')
+    expect(globals).toContain('--app-content-max-width: 96rem')
+    expect(globals).toContain('--dashboard-content-max-width: 96rem')
+    expect(globals).toContain('--page-gap: 1.125rem')
     expect(layout).toContain('app-page-frame--dashboard')
     expect(dashboard).toContain('class="dashboard-workspace"')
     expect(dashboard).toContain('class="dashboard-monitor"')

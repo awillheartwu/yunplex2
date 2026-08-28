@@ -115,8 +115,8 @@ const legendItems = computed(() => getDashboardSourceHealthLegend(props.summary)
 }
 
 .dashboard-health__segment--success { background: var(--success); }
-.dashboard-health__segment--warning { background: #fbbf24; }
-.dashboard-health__segment--danger { background: #ef4444; }
+.dashboard-health__segment--warning { background: var(--warning); }
+.dashboard-health__segment--danger { background: var(--danger); }
 .dashboard-health__segment--neutral { background: rgba(156, 163, 175, 0.6); }
 
 .dashboard-health__legend {
@@ -140,8 +140,8 @@ const legendItems = computed(() => getDashboardSourceHealthLegend(props.summary)
 }
 
 .dashboard-health__dot--success { background: var(--success); }
-.dashboard-health__dot--warning { background: #fbbf24; }
-.dashboard-health__dot--danger { background: #ef4444; }
+.dashboard-health__dot--warning { background: var(--warning); }
+.dashboard-health__dot--danger { background: var(--danger); }
 .dashboard-health__dot--neutral { background: rgba(156, 163, 175, 0.8); }
 
 @media (max-width: 767px) {

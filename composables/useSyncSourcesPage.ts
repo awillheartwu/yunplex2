@@ -245,7 +245,7 @@ export function useSyncSourcesPage() {
   })
   const totalActionableFailures = computed(() => allSources.value.reduce((sum, s) => sum + getActionableFailureCount(s), 0))
   const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + getCopyrightCount(s), 0))
-  const advancedFilterLabel = computed(() => advancedFilterCount.value > 0 ? '筛选' : '高级筛选')
+  const advancedFilterLabel = computed(() => '筛选')
 
   // Add dialogs
   const showAdd = ref(false)

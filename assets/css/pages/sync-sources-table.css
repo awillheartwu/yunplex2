@@ -1,7 +1,7 @@
 
 .sync-row-actions__primary:hover:not(:disabled) {
-  background: rgba(52, 87, 213, 0.12);
-  border-color: rgba(52, 87, 213, 0.2);
+  background: var(--accent-muted);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .sync-row-actions__primary:disabled {
@@ -44,19 +44,19 @@
 }
 
 .dark .sync-table thead th {
-  color: rgba(233, 241, 255, 0.82);
-  background: rgba(137, 158, 196, 0.16);
-  border-bottom-color: rgba(143, 166, 209, 0.22);
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border-bottom-color: var(--border-primary);
 }
 
 .dark .sync-table__row:hover {
-  background: rgba(124, 147, 255, 0.08);
+  background: var(--bg-hover);
 }
 
 .dark .sync-table__source-trigger:hover,
 .dark .sync-table__source-trigger:focus-visible {
-  background: rgba(124, 147, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(167, 183, 255, 0.16);
+  background: var(--accent-muted);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .sync-row-actions__menu {
@@ -115,7 +115,7 @@
 
 .sync-expanded-panel {
   padding: 1rem 1.1rem 1.15rem;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--bg-input);
 }
 
 .sync-table__expanded-row td {
@@ -124,14 +124,12 @@
 }
 
 .dark .sync-expanded-panel {
-  background:
-    linear-gradient(180deg, rgba(88, 105, 141, 0.14), rgba(60, 77, 110, 0.18)),
-    rgba(18, 29, 49, 0.84);
-  border-top: 1px solid rgba(143, 166, 209, 0.12);
+  background: var(--bg-input);
+  border-top: 1px solid var(--border-primary);
 }
 
 .dark .sync-table__expanded-row td {
-  background: rgba(10, 18, 33, 0.22);
+  background: var(--bg-input);
 }
 
 .sync-mobile-card {
@@ -139,9 +137,9 @@
   min-width: 0;
   box-sizing: border-box;
   padding: 1rem;
-  border: 1px solid rgba(49, 73, 113, 0.11);
-  border-radius: 1.15rem;
-  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
   display: grid;
   gap: 0.9rem;
   outline: 1px solid transparent;
@@ -154,7 +152,7 @@
 }
 
 .sync-mobile-card:first-child {
-  border-top: 1px solid rgba(49, 73, 113, 0.11);
+  border-top: 1px solid var(--border-primary);
 }
 
 .sync-mobile-card--drag-over {
@@ -396,11 +394,11 @@
   z-index: 60;
   width: 22rem;
   padding: 1rem;
-  border-radius: 1.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(20, 22, 28, 0.96);
-  box-shadow: 0 22px 50px rgba(8, 10, 18, 0.34);
-  color: rgba(255, 255, 255, 0.92);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
   pointer-events: none;
   backdrop-filter: blur(18px);
 }
@@ -422,7 +420,7 @@
 
 .sync-hover-card__cover {
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
 }
 
 .sync-hover-card__cover img {
@@ -434,8 +432,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.64);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-tertiary);
+  background: var(--bg-input);
 }
 
 .sync-hover-card__title-row {
@@ -452,7 +450,7 @@
   white-space: nowrap;
   font-size: 1.15rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .sync-hover-card__origin,
@@ -461,7 +459,7 @@
   margin: 0.3rem 0 0;
   font-size: 0.82rem;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--text-tertiary);
 }
 
 .sync-hover-card__stats {
@@ -470,7 +468,7 @@
   gap: 0.45rem 0.75rem;
   margin-top: 0.9rem;
   font-size: 0.84rem;
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--text-secondary);
 }
 
 .sync-mobile-source-backdrop {
@@ -479,7 +477,7 @@
   display: flex;
   align-items: flex-end;
   padding: 0 0.75rem max(0.75rem, env(safe-area-inset-bottom));
-  background: rgba(16, 20, 32, 0.55);
+  background: var(--bg-overlay);
   backdrop-filter: blur(10px);
 }
 
@@ -489,11 +487,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0.75rem 1rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 1.35rem;
-  background: rgba(20, 22, 28, 0.98);
-  box-shadow: 0 26px 70px rgba(8, 10, 18, 0.38);
-  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
 }
 
 .sync-mobile-source-sheet__header {
@@ -507,13 +505,13 @@
 .sync-mobile-source-sheet__close {
   min-width: 2.5rem;
   min-height: 2.5rem;
-  color: rgba(255, 255, 255, 0.68);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-tertiary);
+  background: var(--bg-input);
 }
 
 .sync-mobile-source-sheet__close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .sync-mobile-source-sheet__actions {
@@ -522,7 +520,7 @@
   gap: 0.55rem;
   margin-top: 1rem;
   padding-top: 0.9rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-primary);
 }
 
 .sync-mobile-source-sheet__actions .btn {

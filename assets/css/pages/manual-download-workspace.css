@@ -1,4 +1,4 @@
-.manual-page{display:flex;min-block-size:100%;flex-direction:column;gap:1.5rem;padding-bottom:1.5rem}
+.manual-page{display:flex;min-block-size:100%;flex-direction:column;gap:var(--page-gap);padding-bottom:1.5rem}
 .manual-inline-link{color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:.18em}
 .manual-inline-link:hover{color:color-mix(in srgb,var(--accent) 78%,var(--text-primary))}
 .manual-workspace {

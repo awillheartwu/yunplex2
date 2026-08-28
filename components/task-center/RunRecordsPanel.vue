@@ -8,7 +8,7 @@
       :can-clear="canClear"
       advanced
       :advanced-label="advancedFilterLabel"
-      advanced-title="高级筛选"
+      advanced-title="筛选条件"
       @update:search="onSearch"
       @clear="clearFilters"
       @advanced-open="prepareDraftFilters"

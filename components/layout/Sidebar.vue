@@ -13,7 +13,6 @@
       <div
         data-testid="sidebar-logo"
         class="sidebar-logo bg-accent"
-        style="box-shadow:0 16px 34px var(--accent-glow)"
       >
         <AppIcon name="music" :size="17" class="text-white" />
       </div>
@@ -104,8 +103,8 @@ const navItems = [
   justify-content: center;
   position: relative;
   border: 1px solid rgba(255,255,255,0.22);
-  border-radius: 13px;
-  box-shadow: 0 10px 24px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25) !important;
+  border-radius: 11px;
+  box-shadow: var(--shadow-xs);
 }
 
 .app-sidebar-shell {
@@ -113,8 +112,8 @@ const navItems = [
   top: 0;
   height: 100dvh;
   border-right: 1px solid var(--border-primary);
-  box-shadow: 8px 0 28px rgba(28, 40, 68, 0.025);
-  backdrop-filter: blur(22px);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
 }
 
 .sidebar-nav {

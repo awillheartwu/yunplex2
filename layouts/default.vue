@@ -23,7 +23,7 @@
         :menu-mode="isDesktopViewport ? 'desktop' : 'mobile'"
         @toggle-menu="toggleNavigation"
       />
-      <main class="app-main flex-1 px-4 py-4 sm:px-6 md:px-8 md:py-5 xl:px-9">
+      <main class="app-main flex-1 px-4 py-4 sm:px-6 md:px-7 md:py-6 xl:px-8">
         <div
           class="app-page-frame w-full min-w-0"
           :class="{ 'app-page-frame--dashboard': route.path === '/' }"

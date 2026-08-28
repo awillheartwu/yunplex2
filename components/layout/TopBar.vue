@@ -1,5 +1,5 @@
 <template>
-  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-8 xl:px-9">
+  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-7 xl:px-8">
     <div class="flex min-w-0 items-center gap-3 sm:gap-4">
       <button
         class="icon-button"
@@ -132,16 +132,16 @@ function formatTime(iso: string): string {
   min-block-size: var(--app-topbar-block-size);
   padding-block: 0.55rem;
   border-bottom: 1px solid var(--border-primary);
-  background: color-mix(in srgb, var(--bg-app) 88%, transparent);
-  backdrop-filter: blur(20px) saturate(1.15);
+  background: color-mix(in srgb, var(--bg-app) 92%, transparent);
+  backdrop-filter: blur(16px);
 }
 
 .app-topbar__title {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-size: 1.55rem;
-  font-weight: 750;
+  font-size: 1.28rem;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -152,7 +152,7 @@ function formatTime(iso: string): string {
 
 @media (max-width: 767px) {
   .app-topbar__title {
-    font-size: 1.35rem;
+    font-size: 1.18rem;
   }
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="page-stack">
     <PageHeader
       description="管理网易云音乐和 Plex 的连接、下载与同步策略"
     >

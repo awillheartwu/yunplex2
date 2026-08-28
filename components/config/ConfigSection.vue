@@ -33,13 +33,13 @@ defineEmits<{ toggle: [] }>()
 }
 
 .config-section--open {
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--border-primary));
+  border-color: var(--border-secondary);
 }
 
 .config-section__header {
   display: flex;
   width: 100%;
-  min-height: 4.4rem;
+  min-height: 4rem;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -58,7 +58,7 @@ defineEmits<{ toggle: [] }>()
 
 .config-section--open .config-section__header {
   border-bottom-color: var(--border-primary);
-  background: color-mix(in srgb, var(--accent-muted) 30%, transparent);
+  background: var(--bg-input);
 }
 
 .config-section__heading {
