@@ -4,6 +4,11 @@
       <div class="dashboard-toolbar__status">
         <strong>同步概览</strong>
         <span class="dashboard-toolbar__timestamp">{{ formatDashboardLastSyncLabel(summary.status.lastSyncAt) }}</span>
+        <span
+          v-if="summary.status.autoSyncEnabled && schedulerScheduleLabel"
+          class="dashboard-toolbar__schedule"
+          :class="{ 'text-warning': schedulerScheduleTone === 'warning' }"
+        >{{ schedulerScheduleLabel }}</span>
       </div>
 
       <div class="dashboard-toolbar__actions">
@@ -84,6 +89,8 @@ const {
   overallTone,
   refreshDependencyHealth,
   resourceTrend,
+  schedulerScheduleLabel,
+  schedulerScheduleTone,
 } = useSystemMonitor()
 
 async function refreshDashboard() {
@@ -156,6 +163,7 @@ onUnmounted(() => {
 .dashboard-toolbar__status { flex-wrap: wrap; gap: .8rem; min-width: 0; }
 .dashboard-toolbar__status strong { color: var(--text-primary); font-size: .8rem; }
 .dashboard-toolbar__timestamp { color: var(--text-muted); font-size: .76rem; white-space: nowrap; }
+.dashboard-toolbar__schedule { color: var(--text-tertiary); font-size: .72rem; white-space: nowrap; }
 .dashboard-toolbar__actions { gap: .6rem; }
 .dashboard-toggle { display: inline-flex; align-items: center; gap: .65rem; min-height: 2.4rem; padding: 0 .75rem; border: 1px solid var(--border-primary); border-radius: .8rem; background: var(--bg-input); color: var(--text-secondary); font-size: .76rem; white-space: nowrap; }
 .dashboard-toggle--active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border-primary)); }
