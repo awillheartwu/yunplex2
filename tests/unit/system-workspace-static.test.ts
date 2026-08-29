@@ -25,6 +25,7 @@ describe('operations information architecture', () => {
   })
 
   it('keeps monitor focused on health and current resources', () => {
+    const dashboard = readProjectFile('pages/index.vue')
     const monitor = readProjectFile('components/system/SystemMonitorPanel.vue')
     const composable = readProjectFile('composables/useSystemMonitor.ts')
 
@@ -35,6 +36,9 @@ describe('operations information architecture', () => {
     expect(composable).toContain('}, 10000)')
     expect(readProjectFile('components/system/SystemHealthOverview.vue')).toContain('to="/logs"')
     expect(readProjectFile('components/system/SystemHealthOverview.vue')).toContain('repeat(4, minmax(0, 1fr))')
+    expect(composable).not.toContain('schedulerHealth(stats.value),')
+    expect(composable).toContain('schedulerScheduleLabel')
+    expect(dashboard).toContain('{{ schedulerScheduleLabel }}')
   })
 
   it('removes the superseded system workspace and retired list routes', () => {
