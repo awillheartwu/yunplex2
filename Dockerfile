@@ -1,29 +1,30 @@
-FROM node:22-alpine
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN apk add --no-cache python3 make g++
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-# Copy dependency files
 COPY package.json pnpm-lock.yaml ./
-
-# Install dependencies (frozen lockfile for reproducibility)
 RUN pnpm install --frozen-lockfile
 
-# Copy source
 COPY . .
+RUN pnpm build
 
-# Build
-RUN pnpm run build
+FROM node:24-alpine AS runtime
 
-# Runtime
+WORKDIR /app
+
 ENV NODE_ENV=production
 ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
-VOLUME ["/app/data"]
+COPY --from=build /app/.output ./.output
 
+VOLUME ["/app/data"]
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -q -O - http://127.0.0.1:3000/api/system/health >/dev/null || exit 1
 
 CMD ["node", ".output/server/index.mjs"]
