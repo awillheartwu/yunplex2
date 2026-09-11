@@ -1,8 +1,11 @@
+import { AWAITING_SOURCE_SYNC_PROJECTION } from './task-status-projection'
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
+import { createFileTaskSchema, listFileTaskRuns } from '../db/file-task-schema'
 import { emitEvent } from '../sync/events'
 import { recordFailure, resolveFailures } from '../tasks/failure-records'
-import { getRun, syncManualDownloadRun } from '../run/store'
+import { getRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
+import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { isTagWriteError } from '../tag-writer'
 import { commitCompletedMediaWrite } from './media-write'
@@ -25,9 +28,32 @@ export interface DownloadTask {
   retryCount: number
   jobId?: string
   idempotencyKey?: string
+  operation?: DownloadTaskOperation
+  targetPath?: string
+  executionIntent?: DownloadExecutionIntent
+  /** Derived from the task's source and current Playlist Source state. */
+  awaitingSourceSync?: boolean
   createdAt: string
   updatedAt: string
 }
+
+export type DownloadTaskOperation = 'download' | 'replace' | 'managed_copy' | 'repair_existing'
+export interface DownloadExecutionIntent {
+  downloadMode?: 'full' | 'missing' | 'replace'
+  target?:
+    | { kind: 'computed'; protectedPath?: string; requireManagedCopy?: boolean }
+    | { kind: 'existing'; path: string }
+  downloadLyrics?: boolean
+  embedMetadata?: boolean
+  embedCover?: boolean
+}
+const DOWNLOAD_TASK_OPERATIONS = new Set<DownloadTaskOperation>([
+  'download',
+  'replace',
+  'managed_copy',
+  'repair_existing',
+])
+
 
 export interface QueueStatus {
   pending: number
@@ -44,16 +70,22 @@ export const DOWNLOAD_TASK_LEASE_MS = 10 * 60 * 1000
 export interface ProcessDownloadQueueOptions {
   inactivityTimeoutMs?: number
   leaseDurationMs?: number
+  shouldStop?: () => boolean
+  onTaskSettled?: (
+    task: DownloadTask,
+    outcome: 'done' | 'failed',
+    progress: { completed: number; total: number },
+  ) => void
 }
 
-interface DownloadProcessorResult {
+export interface DownloadProcessorResult {
   filePath: string
   fileType: string
   ops?: { download?: string; lyric?: string; tags?: string; cover?: string; error?: string }
   audioOperation?: 'downloaded' | 'redownloaded' | 'reused'
 }
 
-type DownloadProcessor = (
+export type DownloadProcessor = (
   task: DownloadTask,
   onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
   signal: AbortSignal,
@@ -66,6 +98,8 @@ interface TaskRow {
   file_path: string | null; file_type: string | null; quality: string | null
   error: string | null; retry_count: number; job_id: string | null; run_id: string | null
   idempotency_key: string | null; lease_owner: string | null; lease_expires_at: string | null; attempt_started_at: string | null
+  operation: string; target_path: string | null; execution_intent_json: string | null
+  awaiting_source_sync?: number | null
   created_at: string; updated_at: string
 }
 
@@ -79,12 +113,39 @@ function rowToTask(r: TaskRow): DownloadTask {
     quality: r.quality ?? undefined, error: r.error ?? undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
     idempotencyKey: r.idempotency_key ?? undefined,
+    operation: DOWNLOAD_TASK_OPERATIONS.has(r.operation as DownloadTaskOperation)
+      ? r.operation as DownloadTaskOperation
+      : 'download',
+    targetPath: r.target_path ?? undefined,
+    executionIntent: parseExecutionIntent(r.execution_intent_json),
+    awaitingSourceSync: r.awaiting_source_sync === 1,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }
 
+function parseExecutionIntent(value: string | null): DownloadExecutionIntent | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as DownloadExecutionIntent
+    if (!parsed || typeof parsed !== 'object') return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
 export function getDownloadTask(id: string): DownloadTask | null {
-  const row = getDb().prepare('SELECT * FROM download_tasks WHERE id = ?').get(id) as TaskRow | undefined
+  const db = getDb()
+  createFileTaskSchema(db)
+  const row = db.prepare(`
+    SELECT
+      dt.*,
+      COALESCE(NULLIF(ps.name, ''), NULLIF(ps.netease_playlist_name, ''), NULLIF(ps.plex_playlist_name, '')) AS source_name,
+      ${AWAITING_SOURCE_SYNC_PROJECTION}
+    FROM download_tasks dt
+    LEFT JOIN playlist_sources ps ON ps.id = dt.source_id
+    WHERE dt.id = ?
+  `).get(id) as TaskRow | undefined
   return row ? rowToTask(row) : null
 }
 
@@ -92,6 +153,7 @@ export function listDownloadTasks(opts: {
   status?: string; limit?: number; offset?: number; from?: string; to?: string; search?: string; timeZone?: string; runId?: string
 } = {}): { items: DownloadTask[]; total: number; earliestDate: string | null } {
   const db = getDb()
+  createFileTaskSchema(db)
   const limit = opts.limit ?? 50
   const offset = opts.offset ?? 0
 
@@ -133,8 +195,16 @@ export function listDownloadTasks(opts: {
     params.push(q, q, q, rawQ, q, q, q)
   }
   if (opts.runId) {
-    conditions.push('COALESCE(dt.run_id, dt.job_id) = ?')
-    params.push(opts.runId)
+    conditions.push(`(
+      COALESCE(dt.run_id, dt.job_id) = ?
+      OR EXISTS (
+        SELECT 1
+        FROM run_file_tasks linked_run_task
+        WHERE linked_run_task.task_id = dt.id
+          AND linked_run_task.run_id = ?
+      )
+    )`)
+    params.push(opts.runId, opts.runId)
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -143,7 +213,8 @@ export function listDownloadTasks(opts: {
   const rows = db.prepare(
     `SELECT
       dt.*,
-      COALESCE(NULLIF(ps.name, ''), NULLIF(ps.netease_playlist_name, ''), NULLIF(ps.plex_playlist_name, '')) AS source_name
+      COALESCE(NULLIF(ps.name, ''), NULLIF(ps.netease_playlist_name, ''), NULLIF(ps.plex_playlist_name, '')) AS source_name,
+      ${AWAITING_SOURCE_SYNC_PROJECTION}
     FROM download_tasks dt
     LEFT JOIN playlist_sources ps ON ps.id = dt.source_id
     ${where}
@@ -186,6 +257,16 @@ export function getQueueStatus(): QueueStatus {
   }
 }
 
+export function listPendingDownloadTaskIds(limit = 1000): string[] {
+  return (getDb().prepare(`
+    SELECT id
+    FROM download_tasks
+    WHERE status = 'pending'
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
+}
+
 export function updateTaskState(id: string, updates: Partial<{
   status: string; progress: number; filePath: string; fileType: string
   quality: string; error: string | null; retryCount: number; leaseOwner: string | null
@@ -226,32 +307,53 @@ export function updateTaskState(id: string, updates: Partial<{
 function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: string | null) {
   const task = getDownloadTask(id)
   if (!task) return
-  // Source Convergence projects source-scoped outcomes from its finalized run.
-  // Source-aware manual downloads have no convergence finalizer, so the queue
-  // remains their terminal failure writer.
-  const run = task.jobId ? getRun(task.jobId) : null
-  if (task.sourceId && run?.type !== 'manual_download') return
-  const common = {
-    songId: task.songId,
-    songName: task.songName,
-    artist: task.artist,
-    sourceId: task.sourceId,
+  // Queue writes legacy failures; associations project every caller without changing owner.
+  const associations = listFileTaskRuns(getDb(), task.id)
+  const manualCallers = associations.filter((association) => {
+    const associatedRun = getRun(association.runId)
+    return associatedRun?.type === 'manual_download'
+  })
+  // A reused sync/repair owner still projects manual caller failures.
+  const failureCallers = manualCallers.length > 0
+    ? manualCallers
+    : (!task.sourceId || getRun(task.jobId || '')?.type === 'manual_download')
+      ? [{ runId: task.jobId || '', sourceId: task.sourceId }]
+      : []
+  const reason = error || task.error || '下载失败'
+  for (const caller of failureCallers) {
+    const common = {
+      songId: task.songId,
+      songName: task.songName,
+      artist: task.artist,
+      sourceId: associations.length > 0 ? caller.sourceId : caller.sourceId ?? task.sourceId,
+    }
+    if (status === 'done') {
+      resolveFailures(common)
+    } else {
+      recordFailure({
+        ...common,
+        sourceName: task.sourceName || (common.sourceId ? '' : '手动下载'),
+        runId: caller.runId || null,
+        runType: 'manual_download',
+        failureKind: classifyDomainErrorCode(reason, 'failed_download'),
+        failureReason: reason,
+        downloadTaskId: task.id,
+      })
+    }
+  }
+
+  const runIds = new Set(associations.map(association => association.runId))
+  if (task.jobId) runIds.add(task.jobId)
+  for (const runId of runIds) {
+    const associatedRun = getRun(runId)
+    if (associatedRun?.type === 'manual_download') syncManualDownloadRun(runId)
+    if (associatedRun?.type === 'repair') syncRepairRun(runId, { finalize: false })
   }
   if (status === 'done') {
-    resolveFailures(common)
-  } else {
-    const reason = error || task.error || '下载失败'
-    recordFailure({
-      ...common,
-      sourceName: task.sourceName || (task.sourceId ? '' : '手动下载'),
-      runId: task.jobId || null,
-      runType: 'manual_download',
-      failureKind: classifyDomainErrorCode(reason, 'failed_download'),
-      failureReason: reason,
-      downloadTaskId: task.id,
-    })
+    for (const sourceId of new Set(associations.flatMap(association => association.sourceId ? [association.sourceId] : []))) {
+      updateSource(sourceId, { requiresMatchReconcile: true })
+    }
   }
-  if (task.jobId) syncManualDownloadRun(task.jobId)
 }
 
 export function recoverExpiredDownloadTasks(now = new Date().toISOString()): number {
@@ -300,6 +402,7 @@ export function recoverExpiredDownloadTasks(now = new Date().toISOString()): num
 export function enqueueTask(task: {
   sourceId?: string | null; songId: number; songName: string; artist: string
   album: string; quality?: string; jobId?: string; idempotencyKey?: string
+  operation?: DownloadTaskOperation; targetPath?: string; executionIntent?: DownloadExecutionIntent
 }): DownloadTask {
   const db = getDb()
   const idempotencyKey = task.idempotencyKey ?? buildDownloadTaskIdempotencyKey({
@@ -321,10 +424,15 @@ export function enqueueTask(task: {
 
   try {
     db.prepare(`
-      INSERT INTO download_tasks (id, source_id, song_id, song_name, artist, album, status, progress, quality, job_id, run_id, idempotency_key, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?, ?)
+      INSERT INTO download_tasks (
+        id, source_id, song_id, song_name, artist, album, status, progress,
+        quality, job_id, run_id, idempotency_key, operation, target_path, execution_intent_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, task.sourceId ?? null, task.songId, task.songName, task.artist, task.album,
-      task.quality ?? null, task.jobId ?? null, task.jobId ?? null, idempotencyKey, now, now)
+      task.quality ?? null, task.jobId ?? null, task.jobId ?? null, idempotencyKey,
+      task.operation ?? 'download', task.targetPath ?? null,
+      task.executionIntent ? JSON.stringify(task.executionIntent) : null, now, now)
   } catch {
     const raced = db.prepare(`
       SELECT * FROM download_tasks
@@ -341,12 +449,68 @@ export function enqueueTask(task: {
   return rowToTask(row)
 }
 
+/**
+ * Return failed tasks to the persistent queue without executing them here.
+ * Tasks that conflict with another active task for the same output identity
+ * remain failed so a retry cannot create a duplicate concurrent media write.
+ */
+export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
+  const uniqueIds = [...new Set(ids.filter(Boolean))]
+  if (uniqueIds.length === 0) return []
+  const db = getDb()
+  const now = new Date().toISOString()
+  const requeuedIds = db.transaction(() => {
+    const changed: string[] = []
+    const statement = db.prepare(`
+      UPDATE download_tasks
+      SET status = 'pending',
+        progress = 0,
+        error = NULL,
+        retry_count = retry_count + 1,
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        attempt_started_at = NULL,
+        updated_at = ?
+      WHERE id = ?
+        AND status = 'failed'
+        AND (
+          idempotency_key IS NULL
+          OR NOT EXISTS (
+            SELECT 1
+            FROM download_tasks active_task
+            WHERE active_task.id != download_tasks.id
+              AND active_task.idempotency_key = download_tasks.idempotency_key
+              AND active_task.status IN ('pending','downloading','tagging')
+          )
+        )
+    `)
+    for (const id of uniqueIds) {
+      if (statement.run(now, id).changes > 0) changed.push(id)
+    }
+    return changed
+  })()
+  const requeued = requeuedIds
+    .map(id => getDownloadTask(id))
+    .filter((task): task is DownloadTask => task !== null)
+  const requeuedRunIds = new Set<string>()
+  for (const task of requeued) {
+    for (const association of listFileTaskRuns(db, task.id)) requeuedRunIds.add(association.runId)
+    if (task.jobId) requeuedRunIds.add(task.jobId)
+  }
+  for (const runId of requeuedRunIds) {
+    const run = getRun(runId)
+    if (run?.type === 'manual_download') syncManualDownloadRun(runId)
+    if (run?.type === 'repair') syncRepairRun(runId, { finalize: false })
+  }
+  return requeued
+}
+
 export function buildDownloadTaskIdempotencyKey(input: {
   songId: number
   quality?: string | null
   downloadDir?: string | null
   pathFormat?: string | null
-  operation?: 'download' | 'replace' | 'managed_copy'
+  operation?: DownloadTaskOperation
 }): string {
   return [
     'song',
@@ -422,6 +586,7 @@ export async function processAll(
 
   async function worker() {
     while (idx < tasks.length) {
+      if (options.shouldStop?.()) return
       const selected = tasks[idx++]
       if (!selected) continue
       const task = claimTask(selected.id, leaseOwner, leaseDurationMs)
@@ -510,33 +675,39 @@ export async function processAll(
             },
             timestamp: new Date().toISOString(),
           })
+          options.onTaskSettled?.(task, 'failed', { completed, total: tasks.length })
           continue
         }
 
-        const updated = updateTaskState(task.id, {
-          status: 'done', progress: 100,
-          filePath: result.filePath, fileType: result.fileType,
-          error: null,
-          leaseOwner: null,
-          leaseExpiresAt: null,
-        }, { leaseOwner })
+        const updated = getDb().transaction(() => {
+          const accepted = updateTaskState(task.id, {
+            status: 'done', progress: 100,
+            filePath: result.filePath, fileType: result.fileType,
+            error: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          }, { leaseOwner })
+          if (!accepted) return false
+          commitCompletedMediaWrite({
+            neteaseSongId: task.songId,
+            filePath: result.filePath,
+            provenance: task.operation === 'repair_existing' ? 'manual' : 'download_task',
+            taskId: task.id,
+            audioDownloaded: result.ops?.download === 'ok',
+            audioOperation: result.audioOperation,
+            runId: task.jobId ?? null,
+            sourceId: task.sourceId,
+          })
+          return true
+        })()
         if (!updated) continue
-        commitCompletedMediaWrite({
-          neteaseSongId: task.songId,
-          filePath: result.filePath,
-          provenance: 'download_task',
-          taskId: task.id,
-          audioDownloaded: result.ops?.download === 'ok',
-          audioOperation: result.audioOperation,
-          runId: task.jobId ?? null,
-          sourceId: task.sourceId,
-        })
 
         emitEvent({
           type: 'song-progress',
           data: { taskId: task.id, songName: task.songName, status: 'done', completed: ++completed, total: tasks.length, sourceId: task.sourceId },
           timestamp: new Date().toISOString(),
         })
+        options.onTaskSettled?.(task, 'done', { completed, total: tasks.length })
       } catch (err) {
         const tagError = isTagWriteError(err) ? err : null
         const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
@@ -566,14 +737,13 @@ export async function processAll(
           },
           timestamp: new Date().toISOString(),
         })
+        options.onTaskSettled?.(task, 'failed', { completed, total: tasks.length })
       }
     }
   }
 
   const workers = Array.from({ length: concurrency }, () => worker())
   await Promise.all(workers)
-  if (taskIds?.length) await waitForTasksToSettle(taskIds)
-
   // Count only tasks matching the same filter as the workers (batch-specific if jobId provided)
   const countConditions = ["status = 'failed'"]
   const countParams: unknown[] = []
@@ -597,29 +767,32 @@ export async function processAll(
   return failed
 }
 
-async function waitForTasksToSettle(taskIds: string[], timeoutMs = 30 * 60 * 1000): Promise<void> {
+export async function waitForDownloadTasks(input: {
+  taskIds: string[]
+  timeoutMs?: number
+  throwIfCancelled?: () => void
+  pollIntervalMs?: number
+  onProgress?: (progress: { settled: number; total: number }) => void
+}): Promise<void> {
+  const { taskIds } = input
   if (taskIds.length === 0) return
-  const deadline = Date.now() + timeoutMs
+  const deadline = Date.now() + (input.timeoutMs ?? 30 * 60 * 1000)
+  let previousSettled = -1
   while (Date.now() < deadline) {
+    input.throwIfCancelled?.()
     const row = getDb().prepare(`
       SELECT COUNT(*) AS count
       FROM download_tasks
       WHERE id IN (${taskIds.map(() => '?').join(',')})
         AND status IN ('pending','downloading','tagging')
     `).get(...taskIds) as { count: number }
+    const settled = taskIds.length - row.count
+    if (settled !== previousSettled) {
+      previousSettled = settled
+      input.onProgress?.({ settled, total: taskIds.length })
+    }
     if (row.count === 0) return
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise(resolve => setTimeout(resolve, input.pollIntervalMs ?? 250))
   }
-}
-
-export async function retryTask(
-  id: string,
-  processor: (task: DownloadTask, onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void) => Promise<{ filePath: string; fileType: string }>,
-): Promise<DownloadTask | null> {
-  const task = getDownloadTask(id)
-  if (!task || task.status !== 'failed') return null
-
-  await processAll(async (t, onProgress) => processor(t, onProgress), undefined, 1, [task.id])
-
-  return getDownloadTask(id)
+  throw new Error('等待下载任务完成超时')
 }

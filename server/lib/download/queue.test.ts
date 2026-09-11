@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../db'
+import { createFileTaskSchema, linkRunFileTask } from '../db/file-task-schema'
 import { TagWriteError } from '../tag-writer'
 import { createManualDownloadRun, getRun } from '../run/store'
 import { getLocalMediaAsset, upsertLocalMediaAsset } from '../sync/local-media-store'
@@ -12,7 +13,7 @@ import {
   listDownloadTasks,
   processAll,
   recoverExpiredDownloadTasks,
-  retryTask,
+  requeueFailedDownloadTasks,
 } from './queue'
 
 const tempDirs: string[] = []
@@ -67,6 +68,40 @@ describe('download queue cleanup', () => {
     expect((getDb().prepare('SELECT COUNT(*) AS count FROM download_tasks').get() as { count: number }).count).toBe(1)
   })
 
+  it('persists the operation and target required to resume a media task', () => {
+    setupDb()
+
+    const task = enqueueTask({
+      sourceId: 'source-a',
+      songId: 99,
+      songName: 'Repair',
+      artist: 'Artist',
+      album: 'Album',
+      operation: 'repair_existing',
+      targetPath: '/music/repair.flac',
+      executionIntent: {
+        downloadMode: 'missing',
+        target: { kind: 'existing', path: '/music/repair.flac' },
+        downloadLyrics: true,
+        embedMetadata: true,
+        embedCover: false,
+      },
+      idempotencyKey: 'repair-file',
+    })
+
+    expect(task).toMatchObject({
+      operation: 'repair_existing',
+      targetPath: '/music/repair.flac',
+      executionIntent: {
+        downloadMode: 'missing',
+        target: { kind: 'existing', path: '/music/repair.flac' },
+        downloadLyrics: true,
+        embedMetadata: true,
+        embedCover: false,
+      },
+    })
+  })
+
   it('returns stable active queue order and the playlist source name', () => {
     setupDb()
     getDb().prepare(`
@@ -86,6 +121,63 @@ describe('download queue cleanup', () => {
 
     expect(result.items.map(item => item.id)).toEqual(['running-older', 'tagging-newer', 'pending-newer'])
     expect(result.items.every(item => item.sourceName === '强制重下载歌单')).toBe(true)
+  })
+
+  it('projects done tasks awaiting source sync from the task source at read time', () => {
+    setupDb()
+    const now = new Date().toISOString()
+    getDb().prepare(`
+      INSERT INTO playlist_sources (
+        id, netease_playlist_id, name, requires_match_reconcile, created_at, updated_at
+      ) VALUES
+        ('task-source', 1002, '任务来源', 1, ?, ?),
+        ('owner-source', 1003, '历史 owner 来源', 0, ?, ?)
+    `).run(now, now, now, now)
+    const task = enqueueTask({
+      sourceId: 'owner-source',
+      songId: 101,
+      songName: '重试后的歌曲',
+      artist: 'Artist',
+      album: 'Album',
+      jobId: 'historical-sync-owner',
+      idempotencyKey: 'task-source-awaiting-sync',
+    })
+    createManualDownloadRun({
+      id: 'current-caller',
+      total: 1,
+      sourceLabel: '当前调用者',
+      sourceIds: ['task-source'],
+    })
+    createFileTaskSchema(getDb())
+    linkRunFileTask(getDb(), {
+      runId: 'current-caller',
+      taskId: task.id,
+      sourceId: 'task-source',
+    })
+    getDb().prepare("UPDATE download_tasks SET status = 'done' WHERE id = ?").run(task.id)
+
+    expect(getDownloadTask(task.id)).toMatchObject({
+      status: 'done',
+      jobId: 'historical-sync-owner',
+      awaitingSourceSync: true,
+    })
+    expect(listDownloadTasks({ status: 'done' }).items).toEqual([
+      expect.objectContaining({ id: task.id, awaitingSourceSync: true }),
+    ])
+
+    createManualDownloadRun({ id: 'historical-sync-owner', total: 1, sourceLabel: 'Owner' })
+    getDb().prepare("UPDATE task_runs SET type='sync',status='running' WHERE id='historical-sync-owner'").run()
+    expect(getDownloadTask(task.id)?.awaitingSourceSync).toBe(false)
+    getDb().prepare("UPDATE task_runs SET status='cancelled' WHERE id='historical-sync-owner'").run()
+    expect(getDownloadTask(task.id)?.awaitingSourceSync).toBe(true)
+
+    getDb().prepare("UPDATE playlist_sources SET requires_match_reconcile = 0 WHERE id IN ('task-source', 'owner-source')").run()
+    expect(getDownloadTask(task.id)?.awaitingSourceSync).toBe(false)
+    expect(listDownloadTasks({ status: 'done' }).items[0]?.awaitingSourceSync).toBe(false)
+
+    getDb().prepare("UPDATE playlist_sources SET requires_match_reconcile = 1 WHERE id = 'task-source'").run()
+    getDb().prepare("UPDATE download_tasks SET status = 'downloading' WHERE id = ?").run(task.id)
+    expect(getDownloadTask(task.id)?.awaitingSourceSync).toBe(false)
   })
 
   it('filters tasks by run id so task center can follow one live run including downstream-ready songs', () => {
@@ -288,7 +380,7 @@ describe('download queue cleanup', () => {
     })
   })
 
-  it('retries only the requested task even when other failed tasks share the same run', async () => {
+  it('requeues only the requested failed task without executing it in the caller', async () => {
     setupDb()
     const first = enqueueTask({
       songId: 10,
@@ -310,19 +402,18 @@ describe('download queue cleanup', () => {
     })
     getDb().prepare("UPDATE download_tasks SET status = 'failed' WHERE id IN (?, ?)").run(first.id, second.id)
 
-    await retryTask(first.id, async (task) => ({
-      filePath: `/tmp/music/${task.songId}.flac`,
-      fileType: 'flac',
-    }))
+    const retried = requeueFailedDownloadTasks([first.id])
 
     const rows = getDb()
       .prepare('SELECT id, status FROM download_tasks ORDER BY song_id')
       .all() as Array<{ id: string; status: string }>
 
     expect(rows).toEqual([
-      { id: first.id, status: 'done' },
+      { id: first.id, status: 'pending' },
       { id: second.id, status: 'failed' },
     ])
+    expect(retried).toHaveLength(1)
+    expect(retried[0]).toMatchObject({ id: first.id, status: 'pending', retryCount: 1 })
   })
 
   it('does not claim a failed task when another active task owns the same idempotency key', async () => {

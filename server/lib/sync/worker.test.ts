@@ -1,3 +1,4 @@
+import { persistSourceRequest } from './request-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -7,6 +8,9 @@ import { cloneConfig } from '../config/validation'
 import { DEFAULT_CONFIG } from '../config/defaults'
 import { closeDb, getDb, initDb } from '../db'
 import { startWorker, stopWorker } from './worker'
+import { enqueueManualSourceSync } from './source-schedule-store'
+import { ensurePendingInitialization, setInitializationStatus } from '../source-initialization/store'
+import { saveRun } from '../run/store'
 
 let directory = ''
 
@@ -14,6 +18,7 @@ function makeConfig(enabled = false): AppConfig {
   const config = cloneConfig(DEFAULT_CONFIG)
   config.sync.enabled = enabled
   config.sync.intervalMinutes = 30
+  config.sync.initializeMediaOnFirstSync = false
   return config
 }
 
@@ -42,6 +47,32 @@ function makeService(runSyncForSource = vi.fn(async () => ({
   }
 }
 
+function saveTestRun(id: string, type: 'source_initialization' | 'sync', status: 'awaiting_action' | 'running') {
+  saveRun({
+    id,
+    type,
+    trigger: 'user',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    status,
+    durationMs: 0,
+    summary: id,
+    source: 'source-1',
+    sourceIds: ['source-1'],
+    target: 'Plex',
+    totalSongs: 0,
+    successSongs: 0,
+    failedSongs: 0,
+    skippedSongs: 0,
+    removedSongs: 0,
+    warnings: 0,
+    dryRun: false,
+    steps: [],
+    songs: [],
+    config: {},
+  })
+}
+
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'reyunplex-worker-'))
   initDb(directory)
@@ -55,6 +86,65 @@ afterEach(async () => {
 })
 
 describe('source scheduler worker', () => {
+  it('consumes an explicit manual request while automatic scheduling is disabled', async () => {
+    const config = makeConfig(false)
+    insertSource('source-1', 0)
+    enqueueManualSourceSync('source-1')
+    const service = makeService()
+    const worker = startWorker(() => config, service as never, directory)
+
+    await worker.runOnce()
+
+    expect(service.prepareSyncForSource).toHaveBeenCalledWith('source-1', {
+      mode: 'normal',
+      trigger: 'user',
+    })
+  })
+
+  it('cancels a queued request without Source Convergence while initialization awaits review', async () => {
+    const config = makeConfig(false)
+    config.sync.initializeMediaOnFirstSync = true
+    insertSource('source-1', 0)
+    const initialization = ensurePendingInitialization('source-1', 'user')
+    setInitializationStatus(initialization.id, 'awaiting_review', { runId: 'initialization-run' })
+    enqueueManualSourceSync('source-1')
+    const service = makeService()
+    const worker = startWorker(() => config, service as never, directory)
+
+    await worker.runOnce()
+
+    expect(service.prepareSyncForSource).not.toHaveBeenCalled()
+    expect(worker.getStatus().queueDepth).toBe(0)
+    expect(getDb().prepare('SELECT status, run_id FROM source_sync_queue').get())
+      .toEqual({ status: 'cancelled', run_id: null })
+  })
+
+  it('links an enabled source initialization to its first follow-up convergence run', async () => {
+    const config = makeConfig(false)
+    config.sync.initializeMediaOnFirstSync = true
+    insertSource('source-1', 0)
+    saveTestRun('initialization-run', 'source_initialization', 'awaiting_action')
+    saveTestRun('follow-up-run', 'sync', 'running')
+    const initialization = ensurePendingInitialization('source-1', 'user')
+    setInitializationStatus(initialization.id, 'completed', { runId: 'initialization-run' })
+    persistSourceRequest({ sourceId: 'source-1', kind: 'convergence', trigger: 'user', followUpOf: initialization.id })
+    const service = makeService()
+    service.prepareSyncForSource.mockReturnValue({
+      runId: 'follow-up-run',
+      run: async () => ({ isRunning: false, lastSyncResult: 'success', failures: [] }),
+    } as never)
+    const worker = startWorker(() => config, service as never, directory)
+
+    await worker.runOnce()
+
+    expect(getDb().prepare('SELECT follow_up_run_id FROM source_initializations WHERE id = ?').get(initialization.id))
+      .toEqual({ follow_up_run_id: 'follow-up-run' })
+    expect(getDb().prepare('SELECT run_id, related_run_id, relation FROM task_run_links ORDER BY run_id').all()).toEqual([
+      { run_id: 'follow-up-run', related_run_id: 'initialization-run', relation: 'follow_up_of' },
+      { run_id: 'initialization-run', related_run_id: 'follow-up-run', relation: 'initialization_follow_up' },
+    ])
+  })
+
   it('reuses the process worker when the daemon plugin initializes twice', () => {
     const config = makeConfig(false)
     const first = startWorker(() => config, makeService() as never, directory)
@@ -125,6 +215,19 @@ describe('source scheduler worker', () => {
     const service = makeService()
     service.getState.mockReturnValue({ isRunning: true } as never)
     const worker = startWorker(() => config, service as never, directory)
+
+    config.sync.enabled = true
+    await worker.runOnce()
+
+    expect(service.prepareSyncForSource).not.toHaveBeenCalled()
+    expect(worker.getStatus().queueDepth).toBe(1)
+  })
+
+  it('queues due work but does not start Source Convergence during media repair', async () => {
+    const config = makeConfig(false)
+    insertSource('source-1', 0)
+    const service = makeService()
+    const worker = startWorker(() => config, service as never, directory, () => false)
 
     config.sync.enabled = true
     await worker.runOnce()

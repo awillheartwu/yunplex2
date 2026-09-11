@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterDays?: number | null
     skipPlexPlaylist?: boolean | null
     skipRemoveExtraTracks?: boolean | null
+    initializeMediaOnFirstSync?: boolean | null
     neteasePlaylistName?: string
   }>(event)
 
@@ -47,6 +48,7 @@ export default defineEventHandler(async (event) => {
     fullCompareAfterDays: body.fullCompareAfterDays,
     skipPlexPlaylist: body.skipPlexPlaylist,
     skipRemoveExtraTracks: body.skipRemoveExtraTracks,
+    initializeMediaOnFirstSync: body.initializeMediaOnFirstSync,
     neteasePlaylistName: body.neteasePlaylistName,
   })
 

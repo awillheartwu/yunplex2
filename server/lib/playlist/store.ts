@@ -8,6 +8,7 @@ export interface PlaylistSourceFilter {
   type?: 'playlist' | 'album'
   enabled?: boolean
   subscribed?: boolean
+  hasPlexTarget?: boolean
   lastStatus?: PlaylistSource['lastStatus']
   hasFailures?: boolean
   hasCopyright?: boolean
@@ -15,6 +16,21 @@ export interface PlaylistSourceFilter {
 
 const SOURCE_SELECT = `
   SELECT ps.*,
+    (
+      SELECT initialization.id FROM source_initializations initialization
+      WHERE initialization.source_id = ps.id
+      ORDER BY initialization.created_at DESC LIMIT 1
+    ) AS initialization_id,
+    (
+      SELECT initialization.status FROM source_initializations initialization
+      WHERE initialization.source_id = ps.id
+      ORDER BY initialization.created_at DESC LIMIT 1
+    ) AS initialization_status,
+    (
+      SELECT initialization.total_items FROM source_initializations initialization
+      WHERE initialization.source_id = ps.id
+      ORDER BY initialization.created_at DESC LIMIT 1
+    ) AS initialization_total_items,
     (
       SELECT COUNT(*)
       FROM failure_records fr
@@ -75,6 +91,10 @@ export function listSources(filter: boolean | PlaylistSourceFilter = false): Pla
     conditions.push('subscribed = ?')
     params.push(normalized.subscribed ? 1 : 0)
   }
+  if (normalized.hasPlexTarget !== undefined) {
+    const hasTarget = "NULLIF(TRIM(plex_playlist_rating_key), '') IS NOT NULL"
+    conditions.push(normalized.hasPlexTarget ? hasTarget : `NOT (${hasTarget})`)
+  }
   if (normalized.lastStatus) {
     conditions.push('last_status = ?')
     params.push(normalized.lastStatus)
@@ -104,22 +124,28 @@ export function getEnabledSources(): PlaylistSource[] {
 export async function createSource(
   neteasePlaylistId: number,
   _cookie: string,
-  opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; trackCount?: number; name?: string; artist?: string; coverUrl?: string },
+  opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; enabled?: boolean; trackCount?: number; name?: string; artist?: string; coverUrl?: string },
 ): Promise<PlaylistSource> {
   const isAlbum = opts?.type === 'album'
   const neName = isAlbum
     ? opts?.name || null
-    : await fetchPlaylistName(neteasePlaylistId)
+    : opts?.name || await fetchPlaylistName(neteasePlaylistId)
   const taskName = neName ? `${neName}任务` : '(待获取)'
   const db = getDb()
   const id = randomUUID()
   const now = new Date().toISOString()
   const maxOrder = (db.prepare('SELECT COALESCE(MAX(sort_order), -1) as mx FROM playlist_sources').get() as { mx: number }).mx
 
-  db.prepare(`
-    INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, cover_url, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
-  `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, isAlbum ? 0 : 1, opts?.coverUrl || '', neName || '', opts?.trackCount || 0, maxOrder + 1, now, now)
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, cover_url, plex_playlist_name, plex_playlist_rating_key, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
+    `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, (opts?.enabled ?? !isAlbum) ? 1 : 0, opts?.coverUrl || '', neName || '', opts?.trackCount || 0, maxOrder + 1, now, now)
+    if (!isAlbum) {
+      db.prepare(`INSERT INTO source_initializations (id, source_id, status, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?)`)
+        .run(randomUUID(), id, now, now)
+    }
+  })()
 
   return getSource(id)!
 }
@@ -147,6 +173,7 @@ export function updateSource(id: string, partial: Partial<{
   skipRemoveExtraTracks: boolean | null
   requiresMatchReconcile: boolean
   syncIntervalMinutes: number | null
+  initializeMediaOnFirstSync: boolean | null
   nextSyncAt: string | null
   lastScheduleStatus: PlaylistSource['lastScheduleStatus']
   lastScheduledAt: string | null
@@ -187,6 +214,7 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.skipRemoveExtraTracks !== undefined) { sets.push('skip_remove_extra_tracks = ?'); vals.push(toNullableBoolean(partial.skipRemoveExtraTracks)) }
   if (partial.requiresMatchReconcile !== undefined) { sets.push('requires_match_reconcile = ?'); vals.push(partial.requiresMatchReconcile ? 1 : 0) }
   if (partial.syncIntervalMinutes !== undefined) { sets.push('sync_interval_minutes = ?'); vals.push(partial.syncIntervalMinutes) }
+  if (partial.initializeMediaOnFirstSync !== undefined) { sets.push('initialize_media_on_first_sync = ?'); vals.push(toNullableBoolean(partial.initializeMediaOnFirstSync)) }
   if (partial.nextSyncAt !== undefined) { sets.push('next_sync_at = ?'); vals.push(partial.nextSyncAt) }
   if (partial.lastScheduleStatus !== undefined) { sets.push('last_schedule_status = ?'); vals.push(partial.lastScheduleStatus) }
   if (partial.lastScheduledAt !== undefined) { sets.push('last_scheduled_at = ?'); vals.push(partial.lastScheduledAt) }

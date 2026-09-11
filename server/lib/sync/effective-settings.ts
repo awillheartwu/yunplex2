@@ -7,6 +7,7 @@ export interface EffectiveSourceSyncSettings {
   skipRemoveExtraTracks: boolean
   fullCompareAfterSkips: number
   fullCompareAfterDays: number
+  initializeMediaOnFirstSync: boolean
 }
 
 export function resolveEffectiveSourceSyncSettings(
@@ -19,5 +20,6 @@ export function resolveEffectiveSourceSyncSettings(
     skipRemoveExtraTracks: source.skipRemoveExtraTracks ?? config.sync.skipRemoveExtraTracks,
     fullCompareAfterSkips: source.fullCompareAfterSkips ?? config.sync.fullCompareAfterSkips,
     fullCompareAfterDays: source.fullCompareAfterDays ?? config.sync.fullCompareAfterDays,
+    initializeMediaOnFirstSync: source.initializeMediaOnFirstSync ?? config.sync.initializeMediaOnFirstSync ?? true,
   }
 }

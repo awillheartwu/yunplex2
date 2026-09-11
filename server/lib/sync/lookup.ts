@@ -31,6 +31,7 @@ import {
   resolvePlexIdentityPath,
 } from './identity-normalization'
 import { bindResolvedIdentity } from './lookup-identity'
+import { getActiveMediaDecisions, resolveMediaDecision } from '../source-initialization/store'
 
 type IdentityContext = { sourceId?: string; runId?: string }
 
@@ -78,6 +79,9 @@ export async function resolveTracks(
   const usedRatingKeys = new Set<string>()
   const targetBindings = [...getSongIdentityBindings(yunSongs.map(song => song.id)).values()]
     .filter(binding => binding.status !== 'unbound')
+  const initializationDecisions = identityContext.sourceId
+    ? getActiveMediaDecisions(identityContext.sourceId)
+    : new Map<number, 'defer' | 'download'>()
 
   for (const [index, song] of yunSongs.entries()) {
     const mediaPlan = mediaPlans.get(song.id)
@@ -90,6 +94,7 @@ export async function resolveTracks(
       dryRun,
       identityContext,
       mediaPlan,
+      initializationDecision: initializationDecisions.get(song.id),
       previewInspection: previewInspections.get(song.id),
     })
     if (mediaPlan && !resolution.mediaPolicy) annotateMediaPolicy(resolution, mediaPlan)
@@ -150,6 +155,7 @@ async function resolveOne(input: {
   dryRun: boolean
   identityContext: IdentityContext
   mediaPlan?: MissingMediaPlan
+  initializationDecision?: 'defer' | 'download'
   previewInspection?: LocalMediaInspection
 }): Promise<TrackResolution> {
   const { song, index, playlistTracks, sectionKey, cfg, dryRun, identityContext, mediaPlan } = input
@@ -206,6 +212,7 @@ async function resolveOne(input: {
             },
           })
         }
+        if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
       const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
       return {
@@ -298,6 +305,7 @@ async function resolveOne(input: {
             },
           })
         }
+        if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
       const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
       return {
@@ -338,6 +346,14 @@ async function resolveOne(input: {
     }
   }
 
+  if (input.initializationDecision === 'defer') {
+    return awaitingManualResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确暂缓，等待手动选择')
+  }
+
+  if (input.initializationDecision === 'download') {
+    return downloadResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确选择下载并托管')
+  }
+
   if (mediaPlan?.disposition === 'wait_manual') {
     return awaitingManualResolution(base, mediaPlan.filePath ?? expectedLocalPath, localAsset, mediaPlan.message)
   }
@@ -362,6 +378,7 @@ async function resolveOne(input: {
           sourceId: identityContext.sourceId,
           runId: identityContext.runId,
         })
+        if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
       const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
       return {

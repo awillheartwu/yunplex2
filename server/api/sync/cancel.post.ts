@@ -1,9 +1,10 @@
+import { cancelSourceRequests } from '../../lib/sync/source-request-cancellation'
 import { success, fail } from '../../lib/response'
 import { getSyncServiceInstance } from '../../lib/sync/instance'
 
 export default defineEventHandler(() => {
   const syncService = getSyncServiceInstance()
-  const cancelled = syncService.cancelSync()
+  const cancelled = cancelSourceRequests(() => syncService.cancelSync())
   if (cancelled) {
     return success(null, '已发送取消请求')
   }

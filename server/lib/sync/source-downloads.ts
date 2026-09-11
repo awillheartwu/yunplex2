@@ -5,13 +5,10 @@ import type { PlaylistSource } from '../playlist/types'
 import type { RunBuilder } from '../run/builder'
 import {
   buildDownloadTaskIdempotencyKey,
-  enqueueTask,
-  getDownloadTask,
-  processAll,
   type DownloadTask,
 } from '../download/queue'
-import { resolveSingleSongConfig } from '../download/options'
-import { downloadSingleSong } from '../download/single-song'
+import { submitFileTasks } from '../download/file-task-command'
+import { getDownloadWorker } from '../download/worker'
 import { classifyDownloadTaskFailure } from './download-diagnostics'
 import { getActiveSongIdentityBindings } from './identity-store'
 import { normalizePlexPath } from './identity-normalization'
@@ -119,9 +116,16 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     )
     setStage('downloading')
 
-    for (const resolution of songsToDownload) {
+    const fileTaskHandle = submitFileTasks(songsToDownload.map(resolution => {
       const [, trackArtist] = splitArtists(resolution.song.artists)
-      const task = enqueueTask({
+      const operation = downloadPlans.get(resolution.song.id)?.mode === 'replace'
+        ? 'replace' as const
+        : 'download' as const
+      const plan = downloadPlans.get(resolution.song.id)
+      const targetPath = plan?.target?.kind === 'existing'
+        ? plan.target.path
+        : plan?.target?.protectedPath
+      return {
         sourceId: source.id,
         songId: resolution.song.id,
         songName: resolution.song.name,
@@ -129,37 +133,37 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         album: resolution.song.album.name,
         quality: config.netease.quality,
         jobId: job.getId(),
+        operation,
+        ...(targetPath ? { targetPath } : {}),
+        executionIntent: {
+          downloadMode: plan?.mode ?? 'full',
+          ...(plan?.target ? { target: plan.target } : {}),
+          downloadLyrics: config.download.downloadLyrics,
+          embedMetadata: config.download.embedMetadata,
+          embedCover: config.download.embedCover,
+        },
         idempotencyKey: buildDownloadTaskIdempotencyKey({
           songId: resolution.song.id,
-          operation: downloadPlans.get(resolution.song.id)?.mode === 'replace' ? 'replace' : 'download',
+          operation,
           quality: config.netease.quality,
           downloadDir: config.download.dir,
           pathFormat: config.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
         }),
-      })
-      queuedDownloadTasks.set(resolution.song.id, task)
+      }
+    }))
+    for (const { task } of fileTaskHandle.tasks) {
+      queuedDownloadTasks.set(task.songId, task)
     }
 
-    const processor = async (
-      task: DownloadTask,
-      onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
-      signal: AbortSignal,
-    ) => {
-      throwIfCancelled()
-      const plan = downloadPlans.get(task.songId)
-      return downloadSingleSong(task.songId, resolveSingleSongConfig(config, {
-        downloadMode: plan?.mode ?? 'full',
-        target: plan?.target,
-      }), onProgress, signal)
-    }
-
-    await processAll(
-      processor,
-      undefined,
-      config.sync.downloadConcurrency || 3,
-      [...queuedDownloadTasks.values()].map(task => task.id),
-    )
+    const worker = getDownloadWorker()
+    if (!worker) throw new Error('下载消费者尚未启动')
+    fileTaskHandle.wake()
+    await fileTaskHandle.wait({
+      throwIfCancelled,
+    })
     throwIfCancelled()
+    queuedDownloadTasks.clear()
+    for (const task of fileTaskHandle.readResults()) queuedDownloadTasks.set(task.songId, task)
     setStage('processing_tags')
 
     for (const resolution of songsToDownload) {
@@ -167,8 +171,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         ?? job.findSongId(source.id, resolution.song.id)
       if (!songId) continue
 
-      const queuedTaskId = queuedDownloadTasks.get(resolution.song.id)?.id
-      const task = queuedTaskId ? getDownloadTask(queuedTaskId) : null
+      const task = queuedDownloadTasks.get(resolution.song.id) ?? null
       if (!task || task.status === 'failed') {
         const diagnosis = classifyDownloadTaskFailure(task)
         const artist = splitArtists(resolution.song.artists)[0]
@@ -245,8 +248,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
 
   for (const resolution of resolutions) {
     if (resolution.resolution !== 'needs_download') continue
-    const queuedTaskId = queuedDownloadTasks.get(resolution.song.id)?.id
-    const task = queuedTaskId ? getDownloadTask(queuedTaskId) : null
+    const task = queuedDownloadTasks.get(resolution.song.id) ?? null
     const diagnosis = classifyDownloadTaskFailure(task)
     if (task?.filePath && !resolution.filePath) resolution.filePath = task.filePath
     if (task?.status === 'failed' && diagnosis.status === 'copyright_restricted') {

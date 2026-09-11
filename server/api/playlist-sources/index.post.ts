@@ -1,7 +1,8 @@
+import { requestSources, type SourceRequestsResult } from '../../lib/sync/source-requests'
 import { success, fail } from '../../lib/response'
 import { listSources, createSource } from '../../lib/playlist/store'
 import { readConfig } from '../../lib/config/store'
-import { getSyncServiceInstance, getSyncWorker, isRepairRunning } from '../../lib/sync/instance'
+import { getSyncWorker } from '../../lib/sync/instance'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -32,17 +33,12 @@ export default defineEventHandler(async (event) => {
       artist: body.artist,
       coverUrl: body.coverUrl,
     })
-    getSyncWorker()?.update()
-    let autoSyncRunId: string | null = null
-    // Auto-sync album if enabled
+    let autoSync: SourceRequestsResult | undefined
     if (body.type === 'album' && cfg.sync.autoDownloadAlbum) {
-      const syncService = getSyncServiceInstance()
-      const state = syncService.getState()
-      if (!state.isRunning && !isRepairRunning()) {
-        autoSyncRunId = syncService.startSyncForSource(source.id, { mode: 'full', trigger: 'system' }).runId
-      }
+      autoSync = requestSources({ sourceIds: [source.id], mode: 'full', trigger: 'system' })
     }
-    return success({ ...source, ...(autoSyncRunId ? { runId: autoSyncRunId } : {}) }, body.type === 'album' ? '专辑源添加成功' : '歌单源添加成功')
+    getSyncWorker()?.update()
+    return success({ ...source, ...(autoSync ? { sourceRequests: autoSync } : {}) }, body.type === 'album' ? '专辑源添加成功' : '歌单源添加成功')
   } catch (err) {
     const msg = err instanceof Error ? err.message : '创建失败'
     return fail(msg)

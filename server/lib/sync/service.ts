@@ -36,6 +36,7 @@ import { finalizeSourceConvergence } from './source-finalization'
 import { applySourceDownloads } from './source-downloads'
 import { reconcilePlexPlaylist } from './source-plex-reconciliation'
 import { tryApplyPureSourceReorder } from './source-pure-reorder'
+import { assertSourcesReadyForConvergence } from '../source-initialization/gate'
 
 export { STAGE_LABELS } from './service-state'
 
@@ -43,6 +44,7 @@ export function getSyncService(getConfig: () => AppConfig) {
   let state = createInitialState()
   let cancelRequested = false
   let currentSourceName = ''
+  let currentSourceId: string | null = null
   let currentRun: RunBuilder | null = null
 
   function getState(): SyncState { return { ...state } }
@@ -76,6 +78,8 @@ export function getSyncService(getConfig: () => AppConfig) {
     const retrySourceFailures = options?.trigger === 'retry'
     const takeOverExternal = options?.takeOverExternal ?? false
     cancelRequested = false
+    currentSourceId = targetIds?.length === 1 ? targetIds[0]! : null
+    currentSourceName = ''
     state = { ...createInitialState(), isRunning: true, startedAt: new Date().toISOString(), dryRun }
 
     const job = preparedJob ?? new RunBuilder(dryRun)
@@ -88,15 +92,16 @@ export function getSyncService(getConfig: () => AppConfig) {
       setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
       const splitArtists = createSplitArtists(multiFormat)
 
-      // ── Validate ──
-      if (!cfg.netease.cookie) throw new Error('未配置网易云 Cookie')
-      if (!cfg.plex.server || !cfg.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
-
       const allSources = getEnabledSources()
       const sources = targetIds
         ? listSources().filter((s) => targetIds.includes(s.id)) // manual trigger: include disabled (e.g. albums)
         : allSources
       if (sources.length === 0) throw new Error('没有可同步的歌单源，请在「歌单源」页面添加')
+      assertSourcesReadyForConvergence(sources, cfg)
+
+      // ── Validate ──
+      if (!cfg.netease.cookie) throw new Error('未配置网易云 Cookie')
+      if (!cfg.plex.server || !cfg.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
       job.setSourceIds(sources.map(source => source.id))
       if (!dryRun) saveSyncRun(job.getRun())
 
@@ -108,6 +113,7 @@ export function getSyncService(getConfig: () => AppConfig) {
 
       for (const source of sources) {
         throwIfCancelled()
+        currentSourceId = source.id
         currentSourceName = source.name || `网易云歌单 #${source.neteasePlaylistId}`
         const rawLimit = source.syncLimit ?? cfg.sync.songLimit
         const sourceSongLimit = rawLimit === 0 ? undefined : rawLimit
@@ -588,6 +594,8 @@ export function getSyncService(getConfig: () => AppConfig) {
   } {
     if (state.isRunning) throw new Error('同步任务已在运行中，请等待当前任务完成')
     const job = new RunBuilder(options?.mode === 'preview')
+    job.setSourceIds([sourceId])
+    if (options?.mode !== 'preview') saveSyncRun(job.getRun(), options?.trigger ?? 'user')
     return {
       runId: job.getId(),
       run: () => runSync({ ...options, sourceIds: [sourceId] }, job),
@@ -625,7 +633,7 @@ export function getSyncService(getConfig: () => AppConfig) {
     state.currentSourceName = currentSourceName || null
     emitEvent({
       type: 'stage-change',
-      data: { stage, label: STAGE_LABELS[stage] || stage, sourceName: currentSourceName },
+      data: { stage, label: STAGE_LABELS[stage] || stage, sourceName: currentSourceName, sourceId: currentSourceId },
       timestamp: new Date().toISOString(),
     })
     if (currentRun && !state.dryRun) saveSyncRun(currentRun.getRun())
@@ -646,7 +654,7 @@ export function getSyncService(getConfig: () => AppConfig) {
     state.currentSong = null
     emitEvent({
       type: 'stage-change',
-      data: { stage: 'idle', label: '空闲', sourceName: currentSourceName },
+      data: { stage: 'idle', label: '空闲', sourceName: currentSourceName, sourceId: currentSourceId },
       timestamp: new Date().toISOString(),
     })
   }

@@ -6,6 +6,7 @@ import {
   initPlexClient,
 } from '../../../../lib/plex-client'
 import {
+  BindingIdentityConflictError,
   BindingVersionConflictError,
   normalizePlexPath,
   rebindSongIdentity,
@@ -61,9 +62,10 @@ export default defineEventHandler(async (event) => {
       release()
     }
   } catch (error) {
-    if (error instanceof BindingVersionConflictError) {
+    const conflict = error instanceof BindingVersionConflictError || error instanceof BindingIdentityConflictError
+    if (conflict) {
       setResponseStatus(event, 409)
     }
-    return fail(error instanceof Error ? error.message : '重绑失败', error instanceof BindingVersionConflictError ? 409 : 1)
+    return fail(error instanceof Error ? error.message : '重绑失败', conflict ? 409 : 1)
   }
 })

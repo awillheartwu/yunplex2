@@ -3,15 +3,20 @@ import { DEFAULT_CONFIG } from '../config/defaults'
 import { resolveSingleSongConfig } from './options'
 
 const enqueueTask = vi.fn()
-const processAll = vi.fn()
+const requestDownloadProcessing = vi.fn(async () => undefined)
 const createManualDownloadRun = vi.fn()
 const fetchSongDetail = vi.fn()
 
 vi.mock('./queue', () => ({
   buildDownloadTaskIdempotencyKey: vi.fn(input => JSON.stringify(input)),
   enqueueTask,
-  processAll,
   getQueueStatus: vi.fn(() => ({ pending: 0, downloading: 0, tagging: 0, done: 1, failed: 0, total: 1 })),
+}))
+vi.mock('./worker', () => ({ requestDownloadProcessing }))
+vi.mock('../db', () => ({ getDb: () => ({ transaction: (callback: () => unknown) => callback }) }))
+vi.mock('../db/file-task-schema', () => ({
+  createFileTaskSchema: vi.fn(),
+  linkRunFileTask: vi.fn(),
 }))
 vi.mock('./single-song', () => ({ downloadSingleSong: vi.fn() }))
 vi.mock('../netease', () => ({
@@ -46,7 +51,6 @@ describe('download batch source context', () => {
       createdAt: '',
       updatedAt: '',
     }))
-    processAll.mockResolvedValue(0)
   })
 
   it('persists source attribution through run and queue task', async () => {
@@ -57,7 +61,6 @@ describe('download batch source context', () => {
       }),
       artistAliases: {},
       applyAliasToAlbum: false,
-      downloadConcurrency: 1,
     }
 
     await runDownloadBatch({
@@ -76,11 +79,15 @@ describe('download batch source context', () => {
       sourceId: 'source-one',
       songId: 123,
       idempotencyKey: expect.stringContaining('managed_copy'),
+      executionIntent: expect.objectContaining({
+        downloadMode: 'full',
+        target: { kind: 'computed', requireManagedCopy: true },
+      }),
     }))
-    expect(processAll).toHaveBeenCalledWith(expect.any(Function), undefined, 1, ['task-one'])
+    expect(requestDownloadProcessing).toHaveBeenCalledOnce()
   })
 
-  it('reuses an active idempotent run without creating an empty run', async () => {
+  it('creates its own run and returns all reused tasks', async () => {
     enqueueTask.mockReturnValue({
       id: 'existing-task',
       sourceId: 'source-one',
@@ -102,7 +109,6 @@ describe('download batch source context', () => {
       }),
       artistAliases: {},
       applyAliasToAlbum: false,
-      downloadConcurrency: 1,
     }
 
     await expect(runDownloadBatch({
@@ -110,8 +116,12 @@ describe('download batch source context', () => {
       songIds: [123],
       sourceContext: { id: 'source-one', name: '来源一 · 下载并托管' },
       config,
-    })).resolves.toEqual({ batchId: 'existing-run', total: 0 })
-    expect(createManualDownloadRun).not.toHaveBeenCalled()
-    expect(processAll).not.toHaveBeenCalled()
+    })).resolves.toMatchObject({
+      total: 1,
+      tasks: [{ taskId: 'existing-task', reused: true }],
+      selectionFailures: [],
+    })
+    expect(createManualDownloadRun).toHaveBeenCalledWith(expect.objectContaining({ total: 1 }))
+    expect(requestDownloadProcessing).toHaveBeenCalledOnce()
   })
 })

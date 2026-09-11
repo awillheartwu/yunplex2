@@ -11,9 +11,11 @@ import type {
   TaskRunType,
 } from '../job/types'
 import { getDb } from '../db'
+import { createFileTaskSchema } from '../db/file-task-schema'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
-import { reconcileRunFailures, recordFailure } from '../tasks/failure-records'
+import { reconcileRunFailures } from '../tasks/failure-records'
 import { classifyDownloadFailure } from '../sync/download-diagnostics'
+import { projectTaskRunDynamicFields, projectTaskRunStatus, taskRunStatusFilterSql, taskRunsSupportsAwaitingAction } from './status-projection'
 
 function normalizeRun(run: TaskRun): TaskRun {
   const sourceIds = new Set(run.sourceIds || [])
@@ -83,7 +85,7 @@ export function saveRun(run: TaskRun): void {
       normalized.trigger,
       normalized.startedAt,
       normalized.finishedAt,
-      normalized.status,
+      normalized.status === 'awaiting_action' && !taskRunsSupportsAwaitingAction(db) ? 'partial' : normalized.status,
       normalized.summary,
       normalized.totalSongs,
       normalized.successSongs,
@@ -175,6 +177,7 @@ export function getRun(id: string): TaskRun | null {
     steps_json: string
   } | undefined
   if (!row) return null
+  const dynamicFields = projectTaskRunDynamicFields(db, row)
   const sourceIds = (db.prepare('SELECT source_id FROM task_run_sources WHERE run_id = ? ORDER BY source_id').all(id) as Array<{ source_id: string }>)
     .map(item => item.source_id)
   const songs = (db.prepare(`
@@ -221,7 +224,8 @@ export function getRun(id: string): TaskRun | null {
     trigger: row.trigger,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
-    status: row.status,
+    status: projectTaskRunStatus(db, row),
+    ...dynamicFields,
     durationMs: row.duration_ms,
     summary: row.summary,
     source: row.source,
@@ -259,8 +263,9 @@ export function listRuns(filter: TaskRunFilter = {}): {
     params.push(filter.type)
   }
   if (filter.status) {
-    conditions.push('status = ?')
-    params.push(filter.status)
+    const statusFilter = taskRunStatusFilterSql(filter.status)
+    conditions.push(statusFilter.sql)
+    params.push(...statusFilter.params)
   }
   if (filter.sourceId) {
     conditions.push('EXISTS (SELECT 1 FROM task_run_sources trs WHERE trs.run_id = task_runs.id AND trs.source_id = ?)')
@@ -348,7 +353,8 @@ export function listRuns(filter: TaskRunFilter = {}): {
       trigger: row.trigger,
       startedAt: row.started_at,
       finishedAt: row.finished_at,
-      status: row.status,
+      status: projectTaskRunStatus(db, row),
+      ...projectTaskRunDynamicFields(db, row),
       durationMs: row.duration_ms,
       summary: row.summary,
       source: row.source,
@@ -411,10 +417,154 @@ export function createManualDownloadRun(input: {
   return run
 }
 
+export function createRepairRun(input: {
+  id: string
+  total: number
+  skipped: number
+  sourceId: string
+  sourceLabel: string
+}): TaskRun {
+  const startedAt = new Date().toISOString()
+  const run: TaskRun = {
+    id: input.id,
+    type: 'repair',
+    trigger: 'user',
+    startedAt,
+    finishedAt: null,
+    status: 'running',
+    durationMs: 0,
+    summary: `补全资源：${input.sourceLabel}`,
+    source: input.sourceLabel,
+    sourceIds: [input.sourceId],
+    target: '本地媒体标签与辅助文件',
+    totalSongs: input.total,
+    successSongs: 0,
+    failedSongs: 0,
+    skippedSongs: input.skipped,
+    removedSongs: 0,
+    warnings: 0,
+    dryRun: false,
+    steps: [{
+      id: `${input.id}:repair`,
+      type: 'repair',
+      title: '补全本地标签与辅助文件',
+      status: 'running',
+      startedAt,
+      finishedAt: null,
+      durationMs: 0,
+      message: `正在处理 ${input.total - input.skipped} 首歌曲`,
+      children: [],
+    }],
+    songs: [],
+    config: {},
+  }
+  saveRun(run)
+  return run
+}
+
+export function syncRepairRun(runId: string, options: { finalize?: boolean } = {}): TaskRun | null {
+  const finalize = options.finalize ?? true
+  const run = getRun(runId)
+  if (!run || run.type !== 'repair') return run
+  const db = getDb()
+  createFileTaskSchema(db)
+  const linkedRows = db.prepare(`
+    SELECT task.status, task.updated_at
+    FROM run_file_tasks linked
+    JOIN download_tasks task ON task.id = linked.task_id
+    WHERE linked.run_id = ?
+      AND task.operation = 'repair_existing'
+    ORDER BY linked.created_at ASC, task.created_at ASC
+  `).all(runId) as Array<{
+    status: 'pending' | 'downloading' | 'tagging' | 'done' | 'failed'
+    updated_at: string
+  }>
+  // Keep pre-association repair runs recoverable after upgrading an existing
+  // database. New submissions always use run_file_tasks above.
+  const rows = linkedRows.length > 0 ? linkedRows : db.prepare(`
+    SELECT status, updated_at
+    FROM download_tasks
+    WHERE COALESCE(run_id, job_id) = ?
+      AND operation = 'repair_existing'
+    ORDER BY created_at ASC
+  `).all(runId) as Array<{
+    status: 'pending' | 'downloading' | 'tagging' | 'done' | 'failed'
+    updated_at: string
+  }>
+  const queued = rows.length
+  const skipped = Math.max(0, run.totalSongs - queued)
+  const active = rows.filter(row => ['pending', 'downloading', 'tagging'].includes(row.status)).length
+  const success = rows.filter(row => row.status === 'done').length
+  const failed = rows.filter(row => row.status === 'failed').length
+  const finishedAt = active === 0
+    ? rows.reduce((latest, row) => row.updated_at > latest ? row.updated_at : latest, run.startedAt)
+    : null
+
+  run.status = !finalize || active > 0
+    ? 'running'
+    : failed === 0
+      ? 'success'
+      : success > 0
+        ? 'partial'
+        : 'failed'
+  run.finishedAt = finalize ? finishedAt : null
+  run.durationMs = Math.max(
+    0,
+    new Date(run.finishedAt || new Date().toISOString()).getTime() - new Date(run.startedAt).getTime(),
+  )
+  run.successSongs = success
+  run.failedSongs = failed
+  run.skippedSongs = skipped
+  const progressSummary = `成功 ${success} 首${failed > 0 ? `，失败 ${failed} 首` : ''}${skipped > 0 ? `，跳过 ${skipped} 首` : ''}`
+  run.summary = !finalize && active === 0
+    ? `补全资源文件处理完成：${progressSummary}，等待 Plex 刷新`
+    : active > 0
+    ? `补全资源进行中：${progressSummary}，待处理 ${active} 首`
+    : `补全资源完成：${progressSummary}`
+
+  const step = run.steps[0]
+  if (step) {
+    step.status = !finalize || run.status === 'running' ? 'running' : run.status
+    step.finishedAt = finalize ? finishedAt : null
+    step.durationMs = run.durationMs
+    step.message = !finalize && active === 0
+      ? `${progressSummary}，等待 Plex 刷新`
+      : active > 0 ? `${progressSummary}，待处理 ${active} 首` : progressSummary
+  }
+  saveRun(run)
+  return run
+}
+
 export function syncManualDownloadRun(runId: string): TaskRun | null {
   const run = getRun(runId)
   if (!run || run.type !== 'manual_download') return run
-  const rows = getDb().prepare(`
+  const db = getDb()
+  createFileTaskSchema(db)
+  const linkedRows = db.prepare(`
+    SELECT task.id, linked.source_id AS source_id,
+      task.song_id, task.song_name, task.artist, task.album, task.status, task.progress,
+      task.file_path, task.file_type, task.quality, task.error, task.created_at, task.updated_at
+    FROM run_file_tasks linked
+    JOIN download_tasks task ON task.id = linked.task_id
+    WHERE linked.run_id = ?
+    ORDER BY linked.created_at ASC, task.created_at ASC
+  `).all(runId) as Array<{
+    id: string
+    source_id: string | null
+    song_id: number
+    song_name: string
+    artist: string
+    album: string
+    status: 'pending' | 'downloading' | 'tagging' | 'done' | 'failed'
+    progress: number
+    file_path: string | null
+    file_type: string | null
+    quality: string | null
+    error: string | null
+    created_at: string
+    updated_at: string
+  }>
+  const rows = linkedRows.length > 0 ? linkedRows : db.prepare(`
     SELECT id, source_id, song_id, song_name, artist, album, status, progress,
       file_path, file_type, quality, error, created_at, updated_at
     FROM download_tasks
@@ -509,7 +659,8 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
 export function recoverInterruptedRuns(): number {
   const now = new Date().toISOString()
   const interruptedDownloads = getDb().prepare(`
-    SELECT id, source_id, song_id, song_name, artist, COALESCE(run_id, job_id) AS run_id, status
+    SELECT id, source_id, song_id, song_name, artist,
+      COALESCE(run_id, job_id) AS run_id, status, operation
     FROM download_tasks
     WHERE status IN ('downloading','tagging')
   `).all() as Array<{
@@ -520,36 +671,24 @@ export function recoverInterruptedRuns(): number {
     artist: string
     run_id: string | null
     status: string
+    operation: string
   }>
   if (interruptedDownloads.length > 0) {
     getDb().prepare(`
       UPDATE download_tasks
-      SET status = 'failed',
+      SET status = 'pending',
         progress = 0,
-        error = ?,
+        error = NULL,
         lease_owner = NULL,
         lease_expires_at = NULL,
+        attempt_started_at = NULL,
         updated_at = ?
       WHERE status IN ('downloading','tagging')
-    `).run('任务因服务重启中断', now)
-    for (const task of interruptedDownloads) {
-      const runType = task.run_id ? getRun(task.run_id)?.type : undefined
-      recordFailure({
-        songId: task.song_id,
-        songName: task.song_name,
-        artist: task.artist,
-        sourceId: task.source_id,
-        runId: task.run_id,
-        runType: runType ?? (task.source_id ? 'sync' : 'manual_download'),
-        failureKind: 'scheduler_interrupted',
-        failureReason: '任务因服务重启中断',
-        occurredAt: now,
-        downloadTaskId: task.id,
-      })
-    }
+    `).run(now)
   }
 
   const db = getDb()
+  createFileTaskSchema(db)
   db.prepare(`
     UPDATE task_run_song_changes
     SET status = 'failed_download',
@@ -567,17 +706,44 @@ export function recoverInterruptedRuns(): number {
   for (const row of rows) {
     const run = getRun(row.id)
     if (!run) continue
-    if (run.trigger === 'schedule') {
-      const activeRequest = db.prepare(`
-        SELECT 1 FROM source_sync_queue
-        WHERE run_id = ? AND status = 'running'
-          AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
-        LIMIT 1
-      `).get(run.id, now)
-      if (activeRequest) continue
-    }
+    const activeRequest = db.prepare(`
+      SELECT 1 FROM source_sync_queue
+      WHERE run_id = ? AND (
+        (? = 'source_initialization' AND request_kind = 'analysis' AND status IN ('pending','running'))
+        OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at > ?)
+      )
+      LIMIT 1
+    `).get(run.id, run.type, now)
+    if (activeRequest) continue
     if (run.type === 'manual_download') {
       const synced = syncManualDownloadRun(run.id)
+      if (synced?.status !== 'running') changed += 1
+      continue
+    }
+    if (run.type === 'repair') {
+      const repairTasks = db.prepare(`
+        SELECT COUNT(*) AS count,
+          SUM(CASE WHEN repair_task.status IN ('pending','downloading','tagging') THEN 1 ELSE 0 END) AS active
+        FROM (
+          SELECT task.id, task.status
+          FROM run_file_tasks linked
+          JOIN download_tasks task ON task.id = linked.task_id
+          WHERE linked.run_id = ? AND task.operation = 'repair_existing'
+          UNION
+          SELECT task.id, task.status
+          FROM download_tasks task
+          WHERE COALESCE(task.run_id, task.job_id) = ? AND task.operation = 'repair_existing'
+        ) repair_task
+      `).get(run.id, run.id) as { count: number; active: number | null }
+      if ((repairTasks.active ?? 0) > 0) {
+        syncRepairRun(run.id)
+        continue
+      }
+      // Media Repair has durable post-processing (Run projection + Plex refresh)
+      // outside the file worker. Leave the Run recoverable even when every task
+      // reached a terminal state just before the process stopped.
+      if (repairTasks.count > 0) continue
+      const synced = syncRepairRun(run.id)
       if (synced?.status !== 'running') changed += 1
       continue
     }

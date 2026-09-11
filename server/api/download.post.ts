@@ -44,14 +44,16 @@ export default defineEventHandler(async (event) => {
         }),
         artistAliases: cfg.other?.artistAliases ?? {},
         applyAliasToAlbum: cfg.other?.applyAliasToAlbum ?? false,
-        downloadConcurrency: cfg.sync.downloadConcurrency || 3,
       },
     })
 
     return success({
       batchId: result.batchId,
       total: result.total,
-    }, `下载已启动，共 ${result.total} 首歌曲`)
+      selectionFailures: result.selectionFailures,
+    }, result.selectionFailures.length > 0
+      ? `已加入 ${result.total} 首歌曲，${result.selectionFailures.length} 首资源解析失败`
+      : `下载已启动，共 ${result.total} 首歌曲`)
   } catch (err) {
     return fail(err, 1, 'failed_download')
   }

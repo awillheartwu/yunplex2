@@ -8,6 +8,7 @@ import { closeDb, getDb, initDb } from '../db'
 import { getSource, updateSource } from '../playlist/store'
 import {
   claimNextSourceRequest,
+  enqueueManualSourceSync,
   finishSourceRequest,
   getSourceScheduleSnapshot,
   nextSourceDueAt,
@@ -19,6 +20,7 @@ let directory = ''
 
 function config(intervalMinutes = 30) {
   const value = cloneConfig(DEFAULT_CONFIG)
+  value.sync.initializeMediaOnFirstSync = false
   value.sync.enabled = true
   value.sync.intervalMinutes = intervalMinutes
   return value
@@ -53,6 +55,15 @@ afterEach(() => {
 })
 
 describe('source schedule store', () => {
+  it('keeps one manual request claimable when automatic scheduling is disabled', () => {
+    const now = new Date('2026-08-28T00:00:00.000Z')
+    insertSource('source-1', now)
+    const first = enqueueManualSourceSync('source-1', now)
+    expect(enqueueManualSourceSync('source-1', now)).toBe(first)
+    const request = claimNextSourceRequest('worker', now)
+    expect(request).toMatchObject({ id: first, sourceId: 'source-1', trigger: 'user' })
+  })
+
   it('enqueues only sources whose independent interval is due', () => {
     const base = new Date('2026-08-28T00:00:00.000Z')
     insertSource('source-1', base, { interval: 1, lastSyncedAt: base })

@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../db'
-import { deleteSource } from './store'
+import { createSource, deleteSource, listSources } from './store'
+import { parsePlaylistSourceFilters } from '../api-filter-params'
 
 let directory: string | null = null
 
@@ -14,6 +15,41 @@ afterEach(() => {
 })
 
 describe('playlist source lifecycle', () => {
+  it('filters recorded Plex targets independently of NetEase subscriptions, including blank targets', () => {
+    directory = mkdtempSync(join(tmpdir(), 'reyunplex-source-filter-'))
+    const db = initDb(directory)
+    const insert = db.prepare(`INSERT INTO playlist_sources
+      (id, netease_playlist_id, name, subscribed, plex_playlist_rating_key, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, '2026-09-08', '2026-09-08')`)
+    insert.run('owned-bound', 1, 'Owned', 0, 'plex-1')
+    insert.run('saved-unbound', 2, 'Saved', 1, '')
+    insert.run('saved-bound', 3, 'Both', 1, 'plex-3')
+    insert.run('blank', 4, 'Blank', 0, '   ')
+    insert.run('empty', 5, 'Empty', 0, '')
+    const ids = (query: Record<string, string>) => listSources(parsePlaylistSourceFilters(query)).map(source => source.id).sort()
+    expect(ids({ hasPlexTarget: '1' })).toEqual(['owned-bound', 'saved-bound'])
+    expect(ids({ hasPlexTarget: '0' })).toEqual(['blank', 'empty', 'saved-unbound'])
+    expect(ids({ subscribed: '1' })).toEqual(['saved-bound', 'saved-unbound'])
+    expect(ids({ subscribed: '1', hasPlexTarget: '1' })).toEqual(['saved-bound'])
+    expect(ids({ subscribed: '1', hasPlexTarget: 'false' })).toEqual(['saved-unbound'])
+  })
+  it('can create a playlist source disabled for source-attributed downloads', async () => {
+    directory = mkdtempSync(join(tmpdir(), 'reyunplex-source-store-'))
+    initDb(directory)
+
+    const source = await createSource(99, 'cookie', {
+      type: 'playlist',
+      name: 'Prepared source',
+      enabled: false,
+    })
+
+    expect(source).toMatchObject({
+      neteasePlaylistId: 99,
+      neteasePlaylistName: 'Prepared source',
+      enabled: false,
+    })
+  })
+
   it('deletes failure records and their occurrences with the source', () => {
     directory = mkdtempSync(join(tmpdir(), 'reyunplex-source-store-'))
     const db = initDb(directory)

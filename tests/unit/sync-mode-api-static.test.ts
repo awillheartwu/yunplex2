@@ -14,10 +14,18 @@ describe('sync mode API contract', () => {
   })
 
   it('uses one mode field for source actions', () => {
-    expect(sourceEndpoint).toContain('mode?: SyncMode')
-    expect(sourceEndpoint).toContain("mode === 'rebuild_matching'")
-    expect(sourceEndpoint).toContain("mode === 'redownload_managed'")
+    expect(sourceEndpoint).toContain("Pick<SyncRunOptions, 'mode' | 'takeOverExternal'>")
+    expect(sourceEndpoint).toContain('requestSources(')
+    expect(sourceEndpoint).not.toContain('startSyncForSource(')
     expect(sourceEndpoint).not.toContain('rebuildMatch?: boolean')
     expect(sourceEndpoint).not.toContain('redownloadAll?: boolean')
   })
+  it('routes batch and automatic album entrypoints through the source application', () => {
+    for (const path of ['batch.post.ts', 'index.post.ts']) {
+      const handler = readFileSync(`${root}/server/api/playlist-sources/${path}`, 'utf8')
+      expect(handler).toContain('requestSources(')
+      expect(handler).not.toMatch(/\.startSync(?:ForSource)?\(/)
+    }
+  })
+
 })

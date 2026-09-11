@@ -50,6 +50,8 @@ export interface SyncStrategyConfig {
   extraTrackRemovalPolicy: ExtraTrackRemovalPolicy
   maxFailureAttempts: number
   unverifiedMediaPolicy: UnverifiedMediaPolicy
+  /** Gate the first playlist convergence behind a read-only Explicit Adoption plan. */
+  initializeMediaOnFirstSync?: boolean
 }
 
 export type ExtraTrackRemovalPolicy = 'strict' | 'balanced' | 'exact'

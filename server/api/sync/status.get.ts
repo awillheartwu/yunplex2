@@ -1,7 +1,8 @@
 import { success } from '../../lib/response'
-import { getSyncServiceInstance } from '../../lib/sync/instance'
+import { getSyncServiceInstance, isRepairRunning } from '../../lib/sync/instance'
 
 export default defineEventHandler(() => {
   const syncService = getSyncServiceInstance()
-  return success(syncService.getState())
+  const state = syncService.getState()
+  return success(isRepairRunning() ? { ...state, currentStage: 'repair' as const } : state)
 })

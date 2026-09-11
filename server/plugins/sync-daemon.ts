@@ -3,14 +3,22 @@ import { initDb } from '../lib/db'
 import { getSyncService } from '../lib/sync/service'
 import { startWorker, stopWorker } from '../lib/sync/worker'
 import { recoverInterruptedSourceRequests } from '../lib/sync/source-schedule-store'
-import { setSyncService, setSyncWorker } from '../lib/sync/instance'
+import { isRepairRunning, setSyncService, setSyncWorker } from '../lib/sync/instance'
 import { recoverInterruptedRuns } from '../lib/run/store'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
+import { startDownloadWorker, stopDownloadWorker } from '../lib/download/worker'
+import {
+  resumePendingMediaRepairCommands,
+  stopMediaRepairCommands,
+  waitForMediaRepairCommands,
+} from '../lib/download/media-repair-command'
 import { appendLog } from '../lib/log/store'
 import {
   dataLifecycleChangeCount,
   runDataLifecycleMaintenance,
 } from '../lib/maintenance/data-lifecycle'
+import { listRequestedPendingInitializations } from '../lib/source-initialization/store'
+import { enqueueSourceInitialization } from '../lib/source-initialization/service'
 
 const DOWNLOAD_LEASE_SWEEP_INTERVAL_MS = 60 * 1000
 const DATA_LIFECYCLE_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -26,6 +34,7 @@ export default defineNitroPlugin((nitroApp) => {
   initDb(dataDir)
   recoverInterruptedSourceRequests()
   recoverInterruptedRuns()
+  startDownloadWorker(() => readConfig())
 
   const maintainDataLifecycle = () => {
     try {
@@ -47,11 +56,19 @@ export default defineNitroPlugin((nitroApp) => {
 
   const svc = getSyncService(() => readConfig())
   setSyncService(svc)
+  resumePendingMediaRepairCommands()
+  for (const initialization of listRequestedPendingInitializations()) {
+    enqueueSourceInitialization(
+      initialization.sourceId,
+      initialization.trigger === 'schedule' ? 'schedule' : initialization.trigger === 'retry' ? 'retry' : 'user',
+    )
+  }
 
   const worker = startWorker(
     () => readConfig(),
     svc,
     dataDir,
+    () => !isRepairRunning(),
   )
   setSyncWorker(worker)
 
@@ -62,11 +79,12 @@ export default defineNitroPlugin((nitroApp) => {
   const lifecycleSweep = setInterval(maintainDataLifecycle, DATA_LIFECYCLE_INTERVAL_MS)
   lifecycleSweep.unref()
   nitroApp.hooks.hookOnce('close', async () => {
-    if (!import.meta.dev) {
       daemonInitialized = false
       await stopWorker()
+      await stopMediaRepairCommands()
+      await stopDownloadWorker()
+      await waitForMediaRepairCommands()
       clearInterval(leaseSweep)
       clearInterval(lifecycleSweep)
-    }
   })
 })

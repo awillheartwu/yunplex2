@@ -45,6 +45,7 @@ describe('automatic sync acceptance', () => {
     const config = cloneConfig(DEFAULT_CONFIG)
     config.sync.enabled = true
     config.sync.intervalMinutes = 30
+    config.sync.initializeMediaOnFirstSync = false
     let active = 0
     let maxActive = 0
     const calls: string[] = []
