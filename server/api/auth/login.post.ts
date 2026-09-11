@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
   if (!ok) {
     recordRateLimitFailure('login', fingerprint)
     setResponseStatus(event, 401)
-    return fail('密码错误')
+    return fail('密码错误', 1, 'validation_failed')
   }
 
   clearRateLimit('login', fingerprint)

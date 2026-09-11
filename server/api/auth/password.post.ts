@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const currentOk = await verifyAdminPassword(currentPassword)
   if (!currentOk) {
     setResponseStatus(event, 401)
-    return fail('当前密码错误')
+    return fail('当前密码错误', 1, 'validation_failed')
   }
 
   try {
