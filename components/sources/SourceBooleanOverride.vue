@@ -1,14 +1,14 @@
 <template>
-  <div class="flex items-center justify-between gap-4">
-    <div class="min-w-0">
-      <label class="text-xs font-medium" style="color:var(--text-primary)">{{ label }}</label>
-      <p class="mt-0.5 text-2xs" style="color:var(--text-tertiary)">
-        {{ hint }}。当前生效：{{ effectiveValue ? '开启' : '关闭' }}
+  <div class="source-boolean-override">
+    <div class="source-boolean-override__copy">
+      <span class="source-boolean-override__label">{{ label }}</span>
+      <p class="source-boolean-override__hint">
+        <template v-if="hint">{{ hint }} · </template>设置效果：{{ effectiveValue === null ? '尚未读取全局设置' : effectiveValue ? '开启' : '关闭' }}
       </p>
     </div>
     <select
       :value="serializedValue"
-      class="form-input w-28 shrink-0 text-xs"
+      class="form-input source-boolean-override__select"
       :aria-label="label"
       @change="updateValue"
     >
@@ -22,9 +22,9 @@
 <script setup lang="ts">
 const props = defineProps<{
   modelValue: boolean | null
-  globalValue: boolean
+  globalValue: boolean | null
   label: string
-  hint: string
+  hint?: string
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean | null] }>()
@@ -39,3 +39,50 @@ function updateValue(event: Event) {
   emit('update:modelValue', value === 'inherit' ? null : value === 'true')
 }
 </script>
+
+<style scoped>
+.source-boolean-override {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8.5rem;
+  gap: var(--space-4);
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.source-boolean-override__copy {
+  min-width: 0;
+}
+
+.source-boolean-override__label {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+}
+
+.source-boolean-override__hint {
+  margin-top: var(--space-0_5);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.source-boolean-override__select {
+  width: 8.5rem;
+  min-width: 0;
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 480px) {
+  .source-boolean-override {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .source-boolean-override__select {
+    width: 100%;
+  }
+}
+</style>

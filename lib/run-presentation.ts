@@ -1,7 +1,7 @@
 import type { JobStatus, TaskRunTrigger, TaskRunType } from '~~/server/lib/job/types'
 import { presentRunSummary } from '~~/lib/failure-cache-presentation'
 
-export type RunTypeTone = 'sync' | 'download' | 'repair'
+export type RunTypeTone = 'sync' | 'download' | 'repair' | 'initialization'
 
 export interface RunTypeIdentity {
   label: string
@@ -12,6 +12,15 @@ export interface RunTypeIdentity {
 }
 
 export function runTypeIdentity(type: TaskRunType): RunTypeIdentity {
+  if (type === 'source_initialization') {
+    return {
+      label: '首次媒体接管',
+      shortLabel: '接管',
+      icon: 'search',
+      tone: 'initialization',
+      description: '读取网易云与 Plex，生成等待人工确认的媒体接管方案',
+    }
+  }
   if (type === 'manual_download') {
     return {
       label: '手动下载',
@@ -59,6 +68,7 @@ export function runTriggerLabel(trigger: TaskRunTrigger): string {
 }
 
 export function runStatusLabel(status: JobStatus): string {
+  if (status === 'awaiting_action') return '等待确认'
   if (status === 'running') return '运行中'
   if (status === 'success') return '成功'
   if (status === 'partial') return '部分成功'
@@ -72,7 +82,7 @@ export function runSummaryLabel(summary: string, fallback = ''): string {
 
 export function runBadgeStatus(status: JobStatus): 'ok' | 'error' | 'warning' | 'running' | 'idle' {
   if (status === 'success') return 'ok'
-  if (status === 'partial') return 'warning'
+  if (status === 'partial' || status === 'awaiting_action') return 'warning'
   if (status === 'failed') return 'error'
   if (status === 'running') return 'running'
   return 'idle'

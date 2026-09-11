@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { useFeedback } from '~/composables/useFeedback'
 import type { MatchOverviewItem, MatchOverviewPage, MatchOverviewState } from '~~/types/match-management'
 
 interface PlexSearchTrack { ratingKey: string; title: string; artist: string; album: string; plexFilePath: string | null }
@@ -135,6 +136,7 @@ const props = withDefaults(defineProps<{
 }>(), { mobile: false })
 const emit = defineEmits<{ changed: [] }>()
 const api = useApi()
+const feedback = useFeedback()
 const orphaned = computed(() => props.sourceId === 'orphaned')
 const search = ref('')
 const state = ref<MatchOverviewState | ''>('')
@@ -218,6 +220,7 @@ async function downloadManaged(item: MatchOverviewItem) {
   try {
     await api.post(`/playlist-sources/${props.sourceId}/songs/${id}/download-managed`, {})
     notice.value = '已加入托管下载队列；完成后相关同步源会自动等待重新对齐。'
+    feedback.success('已加入托管下载队列', '完成后相关同步源会自动等待重新对齐。')
     emit('changed')
   } catch (err) {
     error.value = err instanceof Error ? err.message : '启动托管下载失败'
@@ -276,6 +279,7 @@ async function executePendingAction() {
         sourceId: orphaned.value ? undefined : props.sourceId,
       })
       notice.value = 'Plex 媒体关联已保存；所有引用这首网易云歌曲的来源会在下次同步时对齐。'
+      feedback.success('Plex 媒体关联已保存', '所有引用这首网易云歌曲的来源会在下次同步时对齐。')
     } else {
       await api.post(`/match-management/bindings/${songId(action.item)}/unbind`, {
         expectedBindingUpdatedAt: action.item.binding?.updatedAt,
@@ -283,6 +287,7 @@ async function executePendingAction() {
         sourceId: orphaned.value ? undefined : props.sourceId,
       })
       notice.value = '媒体关联已移除；系统会在下次同步时重新评估。'
+      feedback.success('媒体关联已移除', '系统会在下次同步时重新评估。')
     }
     pendingAction.value = null
     searchItemKey.value = ''
@@ -299,41 +304,41 @@ watch(() => props.sourceId, () => { page.value = 1; void load() }, { immediate: 
 </script>
 
 <style scoped>
-.source-media { display: grid; gap: .85rem; min-width: 0; }
+.source-media { display: grid; gap: var(--space-3_5); min-width: 0; }
 .source-media__header, .source-media__filters, .source-media__row, .source-media__actions, .source-media__pagination { display: flex; align-items: center; }
-.source-media__header { justify-content: space-between; gap: 1rem; }
+.source-media__header { justify-content: space-between; gap: var(--space-4); }
 .source-media__header div { min-width: 0; }
-.source-media__header strong { color: var(--text-primary); font-size: .86rem; }
-.source-media__header p { margin: .18rem 0 0; color: var(--text-muted); font-size: .72rem; line-height: 1.45; }
-.source-media__filters { gap: .55rem; }
+.source-media__header strong { color: var(--text-primary); font-size: var(--text-base); }
+.source-media__header p { margin: var(--space-0_5) 0 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+.source-media__filters { gap: var(--space-2); }
 .source-media__filters select { width: 10rem; }
 .source-media__search { position: relative; flex: 1; min-width: 10rem; }
 .source-media__search svg { position: absolute; left: .7rem; top: 50%; z-index: 1; transform: translateY(-50%); color: var(--text-muted); }
-.source-media__search input { width: 100%; padding-left: 2rem; }
-.source-media__list { display: grid; gap: .45rem; }
-.source-media__row { display: grid; grid-template-columns: minmax(13rem, 1.1fr) minmax(13rem, 1fr) auto; gap: .8rem; padding: .65rem .75rem; border: 1px solid var(--border-primary); border-radius: .7rem; background: var(--bg-surface); min-width: 0; }
-.source-media__target { display: flex; align-items: center; gap: .6rem; min-width: 0; }
-.source-media__target img { width: 36px; height: 36px; border-radius: .4rem; object-fit: cover; }
-.source-media__target div, .source-media__binding { display: grid; gap: .15rem; min-width: 0; }
+.source-media__search input { width: 100%; padding-left: var(--space-8); }
+.source-media__list { display: grid; gap: var(--space-2); }
+.source-media__row { display: grid; grid-template-columns: minmax(13rem, 1.1fr) minmax(13rem, 1fr) auto; gap: var(--space-3); padding: var(--space-2_5) var(--space-3); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); background: var(--bg-surface); min-width: 0; }
+.source-media__target { display: flex; align-items: center; gap: var(--space-2_5); min-width: 0; }
+.source-media__target img { width: 36px; height: 36px; border-radius: var(--radius-sm); object-fit: cover; }
+.source-media__target div, .source-media__binding { display: grid; gap: var(--space-0_5); min-width: 0; }
 .source-media__target strong, .source-media__target span, .source-media__binding strong, .source-media__binding small, .source-media__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-media__target strong, .source-media__binding strong { color: var(--text-primary); font-size: .75rem; }
-.source-media__target span, .source-media__binding small { color: var(--text-muted); font-size: .68rem; }
-.source-media__reason { color: var(--warning); font-size: .68rem; line-height: 1.35; }
-.source-media__path { color: var(--text-muted); font-size: .66rem; }
-.source-media__path em { margin-right: .35rem; color: var(--text-secondary); font-style: normal; font-weight: 650; }
-.source-media__state { width: max-content; color: var(--accent); font-size: .65rem; }
+.source-media__target strong, .source-media__binding strong { color: var(--text-primary); font-size: var(--text-xs); }
+.source-media__target span, .source-media__binding small { color: var(--text-muted); font-size: var(--text-xs); }
+.source-media__reason { color: var(--warning); font-size: var(--text-xs); line-height: 1.35; }
+.source-media__path { color: var(--text-muted); font-size: var(--text-xs); }
+.source-media__path em { margin-right: var(--space-1_5); color: var(--text-secondary); font-style: normal; font-weight: var(--font-weight-semibold); }
+.source-media__state { width: max-content; color: var(--accent); font-size: var(--text-xs); }
 .source-media__state--awaiting_manual, .source-media__state--binding_stale, .source-media__state--sync_failed, .source-media__state--copyright_restricted, .source-media__state--retry_paused { color: var(--warning); }
-.source-media__actions { justify-content: flex-end; gap: .35rem; flex-wrap: wrap; }
-.source-media__candidates { grid-column: 1 / -1; display: grid; gap: .4rem; padding-top: .55rem; border-top: 1px solid var(--border-primary); }
-.source-media__candidates > article { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .5rem; border-radius: .55rem; background: var(--bg-hover); }
+.source-media__actions { justify-content: flex-end; gap: var(--space-1_5); flex-wrap: wrap; }
+.source-media__candidates { grid-column: 1 / -1; display: grid; gap: var(--space-1_5); padding-top: var(--space-2); border-top: 1px solid var(--border-primary); }
+.source-media__candidates > article { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2); border-radius: var(--radius-md); background: var(--bg-hover); }
 .source-media__candidates div { display: grid; min-width: 0; }
-.source-media__candidates strong, .source-media__candidates span, .source-media__candidates small, .source-media__candidates p { font-size: .7rem; }
+.source-media__candidates strong, .source-media__candidates span, .source-media__candidates small, .source-media__candidates p { font-size: var(--text-xs); }
 .source-media__candidates span, .source-media__candidates small, .source-media__candidates p { color: var(--text-muted); }
-.source-media__empty { padding: 1.2rem; text-align: center; color: var(--text-muted); font-size: .75rem; }
-.source-media__notice, .source-media__error { margin: 0; padding: .55rem .7rem; border-radius: .55rem; font-size: .72rem; }
+.source-media__empty { padding: var(--space-5); text-align: center; color: var(--text-muted); font-size: var(--text-xs); }
+.source-media__notice, .source-media__error { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-xs); }
 .source-media__notice { color: var(--success); background: color-mix(in srgb, var(--success) 9%, transparent); }
 .source-media__error { color: var(--danger); background: color-mix(in srgb, var(--danger) 9%, transparent); }
-.source-media__pagination { justify-content: center; gap: .75rem; color: var(--text-muted); font-size: .7rem; }
+.source-media__pagination { justify-content: center; gap: var(--space-3); color: var(--text-muted); font-size: var(--text-xs); }
 @media (max-width: 760px) {
   .source-media__header, .source-media__filters { align-items: stretch; flex-direction: column; }
   .source-media__filters select { width: 100%; }

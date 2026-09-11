@@ -6,14 +6,14 @@ const root = fileURLToPath(new URL('../..', import.meta.url))
 const page = readFileSync(`${root}/pages/match-reviews.vue`, 'utf8')
 const sourceMedia = readFileSync(`${root}/components/sources/SourceMediaDetails.vue`, 'utf8')
 const sourcePage = readFileSync(`${root}/components/sources/SyncSourcesPage.vue`, 'utf8')
+const sourceDetailPage = readFileSync(`${root}/pages/sync-sources/[id].vue`, 'utf8')
 const sidebar = readFileSync(`${root}/components/layout/Sidebar.vue`, 'utf8')
 
 describe('media reuse page contract', () => {
   it('moves everyday media management into source context', () => {
-    expect(sourcePage.match(/<SourceMediaDetails/g)?.length).toBe(2)
-    expect(sourcePage).toContain('v-if="!compactViewport"')
-    expect(sourcePage).toContain('v-if="compactViewport"')
-    expect(sourcePage).toContain('desktopTableScrollRef.value.scrollLeft = 0')
+    expect(sourcePage).not.toContain('<SourceMediaDetails')
+    expect(sourceDetailPage).toContain("activeTab==='media'")
+    expect(sourceDetailPage).toContain('<SourceMediaDetails')
     expect(sourceMedia).toContain('歌曲与媒体')
     expect(sourceMedia).toContain('使用 Plex 媒体')
     expect(sourceMedia).toContain('下载并托管')

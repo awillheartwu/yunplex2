@@ -1,17 +1,13 @@
 <template>
   <div class="task-center-page">
     <PageHeader
-      description="集中查看正在执行的工作、历史运行结果和需要处理的问题"
+      description="执行中的工作、过去的记录，以及等待你处理的事项。"
     />
 
-    <PageTabs
-      :model-value="activeTab"
-      :tabs="taskCenterTabs"
-      aria-label="任务中心视图"
-      @change="onTaskCenterTabChange"
-    />
+    <div class="activity-workspace">
+      <aside class="activity-navigation" aria-label="活动视图"><button v-for="tab in taskCenterTabs" :key="tab.key" type="button" :aria-pressed="activeTab === tab.key" @click="onTaskCenterTabChange(tab.key)"><AppIcon :name="tab.key === 'overview' ? 'activity' : tab.key === 'runs' ? 'clock' : 'archive'" :size="17" /><span>{{ tab.label }}</span><small v-if="tab.count">{{ tab.count }}</small></button><div class="activity-navigation__hint"><AppIcon name="info" :size="16" /><p>同步和下载的结果自动汇总在这里。</p></div></aside>
+    <div class="activity-content">
 
-    <main>
       <section v-if="activeTab === 'overview'" class="task-overview">
         <div class="task-overview__summary">
           <article v-if="syncState?.isRunning" class="section-card task-live-card">
@@ -79,31 +75,23 @@
             </div>
           </article>
 
-          <article v-else class="section-card task-idle-card">
+          <section v-else-if="primaryActiveRun" class="activity-current-run"><h2>当前活动</h2><RunCard :run="primaryActiveRun" /></section>
+          <article v-else class="task-idle-card">
+            <div class="task-idle-card__art"><AppIcon name="checkCircle" :size="38" /></div>
             <div class="task-idle-card__status">
               <span class="task-idle-card__status-dot" />
               系统空闲
             </div>
             <div class="task-idle-card__empty">
               <h3>当前没有正在执行的任务</h3>
-              <p>同步请从仪表盘或同步源发起，下载请从手动下载发起。</p>
+              <p>添加音乐或同步歌单后，可以在这里跟进执行进度。</p>
             </div>
             <div class="task-idle-card__actions">
-              <button class="btn btn-secondary btn-sm" type="button" @click="switchTab('runs')">查看运行记录</button>
+              <NuxtLink to="/sync-sources" class="btn btn-secondary btn-sm"><AppIcon name="source" :size="14" />打开音乐库</NuxtLink><NuxtLink to="/manual-download" class="btn btn-secondary btn-sm"><AppIcon name="download" :size="14" />添加音乐</NuxtLink>
             </div>
           </article>
 
-          <section class="section-card issue-summary" :class="{ 'has-issues': openFailureTotal > 0 }">
-            <div>
-              <p class="issue-summary__eyebrow">需要处理</p>
-              <strong class="issue-summary__count">{{ openFailureTotal }}</strong>
-              <h3>{{ openFailureTotal > 0 ? '个问题等待处理' : '暂无待处理问题' }}</h3>
-              <p>{{ openFailureTotal > 0 ? '失败项会在成功重试后自动关闭，也可以暂时忽略。' : '最近的运行没有留下未解决异常。' }}</p>
-            </div>
-            <button class="btn btn-secondary btn-sm" type="button" @click="switchTab('failures')">
-              {{ openFailureTotal > 0 ? '处理问题' : '查看记录' }}
-            </button>
-          </section>
+
         </div>
 
         <section v-if="secondaryActiveRuns.length > 0" class="section-card compact-runs">
@@ -267,7 +255,8 @@
       </section>
 
       <RunRecordsPanel v-else />
-    </main>
+    </div>
+    </div>
   </div>
 </template>
 
@@ -281,13 +270,15 @@ const {
   downloadQueue, elapsedLabel, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, formatElapsed,
   failureStatusTabs, failureTypeFilters, formatTime, handleCancelSync, ignoreFailure, isRetryable, liveDescription,
-  livePercent, liveTitle, onFailureSearch, onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters,
+  livePercent, liveTitle, onFailureSearch, onTaskCenterTabChange, overviewStageItems, prepareFailureDraftFilters,
   primaryActiveRun, removeFailureFilter, reopenFailure, resetFailureDraftFilters, retryFailure,
-  runTypeLabel, secondaryActiveRuns, selectedFailures, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions, switchTab,
+  runTypeLabel, secondaryActiveRuns, selectedFailures, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions,
   syncState, taskCenterTabs, toggleFailure,
 } = useTaskCenterPage()
 </script>
 
 <style scoped>
 @import '~/assets/css/pages/task-center.css';
+@import '~/assets/css/pages/task-center-overview.css';
+@import '~/assets/css/pages/task-center-failures.css';
 </style>

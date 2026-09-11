@@ -213,7 +213,7 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
     title: `开始${runTypeLabel(run.type)}`,
     description: `${runTriggerLabel(run.trigger)} · ${run.source} → ${run.target}`,
     tone: 'running',
-    icon: run.type === 'manual_download' ? 'download' : run.type === 'repair' ? 'database' : 'sync',
+    icon: run.type === 'manual_download' ? 'download' : run.type === 'repair' ? 'database' : run.type === 'source_initialization' ? 'search' : 'sync',
     statusLabel: '开始',
     details: [],
   }]
@@ -363,10 +363,16 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
   items.push({
     id: `${run.id}:finished`,
     occurredAt: run.finishedAt || lastKnownTime(run),
-    title: run.status === 'running' ? `${runTypeLabel(run.type)}仍在运行` : `${runTypeLabel(run.type)}已结束`,
+    title: run.status === 'running'
+      ? `${runTypeLabel(run.type)}仍在运行`
+      : run.status === 'awaiting_action'
+        ? `${runTypeLabel(run.type)}等待确认`
+        : `${runTypeLabel(run.type)}已结束`,
     description: run.summary || runStatusLabel(run.status),
     tone: run.status === 'running'
       ? 'running'
+      : run.status === 'awaiting_action'
+        ? 'warning'
       : run.status === 'failed'
         ? 'failure'
         : run.status === 'partial'
@@ -374,7 +380,7 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
           : run.status === 'cancelled'
             ? 'existing'
             : 'success',
-    icon: run.status === 'running' ? 'loader' : run.status === 'failed' ? 'failure' : 'checkCircle',
+    icon: run.status === 'running' ? 'loader' : run.status === 'awaiting_action' ? 'warning' : run.status === 'failed' ? 'failure' : 'checkCircle',
     statusLabel: runStatusLabel(run.status),
     durationMs: run.durationMs,
     details: [],

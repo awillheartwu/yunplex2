@@ -82,6 +82,6 @@ const {
 
 <style scoped>
 @import '~/assets/css/pages/task-center.css';
-.run-records{padding-bottom:.5rem}
-.run-records__loading{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary);font-size:.85rem}
+.run-records{padding-bottom:var(--space-2)}
+.run-records__loading{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary);font-size:var(--text-base)}
 </style>

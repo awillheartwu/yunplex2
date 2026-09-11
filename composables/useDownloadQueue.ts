@@ -1,6 +1,6 @@
 import type { DownloadTask, QueueStatus } from '~~/server/lib/download/queue'
 import { sseSubscribe, sseConnected } from './sse'
-import { useIntervalFn, useThrottleFn } from './useTiming'
+import { useIntervalFn, useThrottleFn, useLatestAsyncGuard } from './useTiming'
 
 interface DownloadQueueOptions {
   liveRunId?: Ref<string | null | undefined>
@@ -23,8 +23,10 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
   const error = ref('')
 
   const unsubs: Array<() => void> = []
+  const fetchGuard = useLatestAsyncGuard()
 
   async function fetchAll() {
+    const token = fetchGuard.next()
     loading.value = true
     error.value = ''
     try {
@@ -37,12 +39,13 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
         api.get<QueueStatus>('/downloads/queue-status'),
         api.get<{ items: DownloadTask[] }>('/downloads/tasks', taskParams),
       ])
+      if (!fetchGuard.isLatest(token)) return
       queueStatus.value = status
       liveTasks.value = live.items
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '下载队列加载失败'
+      if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '下载队列加载失败'
     } finally {
-      loading.value = false
+      if (fetchGuard.isLatest(token)) loading.value = false
     }
   }
 
@@ -62,6 +65,7 @@ export function useDownloadQueue(options: DownloadQueueOptions = {}) {
   onMounted(() => {
     // Throttled SSE-driven refresh — queue-update fires per song progress (dozens/sec)
     unsubs.push(sseSubscribe('queue-update', throttledFetch))
+    unsubs.push(sseSubscribe('resync', throttledFetch))
 
     fetchAll()
     if (!sseConnected.value) startPolling()

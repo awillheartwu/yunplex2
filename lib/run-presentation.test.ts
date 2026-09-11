@@ -23,6 +23,11 @@ describe('run presentation', () => {
       icon: 'database',
       tone: 'repair',
     })
+    expect(runTypeIdentity('source_initialization')).toMatchObject({
+      label: '首次媒体接管',
+      icon: 'search',
+      tone: 'initialization',
+    })
   })
 
   it('keeps run status labels and badge tones aligned', () => {
@@ -31,6 +36,8 @@ describe('run presentation', () => {
     expect(runStatusLabel('partial')).toBe('部分成功')
     expect(runBadgeStatus('partial')).toBe('warning')
     expect(runBadgeStatus('running')).toBe('running')
+    expect(runStatusLabel('awaiting_action')).toBe('等待确认')
+    expect(runBadgeStatus('awaiting_action')).toBe('warning')
     expect(runBadgeStatus('failed')).toBe('error')
     expect(runBadgeStatus('cancelled')).toBe('idle')
   })

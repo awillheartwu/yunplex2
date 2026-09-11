@@ -191,11 +191,11 @@ function formatDuration(ms: number): string {
 
 <style scoped>
 .song-row{border-left:3px solid;border-left-color:currentColor}
-.song-row__button{display:flex;width:100%;align-items:center;gap:1rem;padding:.75rem 1.25rem;border:0;background:transparent;text-align:left;cursor:pointer;transition:background 150ms ease}
+.song-row__button{display:flex;width:100%;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-5);border:0;background:transparent;text-align:left;cursor:pointer;transition:background var(--duration-fast) ease}
 .song-row__button:hover{background:color-mix(in srgb,currentColor 7%,var(--bg-surface))}
-.song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:999px;background:currentColor}
-.song-status-badge{display:inline-flex;align-items:center;gap:.3rem;flex:none;padding:.18rem .5rem;border:1px solid;border-radius:.45rem;font-size:.68rem;font-weight:700}
-.song-row__expanded{padding:0 1.25rem 1rem 3rem}
-.song-row__detail-card{display:flex;flex-direction:column;gap:.5rem;padding:.75rem;border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app)}
-.song-row__match-trace{display:flex;flex-direction:column;gap:.35rem;padding-top:.55rem;border-top:1px solid var(--border-primary)}
+.song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:var(--radius-full);background:currentColor}
+.song-status-badge{display:inline-flex;align-items:center;gap:var(--space-1);flex:none;padding:var(--space-0_5) var(--space-2);border:1px solid;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
+.song-row__expanded{padding:0 var(--space-5) var(--space-4) var(--space-12)}
+.song-row__detail-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app)}
+.song-row__match-trace{display:flex;flex-direction:column;gap:var(--space-1_5);padding-top:var(--space-2);border-top:1px solid var(--border-primary)}
 </style>

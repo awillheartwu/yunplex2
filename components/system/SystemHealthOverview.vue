@@ -7,7 +7,7 @@
         <p class="text-2xs text-muted">依赖检测于 {{ dependencyCheckedLabel }}</p>
       </div>
       <div class="system-health__actions">
-        <NuxtLink to="/logs" class="btn btn-secondary btn-xs">
+        <NuxtLink to="/system?tab=logs" class="btn btn-secondary btn-xs">
           <AppIcon name="logs" :size="14" />
           查看日志
         </NuxtLink>
@@ -69,43 +69,43 @@ const headlineClass = computed(() => ({
 .system-health {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
+  gap: var(--space-4);
+  padding: var(--space-5);
 }
 
 .system-health__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .system-health__header h2 {
-  margin-top: 0.15rem;
-  font-size: 1rem;
-  font-weight: 700;
+  margin-top: var(--space-0_5);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-bold);
 }
 
 .system-health__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .system-health__grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .system-health__item {
   display: flex;
   min-width: 0;
-  gap: 0.65rem;
+  gap: var(--space-2_5);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
-  padding: 0.8rem;
+  padding: var(--space-3);
   background: var(--bg-elevated);
 }
 
@@ -118,20 +118,20 @@ const headlineClass = computed(() => ({
 
 .system-health__item p {
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
 }
 
 .system-health__item strong {
   display: block;
   margin-block: 0.1rem;
   color: var(--text-primary);
-  font-size: 0.88rem;
+  font-size: var(--text-base);
 }
 
 .system-health__item span {
   display: block;
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
 }
 
 .system-health__icon {
@@ -141,13 +141,13 @@ const headlineClass = computed(() => ({
   flex: 0 0 1.75rem;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
 .system-health__item--ok .system-health__icon { color: var(--success); background: var(--success-soft); }
 .system-health__item--warning .system-health__icon { color: var(--warning); background: var(--warning-soft); }
 .system-health__item--error .system-health__icon { color: var(--danger); background: var(--danger-soft); }
-.system-health__item--idle .system-health__icon { color: var(--text-tertiary); background: var(--bg-muted); }
+.system-health__item--idle .system-health__icon { color: var(--text-tertiary); background: var(--bg-input); }
 
 @media (max-width: 1024px) {
   .system-health__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

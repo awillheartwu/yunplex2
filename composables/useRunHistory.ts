@@ -3,6 +3,7 @@ import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
 import { countActiveFilters, formatDateFilterLabel, parseAllowedQueryValue, parseDateQueryValue } from '~~/composables/useFilterQuery'
 import { useRuns } from '~~/composables/useRuns'
 import { useDebounceFn } from '~~/composables/useTiming'
+import { sseSubscribe } from './sse'
 
 export function useRunHistory() {
   const route = useRoute()
@@ -13,6 +14,7 @@ export function useRunHistory() {
 
   const typeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
     { label: '全部类型', value: '' },
+    { label: '首次媒体接管', value: 'source_initialization' },
     { label: '同步', value: 'sync' },
     { label: '补全', value: 'repair' },
     { label: '手动下载', value: 'manual_download' },
@@ -20,6 +22,7 @@ export function useRunHistory() {
   const statusFilters: Array<{ label: string; value: JobStatus | '' }> = [
     { label: '全部状态', value: '' },
     { label: '运行中', value: 'running' },
+    { label: '等待确认', value: 'awaiting_action' },
     { label: '成功', value: 'success' },
     { label: '部分成功', value: 'partial' },
     { label: '失败', value: 'failed' },
@@ -141,7 +144,10 @@ export function useRunHistory() {
     applyFilters()
   }
 
+  let resumeUnsubscribe: (() => void) | null = null
+  onUnmounted(() => resumeUnsubscribe?.())
   onMounted(async () => {
+    resumeUnsubscribe = sseSubscribe('resync', () => { void runs.fetch().catch(() => {}) })
     const types = typeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
     const statuses = statusFilters.map(item => item.value).filter((value): value is JobStatus => value !== '')
     runs.filter.value = {

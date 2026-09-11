@@ -1,0 +1,135 @@
+/* Media adoption review styles; imported by its owning component. */
+.source-adoption__table span:not(.source-adoption__tier) {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-adoption__table small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-adoption__bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  justify-content: space-between;
+}
+.source-adoption__bulk > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.source-adoption__pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.source-adoption__table-wrap {
+  overflow: auto;
+}
+.source-adoption__table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+.source-adoption__table th {
+  padding: var(--space-2_5);
+  border-bottom: 1px solid var(--border-primary);
+  text-align: left;
+  vertical-align: middle;
+}
+.source-adoption__table td {
+  padding: var(--space-2_5);
+  border-bottom: 1px solid var(--border-primary);
+  text-align: left;
+  vertical-align: middle;
+}
+.source-adoption__table td:nth-child(2) {
+  max-width: 18rem;
+}
+.source-adoption__table td:nth-child(3) {
+  max-width: 18rem;
+}
+.source-adoption__table strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .source-adoption__bulk {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .source-adoption__table-wrap {
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  .source-adoption__table {
+    display: block;
+    min-width: 0;
+  }
+  .source-adoption__table thead {
+    display: none;
+  }
+  .source-adoption__table tbody {
+    display: grid;
+    gap: var(--space-2_5);
+  }
+  .source-adoption__table tr {
+    display: grid;
+    grid-template-columns: 1.8rem minmax(0, 1fr);
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+  }
+  .source-adoption__table td {
+    display: block;
+    grid-column: 2;
+    padding: var(--space-1_5) 0;
+    border: 0;
+    max-width: none;
+  }
+  .source-adoption__table td:nth-child(2),
+  .source-adoption__table td:nth-child(3) {
+    max-width: none;
+  }
+  .source-adoption__table td:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 5;
+    padding-top: var(--space-2);
+  }
+  .source-adoption__table td[data-label]::before {
+    display: block;
+    margin-bottom: var(--space-0_5);
+    color: var(--text-tertiary);
+    content: attr(data-label);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.03em;
+  }
+  .source-adoption__table td:last-child .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .source-adoption__table .form-input {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+}

@@ -14,25 +14,30 @@
         data-testid="sidebar-logo"
         class="sidebar-logo bg-accent"
       >
-        <AppIcon name="music" :size="17" class="text-white" />
+        <AppIcon name="music" :size="17"  />
       </div>
       <span
         v-show="!desktopCollapsed"
         class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold tracking-tight"
         :style="{ color: 'var(--text-primary)' }"
-      >YunPlex2</span>
+      >reYunPlex<small class="sidebar-brand__caption">MUSIC WORKSPACE</small></span>
     </div>
 
-    <nav class="sidebar-nav flex-1 overflow-y-auto px-3 py-4">
+    <nav class="sidebar-nav flex-1 overflow-y-auto px-3 py-4" aria-label="主导航">
+      <p v-show="!desktopCollapsed" class="sidebar-group-label">音乐工作区</p>
       <SidebarItem
-        v-for="item in navItems"
+        v-for="item in workspaceNavigation"
         :key="item.path"
         :icon="item.icon"
         :label="item.label"
         :path="item.path"
         :collapsed="desktopCollapsed"
+
         @navigate="emit('navigate')"
       />
+      <NuxtLink v-if="!desktopCollapsed" to="/sync-sources?add=1" class="sidebar-add"><AppIcon name="plus" :size="16" />新建收藏</NuxtLink><div class="sidebar-nav__spacer" />
+      <p v-show="!desktopCollapsed" class="sidebar-group-label">系统管理</p>
+      <SidebarItem v-for="item in managementNavigation" :key="item.path" :icon="item.icon" :label="item.label" :path="item.path" :collapsed="desktopCollapsed" @navigate="emit('navigate')" />
     </nav>
 
     <div v-if="!mobile" class="shrink-0" style="border-top:1px solid var(--border-primary)">
@@ -56,6 +61,7 @@
 
 <script setup lang="ts">
 import { useSidebarState } from '~/composables/useSidebarState'
+import { managementNavigation, workspaceNavigation } from '~/lib/navigation'
 
 const props = withDefaults(defineProps<{ mobile?: boolean }>(), { mobile: false })
 const emit = defineEmits<{ navigate: [] }>()
@@ -64,22 +70,15 @@ const { sidebarCollapsed, loadSidebarState, toggleSidebarCollapsed } = useSideba
 const desktopCollapsed = computed(() => sidebarCollapsed.value && !props.mobile)
 const sidebarWidth = computed(() => {
   if (props.mobile) return 'min(18rem, 82vw)'
-  return desktopCollapsed.value ? '64px' : '220px'
+  return desktopCollapsed.value ? '64px' : '232px'
 })
 
 onMounted(loadSidebarState)
 
-const navItems = [
-  { icon: 'dashboard', label: '仪表盘', path: '/' },
-  { icon: 'source', label: '同步源', path: '/sync-sources' },
-  { icon: 'download', label: '手动下载', path: '/manual-download' },
-  { icon: 'activity', label: '任务中心', path: '/task-center' },
-  { icon: 'settings', label: '设置', path: '/config' },
-  { icon: 'logs', label: '日志查看', path: '/logs' },
-]
 </script>
 
 <style scoped>
+.sidebar-add{display:flex;align-items:center;justify-content:center;gap:var(--space-2);margin:var(--space-6) var(--space-1) 0;min-height:2.6rem;background:var(--text-primary);color:var(--bg-app);border-radius:var(--radius-md);font-size:var(--text-sm);font-weight:var(--font-weight-semibold)}
 .sidebar-brand {
   display: flex;
   align-items: center;
@@ -87,6 +86,9 @@ const navItems = [
   min-block-size: var(--app-topbar-block-size);
   padding-inline: 18px;
 }
+.sidebar-brand__caption { display: block; margin-top: var(--space-1); font-size: var(--text-xs); color: var(--text-tertiary); font-weight: var(--font-weight-normal); }
+.sidebar-group-label { margin: var(--space-3) var(--space-3) var(--space-2); font-size: var(--text-xs); letter-spacing: .1em; font-weight: var(--font-weight-semibold); color: var(--text-tertiary); }
+.sidebar-nav__spacer { flex: 1; min-height: 2rem; }
 
 .sidebar-brand--collapsed {
   justify-content: center;
@@ -102,8 +104,9 @@ const navItems = [
   align-items: center;
   justify-content: center;
   position: relative;
-  border: 1px solid rgba(255,255,255,0.22);
-  border-radius: 11px;
+  color: var(--on-accent);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
 }
 
@@ -119,7 +122,7 @@ const navItems = [
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: var(--space-1);
 }
 
 .sidebar-collapse-button {

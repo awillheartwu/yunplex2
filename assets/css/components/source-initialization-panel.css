@@ -1,0 +1,168 @@
+/* Media adoption panel styles; imported by its owning component. */
+.source-adoption {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.source-adoption__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4);
+}
+.source-adoption__hero h2 {
+  margin: var(--space-0_5) 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+}
+.source-adoption__hero p {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+.source-adoption__metrics small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  display: block;
+}
+.source-adoption__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.source-adoption__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+.source-adoption__steps > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+.source-adoption__steps span {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  font-size: var(--text-xs);
+}
+.source-adoption__steps .is-current {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.source-adoption__steps .is-done {
+  color: var(--success);
+}
+.source-adoption__metrics {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2_5);
+}
+.source-adoption__metrics article {
+  padding: var(--space-3);
+}
+.source-adoption__metrics span {
+  display: block;
+}
+.source-adoption__metrics strong {
+  display: block;
+  margin: var(--space-1) 0;
+  color: var(--text-primary);
+  font-size: var(--text-xl);
+}
+.source-adoption__progress {
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.source-adoption__progress p {
+  margin-top: var(--space-0_5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.source-adoption__error {
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-lg);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.source-adoption__quick-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent-muted) 45%, var(--bg-surface));
+}
+.source-adoption__quick-action strong {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.source-adoption__quick-action p {
+  margin-top: var(--space-0_5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.source-adoption__incompatible {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.source-adoption__incompatible p {
+  flex: 1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.source-adoption:has(.source-adoption__commit) {
+  padding-bottom: var(--space-20);
+}
+@media (max-width: 1100px) {
+  .source-adoption__metrics {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .source-adoption__metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .source-adoption__steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .source-adoption__hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .source-adoption__metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .source-adoption__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .source-adoption__quick-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .source-adoption__quick-action .btn {
+    justify-content: center;
+  }
+  .source-adoption__incompatible {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

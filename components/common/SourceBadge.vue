@@ -14,7 +14,7 @@ const badgeText = computed(() => {
 
 const badgeClass = computed(() => {
   const base = 'text-2xs px-1.5 py-0.5 rounded shrink-0'
-  if (props.type === 'album') return `${base} bg-[#f59e0b20] text-[var(--warning,#f59e0b)]`
-  return props.subscribed ? `${base} bg-[#22c55e20] text-success` : `${base} bg-[var(--accent-glow)] text-[var(--accent)]`
+  if (props.type === 'album') return `${base} semantic-ignored`
+  return props.subscribed ? `${base} semantic-success` : `${base} bg-accent-muted text-accent`
 })
 </script>

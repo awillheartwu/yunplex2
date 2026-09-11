@@ -284,11 +284,11 @@ function toggleJson() {
   background: transparent;
 }
 .alias-editor ::-webkit-scrollbar-thumb {
-  background: var(--accent, #818cf8);
-  border-radius: 3px;
+  background: var(--accent);
+  border-radius: var(--radius-xs);
 }
 .alias-editor ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-hover, #6366f1);
+  background: var(--accent-strong);
 }
 /* Firefox */
 .alias-editor__rows {
@@ -312,6 +312,6 @@ function toggleJson() {
 
 .alias-editor__rows {
   scrollbar-width: thin;
-  scrollbar-color: var(--accent, #818cf8) transparent;
+  scrollbar-color: var(--accent) transparent;
 }
 </style>

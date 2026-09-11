@@ -24,5 +24,5 @@ import SourceMediaDetails from '~/components/sources/SourceMediaDetails.vue'
 
 <style scoped>
 .orphaned-media-page { width: 100%; min-width: 0; max-width: 1100px; margin: 0 auto; }
-.orphaned-media-page__content { padding: 1rem; }
+.orphaned-media-page__content { padding: var(--space-4); }
 </style>

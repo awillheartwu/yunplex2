@@ -9,6 +9,7 @@ import {
 } from '~~/composables/useFilterQuery'
 import { useFeedback } from '~~/composables/useFeedback'
 import { useDebounceFn } from '~~/composables/useTiming'
+import { sseSubscribe } from '~~/composables/sse'
 import { formatRunDuration, runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
 import { getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
@@ -127,6 +128,7 @@ export function useTaskCenterPage() {
 
   const failureTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
     { label: '全部类型', value: '' },
+    { label: '首次媒体接管', value: 'source_initialization' },
     { label: '同步', value: 'sync' },
     { label: '补全', value: 'repair' },
     { label: '手动下载', value: 'manual_download' },
@@ -321,15 +323,22 @@ export function useTaskCenterPage() {
     return formatRunDuration(Math.max(0, Date.now() - new Date(value).getTime()))
   }
   async function refreshOverview() {
-    const [activeResponse, failureResponse] = await Promise.all([
+    const [activeResponse, awaitingResponse, failureResponse] = await Promise.all([
       api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '20', status: 'running' }),
+      api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '20', status: 'awaiting_action' }),
       api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', { limit: '1', status: 'open' }),
     ])
-    activeRunItems.value = activeResponse.items
+    activeRunItems.value = [...activeResponse.items, ...awaitingResponse.items]
     openFailureTotal.value = failureResponse.total
   }
 
   onMounted(async () => {
+    repairProgressUnsubscribe = sseSubscribe('repair-progress', (data) => {
+      if (data.finished === true) void refreshOverview()
+    })
+    resumeUnsubscribe = sseSubscribe('resync', () => {
+      void Promise.all([failures.fetch(), refreshOverview()]).catch(() => {})
+    })
     const runTypes = failureTypeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
     const failureKinds = failureKindFilters.map(item => item.value).filter((value): value is string => value !== '')
     const failureStatuses = failureStatusTabs.map(item => item.value)
@@ -358,6 +367,14 @@ export function useTaskCenterPage() {
       sourceOptions.value = []
     }
     await Promise.all([failures.fetch(), refreshOverview()])
+  })
+
+  let repairProgressUnsubscribe: (() => void) | null = null
+  let resumeUnsubscribe: (() => void) | null = null
+  onUnmounted(() => {
+    repairProgressUnsubscribe?.()
+    resumeUnsubscribe?.()
+    repairProgressUnsubscribe = null
   })
 
   watch(() => syncState.value?.isRunning, (running, previous) => {

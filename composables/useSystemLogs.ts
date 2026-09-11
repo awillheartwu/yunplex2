@@ -8,6 +8,7 @@ export function useSystemLogs() {
   const api = useApi()
   const logs = ref<LogEntry[]>([])
   const total = ref(0)
+  const error = ref('')
   const offset = ref(0)
   const loading = ref(false)
   const loadingMore = ref(false)
@@ -26,6 +27,7 @@ export function useSystemLogs() {
   async function fetchLogs() {
     const token = fetchGuard.next()
     loading.value = true
+    error.value = ''
     loadingMore.value = false
     offset.value = 0
     try {
@@ -35,6 +37,8 @@ export function useSystemLogs() {
       if (!fetchGuard.isLatest(token)) return
       logs.value = response.items
       total.value = response.total
+    } catch (err) {
+      if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '请稍后重试'
     } finally {
       if (fetchGuard.isLatest(token)) loading.value = false
     }
@@ -44,6 +48,7 @@ export function useSystemLogs() {
     if (loadingMore.value || !hasMore.value) return
     const token = fetchGuard.next()
     loadingMore.value = true
+    error.value = ''
     try {
       const nextOffset = offset.value + PAGE_SIZE
       const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(nextOffset) }
@@ -53,6 +58,8 @@ export function useSystemLogs() {
       logs.value = [...logs.value, ...response.items]
       total.value = response.total
       offset.value = nextOffset
+    } catch (err) {
+      if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '请稍后重试'
     } finally {
       if (fetchGuard.isLatest(token)) loadingMore.value = false
     }
@@ -99,18 +106,22 @@ export function useSystemLogs() {
   }
 
   let unsubscribe: (() => void) | null = null
+  let resumeUnsubscribe: (() => void) | null = null
   onMounted(async () => {
-    await fetchLogs()
     unsubscribe = sseSubscribe('log', enqueueRealtimeLog)
+    resumeUnsubscribe = sseSubscribe('resync', () => { void fetchLogs() })
+    await fetchLogs()
   })
   onUnmounted(() => {
     realtimeBatch.flush()
     unsubscribe?.()
+    resumeUnsubscribe?.()
     unsubscribe = null
   })
 
   return {
     activeFilter,
+    error,
     fetchLogs,
     filters,
     formatTime,

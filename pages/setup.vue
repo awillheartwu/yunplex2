@@ -3,7 +3,7 @@
     <div class="setup-hero">
       <div>
         <p class="setup-eyebrow">首次初始化</p>
-        <h1 id="setup-title" class="setup-title">把运行条件一次补齐</h1>
+        <h1 id="setup-title" class="setup-title">连接你的音乐世界</h1>
         <p class="setup-copy">创建管理员密码，并确认网易云、Plex、下载目录都可用后再进入控制台。</p>
       </div>
       <div class="setup-progress" aria-label="初始化进度">
@@ -16,6 +16,7 @@
             isStepComplete(step.key) ? 'setup-step--done' : '',
           ]"
           type="button"
+          :aria-current="activeStep === step.key ? 'step' : undefined"
           :disabled="!canOpenStep(step.key)"
           @click="activeStep = step.key"
         >
@@ -388,41 +389,41 @@ function canOpenStep(key: StepKey): boolean {
 .setup-page {
   width: min(100%, 58rem);
   display: grid;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .setup-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .setup-eyebrow {
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-1_5);
   color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
 }
 
 .setup-title {
   margin: 0;
-  font-size: 2.35rem;
+  font-size: var(--text-4xl);
   line-height: 1.1;
-  font-weight: 800;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0;
 }
 
 .setup-copy {
-  margin: 0.35rem 0 0;
+  margin: var(--space-1_5) 0 0;
   color: var(--text-secondary);
-  font-size: 0.92rem;
+  font-size: var(--text-base);
   line-height: 1.65;
 }
 
 .setup-progress {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .setup-step {
@@ -430,16 +431,16 @@ function canOpenStep(key: StepKey): boolean {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  padding: 0 0.55rem;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text-secondary);
-  font-size: 0.82rem;
-  font-weight: 650;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+  transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
 .setup-step:disabled {
@@ -465,9 +466,9 @@ function canOpenStep(key: StepKey): boolean {
   justify-content: center;
   width: 1.35rem;
   height: 1.35rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bg-surface);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .setup-panel {
@@ -477,8 +478,8 @@ function canOpenStep(key: StepKey): boolean {
 .setup-panel__header {
   display: flex;
   align-items: flex-start;
-  gap: 0.85rem;
-  margin-bottom: 1.1rem;
+  gap: var(--space-3_5);
+  margin-bottom: var(--space-4);
 }
 
 .setup-panel__icon {
@@ -496,28 +497,28 @@ function canOpenStep(key: StepKey): boolean {
 
 .setup-panel__title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   line-height: 1.25;
-  font-weight: 760;
+  font-weight: var(--font-weight-bold);
 }
 
 .setup-form {
   display: grid;
-  gap: 0.95rem;
+  gap: var(--space-4);
 }
 
 .setup-label {
   display: inline-flex;
-  margin-bottom: 0.45rem;
-  font-size: 0.85rem;
-  font-weight: 650;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .setup-path-note {
-  margin: 0.5rem 0 0;
-  color: var(--text-muted-deep);
-  font-size: 0.74rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
   line-height: 1.55;
 }
 
@@ -533,14 +534,14 @@ function canOpenStep(key: StepKey): boolean {
 .setup-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(7rem, 0.32fr);
-  gap: 0.8rem;
+  gap: var(--space-3);
 }
 
 .setup-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.65rem;
+  gap: var(--space-2_5);
 }
 
 .setup-action {
@@ -551,9 +552,9 @@ function canOpenStep(key: StepKey): boolean {
 .setup-message,
 .setup-check {
   margin: 0;
-  padding: 0.72rem 0.82rem;
+  padding: var(--space-3) var(--space-3_5);
   border-radius: var(--radius-md);
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -580,15 +581,15 @@ function canOpenStep(key: StepKey): boolean {
 
 .setup-summary {
   display: grid;
-  gap: 0.6rem;
+  gap: var(--space-2_5);
 }
 
 .setup-summary__item {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--space-2_5);
   min-height: 2.8rem;
-  padding: 0 0.85rem;
+  padding: 0 var(--space-3_5);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-input);
@@ -598,7 +599,7 @@ function canOpenStep(key: StepKey): boolean {
 .setup-summary__item strong {
   margin-left: auto;
   color: var(--text-primary);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 @media (min-width: 780px) {
@@ -610,7 +611,7 @@ function canOpenStep(key: StepKey): boolean {
 
 @media (max-width: 640px) {
   .setup-title {
-    font-size: 1.9rem;
+    font-size: var(--text-3xl);
   }
 
   .setup-progress {

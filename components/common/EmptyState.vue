@@ -2,7 +2,7 @@
   <section class="empty-state" role="status" aria-live="polite">
     <div class="empty-state__icon">
       <slot name="icon">
-        <AppIcon name="list" :size="56" />
+        <AppIcon name="list" :size="28" />
       </slot>
     </div>
     <p class="empty-state__title">{{ title }}</p>
@@ -22,7 +22,7 @@ defineProps<{ title: string; description?: string }>()
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 3rem 1rem;
+  padding: var(--space-12) var(--space-4);
   color: var(--text-tertiary);
   text-align: center;
 }
@@ -32,18 +32,18 @@ defineProps<{ title: string; description?: string }>()
   width: 4.5rem;
   height: 4.5rem;
   place-items: center;
-  margin-bottom: 1rem;
-  border: 1px dashed var(--border-secondary);
-  border-radius: 1.35rem;
-  background: var(--bg-input);
-  opacity: 0.55;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-2xl);
+  background: var(--accent-muted);
+  color: var(--accent);
 }
 
 .empty-state__title {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-1);
   color: var(--text-secondary);
-  font-size: 1rem;
-  font-weight: 650;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.35;
 }
 
@@ -51,14 +51,14 @@ defineProps<{ title: string; description?: string }>()
   max-width: 28rem;
   margin: 0;
   color: var(--text-tertiary);
-  font-size: 0.875rem;
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
 @media (max-width: 767px) {
   .empty-state {
     min-block-size: 12rem;
-    padding-block: 2rem;
+    padding-block: var(--space-8);
   }
 }
 </style>

@@ -1,19 +1,41 @@
 <template>
   <div class="run-detail-page">
     <div v-if="loading" class="run-detail-state">正在加载运行详情…</div>
-    <EmptyState v-else-if="!run" title="运行记录不存在" description="这条记录可能已被保留策略清理。">
+    <div v-if="runError" class="section-card run-detail-error" role="alert"><strong>暂时无法读取运行记录</strong><p>{{ runError }}</p><button class="btn btn-secondary btn-sm" @click="fetchRun">重新加载</button></div>
+    <EmptyState v-if="!loading && !run && !runError" title="运行记录不存在" description="这条记录可能已被保留策略清理。">
       <NuxtLink to="/task-center?tab=runs" class="btn btn-secondary">返回运行记录</NuxtLink>
     </EmptyState>
-    <template v-else>
+    <template v-if="run">
       <div class="run-detail-page__title">
         <div>
           <RunTypeBadge :type="run.type" compact size="sm" />
-          <h2>运行详情</h2>
+          <h1>运行详情</h1>
         </div>
         <span v-if="run.status === 'running'" class="run-detail-page__live">
           <span />
           实时更新
         </span>
+        <button
+          v-if="run.type === 'source_initialization' && run.status === 'running' && run.sourceIds?.[0]"
+          class="btn btn-secondary btn-sm"
+          @click="cancelInitialization(run.sourceIds[0])"
+        >
+          取消分析
+        </button>
+        <NuxtLink
+          v-else-if="run.type === 'source_initialization' && run.status === 'awaiting_action' && run.sourceIds?.[0]"
+          class="btn btn-primary btn-sm"
+          :to="`/sync-sources/${run.sourceIds[0]}?tab=initialization`"
+        >
+          打开接管工作台
+        </NuxtLink>
+        <button
+          v-else-if="run.type === 'source_initialization' && run.status === 'failed' && run.sourceIds?.[0]"
+          class="btn btn-primary btn-sm"
+          @click="retryInitialization(run.sourceIds[0])"
+        >
+          重试分析
+        </button>
       </div>
       <JobDetail :job="run" @back="navigateTo('/task-center?tab=runs')" />
     </template>
@@ -22,40 +44,60 @@
 
 <script setup lang="ts">
 import type { TaskRun } from '~~/server/lib/job/types'
-import { useIntervalFn } from '~~/composables/useTiming'
+import { useIntervalFn, useLatestAsyncGuard } from '~~/composables/useTiming'
+import { sseSubscribe } from '~~/composables/sse'
 
 const route = useRoute()
 const api = useApi()
 const run = ref<TaskRun | null>(null)
 const loading = ref(true)
+const runError = ref('')
+const fetchGuard = useLatestAsyncGuard()
 
 async function fetchRun() {
+  const token = fetchGuard.next()
   try {
-    run.value = await api.get<TaskRun>(`/runs/${String(route.params.id)}`)
-  } catch {
-    run.value = null
+    const result = await api.get<TaskRun>(`/runs/${String(route.params.id)}`)
+    if (!fetchGuard.isLatest(token)) return
+    run.value = result
+    runError.value = ''
+  } catch (error) {
+    if (fetchGuard.isLatest(token)) runError.value = error instanceof Error ? error.message : '请稍后重试'
   } finally {
-    loading.value = false
+    if (fetchGuard.isLatest(token)) loading.value = false
   }
 }
 
+async function cancelInitialization(sourceId: string) {
+  await api.post(`/playlist-sources/${sourceId}/initialization/cancel`, {})
+  await fetchRun()
+}
+
+async function retryInitialization(sourceId: string) {
+  await api.post(`/playlist-sources/${sourceId}/initialization/start`, {})
+  await navigateTo(`/sync-sources/${sourceId}?tab=initialization`)
+}
+
 const polling = useIntervalFn(() => {
-  if (run.value?.status === 'running') void fetchRun()
+  if (run.value?.status === 'running' || run.value?.status === 'awaiting_action' || runError.value) void fetchRun()
 }, 2500)
 
 onMounted(async () => {
-  await fetchRun()
+  resumeUnsubscribe = sseSubscribe('resync', () => { void fetchRun() })
   polling.start()
+  await fetchRun()
 })
-onUnmounted(() => polling.stop())
+let resumeUnsubscribe: (() => void) | null = null
+onUnmounted(() => { polling.stop(); resumeUnsubscribe?.() })
 </script>
 
 <style scoped>
-.run-detail-page{display:flex;flex-direction:column;gap:1.25rem;padding-bottom:2rem}
+.run-detail-error { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-4); color: var(--danger); }
+.run-detail-page{display:flex;flex-direction:column;gap:var(--space-5);padding-bottom:var(--space-8)}
 .run-detail-page__title{display:flex;align-items:center;justify-content:space-between}
-.run-detail-page__title>div{display:flex;align-items:center;gap:.65rem}
-.run-detail-page__title h2{margin:0;color:var(--text-primary);font-size:1.05rem}
-.run-detail-page__live{display:flex;align-items:center;gap:.45rem;color:var(--accent);font-size:.75rem;font-weight:700}
-.run-detail-page__live span{width:.5rem;height:.5rem;border-radius:999px;background:var(--success);box-shadow:0 0 0 5px var(--success-soft)}
+.run-detail-page__title>div{display:flex;align-items:center;gap:var(--space-2_5)}
+.run-detail-page__title h1{margin:0;color:var(--text-primary);font-size:var(--text-md)}
+.run-detail-page__live{display:flex;align-items:center;gap:var(--space-2);color:var(--accent);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
+.run-detail-page__live span{width:.5rem;height:.5rem;border-radius:var(--radius-full);background:var(--success);box-shadow:0 0 0 5px var(--success-soft)}
 .run-detail-state{display:flex;min-height:18rem;align-items:center;justify-content:center;color:var(--text-secondary)}
 </style>
