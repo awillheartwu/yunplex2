@@ -38,8 +38,8 @@ YunPlex2/
 
 ### 前置要求
 
-- Node.js 22+
-- pnpm
+- Node.js 24（与 .nvmrc、CI 和 Docker 一致）
+- pnpm 10.33.0（由 packageManager 固定）
 
 ### 安装与启动
 
@@ -141,9 +141,26 @@ volumes:
 | 同步间隔 | 全局默认自动同步间隔（分钟），建议 30-60；单个来源可覆盖，留空则继承 |
 | 歌曲上限 | 每次同步处理的歌曲数量 |
 | 启用自动同步 | 开关 |
-| 缺少已登记媒体时自动下载 | 没有有效媒体资产时直接下载并以文件路径建立身份；默认关闭，来源可单独覆盖 |
+| 未验证媒体处理方式 | 默认“下载独立托管副本”；也可改为“等待手动选择”，再从同步源歌曲上下文明确接管 Plex 媒体或触发托管下载 |
 
-开启缺失媒体自动下载后，人工绑定仍然优先，已验证的 YunPlex 或外部媒体继续复用。下载完成后只通过精确文件路径定位 Plex 项；失败或尚未索引时保留旧歌单条目，不使用元数据候选替代。
+人工接管始终优先，已验证的 YunPlex 托管媒体继续按精确路径复用。选择自动托管时，下载完成后只通过精确文件路径定位 Plex 项；选择等待手动处理时，同步保持待选择状态。失败或尚未索引时保留旧歌单条目，不使用元数据候选替代。
+
+### 自动化验收
+
+```bash
+# 受控媒体身份与删除保护
+pnpm acceptance:media-reuse
+
+# 来源调度、重启恢复和串行执行
+pnpm acceptance:auto-sync
+
+# 独立临时数据库上的 Chromium 关键旅程
+pnpm exec playwright install chromium
+pnpm test:browser
+```
+
+浏览器测试使用独立生成的临时数据库，测试服务退出后自动清理；不会读取或修改项目的 `data/data.db`。真实 Plex scraper、共享路径和网易云下载
+仍按 [真实环境验收手册](docs/external-acceptance.md) 操作。
 
 ## API 接口
 
@@ -159,9 +176,13 @@ volumes:
 | PUT | /api/config | 保存配置 |
 | GET | /api/config/defaults | 获取默认配置 |
 | POST | /api/config/test-connection | 测试连接 |
-| POST | /api/sync/trigger | 触发同步（`{ mode: "normal" | "preview" | "full" }`） |
+| POST | /api/sync/trigger | 按来源接受请求，返回逐来源结果（`{ mode: "normal" | "preview" | "full" }`） |
+| POST | /api/playlist-sources/:id/sync | 单来源请求，忙时拒绝；返回请求、分析或等待确认状态 |
+| GET | /api/source-requests/:id | 查询实际来源请求状态和关联 Run |
+| POST | /api/playlist-sources/:id/initialization/restart | 携带当前 `initializationId` 原子重新分析，过期草案返回冲突 |
+| POST | /api/playlist-sources/:id/initialization/commit | 携带 `initializationId` 幂等提交，返回实际后续请求 ID |
 | GET | /api/sync/status | 查询同步状态 |
-| POST | /api/sync/cancel | 取消正在运行的同步 |
+| POST | /api/sync/cancel | 取消当前来源请求及同批未执行请求，不取消共享文件任务 |
 | GET | /api/logs | 查询日志（参数 `level`, `limit`） |
 | DELETE | /api/logs | 清空日志 |
 | GET | /api/system/health | 健康检查 |

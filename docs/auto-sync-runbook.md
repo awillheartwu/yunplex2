@@ -13,7 +13,7 @@ pnpm acceptance:auto-sync
 - 独立到期与未来来源跳过；
 - 全局严格串行和同窗口幂等；
 - 单来源失败后继续后续来源；
-- 手动同步覆盖、停用取消、重启恢复与过期 lease 回收；
+- 手动忙时拒绝、混合批次分流、停用取消、重启恢复与过期 lease 回收；
 - 重复 daemon 初始化与数据库级单消费者；
 - 下载任务不突破全局并发上限。
 
@@ -51,6 +51,8 @@ pnpm diagnose:sync-source -- --source <SOURCE_ID> --runs 2 --apply --mode normal
 验收必须同时核对：两次 task run、来源 NetEase cursor、Plex read-back fingerprint、下载队列和具体 Plex Playlist Occurrence。生产数据执行 `--apply` 前应先备份数据库。
 
 ## 已完成证据（2026-08-28）
+
+以下为当时版本的历史证据，不覆盖 2026-09-07 的来源入口统一；新版真实验收见 [验收手册](external-acceptance.md)。
 
 - 两个来源使用临时 1 分钟周期连续运行，均为 `attempts=1`；
 - 修复后的真实串行周期中，第一个来源于 `13:29:07.532Z` 完成，第二个于 `13:29:07.537Z` 开始，无重叠；
