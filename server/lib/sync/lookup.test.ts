@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { closeDb, initDb } from '../db'
+import { closeDb, getDb, initDb } from '../db'
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
-import { upsertSongIdentityBinding } from './identity-store'
+import { getSongIdentityBinding, upsertSongIdentityBinding } from './identity-store'
 import { getLocalMediaAsset, upsertLocalMediaAsset } from './local-media-store'
+import { ensurePendingInitialization, upsertMediaDecision } from '../source-initialization/store'
 
 const getPlaylistTracks = vi.fn()
 const getTrackByRatingKey = vi.fn()
@@ -101,6 +102,78 @@ describe('safe media reuse', () => {
     })
   })
 
+  it('recovers Explicit Adoption when Plex changes ratingKey but keeps the exact path', async () => {
+    writeFileSync(join(root, 'external.flac'), 'audio')
+    upsertSongIdentityBinding({
+      neteaseSongId: song.id,
+      plexSectionKey: '12',
+      plexSectionRoot: '/music',
+      plexFilePath: '/music/external.flac',
+      plexRatingKey: 'old-rating',
+      bindingMethod: 'manual',
+      status: 'active',
+      evidence: {},
+    })
+    getTrackByRatingKey.mockResolvedValue(null)
+    findTracksByFilePath.mockResolvedValue([track('new-rating', '/music/external.flac')])
+
+    const { resolveTracks } = await import('./lookup')
+    const resolution = (await resolveTracks([song], '', '12', cfg())).resolutions[0]
+
+    expect(resolution).toMatchObject({
+      resolution: 'found_in_plex_library',
+      plexRatingKey: 'new-rating',
+      matchTrace: { identity: { method: 'manual' } },
+    })
+    expect(getSongIdentityBinding(song.id)).toMatchObject({
+      plexRatingKey: 'new-rating',
+      bindingMethod: 'manual',
+      status: 'active',
+    })
+  })
+
+  it('does not reuse an external exact path without Explicit Adoption', async () => {
+    const external = join(root, 'external.flac')
+    writeFileSync(external, 'audio')
+    upsertLocalMediaAsset({
+      neteaseSongId: song.id,
+      filePath: external,
+      provenance: 'manual',
+      ownership: 'external',
+      status: 'active',
+      evidence: {},
+    })
+    findTracksByFilePath.mockResolvedValue([track('external', '/music/external.flac')])
+
+    const { resolveTracks } = await import('./lookup')
+    expect((await resolveTracks([song], '', '12', cfg())).resolutions[0]).toMatchObject({
+      resolution: 'needs_download',
+      matchTrace: { source: 'download_required' },
+    })
+  })
+
+  it('falls back safely when Explicit Adoption no longer resolves', async () => {
+    upsertSongIdentityBinding({
+      neteaseSongId: song.id,
+      plexSectionKey: '12',
+      plexSectionRoot: '/music',
+      plexFilePath: '/music/missing.flac',
+      plexRatingKey: 'missing',
+      bindingMethod: 'manual',
+      status: 'active',
+      evidence: {},
+    })
+
+    const { resolveTracks } = await import('./lookup')
+    const resolution = (await resolveTracks([song], '', '12', cfg())).resolutions[0]
+
+    expect(resolution).toMatchObject({
+      resolution: 'needs_download',
+      matchTrace: { source: 'download_required' },
+    })
+    expect(getSongIdentityBinding(song.id)?.status).toBe('stale')
+  })
+
   it('downloads when there is no verified identity instead of guessing metadata', async () => {
     const { resolveTracks } = await import('./lookup')
     expect((await resolveTracks([song], '', '12', cfg())).resolutions[0]).toMatchObject({ resolution: 'needs_download', matchTrace: { source: 'download_required' } })
@@ -115,6 +188,24 @@ describe('safe media reuse', () => {
       mediaPolicy: { disposition: 'wait_manual' },
       matchTrace: { source: 'media_policy' },
     })
+  })
+
+  it('honors sparse first-adoption defer decisions without affecting future songs', async () => {
+    const now = new Date().toISOString()
+    getDb().prepare(`INSERT INTO playlist_sources (
+      id, netease_playlist_id, name, enabled, netease_playlist_name, created_at, updated_at
+    ) VALUES ('source-1', 1, 'Source', 1, 'Source', ?, ?)`)
+      .run(now, now)
+    const initialization = ensurePendingInitialization('source-1')
+    upsertMediaDecision('source-1', song.id, 'defer', initialization.id)
+    const { resolveTracks } = await import('./lookup')
+
+    const deferred = await resolveTracks([song], '', '12', cfg(), false, { sourceId: 'source-1' }, { automaticMediaFallback: true })
+    const futureSong = { ...song, id: song.id + 1 }
+    const normal = await resolveTracks([futureSong], '', '12', cfg(), false, { sourceId: 'source-1' }, { automaticMediaFallback: true })
+
+    expect(deferred.resolutions[0]).toMatchObject({ resolution: 'awaiting_manual' })
+    expect(normal.resolutions[0]).toMatchObject({ resolution: 'needs_download' })
   })
 
   it('stops when multiple Plex items claim one managed path', async () => {

@@ -12,7 +12,7 @@ describe('automatic media fallback wiring', () => {
     expect(source('pages/config.vue')).toContain('等待手动选择')
     expect(source('pages/config.vue')).not.toContain('form.sync.downloadWhenMediaMissing')
     expect(source('pages/setup.vue')).not.toContain('v-model="config.sync.downloadWhenMediaMissing"')
-    expect(source('components/sources/EditSourceDialog.vue')).not.toContain('form.downloadWhenMediaMissing')
+    expect(source('components/sources/SourceSettingsPanel.vue')).not.toContain('form.downloadWhenMediaMissing')
   })
 
   it('offers both explicit per-song resolutions in source context', () => {

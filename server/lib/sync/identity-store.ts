@@ -43,6 +43,13 @@ export class BindingVersionConflictError extends Error {
   }
 }
 
+export class BindingIdentityConflictError extends Error {
+  constructor() {
+    super('该 Plex 媒体已关联到另一首网易云歌曲')
+    this.name = 'BindingIdentityConflictError'
+  }
+}
+
 function fromRow(row: BindingRow): SongIdentityBinding {
   return {
     neteaseSongId: row.netease_song_id,
@@ -208,6 +215,24 @@ function assertVersion(neteaseSongId: number, expected: string | null): SongIden
   return current
 }
 
+function assertPlexIdentityAvailable(input: {
+  neteaseSongId: number
+  plexFilePath: string
+  plexRatingKey: string | null
+}): void {
+  const normalizedPath = normalizePlexPath(input.plexFilePath)
+  const conflict = getDb().prepare(`
+    SELECT 1
+    FROM song_identity_bindings
+    WHERE netease_song_id != ?
+      AND status = 'active'
+      AND binding_method IN ('path', 'manual')
+      AND (plex_file_path = ? OR (? IS NOT NULL AND plex_rating_key = ?))
+    LIMIT 1
+  `).get(input.neteaseSongId, normalizedPath, input.plexRatingKey, input.plexRatingKey)
+  if (conflict) throw new BindingIdentityConflictError()
+}
+
 function affectedSources(neteaseSongId: number): Array<{ id: string; name: string }> {
   return getDb().prepare(`
     SELECT DISTINCT source.id, COALESCE(NULLIF(source.name, ''), source.netease_playlist_name, source.id) AS name
@@ -236,6 +261,11 @@ export function rebindSongIdentity(input: {
   const db = getDb()
   return db.transaction(() => {
     assertVersion(input.neteaseSongId, input.expectedBindingUpdatedAt)
+    assertPlexIdentityAvailable({
+      neteaseSongId: input.neteaseSongId,
+      plexFilePath: input.binding.plexFilePath,
+      plexRatingKey: input.binding.plexRatingKey,
+    })
     const binding = upsertSongIdentityBinding({
       ...input.binding,
       neteaseSongId: input.neteaseSongId,

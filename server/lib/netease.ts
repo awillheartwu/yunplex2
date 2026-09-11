@@ -201,6 +201,12 @@ export async function fetchPlaylistSongs(
 
     if (data?.songs) {
       for (const s of data.songs) {
+        // NetEase occasionally returns a nominal song row whose identity text
+        // is explicitly null (typically for unavailable/withdrawn media).
+        // Keep its authoritative trackId, but leave the detail unresolved so
+        // Source Convergence applies deletion protection instead of inventing
+        // a path such as "null/未知专辑" or crashing alias normalization.
+        if (findInvalidRawSongField(s)) continue
         const song = mapRawSong(s)
         // Fallback: old API often has publishTime when v3 doesn't
         if (!song.album.publishTime && oldData?.songs) {
@@ -239,6 +245,34 @@ interface RawSong {
   }
 }
 
+function findInvalidRawSongField(raw: RawSong): string | null {
+  const candidate = raw as unknown as {
+    name?: unknown
+    ar?: unknown
+    al?: unknown
+  }
+  if (typeof candidate.name !== 'string') return 'song.name'
+  if (candidate.ar !== undefined) {
+    if (!Array.isArray(candidate.ar)) return 'song.ar'
+    for (const [index, artist] of candidate.ar.entries()) {
+      const name = artist && typeof artist === 'object'
+        ? (artist as { name?: unknown }).name
+        : undefined
+      if (typeof name !== 'string') return `song.ar[${index}].name`
+    }
+  }
+  if (candidate.al !== undefined) {
+    if (!candidate.al || typeof candidate.al !== 'object') return 'song.al'
+    const album = candidate.al as { name?: unknown; artist?: unknown }
+    if (typeof album.name !== 'string') return 'song.al.name'
+    if (album.artist !== undefined && album.artist !== null) {
+      if (typeof album.artist !== 'object') return 'song.al.artist'
+      if (typeof (album.artist as { name?: unknown }).name !== 'string') return 'song.al.artist.name'
+    }
+  }
+  return null
+}
+
 // ── Artist alias state ──
 let artistAliases: Record<string, string> = {}
 let normalizedAliases: Record<string, string> = {}
@@ -272,6 +306,10 @@ function applyAlias(name: string): string {
 }
 
 export function mapRawSong(raw: RawSong): NeteaseSong {
+  const invalidField = findInvalidRawSongField(raw)
+  if (invalidField) {
+    throw new Error(`网易云歌曲 ${raw.id} 元数据不完整：${invalidField}`)
+  }
   // v3 API may put publishTime at song level or album level, or omit it
   const pubTime = raw.publishTime ?? raw.al?.publishTime ?? 0
   return {

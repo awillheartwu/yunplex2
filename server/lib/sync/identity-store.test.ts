@@ -68,4 +68,32 @@ describe('media identity store', () => {
     expect(() => unbindSongIdentityWithMode({ neteaseSongId: 2, expectedBindingUpdatedAt: 'stale', mode: 'reevaluate' })).toThrow(BindingVersionConflictError)
     expect(unbindSongIdentityWithMode({ neteaseSongId: 2, expectedBindingUpdatedAt: binding.updatedAt, mode: 'reevaluate' }).binding.status).toBe('unbound')
   })
+
+  it('rejects adopting one Plex media identity for two different NetEase songs', () => {
+    setup()
+    rebindSongIdentity({
+      neteaseSongId: 1,
+      expectedBindingUpdatedAt: null,
+      binding: {
+        plexSectionKey: '12',
+        plexSectionRoot: '/music',
+        plexFilePath: '/music/shared.flac',
+        plexRatingKey: 'shared',
+        evidence: {},
+      },
+    })
+
+    expect(() => rebindSongIdentity({
+      neteaseSongId: 2,
+      expectedBindingUpdatedAt: null,
+      binding: {
+        plexSectionKey: '12',
+        plexSectionRoot: '/music',
+        plexFilePath: '/music/shared.flac',
+        plexRatingKey: 'shared',
+        evidence: {},
+      },
+    })).toThrow('该 Plex 媒体已关联到另一首网易云歌曲')
+    expect(getSongIdentityBinding(2)).toBeNull()
+  })
 })

@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
+import { getDb } from '../db'
+import { getRun, saveRun } from '../run/store'
+import { getSource } from '../playlist/store'
+import { resolveInitializationGate } from '../source-initialization/gate'
+import { analyzeSourceInitialization, stopInitializationAnalyses } from '../source-initialization/service'
+import type { SyncRunOptions } from './service-state'
+import { getLatestInitialization, setInitializationStatus } from '../source-initialization/store'
 import {
   claimNextSourceRequest,
   attachSourceRequestRun,
@@ -35,7 +42,7 @@ let worker: WorkerHandle | null = null
 
 interface SyncServiceHandle {
   getState: () => SyncState
-  prepareSyncForSource: (sourceId: string, options?: { mode?: 'normal'; trigger?: 'schedule' }) => {
+  prepareSyncForSource: (sourceId: string, options?: SyncRunOptions) => {
     runId: string
     run: () => Promise<SyncState>
   }
@@ -55,6 +62,7 @@ export function startWorker(
   getConfig: () => AppConfig,
   syncService: SyncServiceHandle,
   _dataDir: string,
+  canStartConvergence: () => boolean = () => true,
 ): WorkerHandle {
   if (worker) return worker
 
@@ -70,9 +78,13 @@ export function startWorker(
     let config = getConfig()
     heartbeatAt = new Date().toISOString()
     reconcileSourceSchedules(config)
-    if (!config.sync.enabled || syncService.getState().isRunning) return
+    if (syncService.getState().isRunning || !canStartConvergence()) return
 
-    while (!stopping && config.sync.enabled && !syncService.getState().isRunning) {
+    while (
+      !stopping
+      && !syncService.getState().isRunning
+      && canStartConvergence()
+    ) {
       const request = claimNextSourceRequest(workerId)
       if (!request) break
       const leaseHeartbeat = setInterval(() => {
@@ -81,14 +93,47 @@ export function startWorker(
       }, LEASE_HEARTBEAT_MS)
       leaseHeartbeat.unref()
       try {
+        const source = getSource(request.sourceId)
+        const gate = source ? resolveInitializationGate(source, config) : { action: 'sync' as const }
+        const cancelled = (getDb().prepare('SELECT cancel_requested_at FROM source_sync_queue WHERE id=?').get(request.id) as { cancel_requested_at: string | null }).cancel_requested_at
+        if (cancelled) {
+          if (request.initializationId) {
+            setInitializationStatus(request.initializationId, 'cancelled', { summary: '用户取消分析' })
+            const run = request.runId ? getRun(request.runId) : null
+            if (run) saveRun({ ...run, status: 'cancelled', finishedAt: new Date().toISOString(), summary: '用户取消分析' })
+          }
+          finishSourceRequest(request, 'success', getConfig(), '用户取消')
+          continue
+        }
+        if (request.kind === 'analysis') {
+          if (stopping) break
+          await analyzeSourceInitialization(request.sourceId, request.trigger, request.initializationId ?? undefined)
+          finishSourceRequest(request, 'success', getConfig(), null)
+          continue
+        }
+        if (gate.action !== 'sync') {
+          throw new Error('来源尚未完成首次媒体接管，普通同步已阻止')
+        }
         const prepared = syncService.prepareSyncForSource(request.sourceId, {
-          mode: 'normal',
-          trigger: 'schedule',
+          mode: request.mode,
+          trigger: request.trigger,
+          ...(request.takeOverExternal ? { takeOverExternal: true } : {}),
         })
         if (!attachSourceRequestRun(request, prepared.runId)) {
           throw new Error('调度请求租约已失效，未启动来源同步')
         }
-        const state = await prepared.run()
+        if (request.followUpOf) {
+          const initialization = getLatestInitialization(request.sourceId)
+          if (initialization?.id === request.followUpOf && initialization.runId) {
+            getDb().transaction(() => {
+              setInitializationStatus(initialization.id, 'completed', { followUpRunId: prepared.runId })
+              getDb().prepare("INSERT OR REPLACE INTO task_run_links (run_id, related_run_id, relation) VALUES (?, ?, 'initialization_follow_up')").run(initialization.runId, prepared.runId)
+              getDb().prepare("INSERT OR REPLACE INTO task_run_links (run_id, related_run_id, relation) VALUES (?, ?, 'follow_up_of')").run(prepared.runId, initialization.runId)
+            })()
+          }
+        }
+        const running = prepared.run()
+        const state = await running
         const result = state.lastSyncResult ?? 'failure'
         finishSourceRequest(
           request,
@@ -97,6 +142,15 @@ export function startWorker(
           result === 'failure' ? state.failures.at(-1)?.reason ?? '来源同步失败' : null,
         )
       } catch (error) {
+        if (stopping) {
+          getDb().prepare("UPDATE source_sync_queue SET status='pending', lease_owner=NULL, lease_expires_at=NULL WHERE id=? AND lease_owner=?").run(request.id, workerId)
+          if (request.initializationId) {
+            setInitializationStatus(request.initializationId, 'pending', { error: '服务停止，等待恢复分析' })
+            const run = request.runId ? getRun(request.runId) : null
+            if (run) saveRun({ ...run, status: 'running', finishedAt: null, summary: '服务停止，等待恢复分析' })
+          }
+          break
+        }
         finishSourceRequest(
           request,
           'failure',
@@ -119,34 +173,31 @@ export function startWorker(
     return currentTick
   }
 
-  function schedule() {
+  function schedule(startImmediately = true) {
     stopping = false
     if (timer) clearInterval(timer)
     timer = setInterval(() => { void runOnce() }, SCHEDULER_POLL_MS)
     timer.unref()
-    void runOnce()
+    if (startImmediately) void runOnce()
   }
 
   function update() {
     const config = getConfig()
-    if (!config.sync.enabled) {
-      if (timer) clearInterval(timer)
-      timer = null
-      reconcileSourceSchedules(config)
-      return
-    }
+    reconcileSourceSchedules(config)
     schedule()
   }
 
   async function stop() {
     stopping = true
+    stopInitializationAnalyses()
+    syncService.cancelSync()
     if (timer) clearInterval(timer)
     timer = null
     await currentTick
   }
 
   function isScheduled() {
-    return timer !== null
+    return timer !== null && getConfig().sync.enabled
   }
 
   function getStatus(): SourceSchedulerStatus {
@@ -160,8 +211,7 @@ export function startWorker(
   }
 
   worker = { schedule, update, stop, isScheduled, runOnce, getStatus }
-  if (getConfig().sync.enabled) schedule()
-  else reconcileSourceSchedules(getConfig())
+  schedule(getConfig().sync.enabled || getSourceScheduleSnapshot().queueDepth > 0)
   return worker
 }
 

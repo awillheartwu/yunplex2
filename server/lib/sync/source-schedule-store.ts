@@ -1,8 +1,10 @@
-import { randomUUID } from 'node:crypto'
 import type { AppConfig } from '../config/types'
 import { getDb } from '../db'
 import { getSource, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
+import { getLatestInitialization } from '../source-initialization/store'
+import { acceptSourceRequest } from './source-requests'
+import { persistSourceRequest, type SourceRequestInput } from './request-store'
 
 export type SourceConvergenceRequestStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -12,6 +14,13 @@ export interface SourceConvergenceRequest {
   scheduleWindow: string
   attempts: number
   leaseOwner: string
+  trigger: SourceRequestInput['trigger']
+  kind: 'analysis' | 'convergence'
+  mode: NonNullable<SourceRequestInput['mode']>
+  initializationId: string | null
+  followUpOf: string | null
+  runId: string | null
+  takeOverExternal: boolean
 }
 
 export interface SourceScheduleSnapshot {
@@ -27,6 +36,13 @@ interface QueueRow {
   source_id: string
   schedule_window: string
   attempts: number
+  request_kind: 'analysis' | 'convergence'
+  mode: NonNullable<SourceRequestInput['mode']>
+  trigger: SourceRequestInput['trigger']
+  initialization_id: string | null
+  follow_up_of: string | null
+  run_id: string | null
+  take_over_external: number
 }
 
 const COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
@@ -115,13 +131,22 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
     const sources = listSources()
 
     for (const source of sources) {
+      const initialization = source.type === 'playlist' ? getLatestInitialization(source.id) : null
+      if (initialization && ['analyzing', 'awaiting_review', 'applying'].includes(initialization.status)) {
+        db.prepare(`UPDATE source_sync_queue SET status='cancelled', finished_at=?, updated_at=?, last_error='等待首次媒体接管确认' WHERE source_id=? AND status='pending' AND request_kind='convergence' AND follow_up_of IS NULL`)
+          .run(nowIso, nowIso, source.id)
+        if (source.nextSyncAt !== null || source.lastScheduleStatus !== 'idle') {
+          updateSource(source.id, { nextSyncAt: null, lastScheduleStatus: 'idle', lastScheduleError: null })
+        }
+        continue
+      }
       if (!source.enabled || !config.sync.enabled) {
         const cancelled = db.prepare(`
           UPDATE source_sync_queue
           SET status = 'cancelled', finished_at = ?, updated_at = ?,
               lease_owner = NULL, lease_expires_at = NULL,
               last_error = '来源或自动同步已停用'
-          WHERE source_id = ? AND status = 'pending'
+          WHERE source_id = ? AND status = 'pending' AND trigger = 'schedule'
         `).run(nowIso, nowIso, source.id)
         if (
           cancelled.changes > 0
@@ -157,7 +182,7 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
           SET status = 'cancelled', finished_at = ?, updated_at = ?,
               lease_owner = NULL, lease_expires_at = NULL,
               last_error = '已被较新的手动同步取代'
-          WHERE source_id = ? AND status = 'pending' AND created_at <= ?
+          WHERE source_id = ? AND status = 'pending' AND trigger='schedule' AND request_kind='convergence' AND created_at <= ?
         `).run(nowIso, nowIso, source.id, source.lastSyncedAt)
         if (superseded.changes > 0) {
           updateSource(source.id, {
@@ -179,23 +204,41 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
       `).get(source.id)
       if (active) continue
 
-      const result = db.prepare(`
-        INSERT OR IGNORE INTO source_sync_queue (
-          id, source_id, schedule_window, status, available_at,
-          attempts, created_at, updated_at
-        ) VALUES (?, ?, ?, 'pending', ?, 0, ?, ?)
-      `).run(randomUUID(), source.id, dueIso, nowIso, nowIso, nowIso)
-      if (result.changes > 0) {
-        enqueued++
-        updateSource(source.id, {
-          lastScheduleStatus: 'queued',
-          lastScheduledAt: nowIso,
-          lastScheduleError: null,
-        })
-      }
+      const accepted = acceptSourceRequest(source, config, { sourceId: source.id, trigger: 'schedule', scheduleWindow: dueIso, now })
+      if (accepted.status !== 'accepted') continue
+      enqueued++
+      updateSource(source.id, { lastScheduleStatus: 'queued', lastScheduledAt: nowIso, lastScheduleError: null })
     }
+    db.prepare(`UPDATE source_initializations SET status='cancelled', summary='分析请求已取消'
+      WHERE status='pending' AND EXISTS (SELECT 1 FROM source_sync_queue q WHERE q.initialization_id=source_initializations.id AND q.status='cancelled')`).run()
+    db.prepare(`UPDATE task_runs SET status='cancelled',finished_at=?,summary='分析请求已取消'
+      WHERE status='running' AND type='source_initialization' AND EXISTS
+        (SELECT 1 FROM source_initializations si WHERE si.run_id=task_runs.id AND si.status='cancelled')`).run(nowIso)
     return enqueued
   })()
+}
+
+/** Persist one user-requested convergence run, even when automatic scheduling is disabled. */
+export function enqueueManualSourceSync(sourceId: string, now = new Date()): string {
+  const db = getDb()
+  const source = getSource(sourceId)
+  if (!source) throw new Error('同步来源不存在')
+  if (!source.enabled) throw new Error('同步来源已禁用')
+  const existing = db.prepare(`
+    SELECT id FROM source_sync_queue
+    WHERE source_id = ? AND status IN ('pending','running')
+    ORDER BY created_at ASC LIMIT 1
+  `).get(sourceId) as { id: string } | undefined
+  if (existing) return existing.id
+
+  const nowIso = now.toISOString()
+  const id = persistSourceRequest({ sourceId, kind: 'convergence', trigger: 'user', now })
+  updateSource(sourceId, {
+    lastScheduleStatus: 'queued',
+    lastScheduledAt: nowIso,
+    lastScheduleError: null,
+  })
+  return id
 }
 
 /** Return interrupted requests to the queue after process restart. */
@@ -242,16 +285,16 @@ export function claimNextSourceRequest(
       SET status = 'cancelled', finished_at = ?, updated_at = ?,
           last_error = '来源已停用'
       WHERE status = 'pending'
-        AND source_id IN (SELECT id FROM playlist_sources WHERE enabled = 0)
+        AND allow_disabled = 0 AND source_id IN (SELECT id FROM playlist_sources WHERE enabled = 0)
     `).run(nowIso, nowIso)
 
     const row = db.prepare(`
-      SELECT queue.id, queue.source_id, queue.schedule_window, queue.attempts
+      SELECT queue.*
       FROM source_sync_queue queue
       JOIN playlist_sources source ON source.id = queue.source_id
-      WHERE queue.status = 'pending' AND queue.available_at <= ? AND source.enabled = 1
+      WHERE queue.status = 'pending' AND queue.available_at <= ? AND (source.enabled = 1 OR queue.allow_disabled = 1)
         AND NOT EXISTS (SELECT 1 FROM source_sync_queue WHERE status = 'running')
-      ORDER BY queue.available_at ASC, queue.created_at ASC
+      ORDER BY queue.available_at ASC, queue.created_at ASC, queue.batch_position ASC, queue.rowid ASC
       LIMIT 1
     `).get(nowIso) as QueueRow | undefined
     if (!row) return null
@@ -279,6 +322,8 @@ export function claimNextSourceRequest(
       scheduleWindow: row.schedule_window,
       attempts: row.attempts + 1,
       leaseOwner,
+      trigger: row.trigger, kind: row.request_kind, mode: row.mode,
+      initializationId: row.initialization_id, followUpOf: row.follow_up_of, runId: row.run_id, takeOverExternal: Boolean(row.take_over_external),
     }
   })()
 }
@@ -330,20 +375,22 @@ export function finishSourceRequest(
       `).run(nowIso, nowIso, request.id)
       return
     }
-    const queueStatus: SourceConvergenceRequestStatus = result === 'failure' ? 'failed' : 'completed'
+    const cancelled = Boolean((db.prepare('SELECT cancel_requested_at FROM source_sync_queue WHERE id=?').get(request.id) as { cancel_requested_at: string | null } | undefined)?.cancel_requested_at)
+      || Boolean(request.initializationId && getLatestInitialization(request.sourceId)?.status === 'cancelled')
+    const queueStatus: SourceConvergenceRequestStatus = cancelled ? 'cancelled' : result === 'failure' ? 'failed' : 'completed'
     const nextSyncAt = new Date(
       now.getTime() + effectiveSourceIntervalMinutes(source, config) * 60 * 1000,
     ).toISOString()
     const queueUpdate = db.prepare(`
       UPDATE source_sync_queue
-      SET status = ?, run_id = ?, last_error = ?, finished_at = ?, updated_at = ?,
+      SET status = ?, run_id = COALESCE(run_id, ?), last_error = ?, finished_at = ?, updated_at = ?,
           lease_owner = NULL, lease_expires_at = NULL
       WHERE id = ? AND status = 'running' AND lease_owner = ?
     `).run(queueStatus, source.lastJobId, error, nowIso, nowIso, request.id, request.leaseOwner)
     if (queueUpdate.changes === 0) return
     updateSource(source.id, {
       nextSyncAt,
-      lastScheduleStatus: result === 'failure' ? 'failed' : result,
+      lastScheduleStatus: cancelled ? 'idle' : result === 'failure' ? 'failed' : result,
       lastScheduledAt: nowIso,
       lastScheduleError: error,
     })

@@ -1,6 +1,6 @@
 // ── Status enums ──
 
-export type JobStatus = 'running' | 'success' | 'partial' | 'failed' | 'cancelled'
+export type JobStatus = 'running' | 'awaiting_action' | 'success' | 'partial' | 'failed' | 'cancelled'
 
 export type StepStatus = 'pending' | 'running' | 'success' | 'partial' | 'failed' | 'skipped' | 'cancelled'
 
@@ -94,8 +94,9 @@ export interface JobStep {
 }
 
 export type SyncRunType = 'sync' | 'repair'
-export type TaskRunType = SyncRunType | 'manual_download'
+export type TaskRunType = SyncRunType | 'manual_download' | 'source_initialization'
 export type TaskRunTrigger = 'user' | 'schedule' | 'system' | 'retry'
+export type SourceRequestStatus = 'pending' | 'running'
 
 export interface SyncJob {
   id: string
@@ -130,6 +131,8 @@ export interface SyncJob {
 export interface TaskRun extends Omit<SyncJob, 'type'> {
   type: TaskRunType
   trigger: TaskRunTrigger
+  awaitingSourceSync?: boolean
+  sourceRequestStatus?: SourceRequestStatus | null
 }
 
 // ── Query / filter types ──
@@ -151,6 +154,8 @@ export interface TaskRunSummary {
   removedSongs: number
   warnings: number
   dryRun: boolean
+  awaitingSourceSync: boolean
+  sourceRequestStatus: SourceRequestStatus | null
 }
 
 export interface TaskRunFilter {

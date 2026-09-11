@@ -1,5 +1,6 @@
 export type SourceType = 'playlist' | 'album'
 export type SourceScheduleStatus = 'idle' | 'queued' | 'running' | 'success' | 'partial' | 'failed'
+export type SourceInitializationStatus = 'pending' | 'analyzing' | 'awaiting_review' | 'applying' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 
 export interface PlaylistSource {
   id: string
@@ -43,6 +44,10 @@ export interface PlaylistSource {
   copyrightRestrictedCount: number
   requiresMatchReconcile: boolean
   syncIntervalMinutes: number | null
+  initializeMediaOnFirstSync?: boolean | null
+  initializationId?: string | null
+  initializationStatus?: SourceInitializationStatus | null
+  initializationTotalItems?: number | null
   nextSyncAt: string | null
   lastScheduleStatus: SourceScheduleStatus
   lastScheduledAt: string | null
@@ -91,6 +96,10 @@ export interface PlaylistSourceRow {
   copyright_restricted_count: number
   requires_match_reconcile: number
   sync_interval_minutes: number | null
+  initialize_media_on_first_sync: number | null
+  initialization_id: string | null
+  initialization_status: string | null
+  initialization_total_items: number | null
   next_sync_at: string | null
   last_schedule_status: string
   last_scheduled_at: string | null
@@ -139,6 +148,10 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     copyrightRestrictedCount: Number(row.copyright_restricted_count || 0),
     requiresMatchReconcile: row.requires_match_reconcile === 1,
     syncIntervalMinutes: row.sync_interval_minutes,
+    initializeMediaOnFirstSync: row.initialize_media_on_first_sync === null ? null : row.initialize_media_on_first_sync === 1,
+    initializationId: row.initialization_id,
+    initializationStatus: row.initialization_status as SourceInitializationStatus | null,
+    initializationTotalItems: row.initialization_total_items,
     nextSyncAt: row.next_sync_at,
     lastScheduleStatus: row.last_schedule_status as SourceScheduleStatus,
     lastScheduledAt: row.last_scheduled_at,

@@ -33,7 +33,6 @@ export async function startManagedSongDownload(input: {
       }),
       artistAliases: cfg.other.artistAliases ?? {},
       applyAliasToAlbum: cfg.other.applyAliasToAlbum ?? false,
-      downloadConcurrency: cfg.sync.downloadConcurrency || 3,
     },
   })
 }

@@ -87,6 +87,7 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'extraTrackRemovalPolicy',
     'maxFailureAttempts',
     'unverifiedMediaPolicy',
+    'initializeMediaOnFirstSync',
   ]),
   other: new Set([
     'multiArtistFormat',
@@ -161,6 +162,7 @@ export function validateFullConfig(input: unknown): AppConfig {
       extraTrackRemovalPolicy: readEnum(candidate.sync.extraTrackRemovalPolicy, EXTRA_TRACK_REMOVAL_POLICIES, '多余歌曲清理策略'),
       maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '连续失败阈值', 1, 20),
       unverifiedMediaPolicy: readEnum(candidate.sync.unverifiedMediaPolicy, UNVERIFIED_MEDIA_POLICIES, '未验证媒体处理方式'),
+      initializeMediaOnFirstSync: readBoolean(candidate.sync.initializeMediaOnFirstSync ?? true, '首次同步前媒体接管'),
     },
     other: {
       multiArtistFormat: readEnum(candidate.other.multiArtistFormat, MULTI_ARTIST_FORMATS, '多歌手格式'),
@@ -225,6 +227,10 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
         get(source, 'sync', 'unverifiedMediaPolicy'),
         UNVERIFIED_MEDIA_POLICIES,
         DEFAULT_CONFIG.sync.unverifiedMediaPolicy,
+      ),
+      initializeMediaOnFirstSync: coerceBoolean(
+        get(source, 'sync', 'initializeMediaOnFirstSync'),
+        DEFAULT_CONFIG.sync.initializeMediaOnFirstSync ?? true,
       ),
     },
     other: {

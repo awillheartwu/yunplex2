@@ -7,8 +7,8 @@ import { isValidDateFilter, isValidTimeZone } from './date-range'
 type QueryValue = string | string[] | number | boolean | null | undefined
 type QueryRecord = Record<string, unknown>
 
-const RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download'])
-const JOB_STATUSES = new Set<JobStatus>(['running', 'success', 'partial', 'failed', 'cancelled'])
+const RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download', 'source_initialization'])
+const JOB_STATUSES = new Set<JobStatus>(['running', 'awaiting_action', 'success', 'partial', 'failed', 'cancelled'])
 const SOURCE_TYPES = new Set<NonNullable<PlaylistSourceFilter['type']>>(['playlist', 'album'])
 const SOURCE_STATUSES = new Set<PlaylistSource['lastStatus']>(['idle', 'success', 'partial', 'failed'])
 const FAILURE_KINDS = new Set([
@@ -86,6 +86,7 @@ export function parsePlaylistSourceFilters(query: QueryRecord): PlaylistSourceFi
     type: enumParam(query, 'type', SOURCE_TYPES),
     enabled: parseOptionalBoolean(query.enabled),
     subscribed: parseOptionalBoolean(query.subscribed),
+    hasPlexTarget: parseOptionalBoolean(query.hasPlexTarget),
     lastStatus: enumParam(query, 'lastStatus', SOURCE_STATUSES),
     hasFailures: parseOptionalBoolean(query.hasFailures),
     hasCopyright: parseOptionalBoolean(query.hasCopyright),

@@ -3,15 +3,17 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_CONFIG } from '../config/defaults'
-import { closeDb, initDb } from '../db'
+import { closeDb, getDb, initDb } from '../db'
 import type { NeteaseSong } from '../netease'
 import { createSource, getSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { RunBuilder } from '../run/builder'
+import { saveSyncRun } from '../run/store'
 import { applySourceDownloads } from './source-downloads'
 import { finalizeSourceConvergence } from './source-finalization'
 import { assertResolvedIdentitiesCurrent } from './source-plex-reconciliation'
 import type { TrackResolution } from './types'
+import { startDownloadWorker, stopDownloadWorker } from '../download/worker'
 
 const source: PlaylistSource = {
   id: 'source-1',
@@ -118,6 +120,53 @@ describe('source download convergence', () => {
       message: '[预览] 共 1 首',
     }])
     expect(log).not.toHaveBeenCalled()
+  })
+
+  it('waits for its tasks while the single download worker performs the media write', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reyunplex-source-download-worker-'))
+    initDb(dir)
+    const config = structuredClone(DEFAULT_CONFIG)
+    const job = new RunBuilder(false)
+    const target = resolution(1, 'needs_download')
+    addRunSong(job, target)
+    saveSyncRun(job.getRun())
+    try {
+      startDownloadWorker(() => config, async task => ({
+        filePath: `/tmp/source-${task.songId}.flac`,
+        fileType: 'flac',
+        ops: { download: 'ok', tags: 'ok' },
+        audioOperation: 'downloaded',
+      }))
+
+      await expect(applySourceDownloads({
+        source,
+        resolutions: [target],
+        config,
+        job,
+        stepContext: { sourceId: source.id },
+        dryRun: false,
+        redownloadManagedMedia: false,
+        takeOverExternal: false,
+        splitArtists: artists => [artists.map(item => item.name).join(' & '), artists[0]?.name ?? ''],
+        throwIfCancelled: () => undefined,
+        setStage: () => undefined,
+        addFailure: () => undefined,
+        log: () => undefined,
+      })).resolves.toEqual({ needsPlexRefresh: true, downloadTargetCount: 1 })
+
+      expect(target.filePath).toBe('/tmp/source-1.flac')
+      expect(getDb().prepare("SELECT status, execution_intent_json IS NOT NULL intent FROM download_tasks").get())
+        .toEqual({ status: 'done', intent: 1 })
+      expect(getDb().prepare(`
+        SELECT run_id, source_id
+        FROM run_file_tasks
+        WHERE task_id = (SELECT id FROM download_tasks LIMIT 1)
+      `).get()).toEqual({ run_id: job.getId(), source_id: source.id })
+    } finally {
+      await stopDownloadWorker()
+      closeDb()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

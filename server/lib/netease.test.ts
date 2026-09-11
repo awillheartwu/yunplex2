@@ -66,6 +66,42 @@ describe('fetchPlaylistSongs safety', () => {
     expect(playlistDetail).toHaveBeenCalledWith({ id: 100, cookie: 'cookie' })
   })
 
+  it('keeps nullable upstream metadata unresolved without losing authoritative track IDs', async () => {
+    playlistDetail.mockResolvedValue({
+      status: 200,
+      body: {
+        code: 200,
+        playlist: {
+          name: 'Large playlist',
+          trackIds: [{ id: 1 }, { id: 2 }],
+          trackUpdateTime: 123,
+        },
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ songs: [] }), { status: 200 }),
+    ))
+    songDetail.mockResolvedValue({
+      body: {
+        songs: [
+          rawSong(1, 'Valid'),
+          {
+            ...rawSong(2, 'Unavailable'),
+            ar: [{ id: 22, name: null }],
+            al: { id: 2, name: null, picUrl: '' },
+          },
+        ],
+      },
+    })
+
+    const { fetchPlaylistSongs } = await import('./netease')
+    const result = await fetchPlaylistSongs(100, undefined, 'cookie')
+
+    expect(result.trackIds.map(track => track.id)).toEqual([1, 2])
+    expect(result.allTrackIds.map(track => track.id)).toEqual([1, 2])
+    expect(result.songs.map(song => song.id)).toEqual([1])
+  })
+
   it('rejects an HTTP failure instead of presenting an empty destructive target', async () => {
     playlistDetail.mockResolvedValue({ status: 503, body: { code: 503 } })
     const { fetchPlaylistSongs } = await import('./netease')

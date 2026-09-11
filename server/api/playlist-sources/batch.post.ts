@@ -1,20 +1,23 @@
+import { requestSources } from '../../lib/sync/source-requests'
 import { success, fail } from '../../lib/response'
 import { applyPlaylistSourceBatchAction } from '../../lib/playlist/batch-actions'
-import { getSyncServiceInstance, getSyncWorker, isRepairRunning } from '../../lib/sync/instance'
+import { getSyncWorker } from '../../lib/sync/instance'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ action?: unknown; ids?: unknown }>(event)
-  const syncService = getSyncServiceInstance()
+
+  if (body?.action === 'sync') {
+    if (!Array.isArray(body.ids)) return fail('请选择要操作的同步源')
+    try {
+      const result = requestSources({ sourceIds: body.ids.filter((id): id is string => typeof id === 'string'), mode: 'normal', trigger: 'user' })
+      if (result.triggered) void getSyncWorker()?.runOnce()
+      return success({ ...result, action: 'sync', count: result.results.filter(item => item.status === 'accepted').length }, result.triggered ? '已按来源接受请求' : result.results[0]?.message)
+    } catch (error) { return fail(error) }
+  }
 
   try {
-    const result = applyPlaylistSourceBatchAction(body?.action, body?.ids, {
-      isSyncRunning: () => syncService.getState().isRunning,
-      isRepairRunning,
-      runSync: (ids) => {
-        return syncService.startSync({ mode: 'normal', sourceIds: ids, trigger: 'user' })
-      },
-    })
-    if (result.action !== 'sync') getSyncWorker()?.update()
+    const result = applyPlaylistSourceBatchAction(body?.action, body?.ids)
+    getSyncWorker()?.update()
 
     const messages = {
       enable: `已启用 ${result.count} 个同步源`,

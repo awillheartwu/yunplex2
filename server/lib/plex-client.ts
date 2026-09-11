@@ -345,6 +345,25 @@ export async function getSectionTrackCount(sectionKey: string): Promise<number> 
   return (res as { MediaContainer?: { totalSize?: number } }).MediaContainer?.totalSize ?? 0
 }
 
+/** Read one stable, paginated music-section snapshot for read-only planning. */
+export async function getSectionTracks(sectionKey: string): Promise<PlexTrack[]> {
+  if (!client) throw new Error('Plex client not initialized')
+  const tracks: PlexTrack[] = []
+  let start = 0
+  while (true) {
+    const res = await client.query(
+      `/library/sections/${sectionKey}/all?type=10&includeGuids=1&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PATH_INDEX_PAGE_SIZE}`,
+    ) as { MediaContainer?: { totalSize?: number | string; Metadata?: PlexTrack[] | PlexTrack } }
+    const page = extractMetadata(res)
+    tracks.push(...page)
+    if (!page.length) break
+    start += page.length
+    const total = Number(res.MediaContainer?.totalSize)
+    if ((Number.isFinite(total) && start >= total) || (!Number.isFinite(total) && page.length < PLEX_PATH_INDEX_PAGE_SIZE)) break
+  }
+  return tracks
+}
+
 export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Promise<PlexTrack[]> {
   if (!client) throw new Error('Plex client not initialized')
   const size = Math.min(Math.max(limit, 1), 100)
