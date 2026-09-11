@@ -71,8 +71,8 @@ defineProps<{
 <style scoped>
 .storage-diagnostic {
   display: grid;
-  gap: 0.9rem;
-  padding: 1rem;
+  gap: var(--space-3_5);
+  padding: var(--space-4);
   border: 1px solid var(--warning-border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--warning-soft) 48%, var(--bg-surface));
@@ -86,7 +86,7 @@ defineProps<{
 .storage-diagnostic__header {
   display: flex;
   align-items: flex-start;
-  gap: 0.65rem;
+  gap: var(--space-2_5);
 }
 
 .storage-diagnostic__icon {
@@ -103,56 +103,56 @@ defineProps<{
 .storage-diagnostic__header strong,
 .storage-diagnostic__action strong {
   color: var(--text-primary);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 .storage-diagnostic__header p,
 .storage-diagnostic__action p {
-  margin: 0.2rem 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.55;
 }
 
 .storage-diagnostic__paths {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: var(--space-2_5);
 }
 
 .storage-diagnostic__paths > div {
   min-width: 0;
-  padding: 0.65rem;
+  padding: var(--space-2_5);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
 }
 
 .storage-diagnostic dt {
-  margin-bottom: 0.25rem;
-  color: var(--text-muted-deep);
-  font-size: 0.66rem;
-  font-weight: 650;
+  margin-bottom: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
 }
 
 .storage-diagnostic dd {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
   min-width: 0;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .storage-diagnostic code {
   overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--text-primary);
 }
 
 .storage-diagnostic__checks {
   display: grid;
-  gap: 0.45rem;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -161,7 +161,7 @@ defineProps<{
 .storage-diagnostic__checks li {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: var(--space-2);
   color: var(--text-secondary);
 }
 
@@ -183,18 +183,18 @@ defineProps<{
 
 .storage-diagnostic__checks strong {
   color: var(--text-primary);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .storage-diagnostic__checks small {
   overflow-wrap: anywhere;
-  color: var(--text-muted-deep);
-  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
   line-height: 1.45;
 }
 
 .storage-diagnostic__action {
-  padding: 0.65rem 0.75rem;
+  padding: var(--space-2_5) var(--space-3);
   border-left: 3px solid var(--warning);
   background: var(--bg-surface);
 }
@@ -204,8 +204,8 @@ defineProps<{
 }
 
 .storage-diagnostic__sample {
-  color: var(--text-muted-deep);
-  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 .storage-diagnostic__sample summary {
@@ -216,14 +216,14 @@ defineProps<{
 
 .storage-diagnostic__sample dl {
   display: grid;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
+  gap: var(--space-1_5);
+  margin-top: var(--space-2);
 }
 
 .storage-diagnostic__sample dl > div {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 @media (max-width: 760px) {

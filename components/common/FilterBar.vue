@@ -75,10 +75,10 @@
       <div
         v-if="advanced && mobileOpen"
         ref="advancedPanelRef"
-        class="filter-popover hidden md:block"
+        class="filter-popover hidden md:flex"
         :style="{ ...popoverStyle, zIndex: OVERLAY_LAYERS.filterPopover }"
         role="dialog"
-        aria-modal="false"
+        aria-modal="true"
         aria-label="筛选条件"
       >
         <div class="filter-popover__header">
@@ -109,7 +109,7 @@
           :style="{ zIndex: OVERLAY_LAYERS.filterSheet }"
           @click.self="closePanel"
         >
-          <div class="filter-sheet" role="dialog" aria-modal="true" aria-label="筛选条件">
+          <div ref="mobilePanelRef" tabindex="-1" class="filter-sheet" role="dialog" aria-modal="true" aria-label="筛选条件">
             <div class="sheet-handle" />
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-sm font-semibold">{{ advancedTitle }}</h3>
@@ -150,6 +150,7 @@
 import { onBeforeUnmount } from 'vue'
 import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
 import { useRafThrottleFn } from '~~/composables/useTiming'
+import { useDialogFocus } from '~~/composables/useDialogFocus'
 
 const props = withDefaults(defineProps<{
   search: string
@@ -174,6 +175,8 @@ const mobileOpen = ref(false)
 const isMobileViewport = ref(false)
 const advancedButtonRef = ref<HTMLElement | null>(null)
 const advancedPanelRef = ref<HTMLElement | null>(null)
+const mobilePanelRef = ref<HTMLElement | null>(null)
+useDialogFocus(mobileOpen, computed(() => isMobileViewport.value || !props.advanced ? mobilePanelRef.value : advancedPanelRef.value), closePanel)
 const popoverStyle = ref<Record<string, string>>({})
 const emit = defineEmits<{
   'update:search': [value: string]
@@ -208,11 +211,14 @@ function updatePopoverPosition() {
   const gutter = 16
   const preferredLeft = triggerRect.right - panelWidth
   const left = Math.min(Math.max(gutter, preferredLeft), viewportWidth - panelWidth - gutter)
-  const top = triggerRect.bottom + 10
+  const maxHeight = Math.max(0, window.innerHeight - gutter * 2)
+  const height = Math.min(panel.scrollHeight, maxHeight)
+  const top = Math.max(gutter, Math.min(triggerRect.bottom + 10, window.innerHeight - height - gutter))
 
   popoverStyle.value = {
     top: `${Math.round(top)}px`,
     left: `${Math.round(left)}px`,
+    maxHeight: `${Math.round(window.innerHeight - top - gutter)}px`,
   }
 }
 

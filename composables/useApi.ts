@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '~/lib/fetch-with-timeout'
+
 interface ApiResponse<T> {
   code: number
   msg: string
@@ -52,7 +54,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     fetchOptions.body = JSON.stringify(body)
   }
 
-  const res = await fetch(url, fetchOptions)
+  if (method === 'GET') return fetchWithTimeout(url, fetchOptions, 15000, readResponse<T>)
+  return readResponse<T>(await fetch(url, fetchOptions))
+}
+
+async function readResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     await handleAuthStatus(res)
     const payload = await readErrorPayload(res)

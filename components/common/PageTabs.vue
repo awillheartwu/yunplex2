@@ -9,6 +9,8 @@
       :class="{ 'page-tabs__tab--active': modelValue === tab.key }"
       :aria-selected="modelValue === tab.key"
       :disabled="tab.disabled"
+      :tabindex="focusKey === tab.key ? 0 : -1"
+      @keydown="onTabKeydown($event, tab.key)"
       @click="selectTab(tab.key)"
     >
       <span>{{ tab.label }}</span>
@@ -40,6 +42,7 @@ const props = defineProps<{
   ariaLabel?: string
 }>()
 
+const focusKey = computed(() => props.tabs.some(tab => tab.key === props.modelValue && !tab.disabled) ? props.modelValue : props.tabs.find(tab => !tab.disabled)?.key)
 const attrs = useAttrs()
 const resolvedAriaLabel = computed(() => {
   const ariaLabelAttr = attrs['aria-label']
@@ -50,6 +53,21 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
   change: [value: string]
 }>()
+
+function onTabKeydown(event: KeyboardEvent, key: string) {
+  const enabled = props.tabs.filter(tab => !tab.disabled)
+  const index = enabled.findIndex(tab => tab.key === key)
+  let next: number
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % enabled.length
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + enabled.length) % enabled.length
+  else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = enabled.length - 1
+  else return
+  event.preventDefault()
+  selectTab(enabled[next]!.key)
+  const buttons = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+  buttons?.[next]?.focus()
+}
 
 function selectTab(key: string) {
   if (key === props.modelValue) return
@@ -62,9 +80,12 @@ function selectTab(key: string) {
 .page-tabs {
   display: flex;
   min-width: 0;
-  gap: 0.25rem;
+  gap: var(--space-1);
+  padding: var(--space-1);
   overflow-x: auto;
-  border-bottom: 1px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   scrollbar-width: none;
 }
 
@@ -79,16 +100,17 @@ function selectTab(key: string) {
   min-height: 2.5rem;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  padding: 0 0.9rem;
+  gap: var(--space-2);
+  padding: 0 var(--space-3_5);
   border: 0;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
   line-height: 1;
   cursor: pointer;
-  transition: color 150ms ease, background 150ms ease;
+  transition: color var(--duration-fast) ease, background var(--duration-fast) ease;
 }
 
 .page-tabs__tab::after {
@@ -97,7 +119,7 @@ function selectTab(key: string) {
   bottom: -1px;
   left: 0;
   height: 2px;
-  border-radius: 999px 999px 0 0;
+  border-radius: var(--radius-full) var(--radius-full) 0 0;
   background: transparent;
   content: '';
 }
@@ -113,7 +135,7 @@ function selectTab(key: string) {
 }
 
 .page-tabs__tab--active::after {
-  background: var(--accent);
+  background: transparent;
 }
 
 .page-tabs__tab:disabled {
@@ -127,12 +149,12 @@ function selectTab(key: string) {
   height: 1.35rem;
   align-items: center;
   justify-content: center;
-  padding: 0 0.35rem;
-  border-radius: 999px;
+  padding: 0 var(--space-1_5);
+  border-radius: var(--radius-full);
   background: var(--accent-muted);
   color: var(--accent);
-  font-size: 0.6875rem;
-  font-weight: 750;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
 }
 
 .page-tabs__badge--danger {
@@ -142,8 +164,8 @@ function selectTab(key: string) {
 
 @media (max-width: 767px) {
   .page-tabs__tab {
-    min-height: 2.625rem;
-    padding: 0 0.85rem;
+    min-height: 2.75rem;
+    padding: 0 var(--space-3_5);
   }
 }
 </style>

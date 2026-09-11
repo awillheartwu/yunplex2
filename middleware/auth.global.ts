@@ -2,8 +2,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.server) return
 
   const auth = useAuth()
+  if (to.path === '/login' && !auth.state.value) return
   const state = await auth.ensureState().catch(() => null)
-  if (!state || !state.authEnabled) return
+  if (!state) return to.path === '/login' ? undefined : navigateTo({ path: '/login', query: { redirect: to.fullPath } })
+  if (!state.authEnabled) return
 
   if (state.setupRequired) {
     if (to.path !== '/setup') return navigateTo('/setup')

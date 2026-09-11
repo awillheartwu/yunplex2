@@ -2,6 +2,8 @@
   <NuxtLink
     :to="path"
     :title="collapsed ? label : undefined"
+    :aria-label="label"
+    :aria-current="isActive ? 'page' : undefined"
     class="sidebar-item"
     :class="[
       collapsed ? 'sidebar-item--collapsed' : '',
@@ -12,7 +14,7 @@
     @click="$emit('navigate')"
   >
     <SidebarIcon :name="icon" :active="isActive" />
-    <span v-show="!collapsed" class="whitespace-nowrap">{{ label }}</span>
+    <span v-show="!collapsed" class="sidebar-item__label">{{ label }}<small v-if="description">{{ description }}</small></span>
   </NuxtLink>
 </template>
 
@@ -22,13 +24,14 @@ const props = defineProps<{
   label: string
   path: string
   collapsed?: boolean
+  description?: string
 }>()
 defineEmits<{ navigate: [] }>()
 
 const route = useRoute()
 const isActive = computed(() => {
   if (props.path === '/') return route.path === '/'
-  return route.path.startsWith(props.path)
+  return route.path === props.path || route.path.startsWith(`${props.path}/`)
 })
 </script>
 
@@ -36,18 +39,18 @@ const isActive = computed(() => {
 .sidebar-item {
   position: relative;
   display: flex;
-  min-height: 2.65rem;
+  min-height: 2.8rem;
   align-items: center;
-  gap: 0.85rem;
+  gap: var(--space-3_5);
   overflow: hidden;
-  padding: 0.65rem 0.8rem;
+  padding: var(--space-2_5) var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
-  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition: color var(--duration-fast) ease, background var(--duration-fast) ease, border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
 .sidebar-item:hover {
@@ -61,13 +64,18 @@ const isActive = computed(() => {
   background: var(--accent-muted);
   box-shadow: none;
   color: var(--accent);
-  font-weight: 750;
+  font-weight: var(--font-weight-semibold);
 }
+
+.sidebar-item__label { display: grid; gap: var(--space-1); }
+.sidebar-item__label small { color: var(--text-tertiary); font-size: var(--text-xs); font-weight: var(--font-weight-normal); }
+.sidebar-item--active .sidebar-item__label small { color: var(--accent); opacity: .85; }
+.sidebar-item--active::before { position: absolute; left: 0; width: 3px; height: 20px; border-radius: var(--radius-xs); background: var(--accent); content: ''; }
 
 .sidebar-item--collapsed {
   justify-content: center;
   gap: 0;
-  padding-inline: 0.25rem;
+  padding-inline: var(--space-1);
 }
 
 </style>

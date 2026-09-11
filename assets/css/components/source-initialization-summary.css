@@ -1,0 +1,56 @@
+/* Media adoption summary styles; imported by its owning component. */
+.source-adoption__commit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3_5) var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  position: fixed;
+  right: max(1.5rem, calc((100vw - 96rem) / 2 + 1.5rem));
+  bottom: var(--floating-bottom);
+  width: min(48rem, calc(100vw - 18rem));
+  z-index: var(--z-dropdown);
+}
+.source-adoption__commit div {
+  display: flex;
+  flex-direction: column;
+}
+.source-adoption__commit span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+@media (max-width: 640px) {
+  .source-adoption__commit {
+    right: 0.7rem;
+    bottom: var(--floating-bottom);
+    left: 0.7rem;
+    width: auto;
+    min-height: 4.4rem;
+    align-items: center;
+    flex-direction: row;
+    padding: var(--space-2_5) var(--space-3);
+  }
+  .source-adoption__commit div {
+    min-width: 0;
+    flex: 1;
+  }
+  .source-adoption__commit strong {
+    display: none;
+  }
+  .source-adoption__commit span {
+    line-height: 1.45;
+  }
+  .source-adoption__commit small {
+    display: none;
+  }
+  .source-adoption__commit .btn {
+    width: auto;
+    max-width: 48%;
+    justify-content: center;
+    white-space: normal;
+  }
+}

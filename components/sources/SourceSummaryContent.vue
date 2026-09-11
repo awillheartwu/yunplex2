@@ -51,3 +51,73 @@ const lastActivity = computed(() => props.source.lastSyncedAt
   ? `${props.source.type === 'album' ? '上次下载' : '上次同步'} ${formatSyncSourceRelativeTime(props.source.lastSyncedAt)}`
   : props.source.type === 'album' ? '尚未下载' : '尚未同步')
 </script>
+
+<style scoped>
+.sync-hover-card__header {
+  display: flex;
+  gap: var(--space-3_5);
+  min-width: 0;
+}
+
+.sync-hover-card__cover,
+.sync-hover-card__cover img,
+.sync-hover-card__cover-fallback {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-xl);
+  flex-shrink: 0;
+}
+
+.sync-hover-card__cover {
+  overflow: hidden;
+  background: var(--bg-input);
+}
+
+.sync-hover-card__cover img {
+  display: block;
+  object-fit: cover;
+}
+
+.sync-hover-card__cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  background: var(--bg-input);
+}
+
+.sync-hover-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sync-hover-card__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
+.sync-hover-card__origin,
+.sync-hover-card__meta,
+.sync-hover-card__footer {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+.sync-hover-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3_5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+</style>

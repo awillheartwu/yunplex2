@@ -1,11 +1,11 @@
 <template>
-  <div class="form-field">
+  <div ref="field" class="form-field">
     <div class="form-field__label-row">
-      <label class="form-field__label">{{ label }}</label>
+      <label :for="controlId" class="form-field__label">{{ label }}</label>
       <span v-if="required" class="form-field__required" aria-label="必填">*</span>
     </div>
     <slot />
-    <div v-if="hint || $slots.hint" class="form-field__hint">
+    <div v-if="hint || $slots.hint" :id="hintId" class="form-field__hint">
       <slot name="hint">
         <p>{{ hint }}</p>
       </slot>
@@ -14,11 +14,29 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { onUpdated, useId } from 'vue'
+
+const props = defineProps<{
   label: string
   hint?: string
   required?: boolean
 }>()
+const field = ref<HTMLElement | null>(null)
+const generatedId = useId()
+const controlId = ref(`${generatedId}-control`)
+const hintId = `${generatedId}-hint`
+
+// Slots can contain native controls or compound controls; label the first input
+// without replacing caller-provided IDs or accessible descriptions.
+function associateLabel() {
+  const control = field.value?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea')
+  if (!control) return
+  controlId.value = control.id || `${generatedId}-control`
+  if (!control.id) control.id = controlId.value
+  if (props.hint && !control.hasAttribute('aria-describedby')) control.setAttribute('aria-describedby', hintId)
+}
+onMounted(associateLabel)
+onUpdated(associateLabel)
 </script>
 
 <style scoped>
@@ -29,25 +47,25 @@ defineProps<{
 .form-field__label-row {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  margin-bottom: 0.4rem;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1_5);
 }
 
 .form-field__label {
   color: var(--text-primary);
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
 }
 
 .form-field__required {
   color: var(--danger);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 
 .form-field__hint {
-  margin-top: 0.35rem;
+  margin-top: var(--space-1_5);
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
 }
 </style>

@@ -1,3 +1,4 @@
+import type { SourceRequestsResult } from '~~/server/lib/sync/source-requests'
 import type { SyncState } from '~~/server/lib/log/types'
 import { sseSubscribe, sseConnected } from './sse'
 import { createIntervalFunction, createThrottledFunction } from './useTiming'
@@ -34,14 +35,6 @@ function ensureApi() {
 async function refreshStatusFromServer() {
   const api = ensureApi()
   const serverState = await api.get<SyncState>('/sync/status')
-
-  if (sharedState.value) {
-    sharedState.value = {
-      ...serverState,
-      currentStage: sharedState.value.currentStage === 'repair' ? 'repair' : serverState.currentStage,
-    }
-    return
-  }
 
   sharedState.value = serverState
 }
@@ -84,11 +77,7 @@ function ensureSharedRealtime() {
 
   subscriptionsReady = true
   sharedUnsubs.push(sseSubscribe('stage-change', (data) => {
-    if (!sharedState.value || !data.stage) return
-    sharedState.value.currentStage = data.stage as SyncState['currentStage']
-    if (typeof data.sourceName === 'string') {
-      sharedState.value.currentSourceName = data.sourceName
-    }
+    if (data.stage) void fetchStatusShared()
   }))
   sharedUnsubs.push(sseSubscribe('song-progress', (data) => {
     if (!sharedState.value || !data.songName) return
@@ -97,10 +86,12 @@ function ensureSharedRealtime() {
   sharedUnsubs.push(sseSubscribe('log', () => {
     sharedLogRefresh.run()
   }))
+  sharedUnsubs.push(sseSubscribe('resync', () => sharedLogRefresh.run()))
 
   sseConnectionWatcherStop = watch(sseConnected, (connected) => {
     if (connected) {
       stopPollingShared()
+      void fetchStatusShared()
       return
     }
 
@@ -111,6 +102,7 @@ function ensureSharedRealtime() {
 }
 
 function teardownSharedRealtime() {
+  queuedRefresh = false
   stopPollingShared()
   sharedLogRefresh.cancel()
   sseConnectionWatcherStop?.()
@@ -137,7 +129,10 @@ export function useSyncStatus() {
     sharedError.value = null
 
     try {
-      const result = await api.post<{ triggered: boolean; runId: string }>('/sync/trigger', { mode })
+      const result = await api.post<SourceRequestsResult>('/sync/trigger', { mode })
+      const rejected = result.results.find(item => item.status === 'busy' || item.status === 'failed')
+      if (rejected) throw new Error(rejected.message)
+      await fetchStatusShared()
       if (!sseConnected.value) startPollingShared(2000)
       return result
     } catch (err) {

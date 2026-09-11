@@ -1,197 +1,68 @@
 <template>
-  <div class="dashboard-page">
-    <section v-if="summary" class="section-card dashboard-toolbar" aria-label="首页状态与同步操作">
-      <div class="dashboard-toolbar__status">
-        <strong>同步概览</strong>
-        <span class="dashboard-toolbar__timestamp">{{ formatDashboardLastSyncLabel(summary.status.lastSyncAt) }}</span>
-        <span
-          v-if="summary.status.autoSyncEnabled && schedulerScheduleLabel"
-          class="dashboard-toolbar__schedule"
-          :class="{ 'text-warning': schedulerScheduleTone === 'warning' }"
-        >{{ schedulerScheduleLabel }}</span>
-      </div>
-
-      <div class="dashboard-toolbar__actions">
-        <button class="dashboard-toggle" :class="summary.status.autoSyncEnabled ? 'dashboard-toggle--active' : ''" :disabled="autoSyncLoading" type="button" @click="toggleAutoSync">
-          <span class="dashboard-toggle__track"><span class="dashboard-toggle__thumb" :class="summary.status.autoSyncEnabled ? 'dashboard-toggle__thumb--active' : ''" /></span>
-          <span>{{ autoSyncLoading ? '切换中...' : summary.status.autoSyncEnabled ? '自动同步已开启' : '自动同步已关闭' }}</span>
-        </button>
-        <button class="btn btn-primary dashboard-sync-button" :disabled="syncState?.isRunning || syncLoading" type="button" @click="handleSync">
-          {{ syncState?.isRunning || syncLoading ? '同步中...' : '立即同步' }}
-        </button>
-      </div>
-    </section>
-
-    <section class="dashboard-monitor" aria-label="系统状态">
-      <SystemMonitorPanel
-        :dependency-checked-label="dependencyCheckedLabel"
-        :health-items="healthItems"
-        :health-refreshing="healthRefreshing"
-        :kpi-cards="kpiCards"
-        :overall-tone="overallTone"
-        @refresh-health="refreshDependencyHealth"
-        @copy-diagnostics="copyDiagnostics"
-      />
-    </section>
-
-    <div v-if="dashboardLoading" class="section-card dashboard-feedback"><p>加载中</p></div>
-    <div v-else-if="dashboardError" class="section-card dashboard-feedback dashboard-feedback--error">
-      <strong>首页数据暂时不可用</strong>
-      <p>{{ dashboardError }}</p>
-      <button class="btn btn-secondary btn-sm" type="button" @click="refreshDashboard">重新加载</button>
-    </div>
-
-    <template v-else-if="summary">
-      <NuxtLink v-if="syncState?.isRunning" to="/task-center" class="section-card dashboard-current-task">
-        <span class="dashboard-current-task__icon"><AppIcon name="activity" :size="17" /></span>
-        <div>
-          <strong>同步正在执行</strong>
-          <p>{{ syncState.currentSourceName || syncState.currentSong || '正在处理同步源' }}</p>
+  <div class="home-workspace">
+    <PageHeader title="工作台" description="从喜欢的歌单，到属于自己的音乐库。"><template #actions><NuxtLink to="/manual-download" class="btn btn-primary"><AppIcon name="plus" :size="16" />添加音乐</NuxtLink></template></PageHeader>
+    <div v-if="dashboardError" class="home-error" role="alert"><div><strong>工作台暂时无法更新</strong><p>{{ dashboardError }}</p></div><button class="btn btn-secondary" @click="refreshDashboard">重新加载</button></div>
+    <div v-if="dashboardLoading && !summary" class="home-loading" role="status">正在整理你的音乐工作台…</div>
+    <template v-if="summary">
+      <div class="home-pulse"><span><strong>{{ sources.length }}</strong> 个音乐收藏</span><span><strong>{{ sources.filter(item => item.type === 'playlist' && item.enabled).length }}</strong> 个自动管理</span><span><strong>{{ weeklyDownloads }}</strong> 首本周下载</span><NuxtLink to="/system"><span class="home-pulse__dot" />系统状态<AppIcon name="arrowRight" :size="13" /></NuxtLink></div>
+      <SourceRequestResults :results="sourceRequestResults" @dismiss="sourceRequestResults = []" />
+      <div class="home-columns">
+        <div class="home-main">
+          <section class="home-shelf" aria-label="最近的音乐收藏">
+            <header class="workspace-section-heading"><div><h2>最近的音乐收藏</h2><p>继续管理你的歌单和专辑。</p></div><NuxtLink to="/sync-sources">打开音乐库<AppIcon name="arrowRight" :size="14" /></NuxtLink></header>
+            <div v-if="recentSources.length" class="home-collections"><NuxtLink v-for="(source, index) in recentSources" :key="source.id" :to="`/sync-sources/${source.id}`" class="home-collection" :data-tint="index % 3"><div class="home-collection__cover"><img v-if="source.coverUrl && !brokenCovers.has(source.id)" :src="getSyncSourceCoverUrl(source.coverUrl)" alt="" @error="brokenCovers.add(source.id)"><AppIcon v-else :name="source.type === 'album' ? 'album' : 'music'" :size="36" /><span>{{ source.type === 'album' ? '专辑' : '歌单' }}</span></div><strong>{{ source.name || source.neteasePlaylistName }}</strong><small>{{ source.trackCount }} 首 · {{ source.lastSyncedAt ? formatSyncSourceRelativeTime(source.lastSyncedAt) : '尚未同步' }}</small></NuxtLink></div>
+            <div v-else class="home-start"><span class="home-start__icon"><AppIcon name="music" :size="40" /></span><h3>为你的音乐留一个位置。</h3><p>添加网易云歌单或专辑，更新、下载和 Plex 同步会在这里汇合。</p><NuxtLink to="/sync-sources?add=1" class="btn btn-primary"><AppIcon name="plus" :size="16" />收藏第一张歌单</NuxtLink><NuxtLink to="/config" class="home-start__help">先连接网易云与 Plex<AppIcon name="arrowRight" :size="13" /></NuxtLink></div>
+          </section>
+          <section class="home-attention" aria-label="需要你处理"><header class="workspace-section-heading"><div><h2>需要你处理 <span>{{ pendingTotal }}</span></h2><p>需要确认和未解决的问题，集中处理。</p></div><NuxtLink to="/task-center?tab=failures">全部事项<AppIcon name="arrowRight" :size="14" /></NuxtLink></header><div v-if="summary.pendingItems.length" class="home-inbox"><NuxtLink v-for="item in summary.pendingItems" :key="item.id" :to="item.link"><span class="home-inbox__icon" :class="`text-${item.tone === 'danger' ? 'danger' : 'warning'}`"><AppIcon :name="item.icon" :size="19" /></span><div><strong>{{ item.title }}</strong><p>{{ item.subtitle }}</p></div><span class="home-inbox__count">{{ item.count }}</span><AppIcon name="chevronRight" :size="15" /></NuxtLink></div><div v-else class="home-inbox-clear"><AppIcon name="checkCircle" :size="22" /><div><strong>暂时没有需要处理的事项</strong><p>新的确认和异常会出现在这里。</p></div></div></section>
         </div>
-        <span>查看任务中心 <AppIcon name="arrowRight" :size="14" /></span>
-      </NuxtLink>
-
-      <DashboardCharts
-        :download-trend="summary.downloadTrend"
-        :resource-trend="resourceTrend"
-      />
-
-      <div class="dashboard-workspace">
-        <DashboardPendingList :items="summary.pendingItems" />
-        <DashboardSourceHealth :summary="summary.sourceHealth" />
+        <aside class="home-rail">
+          <section class="home-sync" aria-label="同步控制"><div class="home-sync__icon"><AppIcon :name="syncState?.isRunning ? 'sync' : 'checkCircle'" :size="23" :class="{ 'animate-spin': syncState?.isRunning }" /></div><p class="home-label">SYNC STATUS</p><h2>{{ syncState?.isRunning ? '正在同步音乐' : '准备好下一次更新' }}</h2><p class="home-sync__copy">{{ syncState?.isRunning ? syncState.currentSong || syncState.currentSourceName || '正在准备同步' : formatDashboardLastSyncLabel(summary.status.lastSyncAt) }}</p><button class="btn btn-primary" :disabled="syncState?.isRunning || syncLoading" @click="handleSync">{{ syncState?.isRunning ? '同步中…' : syncLoading ? '提交中…' : '立即同步' }}<AppIcon name="arrowRight" :size="15" /></button><NuxtLink v-if="syncState?.isRunning" to="/task-center" class="home-sync__activity">查看实时活动<AppIcon name="arrowRight" :size="13" /></NuxtLink><div class="home-auto"><div><strong>自动更新</strong><small>{{ summary.status.autoSyncEnabled ? `全局间隔 ${config?.sync.intervalMinutes || 30} 分钟` : '由你决定何时同步' }}</small></div><button role="switch" :aria-checked="summary.status.autoSyncEnabled" aria-label="自动同步" :disabled="autoSyncLoading" class="home-auto__switch" @click="toggleAutoSync"><span /></button></div></section>
+          <section class="home-library-status"><p class="home-label">COLLECTION HEALTH</p><h2>收藏状态</h2><div v-for="item in healthBreakdown" :key="item.label"><span><i :class="`bg-${item.tone}`" />{{ item.label }}</span><strong>{{ item.count }}</strong></div><NuxtLink to="/sync-sources">管理全部收藏<AppIcon name="arrowRight" :size="13" /></NuxtLink></section>
+        </aside>
       </div>
     </template>
-
   </div>
 </template>
-
 <script setup lang="ts">
+import { useFeedback } from '~/composables/useFeedback'
 import type { AppConfig } from '~~/server/lib/config/types'
-import type { DashboardSummary } from '~~/types/dashboard'
-import { formatDashboardLastSyncLabel } from '~~/composables/useDashboardFormat'
-import { useFeedback } from '~~/composables/useFeedback'
-import { useSystemMonitor } from '~~/composables/useSystemMonitor'
-
-const api = useApi()
-const feedback = useFeedback()
+import type { PlaylistSource } from '~~/server/lib/playlist/types'
+import type { SourceRequestResult } from '~~/server/lib/sync/source-requests'
+import type { DashboardSummary } from '~/types/dashboard'
+import { formatDashboardLastSyncLabel } from '~/composables/useDashboardFormat'
+import { formatSyncSourceRelativeTime, getSyncSourceCoverUrl } from '~/composables/useSyncSourcePresentation'
+const api = useApi(), feedback = useFeedback()
 const { state: syncState, loading: syncLoading, triggerSync, startPolling, stopPolling } = useSync()
-const summary = ref<DashboardSummary | null>(null)
-const dashboardLoading = ref(true)
-const dashboardError = ref<string | null>(null)
-const autoSyncLoading = ref(false)
-const config = ref<AppConfig | null>(null)
-const {
-  copyDiagnostics,
-  dependencyCheckedLabel,
-  healthItems,
-  healthRefreshing,
-  kpiCards,
-  overallTone,
-  refreshDependencyHealth,
-  resourceTrend,
-  schedulerScheduleLabel,
-  schedulerScheduleTone,
-} = useSystemMonitor()
-
+const sourceRequestResults = ref<SourceRequestResult[]>([]), sources = ref<PlaylistSource[]>([])
+const summary = ref<DashboardSummary | null>(null), config = ref<AppConfig | null>(null)
+const dashboardLoading = ref(true), dashboardError = ref<string | null>(null), autoSyncLoading = ref(false)
+const brokenCovers = reactive(new Set<string>())
+const recentSources = computed(() => [...sources.value].sort((a,b) => (b.lastSyncedAt || b.updatedAt).localeCompare(a.lastSyncedAt || a.updatedAt)).slice(0,6))
+const weeklyDownloads = computed(() => summary.value?.downloadTrend.reduce((total, day) => total + day.count, 0) || 0)
+const pendingTotal = computed(() => summary.value?.pendingItems.reduce((total, item) => total + item.count, 0) || 0)
+const healthBreakdown = computed(() => [{ label: '已同步', tone: 'success', count: summary.value?.sourceHealth.normal || 0 },{ label: '待首次同步', tone: 'existing', count: summary.value?.sourceHealth.unsynced || 0 },{ label: '需要关注', tone: 'warning', count: (summary.value?.sourceHealth.warning || 0) + (summary.value?.sourceHealth.failed || 0) }])
 async function refreshDashboard() {
-  dashboardLoading.value = true
-  dashboardError.value = null
+  dashboardLoading.value = true; dashboardError.value = null
   try {
-    const [nextSummary, nextConfig] = await Promise.all([
-      api.get<DashboardSummary>('/dashboard/summary'),
-      api.get<AppConfig>('/config'),
-    ])
-    summary.value = nextSummary
-    config.value = nextConfig
-  } catch (err) {
-    dashboardError.value = err instanceof Error ? err.message : '加载首页失败'
-  } finally {
-    dashboardLoading.value = false
-  }
+    const [data, settings, items] = await Promise.all([api.get<DashboardSummary>('/dashboard/summary'), api.get<AppConfig>('/config'), api.get<PlaylistSource[]>('/playlist-sources')])
+    summary.value = data; config.value = settings; sources.value = items
+  } catch (err) { dashboardError.value = err instanceof Error ? err.message : '加载失败，请重试' }
+  finally { dashboardLoading.value = false }
 }
-
-async function fetchDashboard() {
-  summary.value = await api.get<DashboardSummary>('/dashboard/summary')
-}
-
 async function toggleAutoSync() {
   if (!config.value || !summary.value) return
   autoSyncLoading.value = true
-  try {
-    const updated = await api.put<AppConfig>('/config', {
-      ...config.value,
-      sync: { ...config.value.sync, enabled: !summary.value.status.autoSyncEnabled },
-    })
-    config.value = updated
-    await fetchDashboard()
-    feedback.success(updated.sync.enabled ? '自动同步已开启' : '自动同步已关闭')
-  } catch (err) {
-    feedback.error('自动同步切换失败', err instanceof Error ? err.message : '请稍后重试')
-  } finally {
-    autoSyncLoading.value = false
-  }
+  try { config.value = await api.put<AppConfig>('/config', { sync: { enabled: !summary.value.status.autoSyncEnabled } }); summary.value = await api.get<DashboardSummary>('/dashboard/summary'); feedback.success(config.value.sync.enabled ? '自动同步已开启' : '自动同步已关闭') }
+  catch (err) { feedback.error('自动同步切换失败', err instanceof Error ? err.message : '请稍后重试') }
+  finally { autoSyncLoading.value = false }
 }
-
 async function handleSync() {
-  try {
-    await triggerSync('normal')
-    await fetchDashboard()
-    feedback.success('同步已触发', '可在任务中心查看实时进度。')
-  } catch (err) {
-    feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试')
-  }
+  sourceRequestResults.value = []
+  try { const result = await triggerSync('normal'); sourceRequestResults.value = result.results; await refreshDashboard(); const accepted = result.results.filter(item => item.status === 'accepted').length; const waiting = result.results.filter(item => item.status === 'awaiting_review').length; feedback.success(`已接受 ${accepted} 个来源请求，${waiting} 个来源等待确认`, '可在来源详情或活动中查看进度。') }
+  catch (err) { feedback.error('同步触发失败', err instanceof Error ? err.message : '请稍后重试') }
 }
-
-let unsubSse: (() => void) | null = null
-onMounted(async () => {
-  startPolling(15000)
-  await refreshDashboard()
-  unsubSse = sseSubscribe('stage-change', async (data) => {
-    if (data.stage === 'idle') await refreshDashboard()
-  })
-})
-onUnmounted(() => {
-  stopPolling()
-  unsubSse?.()
-})
+let unsubscribe: (() => void) | null = null
+onMounted(() => { startPolling(15000); void refreshDashboard(); unsubscribe = sseSubscribe('stage-change', data => { if(data.stage === 'idle') void refreshDashboard() }) })
+onUnmounted(() => { stopPolling(); unsubscribe?.() })
 </script>
-
-<style scoped>
-.dashboard-page { display: grid; gap: var(--page-gap); padding-bottom: 1.5rem; }
-.dashboard-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem; }
-.dashboard-toolbar__status, .dashboard-toolbar__actions, .dashboard-current-task { display: flex; align-items: center; }
-.dashboard-toolbar__status { flex-wrap: wrap; gap: .8rem; min-width: 0; }
-.dashboard-toolbar__status strong { color: var(--text-primary); font-size: .8rem; }
-.dashboard-toolbar__timestamp { color: var(--text-muted); font-size: .76rem; white-space: nowrap; }
-.dashboard-toolbar__schedule { color: var(--text-tertiary); font-size: .72rem; white-space: nowrap; }
-.dashboard-toolbar__actions { gap: .6rem; }
-.dashboard-toggle { display: inline-flex; align-items: center; gap: .65rem; min-height: 2.4rem; padding: 0 .75rem; border: 1px solid var(--border-primary); border-radius: .8rem; background: var(--bg-input); color: var(--text-secondary); font-size: .76rem; white-space: nowrap; }
-.dashboard-toggle--active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border-primary)); }
-.dashboard-toggle:disabled { opacity: .6; cursor: wait; }
-.dashboard-toggle__track { position: relative; width: 2.1rem; height: 1.2rem; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 35%, transparent); }
-.dashboard-toggle__thumb { position: absolute; top: .15rem; left: .15rem; width: .9rem; height: .9rem; border-radius: 999px; background: #fff; transition: transform 160ms ease; }
-.dashboard-toggle__thumb--active { transform: translateX(.9rem); }
-.dashboard-sync-button { min-width: 6.2rem; }
-.dashboard-current-task { justify-content: space-between; gap: .8rem; padding: .8rem 1rem; color: inherit; text-decoration: none; border-color: color-mix(in srgb, var(--accent) 32%, var(--border-primary)); }
-.dashboard-current-task__icon { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 999px; color: var(--accent); background: var(--accent-muted); }
-.dashboard-current-task div { flex: 1; min-width: 0; }
-.dashboard-current-task strong { color: var(--text-primary); font-size: .82rem; }
-.dashboard-current-task p { margin: .15rem 0 0; overflow: hidden; color: var(--text-muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-current-task > span:last-child { display: inline-flex; align-items: center; gap: .35rem; color: var(--accent); font-size: .75rem; white-space: nowrap; }
-.dashboard-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .85rem; align-items: stretch; }
-.dashboard-workspace > :deep(*) { min-height: 100%; }
-.dashboard-monitor { display: grid; }
-.dashboard-feedback { display: grid; place-items: center; min-height: 10rem; padding: 1rem; text-align: center; }
-.dashboard-feedback--error { gap: .7rem; }
-.dashboard-feedback p { margin: 0; color: var(--text-muted); }
-@media (max-width: 900px) {
-  .dashboard-toolbar, .dashboard-toolbar__actions { align-items: stretch; flex-direction: column; }
-  .dashboard-toolbar__actions { width: 100%; }
-  .dashboard-toggle, .dashboard-sync-button { width: 100%; justify-content: center; }
-  .dashboard-workspace { grid-template-columns: 1fr; }
-}
-@media (max-width: 640px) {
-  .dashboard-current-task { align-items: flex-start; flex-wrap: wrap; }
-  .dashboard-current-task > span:last-child { width: 100%; padding-left: 2.8rem; }
-}
-</style>
+<style scoped src="~/assets/css/pages/home-workspace.css"></style>

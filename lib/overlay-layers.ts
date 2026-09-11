@@ -1,8 +1,8 @@
 export const OVERLAY_LAYERS = {
-  filterScrim: 68,
-  filterPopover: 69,
-  filterSheet: 70,
-  nestedBackdrop: 78,
-  nestedPopover: 79,
-  toast: 90,
+  filterScrim: 'var(--z-filter-scrim)',
+  filterPopover: 'var(--z-filter-popover)',
+  filterSheet: 'var(--z-filter-sheet)',
+  nestedBackdrop: 'var(--z-nested-backdrop)',
+  nestedPopover: 'var(--z-nested-popover)',
+  toast: 'var(--z-toast)',
 } as const

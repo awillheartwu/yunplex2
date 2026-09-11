@@ -1,0 +1,217 @@
+/* Theme primitives and design scales. Components consume these semantic tokens. */
+
+:root {
+  color-scheme: light;
+  --font-scale: 1;
+  --bg-app: #f7f5f1;
+  --bg-sidebar: #eeece6;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(21, 23, 21, 0.58);
+  --bg-input: #f1efea;
+  --bg-hover: rgba(80, 77, 65, 0.06);
+  --bg-tooltip: #272824;
+  --text-primary: #272824;
+  --text-secondary: #60625b;
+  --text-muted: var(--text-secondary);
+  --bg-primary: var(--bg-surface);
+  --on-accent: #ffffff;
+  --text-tertiary: #686c62;
+  --border-primary: rgba(39, 40, 36, 0.13);
+  --border-secondary: rgba(39, 40, 36, 0.24);
+  --accent: #a44825;
+  --accent-strong: #85391d;
+  --accent-soft: #bd6a43;
+  --accent-muted: color-mix(in srgb, var(--accent) 9%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 28%, transparent);
+  --success: #14763a;
+  --existing: #59667a;
+  --ignored: #925b09;
+  --warning: #c2410c;
+  --danger: #b91c1c;
+  --running: #2563eb;
+  --success-soft: color-mix(in srgb, var(--success) 9%, transparent);
+  --existing-soft: color-mix(in srgb, var(--existing) 9%, transparent);
+  --ignored-soft: color-mix(in srgb, var(--ignored) 9%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 9%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 9%, transparent);
+  --running-soft: color-mix(in srgb, var(--running) 9%, transparent);
+  --success-border: color-mix(in srgb, var(--success) 28%, transparent);
+  --existing-border: color-mix(in srgb, var(--existing) 28%, transparent);
+  --ignored-border: color-mix(in srgb, var(--ignored) 28%, transparent);
+  --warning-border: color-mix(in srgb, var(--warning) 28%, transparent);
+  --danger-border: color-mix(in srgb, var(--danger) 28%, transparent);
+  --running-border: color-mix(in srgb, var(--running) 28%, transparent);
+  --run-sync: #0f766e;
+  --run-sync-soft: color-mix(in srgb, var(--run-sync) 9%, transparent);
+  --run-sync-border: color-mix(in srgb, var(--run-sync) 28%, transparent);
+  --run-download: #2563eb;
+  --run-download-soft: color-mix(in srgb, var(--run-download) 9%, transparent);
+  --run-download-border: color-mix(
+    in srgb,
+    var(--run-download) 28%,
+    transparent
+  );
+  --run-repair: #7c3aed;
+  --run-repair-soft: color-mix(in srgb, var(--run-repair) 9%, transparent);
+  --run-repair-border: color-mix(in srgb, var(--run-repair) 28%, transparent);
+  --shadow-xs: 0 1px 2px rgba(39, 40, 36, 0.04);
+  --shadow-sm:
+    0 1px 2px rgba(39, 40, 36, 0.035), 0 6px 18px rgba(39, 40, 36, 0.035);
+  --shadow-md: 0 12px 30px rgba(39, 40, 36, 0.09);
+  --shadow-lg: 0 24px 64px rgba(39, 40, 36, 0.16);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --font-ui: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: var(--font-ui);
+  --font-mono: "JetBrains Mono", "SFMono-Regular", "Cascadia Code", monospace;
+  --control-height: 2.5rem;
+  --control-height-sm: 2.25rem;
+  --page-gap: var(--space-6);
+  --panel-padding: var(--space-5);
+  --row-height: 3.75rem;
+  --app-shell-min-block-size: 100dvh;
+  --app-topbar-block-size: 4rem;
+  --app-content-max-width: 96rem;
+  --dashboard-content-max-width: 96rem;
+  --panel-fluid-min-block-size: clamp(12rem, 32dvh, 20rem);
+  --panel-scroll-max-block-size: min(62dvh, 100%);
+  --chart-card-min-block-size: clamp(12rem, 26dvh, 18rem);
+  --chart-plot-min-block-size: clamp(8.75rem, 20dvh, 14rem);
+  --radius-xs: 0.25rem;
+  --radius-2xl: 1.25rem;
+  --radius-full: 9999px;
+  --control-height-xs: 2rem;
+  --control-height-touch: 2.75rem;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --ease-standard: ease;
+  --focus-ring: 0 0 0 3px var(--accent-glow);
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --opacity-disabled: 0.5;
+  --on-solid: #ffffff;
+  --on-tooltip: #ffffff;
+  --shadow-inset: inset 0 1px 1px rgba(39, 40, 36, 0.025);
+  --mobile-dock-height: 4.5rem;
+  --mobile-dock-space: calc(
+    var(--mobile-dock-height) + env(safe-area-inset-bottom, 0px)
+  );
+  --floating-bottom: var(--space-4);
+  --z-dropdown: 20;
+  --z-sticky: 30;
+  --z-dock: 35;
+  --z-drawer: 50;
+  --z-filter-scrim: 60;
+  --z-filter-popover: 61;
+  --z-filter-sheet: 62;
+  --z-modal: 100;
+  --z-nested-backdrop: 110;
+  --z-nested-popover: 111;
+  --z-toast: 120;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2rem;
+  --text-4xl: 2.25rem;
+  --space-0_5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1_5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-2_5: 0.625rem;
+  --space-3: 0.75rem;
+  --space-3_5: 0.875rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --space-9: 2.25rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-14: 3.5rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+}
+
+.dark {
+  color-scheme: dark;
+  --on-accent: #29190f;
+  --bg-app: #151715;
+  --bg-sidebar: #111311;
+  --bg-surface: #1d201d;
+  --bg-elevated: #272b27;
+  --bg-overlay: rgba(0, 0, 0, 0.74);
+  --bg-input: #202420;
+  --bg-hover: rgba(234, 234, 222, 0.05);
+  --bg-tooltip: #eeefe9;
+  --text-primary: #eeefe9;
+  --text-secondary: #b2b7ab;
+  --text-tertiary: #91988b;
+  --border-primary: rgba(238, 239, 233, 0.13);
+  --border-secondary: rgba(238, 239, 233, 0.24);
+  --accent: #eaaa7f;
+  --accent-strong: #f2bd96;
+  --accent-soft: #f2bd96;
+  --accent-muted: color-mix(in srgb, var(--accent) 11%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 20%, transparent);
+  --success: #4ade80;
+  --existing: #a8b4c7;
+  --ignored: #facc15;
+  --warning: #fb923c;
+  --danger: #fb7185;
+  --running: #60a5fa;
+  --success-soft: color-mix(in srgb, var(--success) 13%, transparent);
+  --existing-soft: color-mix(in srgb, var(--existing) 13%, transparent);
+  --ignored-soft: color-mix(in srgb, var(--ignored) 13%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 13%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 13%, transparent);
+  --running-soft: color-mix(in srgb, var(--running) 13%, transparent);
+  --success-border: color-mix(in srgb, var(--success) 28%, transparent);
+  --existing-border: color-mix(in srgb, var(--existing) 28%, transparent);
+  --ignored-border: color-mix(in srgb, var(--ignored) 28%, transparent);
+  --warning-border: color-mix(in srgb, var(--warning) 28%, transparent);
+  --danger-border: color-mix(in srgb, var(--danger) 28%, transparent);
+  --running-border: color-mix(in srgb, var(--running) 28%, transparent);
+  --run-sync: #5eead4;
+  --run-sync-soft: color-mix(in srgb, var(--run-sync) 13%, transparent);
+  --run-sync-border: color-mix(in srgb, var(--run-sync) 28%, transparent);
+  --run-download: #60a5fa;
+  --run-download-soft: color-mix(in srgb, var(--run-download) 13%, transparent);
+  --run-download-border: color-mix(
+    in srgb,
+    var(--run-download) 28%,
+    transparent
+  );
+  --run-repair: #c084fc;
+  --run-repair-soft: color-mix(in srgb, var(--run-repair) 13%, transparent);
+  --run-repair-border: color-mix(in srgb, var(--run-repair) 28%, transparent);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 8px 20px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 16px 38px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 26px 64px rgba(0, 0, 0, 0.34);
+  --on-tooltip: #272824;
+  --shadow-inset: inset 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --floating-bottom: calc(var(--mobile-dock-space) + var(--space-3));
+  }
+}

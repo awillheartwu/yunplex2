@@ -1,21 +1,9 @@
-export type Theme = 'dark' | 'light'
+import { useAppearance } from './useAppearance'
+export type { Theme } from '~/lib/appearance'
 
 export function useTheme() {
-  const theme = ref<Theme>('dark')
-
-  function apply(t: Theme) {
-    theme.value = t
-    document.documentElement.classList.toggle('dark', t === 'dark')
-    localStorage.setItem('yunplex2-theme', t)
-  }
-
-  function toggle() {
-    apply(theme.value === 'dark' ? 'light' : 'dark')
-  }
-
-  // Init from localStorage, default dark
-  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('yunplex2-theme') : null
-  apply((saved as Theme) || 'dark')
-
+  const appearance = useAppearance()
+  const theme = computed(() => appearance.state.value.theme)
+  function toggle() { appearance.setTheme(theme.value === 'dark' ? 'light' : 'dark') }
   return { theme, toggle }
 }

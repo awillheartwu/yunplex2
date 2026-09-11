@@ -103,7 +103,7 @@
 
         <div class="download-queue-row__side">
           <strong v-if="task.status === 'downloading' || task.status === 'tagging'">{{ normalizedProgress(task.progress) }}%</strong>
-          <span v-else-if="task.status === 'done'">{{ downstreamLabel }}</span>
+          <span v-else-if="task.status === 'done'">{{ task.awaitingSourceSync ? '待同步' : downstreamLabel }}</span>
           <span v-else>等待中</span>
         </div>
       </article>
@@ -235,6 +235,7 @@ function songStages(task: DownloadTask) {
   })
 }
 function taskLabel(task: DownloadTask) {
+  if (task.awaitingSourceSync) return '下载完成，待同步'
   return taskStatusLabel(task, resolvedRunType.value)
 }
 function taskSummary(task: DownloadTask) {

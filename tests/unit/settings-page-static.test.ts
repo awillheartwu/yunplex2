@@ -6,12 +6,14 @@ const root = resolve(__dirname, '../..')
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
 describe('settings information architecture', () => {
-  it('uses three user-facing groups and keeps danger actions out of the header', () => {
+  it('uses task-oriented groups and keeps danger actions out of the header', () => {
     const page = read('pages/config.vue')
 
-    expect(page).toContain("{ key: 'general', label: '日常' }")
-    expect(page).toContain("{ key: 'media', label: '媒体产物' }")
-    expect(page).toContain("{ key: 'advanced', label: '高级' }")
+    expect(page).toContain("{ key: 'general', label: '服务连接' }")
+    expect(page).toContain("{ key: 'media', label: '下载与文件' }")
+    expect(page).toContain("{ key: 'advanced', label: '安全与维护' }")
+    expect(page).toContain("{ key: 'sync', label: '同步策略' }")
+    expect(page).toContain("{ key: 'display', label: '外观' }")
     expect(page).not.toContain("key: 'preferences'")
     expect(page).toContain('title="危险操作"')
     expect(page.indexOf('恢复默认')).toBeGreaterThan(page.indexOf('title="危险操作"'))
@@ -23,7 +25,7 @@ describe('settings information architecture', () => {
     expect(page).toContain("activeTab === 'general'")
     expect(page).toContain("activeTab === 'media'")
     expect(page).toContain("activeTab === 'advanced'")
-    expect(page).toContain('title="同步内部策略"')
+    expect(page).toContain('title="同步策略"')
     expect(page).toContain('title="艺人写入规则"')
     expect(page).toContain('title="数据保留"')
     expect(page).toContain('title="安全"')

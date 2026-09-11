@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
   "scripts": {
     "dev": "NODE_OPTIONS=--no-deprecation nuxt dev",
     "build": "nuxt build",
@@ -15,17 +22,20 @@
     "release:major": "standard-version --release-as major",
     "release:patch": "standard-version --release-as patch",
     "test": "vitest run",
+    "test:browser": "playwright test",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "check:ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:repo-size && pnpm build && git diff --check",
+    "check:ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:styles && pnpm check:repo-size && pnpm build && git diff --check",
     "check:repo-size": "node scripts/check-repo-size.mjs",
     "diagnose:sync-source": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-sync-source.ts",
     "diagnose:auto-sync": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-auto-sync.ts",
     "acceptance:auto-sync": "vitest run tests/unit/auto-sync-acceptance.test.ts server/lib/sync/source-schedule-store.test.ts server/lib/sync/worker.test.ts --reporter=verbose",
+    "acceptance:media-reuse": "vitest run server/lib/sync/lookup.test.ts server/lib/sync/identity-store.test.ts server/lib/sync/identity-coordinator.test.ts server/lib/sync/reconciliation-plan.test.ts server/lib/plex-client-path-index.test.ts --reporter=verbose",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check:styles": "node scripts/check-design-tokens.mjs"
   },
   "dependencies": {
     "@lucide/vue": "^1.17.0",
@@ -41,18 +51,20 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@nuxt/test-utils": "^4.0.3",
     "@nuxtjs/tailwindcss": "^6.12.0",
+    "@playwright/test": "^1.62.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",
+    "color-name": "1.1.4",
     "commitizen": "^4.3.1",
     "cz-conventional-changelog": "^3.3.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.9.1",
     "globals": "^17.6.0",
-    "happy-dom": "^20.9.0",
     "husky": "^9.1.7",
+    "postcss": "8.5.15",
+    "postcss-value-parser": "4.2.0",
     "prettier": "^3.8.3",
     "standard-version": "^9.5.0",
     "typescript": "^5.7.0",

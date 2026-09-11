@@ -29,11 +29,11 @@ defineEmits<{ toggle: [] }>()
 <style scoped>
 .config-section {
   overflow: hidden;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
 .config-section--open {
-  border-color: var(--border-secondary);
+  border-color: var(--border-primary);
 }
 
 .config-section__header {
@@ -42,14 +42,14 @@ defineEmits<{ toggle: [] }>()
   min-height: 4rem;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1.15rem;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   border: 0;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: inherit;
   text-align: left;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
 .config-section__header:hover {
@@ -64,13 +64,13 @@ defineEmits<{ toggle: [] }>()
 .config-section__heading {
   display: grid;
   min-width: 0;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .config-section__title-row {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: var(--space-2);
 }
 
 .config-section__icon {
@@ -80,27 +80,27 @@ defineEmits<{ toggle: [] }>()
 
 .config-section__title {
   color: var(--text-primary);
-  font-size: 0.875rem;
-  font-weight: 750;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-bold);
 }
 
 .config-section__description {
   color: var(--text-tertiary);
-  font-size: 0.72rem;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 
 .config-section__body {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1.15rem;
+  gap: var(--space-4);
+  padding: var(--space-6);
 }
 
 @media (max-width: 640px) {
   .config-section__header,
   .config-section__body {
-    padding-inline: 1rem;
+    padding-inline: var(--space-4);
   }
 }
 </style>

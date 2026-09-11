@@ -42,28 +42,28 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'YunPlex2',
+      script: [{ innerHTML: `(${initializeAppearance.toString()})();`, tagPosition: 'head' }],
+      title: 'reYunPlex',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap',
-        },
       ],
     },
   },
 
   css: [
+    '~/assets/css/fonts.css',
+    '~/assets/css/tokens.css',
     '~/assets/css/main.css',
+    '~/assets/css/global/controls.css',
     '~/assets/css/global/components.css',
   ],
 
   tailwindcss: {
+    cssPath: '~/assets/css/main.css',
     config: {
       darkMode: 'class',
       content: [],
@@ -73,7 +73,7 @@ export default defineNuxtConfig({
             surface: {
               DEFAULT: 'var(--bg-surface)',
               elevated: 'var(--bg-elevated)',
-              overlay: 'var(--border-secondary)',
+              overlay: 'var(--bg-overlay)',
             },
             muted: {
               DEFAULT: 'var(--text-secondary)',
@@ -89,11 +89,60 @@ export default defineNuxtConfig({
             danger: 'var(--danger)',
           },
           fontFamily: {
-            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-            mono: ['SF Mono', 'Fira Code', 'monospace'],
+            sans: ['var(--font-ui)'],
+            mono: ['var(--font-mono)'],
           },
           fontSize: {
-            '2xs': ['0.75rem', { lineHeight: '1.125rem' }],
+            '2xs': ['var(--text-xs)', { lineHeight: 'var(--leading-normal)' }],
+            xs: ['var(--text-xs)', { lineHeight: 'var(--leading-normal)' }],
+            sm: ['var(--text-sm)', { lineHeight: 'var(--leading-normal)' }],
+            base: ['var(--text-base)', { lineHeight: 'var(--leading-normal)' }],
+            md: ['var(--text-md)', { lineHeight: 'var(--leading-normal)' }],
+            lg: ['var(--text-lg)', { lineHeight: 'var(--leading-tight)' }],
+            xl: ['var(--text-xl)', { lineHeight: 'var(--leading-tight)' }],
+            '2xl': ['var(--text-2xl)', { lineHeight: 'var(--leading-tight)' }],
+            '3xl': ['var(--text-3xl)', { lineHeight: 'var(--leading-tight)' }],
+            '4xl': ['var(--text-4xl)', { lineHeight: 'var(--leading-tight)' }],
+          },
+          fontWeight: {
+            normal: 'var(--font-weight-normal)',
+            medium: 'var(--font-weight-medium)',
+            semibold: 'var(--font-weight-semibold)',
+            bold: 'var(--font-weight-bold)',
+            extrabold: 'var(--font-weight-bold)',
+          },
+          borderRadius: {
+            DEFAULT: 'var(--radius-sm)',
+            sm: 'var(--radius-xs)',
+            md: 'var(--radius-md)',
+            lg: 'var(--radius-lg)',
+            xl: 'var(--radius-xl)',
+            '2xl': 'var(--radius-2xl)',
+            full: 'var(--radius-full)',
+          },
+          spacing: Object.fromEntries(
+            [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24]
+              .map(step => [String(step), `var(--space-${String(step).replace('.', '_')})`]),
+          ),
+          boxShadow: {
+            DEFAULT: 'var(--shadow-sm)',
+            sm: 'var(--shadow-sm)',
+            md: 'var(--shadow-md)',
+            lg: 'var(--shadow-lg)',
+            xl: 'var(--shadow-lg)',
+            '2xl': 'var(--shadow-lg)',
+            inner: 'var(--shadow-inset)',
+          },
+          lineHeight: {
+            tight: 'var(--leading-tight)',
+            normal: 'var(--leading-normal)',
+            relaxed: 'var(--leading-relaxed)',
+          },
+          transitionDuration: {
+            DEFAULT: 'var(--duration-fast)',
+            150: 'var(--duration-fast)',
+            200: 'var(--duration-normal)',
+            300: 'var(--duration-slow)',
           },
         },
       },
@@ -106,3 +155,4 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-01-01',
 })
+import { initializeAppearance } from './lib/appearance'

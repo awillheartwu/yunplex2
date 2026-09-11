@@ -1,23 +1,7 @@
+import type { SourceRequestsResult, SourceRequestResult } from '~~/server/lib/sync/source-requests'
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import { useDragReorder } from '~~/composables/useDragReorder'
-import {
-  formatSyncSourceRelativeTime,
-  getCopyrightCount,
-  getActionableFailureCount,
-  getIssueActionLabel,
-  getIssueCount,
-  getPlexTargetName,
-  getPlexTargetHint,
-  getSourceDisplayName,
-  getSourceMetaLabel,
-  getSourceOriginName,
-  getSourceStateLabel,
-  getSourceStateTone,
-  getIssueSummaryLabel,
-  getSyncResultLabel,
-  getSyncResultTone,
-  getSyncSourceCoverUrl,
-} from '~~/composables/useSyncSourcePresentation'
+import { getCopyrightCount, getActionableFailureCount, getSourceDisplayName } from '~~/composables/useSyncSourcePresentation'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 import { createLatestAsyncGuard, useDebounceFn, useRafThrottleFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
@@ -27,34 +11,33 @@ export function useSyncSourcesPage() {
   const route = useRoute()
   const router = useRouter()
   const feedback = useFeedback()
-  const { syncingSourceId, syncSource: triggerSourceSync } = useSourceSync()
+  const { error: sourceRequestError, requestState, syncingSourceId, syncSource: triggerSourceSync } = useSourceSync()
   const { state: globalSyncState } = useSync()
   const sources = ref<PlaylistSource[]>([])
   const allSources = ref<PlaylistSource[]>([])
   const loading = ref(false)
+  const loadError = ref('')
   const sourceFetchGuard = createLatestAsyncGuard()
   const togglingId = ref<string | null>(null)
-  const forceFullId = ref<string | null>(null)
-  const rebuildSyncId = ref<string | null>(null)
-  const redownloadSyncId = ref<string | null>(null)
-  const repairingSourceId = ref<string | null>(null)
-  const repairProgress = ref<Record<string, { processed: number; total: number }>>({})
 
   type SourceStatusFilter = '' | 'idle' | 'success' | 'partial' | 'failed'
   type EnabledFilter = '' | 'enabled' | 'disabled'
   type SubscribedFilter = '' | 'subscribed'
+  type PlexTargetFilter = '' | 'bound' | 'unbound'
   type IssueFilter = '' | 'failures' | 'copyright'
-  type SourceFilterChipKey = 'search' | 'type' | 'enabled' | 'subscribed' | 'status' | 'issue'
+  type SourceFilterChipKey = 'search' | 'type' | 'enabled' | 'subscribed' | 'plexTarget' | 'status' | 'issue'
   type SourceBatchAction = 'enable' | 'disable' | 'delete' | 'sync'
 
   const filterType = ref<'playlist' | 'album'>('playlist')
   const sourceSearch = ref('')
   const enabledFilter = ref<EnabledFilter>('')
   const subscribedFilter = ref<SubscribedFilter>('')
+  const plexTargetFilter = ref<PlexTargetFilter>('')
   const statusFilter = ref<SourceStatusFilter>('')
   const issueFilter = ref<IssueFilter>('')
   const draftEnabledFilter = ref<EnabledFilter>('')
   const draftSubscribedFilter = ref<SubscribedFilter>('')
+  const draftPlexTargetFilter = ref<PlexTargetFilter>('')
   const draftStatusFilter = ref<SourceStatusFilter>('')
   const draftIssueFilter = ref<IssueFilter>('')
   const sourceFilters = [
@@ -80,12 +63,14 @@ export function useSyncSourcesPage() {
     type: filterType.value === 'playlist' ? '' : filterType.value,
     enabled: enabledFilter.value,
     subscribed: subscribedFilter.value,
+    plexTarget: plexTargetFilter.value,
     status: statusFilter.value,
     issue: issueFilter.value,
   }))
   const advancedFilterCount = computed(() => countActiveFilters({
     enabled: enabledFilter.value,
     subscribed: subscribedFilter.value,
+    plexTarget: plexTargetFilter.value,
     status: statusFilter.value,
     issue: issueFilter.value,
   }))
@@ -118,7 +103,8 @@ export function useSyncSourcesPage() {
     if (filterType.value === 'album') chips.push({ key: 'type', label: '类型：已保存专辑' })
     if (enabledFilter.value) chips.push({ key: 'enabled', label: `状态：${enabledFilter.value === 'enabled' ? '已启用' : '已禁用'}` })
     if (statusFilter.value) chips.push({ key: 'status', label: `结果：${statusFilterOptions.find(option => option.value === statusFilter.value)?.label ?? statusFilter.value}` })
-    if (subscribedFilter.value) chips.push({ key: 'subscribed', label: '特殊：已绑定目标' })
+    if (subscribedFilter.value) chips.push({ key: 'subscribed', label: '网易云：收藏的歌单' })
+    if (plexTargetFilter.value) chips.push({ key: 'plexTarget', label: plexTargetFilter.value === 'bound' ? 'Plex：已绑定目标' : 'Plex：未绑定目标' })
     if (issueFilter.value) chips.push({ key: 'issue', label: `特殊：${issueFilter.value === 'failures' ? '有待处理异常' : '版权受限'}` })
     return chips
   })
@@ -134,6 +120,7 @@ export function useSyncSourcesPage() {
     filterType.value = queryString('type') === 'album' ? 'album' : 'playlist'
     enabledFilter.value = ['enabled', 'disabled'].includes(queryString('enabled')) ? queryString('enabled') as EnabledFilter : ''
     subscribedFilter.value = queryString('subscribed') === 'subscribed' ? 'subscribed' : ''
+    plexTargetFilter.value = ['bound', 'unbound'].includes(queryString('plexTarget')) ? queryString('plexTarget') as PlexTargetFilter : ''
     statusFilter.value = ['idle', 'success', 'partial', 'failed'].includes(queryString('status')) ? queryString('status') as SourceStatusFilter : ''
     issueFilter.value = ['failures', 'copyright'].includes(queryString('issue')) ? queryString('issue') as IssueFilter : ''
   }
@@ -146,6 +133,7 @@ export function useSyncSourcesPage() {
         type: filterType.value === 'playlist' ? undefined : filterType.value,
         enabled: enabledFilter.value || undefined,
         subscribed: subscribedFilter.value || undefined,
+        plexTarget: plexTargetFilter.value || undefined,
         status: statusFilter.value || undefined,
         issue: issueFilter.value || undefined,
       },
@@ -158,6 +146,7 @@ export function useSyncSourcesPage() {
     if (search) params.search = search
     if (enabledFilter.value) params.enabled = enabledFilter.value === 'enabled' ? '1' : '0'
     if (subscribedFilter.value === 'subscribed') params.subscribed = '1'
+    if (plexTargetFilter.value) params.hasPlexTarget = plexTargetFilter.value === 'bound' ? '1' : '0'
     if (statusFilter.value) params.lastStatus = statusFilter.value
     if (issueFilter.value === 'failures') params.hasFailures = '1'
     if (issueFilter.value === 'copyright') params.hasCopyright = '1'
@@ -188,6 +177,7 @@ export function useSyncSourcesPage() {
   function prepareDraftFilters() {
     draftEnabledFilter.value = enabledFilter.value
     draftSubscribedFilter.value = subscribedFilter.value
+    draftPlexTargetFilter.value = plexTargetFilter.value
     draftStatusFilter.value = statusFilter.value
     draftIssueFilter.value = issueFilter.value
   }
@@ -195,6 +185,7 @@ export function useSyncSourcesPage() {
   function resetDraftFilters() {
     draftEnabledFilter.value = ''
     draftSubscribedFilter.value = ''
+    draftPlexTargetFilter.value = ''
     draftStatusFilter.value = ''
     draftIssueFilter.value = ''
   }
@@ -202,6 +193,7 @@ export function useSyncSourcesPage() {
   function applyDraftFilters(close?: () => void) {
     enabledFilter.value = draftEnabledFilter.value
     subscribedFilter.value = draftSubscribedFilter.value
+    plexTargetFilter.value = draftPlexTargetFilter.value
     statusFilter.value = draftStatusFilter.value
     issueFilter.value = draftIssueFilter.value
     close?.()
@@ -213,6 +205,7 @@ export function useSyncSourcesPage() {
     filterType.value = 'playlist'
     enabledFilter.value = ''
     subscribedFilter.value = ''
+    plexTargetFilter.value = ''
     statusFilter.value = ''
     issueFilter.value = ''
     resetDraftFilters()
@@ -224,6 +217,7 @@ export function useSyncSourcesPage() {
     if (key === 'type') filterType.value = 'playlist'
     if (key === 'enabled') enabledFilter.value = ''
     if (key === 'subscribed') subscribedFilter.value = ''
+    if (key === 'plexTarget') plexTargetFilter.value = ''
     if (key === 'status') statusFilter.value = ''
     if (key === 'issue') issueFilter.value = ''
     void applySourceFilters()
@@ -234,31 +228,21 @@ export function useSyncSourcesPage() {
     await fetchSummarySources()
   }
 
+  watch(sourceRequestError, value => { if (value) feedback.error('来源请求失败', value) })
+  watch(() => requestState.value?.status, () => { void refreshSources() })
+
   // Summary computed
   const totalSourceCount = computed(() => allSources.value.length)
   const enabledCount = computed(() => allSources.value.filter(s => s.type === 'playlist' && s.enabled).length)
-  const lastSyncTime = computed(() => {
-    const times = allSources.value.filter(s => s.lastSyncedAt).map(s => new Date(s.lastSyncedAt!).getTime())
-    if (times.length === 0) return ''
-    const latest = new Date(Math.max(...times))
-    return formatSyncSourceRelativeTime(latest.toISOString())
-  })
   const totalActionableFailures = computed(() => allSources.value.reduce((sum, s) => sum + getActionableFailureCount(s), 0))
   const totalCopyright = computed(() => allSources.value.reduce((sum, s) => sum + getCopyrightCount(s), 0))
   const advancedFilterLabel = computed(() => '筛选')
 
   // Add dialogs
   const showAdd = ref(false)
-  // Edit
-  const editTarget = ref<PlaylistSource | null>(null)
-  const hoverCard = ref<{ source: PlaylistSource; top: number; left: number } | null>(null)
-  const tableShellRef = ref<HTMLElement | null>(null)
-  const tableShellWidth = ref(0)
-  let hoverHideTimer: ReturnType<typeof setTimeout> | null = null
-  let tableShellResizeObserver: ResizeObserver | null = null
 
   // Drag & drop — only enabled in 歌单 view; wrapper handlers map filtered indices to sources indices
-  const { dragIdx, dragOverIdx, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd } = useDragReorder(
+  const { dragOverIdx, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd } = useDragReorder(
     sources,
     async (orderedIds) => { await api.put('/playlist-sources/reorder', { orderedIds }) },
     (s) => s.id,
@@ -315,23 +299,6 @@ export function useSyncSourcesPage() {
     selectedSourceIds.value = new Set()
   }
 
-  const confirmDelete = ref<PlaylistSource | null>(null)
-  const confirmRebuild = ref<PlaylistSource | null>(null)
-  const confirmRedownload = ref<PlaylistSource | null>(null)
-  const redownloadPreview = ref<{
-    total: number
-    managed: number
-    missing: number
-    protectedExternal: number
-    protectedManual: number
-    eligible: number
-    snapshotAvailable: boolean
-  } | null>(null)
-  const redownloadPreviewLoading = ref(false)
-  const redownloadPreviewError = ref('')
-  const takeOverExternal = ref(false)
-  const confirmBatchDelete = ref(false)
-
   function openAddPlaylist() { showAdd.value = true }
   function onPlaylistCreated(count = 1) {
     filterType.value = 'playlist'
@@ -343,128 +310,6 @@ export function useSyncSourcesPage() {
     void refreshSources()
     feedback.success(`已添加 ${count} 个专辑源`)
   }
-  function openEdit(s: PlaylistSource) { editTarget.value = s }
-  async function onSourceSaved() {
-    await refreshSources()
-    feedback.success('同步源已保存')
-  }
-
-  // More menu
-  const moreMenuId = ref<string | null>(null)
-  function toggleMoreMenu(id: string) {
-    moreMenuId.value = moreMenuId.value === id ? null : id
-  }
-
-  type DesktopActionDensity = 'compact' | 'comfortable' | 'wide' | 'expanded'
-
-  const desktopActionDensity = computed<DesktopActionDensity>(() => {
-    const width = tableShellWidth.value || 0
-    if (width >= 1780) return 'expanded'
-    if (width >= 1540) return 'wide'
-    if (width >= 1320) return 'comfortable'
-    return 'compact'
-  })
-
-  const showInlineEditAction = computed(() =>
-    desktopActionDensity.value === 'comfortable'
-    || desktopActionDensity.value === 'wide'
-    || desktopActionDensity.value === 'expanded',
-  )
-
-  const showInlineRepairAction = computed(() =>
-    desktopActionDensity.value === 'wide'
-    || desktopActionDensity.value === 'expanded',
-  )
-
-  function showInlineFullSyncAction(source: PlaylistSource): boolean {
-    return source.type === 'playlist' && desktopActionDensity.value === 'expanded'
-  }
-
-  function updateTableShellWidth() {
-    tableShellWidth.value = tableShellRef.value?.clientWidth ?? window.innerWidth
-  }
-  const updateTableShellWidthOnFrame = useRafThrottleFn(updateTableShellWidth)
-
-  // Expand songs
-  const expandedId = ref<string | null>(null)
-  function toggleExpand(sourceId: string) {
-    if (expandedId.value === sourceId) { expandedId.value = null; return }
-    expandedId.value = sourceId
-  }
-
-  function sourceCoverSrc(url: string): string {
-    return getSyncSourceCoverUrl(url)
-  }
-
-  function sourceStateClass(source: PlaylistSource): string {
-    const tone = getSourceStateTone(source)
-    return `sync-pill--${tone}`
-  }
-
-  function syncResultTextClass(source: PlaylistSource): string {
-    const tone = repairingSourceId.value === source.id ? 'accent' : getSyncResultTone(source)
-    return `sync-table__result-label--${tone}`
-  }
-
-  function syncResultDotClass(source: PlaylistSource): string {
-    if (repairingSourceId.value === source.id) return 'sync-result-dot--accent'
-    switch (getSyncResultTone(source)) {
-      case 'success':
-        return 'sync-result-dot--success'
-      case 'warning':
-        return 'sync-result-dot--warning'
-      case 'danger':
-        return 'sync-result-dot--danger'
-      default:
-        return 'sync-result-dot--neutral'
-    }
-  }
-
-  function clearHoverHideTimer() {
-    if (hoverHideTimer) {
-      clearTimeout(hoverHideTimer)
-      hoverHideTimer = null
-    }
-  }
-
-  function showSourceHover(source: PlaylistSource, event: MouseEvent | FocusEvent) {
-    clearHoverHideTimer()
-    const target = event.currentTarget
-    if (!(target instanceof HTMLElement)) return
-    const rect = target.getBoundingClientRect()
-    const width = 22 * 16
-    const height = 12.5 * 16
-    const gutter = 16
-    let left = rect.left
-    let top = rect.bottom + 12
-
-    if (left + width > window.innerWidth - gutter) {
-      left = Math.max(gutter, window.innerWidth - width - gutter)
-    }
-
-    if (top + height > window.innerHeight - gutter) {
-      top = Math.max(gutter, rect.top - height - 12)
-    }
-
-    hoverCard.value = { source, top, left }
-  }
-
-  function scheduleHideSourceHover() {
-    clearHoverHideTimer()
-    hoverHideTimer = setTimeout(() => {
-      hoverCard.value = null
-    }, 90)
-  }
-
-  async function retrySourceIssues(s: PlaylistSource) {
-    try {
-      await api.post(`/playlist-sources/${s.id}/retry-failed`)
-      await refreshSources()
-      feedback.success('已开始重新尝试来源异常', getSourceDisplayName(s))
-    } catch (err) {
-      feedback.error('重新尝试失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
 
   async function fetchSummarySources() {
     try {
@@ -475,12 +320,13 @@ export function useSyncSourcesPage() {
   async function fetchSources() {
     const token = sourceFetchGuard.next()
     loading.value = true
+    loadError.value = ''
     try {
       const items = await api.get<PlaylistSource[]>('/playlist-sources', buildSourceParams())
       if (!sourceFetchGuard.isLatest(token)) return
       sources.value = items
       pruneSelectionToVisible()
-    } catch { /* ignore */ }
+    } catch (err) { if (sourceFetchGuard.isLatest(token)) loadError.value = err instanceof Error ? err.message : '收藏读取失败，请重试' }
     finally {
       if (sourceFetchGuard.isLatest(token)) loading.value = false
     }
@@ -504,244 +350,68 @@ export function useSyncSourcesPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirmDelete.value) return
-    const source = confirmDelete.value
-    const id = source.id
-    confirmDelete.value = null
-    try {
-      await api.del(`/playlist-sources/${id}`)
-      await refreshSources()
-      feedback.success('同步源已删除', getSourceDisplayName(source))
-    } catch (err) {
-      feedback.error('删除同步源失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  const isAnySyncing = computed(() =>
-    syncingSourceId.value !== null
-    || forceFullId.value !== null
-    || rebuildSyncId.value !== null
-    || redownloadSyncId.value !== null
-    || repairingSourceId.value !== null,
-  )
-
-  function openRebuildConfirm(source: PlaylistSource) {
-    confirmRebuild.value = source
-  }
-
-  async function openRedownloadConfirm(source: PlaylistSource) {
-    if (source.type !== 'playlist') return
-    confirmRedownload.value = source
-    redownloadPreview.value = null
-    redownloadPreviewError.value = ''
-    takeOverExternal.value = false
-    redownloadPreviewLoading.value = true
-    try {
-      redownloadPreview.value = await api.get(`/playlist-sources/${source.id}/redownload-preview`)
-    } catch (err) {
-      redownloadPreviewError.value = err instanceof Error ? err.message : '无法读取重新下载范围'
-    } finally {
-      redownloadPreviewLoading.value = false
-    }
-  }
-
-  function closeRedownloadConfirm() {
-    if (redownloadSyncId.value) return
-    confirmRedownload.value = null
-    redownloadPreview.value = null
-    redownloadPreviewError.value = ''
-    takeOverExternal.value = false
-  }
+  const isAnySyncing = computed(() => syncingSourceId.value !== null || globalSyncState.value?.isRunning === true)
 
   async function syncSource(s: PlaylistSource, full = false) {
     try {
-      if (full) {
-        if (s.type === 'album') syncingSourceId.value = s.id
-        else forceFullId.value = s.id
-        await api.post(`/playlist-sources/${s.id}/sync`, { mode: 'full' })
-      } else {
-        await triggerSourceSync(s.id)
-      }
-      feedback.success(sourceSyncTriggerTitle(s, full), getSourceDisplayName(s))
+      const result = await triggerSourceSync(s.id, { mode: full ? 'full' : 'normal' })
+      feedback.success(result.results[0]?.message || '请求已接受', getSourceDisplayName(s))
+      await refreshSources()
     } catch (err) {
-      forceFullId.value = null
       syncingSourceId.value = null
       feedback.error('触发同步失败', err instanceof Error ? err.message : '请稍后重试')
     }
   }
 
-  async function handleRebuildSync() {
-    if (!confirmRebuild.value) return
-    const source = confirmRebuild.value
-    confirmRebuild.value = null
-    rebuildSyncId.value = source.id
-    try {
-      await api.post(`/playlist-sources/${source.id}/sync`, { mode: 'rebuild_matching' })
-      feedback.success(source.type === 'album' ? '重新评估自动匹配并下载已触发' : '重新评估自动匹配并同步已触发', getSourceDisplayName(source))
-    } catch (err) {
-      rebuildSyncId.value = null
-      feedback.error('触发重建失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  async function handleRedownloadSync() {
-    const source = confirmRedownload.value
-    if (!source || redownloadPreviewLoading.value || redownloadPreviewError.value) return
-    redownloadSyncId.value = source.id
-    try {
-      await api.post(`/playlist-sources/${source.id}/sync`, {
-        mode: 'redownload_managed',
-        takeOverExternal: takeOverExternal.value,
-      })
-      feedback.success('重新下载托管音频并同步已触发', getSourceDisplayName(source))
-      confirmRedownload.value = null
-    } catch (err) {
-      feedback.error('触发重新下载失败', err instanceof Error ? err.message : '请稍后重试')
-    } finally {
-      redownloadSyncId.value = null
-    }
-  }
-
-  function sourceSyncTriggerTitle(source: PlaylistSource, full: boolean): string {
-    if (source.type === 'album') return '专辑下载已触发'
-    return full ? '全量同步已触发' : '同步已触发'
-  }
-
   const batchLoading = ref(false)
+  const sourceRequestResults = ref<SourceRequestResult[]>([])
   const batchToggling = ref(false)
-  const batchDeleting = ref(false)
 
   async function runSelectedBatch(action: Exclude<SourceBatchAction, 'delete'>) {
     const ids = [...selectedSourceIds.value]
     if (ids.length === 0) return
-    if (action === 'sync') batchLoading.value = true
+    if (action === 'sync') { batchLoading.value = true; sourceRequestResults.value = [] }
     else batchToggling.value = true
     try {
-      const result = await api.post<{ count: number; action: SourceBatchAction }>('/playlist-sources/batch', { action, ids })
+      const result = await api.post<SourceRequestsResult & { count: number; action: SourceBatchAction }>('/playlist-sources/batch', { action, ids })
       if (action !== 'sync') {
         feedback.success(action === 'enable' ? `已启用 ${result.count} 个同步源` : `已禁用 ${result.count} 个同步源`)
         clearSelection()
         await refreshSources()
       } else {
-        feedback.success(`已触发 ${result.count} 个同步源同步`)
+        sourceRequestResults.value = result.results
+        const blocked = result.results.find(item => item.status === 'busy' || item.status === 'failed')
+        if (blocked) throw new Error(blocked.message)
+        const waiting = result.results.filter(item => item.status === 'awaiting_review').length
+        feedback.success(`已接受 ${result.count} 个来源请求，${waiting} 个来源等待确认`)
+        batchLoading.value = false
+        await refreshSources()
       }
-    } catch {
+    } catch (error) {
       if (action === 'sync') batchLoading.value = false
-      feedback.error('批量操作失败')
+      feedback.error('批量操作失败', error instanceof Error ? error.message : '请稍后重试')
     } finally {
+      if (action === 'sync') batchLoading.value = false
       if (action !== 'sync') batchToggling.value = false
     }
   }
 
-  // Track global sync via composable for batch button loading state
-  watch(() => globalSyncState.value?.isRunning, (running) => {
-    if (!running && batchLoading.value) {
-      batchLoading.value = false
-      feedback.success('批量同步已完成')
-      clearSelection()
-    }
+  watch(() => globalSyncState.value?.isRunning, (running, previous) => {
+    if (!running && previous) void refreshSources()
   })
 
-  function openBatchDeleteConfirm() {
-    if (selectedCount.value === 0) return
-    confirmBatchDelete.value = true
-  }
-
-  async function handleBatchDelete() {
-    const ids = [...selectedSourceIds.value]
-    if (ids.length === 0) return
-    confirmBatchDelete.value = false
-    batchDeleting.value = true
-    try {
-      const result = await api.post<{ count: number }>('/playlist-sources/batch', { action: 'delete', ids })
-      feedback.success(`已删除 ${result.count} 个来源`)
-      clearSelection()
-      await refreshSources()
-    } catch {
-      feedback.error('批量删除失败')
-    } finally {
-      batchDeleting.value = false
-    }
-  }
-
-  async function repairSource(s: PlaylistSource) {
-    if (repairingSourceId.value) return
-    repairingSourceId.value = s.id
-    try {
-      await api.post(`/playlist-sources/${s.id}/repair`)
-      feedback.success('媒体修复任务已触发', getSourceDisplayName(s))
-    } catch (err) {
-      repairingSourceId.value = null
-      feedback.error('触发媒体修复失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
-
-  // SSE: clear spinners when sync finishes
-  const sseUnsubs: Array<() => void> = []
-  const hideHoverOnFrame = useRafThrottleFn(() => { hoverCard.value = null })
-  const handleHoverInvalidation = () => hideHoverOnFrame.run()
-  const handleTableShellResize = () => updateTableShellWidthOnFrame.run()
-
+  let unsubscribe: (() => void) | null = null
+  let resumeUnsubscribe: (() => void) | null = null
   onMounted(() => {
     restoreSourceFiltersFromRoute()
+    if (route.query.add === '1') { showAdd.value = true; void router.replace({ query: { ...route.query, add: undefined } }) }
     void refreshSources()
-    updateTableShellWidth()
-
-    window.addEventListener('scroll', handleHoverInvalidation, true)
-    window.addEventListener('resize', handleHoverInvalidation)
-    window.addEventListener('resize', handleTableShellResize)
-
-    if (typeof ResizeObserver !== 'undefined' && tableShellRef.value) {
-      tableShellResizeObserver = new ResizeObserver(() => updateTableShellWidthOnFrame.run())
-      tableShellResizeObserver.observe(tableShellRef.value)
-    }
-
-    sseUnsubs.push(sseSubscribe('stage-change', (data) => {
-      const stage = data.stage as string
-      if (stage === 'idle') {
-        forceFullId.value = null
-        rebuildSyncId.value = null
-        repairingSourceId.value = null
-        repairProgress.value = {}
-        void refreshSources()
-      }
-    }))
-    sseUnsubs.push(sseSubscribe('repair-progress', (data) => {
-      const { sourceId, processed, totalSongs } = data as Record<string, unknown>
-      if (sourceId && typeof processed === 'number') {
-        repairProgress.value = { ...repairProgress.value, [sourceId as string]: { processed, total: totalSongs as number } }
-      }
-    }))
-    sseUnsubs.push(() => window.removeEventListener('scroll', handleHoverInvalidation, true))
-    sseUnsubs.push(() => window.removeEventListener('resize', handleHoverInvalidation))
-    sseUnsubs.push(() => window.removeEventListener('resize', handleTableShellResize))
+    unsubscribe = sseSubscribe('stage-change', data => { if (data.stage === 'idle') void refreshSources() })
+    resumeUnsubscribe = sseSubscribe('resync', () => { void refreshSources() })
   })
-
-  onUnmounted(() => {
-    clearHoverHideTimer()
-    tableShellResizeObserver?.disconnect()
-    for (const unsub of sseUnsubs) unsub()
-  })
+  onUnmounted(() => { unsubscribe?.(); resumeUnsubscribe?.(); sourceSearchDebounce.cancel() })
 
   return {
-    advancedFilterCount, advancedFilterLabel, albumSourceCount, allSources, allVisibleSelected, applyDraftFilters, applySourceFilters, batchDeleting,
-    batchLoading, batchToggling, buildSourceParams, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearHoverHideTimer,
-    clearSelection, clearSourceFilters, closeRedownloadConfirm, confirmBatchDelete, confirmDelete, confirmRebuild, confirmRedownload, desktopActionDensity, draftEnabledFilter, draftIssueFilter,
-    draftStatusFilter, draftSubscribedFilter, dragIdx, dragOverIdx, editTarget, enabledCount, enabledFilter, expandedId,
-    fetchSources, fetchSummarySources, filteredSources, filterType, forceFullId, formatRelative: formatSyncSourceRelativeTime,
-    globalSyncState, handleBatchDelete, handleDelete, handleRebuildSync, handleRedownloadSync, hoverCard, hoverHideTimer, isAnySyncing, issueFilter,
-    lastSyncTime, loading, moreMenuId, onAlbumCreated, onDragEnd, onDragLeave, onDragOver, onDragStart,
-    onDrop, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSaved, onSourceSearchInput, onSourceTabChange,
-    openAddPlaylist, openBatchDeleteConfirm, openEdit, openRebuildConfirm, openRedownloadConfirm, playlistSourceCount, plexTargetHint: getPlexTargetHint, plexTargetName: getPlexTargetName, prepareDraftFilters,
-    pruneSelectionToVisible, queryString, rebuildSyncId, redownloadPreview, redownloadPreviewError, redownloadPreviewLoading, redownloadSyncId, refreshSources, removeSourceFilter, repairingSourceId, repairProgress,
-    repairSource, resetDraftFilters, restoreSourceFiltersFromRoute, runSelectedBatch, scheduleHideSourceHover, selectedCount, selectedHasAlbum, selectedHasDisabledPlaylist,
-    selectedSourceIds, selectedSources, setSourceType, showAdd, showInlineEditAction, showInlineFullSyncAction, showInlineRepairAction, showSourceHover,
-    someVisibleSelected, sourceActiveCount, sourceCanClear, sourceCoverSrc, sourceDisplayName: getSourceDisplayName, sourceFilterChips,
-    retrySourceIssues, sourceFilters, sourceIssueActionLabel: getIssueActionLabel, sourceIssueCount: getIssueCount, sourceIssueSummary: getIssueSummaryLabel, sourceMetaLabel: getSourceMetaLabel, sourceOriginName: getSourceOriginName, sourcePageTabs,
-    sources, sourceSearch, sourceSearchDebounce, sourceStateClass, sourceStateLabel: getSourceStateLabel, sourceSyncTriggerTitle, statusFilter, statusFilterOptions, subscribedFilter,
-    syncingSourceId, syncResultDotClass, syncResultLabel: getSyncResultLabel, syncResultTextClass, syncSource, syncSourceFilterQuery, tableShellRef, tableShellResizeObserver, takeOverExternal,
-    tableShellWidth, toggleEnabled, toggleExpand, toggleMoreMenu, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalCopyright,
-    totalActionableFailures, totalSourceCount, triggerSourceSync, updateTableShellWidth,
+  loadError, sourceRequestResults, advancedFilterCount, advancedFilterLabel, allSources, allVisibleSelected, applyDraftFilters, batchLoading, batchToggling, canBatchSyncSelected, canBatchToggleSelected, canDragReorder, clearSourceFilters, draftEnabledFilter, draftIssueFilter, draftStatusFilter, draftSubscribedFilter, draftPlexTargetFilter, dragOverIdx, enabledCount, filteredSources, filterType, isAnySyncing, loading, onAlbumCreated, onDragEnd, onDragLeave, onFilteredDragOver, onFilteredDragStart, onFilteredDrop, onPlaylistCreated, onSourceSearchInput, onSourceTabChange, openAddPlaylist, prepareDraftFilters, refreshSources, removeSourceFilter, resetDraftFilters, runSelectedBatch, selectedCount, selectedSourceIds, showAdd, someVisibleSelected, sourceCanClear, sourceFilterChips, sourcePageTabs, sourceSearch, statusFilterOptions, syncingSourceId, syncSource, toggleEnabled, toggleSelectAllVisible, toggleSourceSelection, togglingId, totalActionableFailures, totalCopyright, totalSourceCount
   }
 }

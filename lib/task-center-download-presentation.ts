@@ -106,6 +106,7 @@ export function taskStatusLabel(
   task: DownloadTask,
   runType: TaskRunType | null | undefined,
 ): string {
+  if (task.status === 'done' && task.awaitingSourceSync) return '下载完成，待同步'
   if (task.status === 'pending') return '等待下载'
   if (task.status === 'downloading') return '下载中'
   if (task.status === 'tagging') return '写入标签'
@@ -119,6 +120,7 @@ export function taskProgressSummary(input: {
   currentStage?: SyncStage | null
 }): string {
   const { task, runType, currentStage } = input
+  if (task.status === 'done' && task.awaitingSourceSync) return '下载完成，来源等待下一次同步'
   if (task.status === 'pending') return '等待进入下载槽位'
   if (task.status === 'downloading') return `音频下载 ${normalizeProgress(task.progress)}%`
   if (task.status === 'tagging') return `正在写入歌词、封面和标签 ${normalizeProgress(task.progress)}%`

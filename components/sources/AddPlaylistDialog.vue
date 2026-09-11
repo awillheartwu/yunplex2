@@ -1,7 +1,8 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="$emit('update:visible', false)">
-      <div class="flex max-h-[90vh] w-full max-w-[34rem] flex-col overflow-hidden rounded-xl border shadow-xl" style="background:var(--bg-surface);border-color:var(--border-primary)">
+    <div v-if="visible" class="fixed inset-0 z-[var(--z-modal)] flex items-end justify-center p-3 sm:items-center" style="background:var(--bg-overlay);backdrop-filter:blur(8px)" @click.self="close">
+      <div ref="dialogPanel" role="dialog" aria-modal="true" aria-label="添加音乐收藏" tabindex="-1" class="add-collection-dialog flex max-h-[90dvh] w-full max-w-[34rem] flex-col overflow-hidden rounded-xl border shadow-xl" style="background:var(--bg-surface);border-color:var(--border-primary)">
+        <div class="add-collection-heading"><div><h2>添加音乐收藏</h2><p>从网易云收藏中选择，或直接输入资源 ID。</p></div><button class="icon-button" :disabled="saving" aria-label="关闭添加收藏" @click="close"><AppIcon name="close" :size="18" /></button></div>
         <!-- Header with type tabs -->
         <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-bottom:1px solid var(--border-primary)">
           <div class="flex items-center gap-1.5">
@@ -17,7 +18,8 @@
           </button>
         </div>
 
-        <template v-if="!error">
+        <div class="px-5 py-2 border-b border-[var(--border-primary)]"><button class="btn btn-ghost btn-sm" :disabled="saving" @click="manualEntry = !manualEntry">{{ manualEntry ? '返回收藏列表' : '直接输入资源 ID' }}</button></div>
+        <template v-if="!error && !manualEntry">
           <div v-if="loading" class="text-sm text-muted py-12 text-center">加载列表...</div>
 
           <!-- Playlist tab -->
@@ -55,10 +57,10 @@
                 </div>
               </template>
               <template v-if="subscribed.length > 0">
-                <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--success,#22c55e)" @click="subscribedCollapsed = !subscribedCollapsed">
+                <div class="flex items-center gap-2 px-1 py-1 border-l-2 cursor-pointer select-none" style="border-color:var(--success)" @click="subscribedCollapsed = !subscribedCollapsed">
                   <AppIcon name="chevronRight" :size="10" class="transition-transform shrink-0" :class="subscribedCollapsed ? '' : 'rotate-90'" />
                   <span class="text-xs font-semibold" style="color:var(--text-primary)">收藏的歌单</span>
-                  <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e)">{{ subscribed.length }}</span>
+                  <span class="text-2xs px-1.5 py-0.5 rounded-full" style="background:var(--success-soft);color:var(--success)">{{ subscribed.length }}</span>
                 </div>
                 <div v-show="!subscribedCollapsed" class="space-y-0.5">
                   <label v-for="p in subscribed" :key="p.id" class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors border" :style="{ borderColor: isAdded(p.id) ? 'var(--border-primary)' : 'transparent', background: selectedIds.includes(p.id) ? 'var(--accent-glow)' : 'transparent' }" :class="isAdded(p.id) ? 'opacity-40 pointer-events-none' : 'hover:bg-[var(--bg-hover)]'">
@@ -112,9 +114,9 @@
           <!-- Footer -->
           <div class="flex items-center justify-between gap-3 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
             <span class="text-2xs text-muted">已选 {{ selectedIds.length }} 个</span>
-            <p v-if="saveError" class="min-w-0 flex-1 truncate text-right text-2xs text-danger">{{ saveError }}</p>
+            <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
             <div class="flex gap-2">
-              <button class="btn btn-secondary" @click="$emit('update:visible', false)">取消</button>
+              <button class="btn btn-secondary" :disabled="saving" @click="close">取消</button>
               <button class="btn btn-primary" :disabled="saving || selectedIds.length === 0" @click="handleAddSelected">
                 {{ saving ? '添加中...' : '确认添加' }}
               </button>
@@ -124,16 +126,16 @@
 
         <!-- Error + manual input fallback -->
         <template v-else>
-          <div class="px-5 py-4 flex-1">
-            <p class="text-2xs text-warning mb-4">{{ error }}</p>
+          <div class="px-5 py-4 flex-1 overflow-y-auto">
+            <p v-if="error" class="text-2xs text-warning mb-4">{{ error }}</p>
             <div>
-              <label class="text-xs font-medium block mb-1.5" style="color:var(--text-primary)">手动输入{{ dialogType === 'playlist' ? '歌单' : '专辑' }} ID</label>
-              <input v-model="manualId" type="number" placeholder="输入 ID" class="form-input w-full text-sm" @keyup.enter="handleAddSingle" />
+              <label for="add-collection-resource-id" class="text-xs font-medium block mb-1.5" style="color:var(--text-primary)">手动输入{{ dialogType === 'playlist' ? '歌单' : '专辑' }} ID</label>
+              <input id="add-collection-resource-id" ref="manualInput" v-model="manualId" :disabled="saving" type="text" inputmode="numeric" placeholder="例如：123456789" class="form-input w-full text-sm" @keydown.enter.prevent="handleAddSingle" />
             </div>
           </div>
           <div class="flex items-center justify-end gap-2 px-5 py-3 shrink-0" style="border-top:1px solid var(--border-primary);background:var(--bg-app)">
-            <p v-if="saveError" class="mr-auto min-w-0 truncate text-2xs text-danger">{{ saveError }}</p>
-            <button class="btn btn-secondary" @click="$emit('update:visible', false)">取消</button>
+            <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
+            <button class="btn btn-secondary" :disabled="saving" @click="close">取消</button>
             <button class="btn btn-primary" :disabled="saving" @click="handleAddSingle">确认添加</button>
           </div>
         </template>
@@ -143,6 +145,7 @@
 </template>
 
 <script setup lang="ts">
+import { useDialogFocus } from '~/composables/useDialogFocus'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 
 interface NeteasePlaylist {
@@ -159,6 +162,9 @@ const props = defineProps<{ visible: boolean; sourceIds: number[] }>()
 const emit = defineEmits<{ 'update:visible': [v: boolean]; created: [count: number]; 'created-album': [count: number] }>()
 
 const api = useApi()
+const dialogPanel = ref<HTMLElement | null>(null)
+function close() { if (!saving.value) emit('update:visible', false) }
+useDialogFocus(() => props.visible, dialogPanel, close)
 
 // Dialog type tab
 const dialogType = ref<'playlist' | 'album'>('playlist')
@@ -186,6 +192,9 @@ const error = ref('')
 const saveError = ref('')
 const selectedIds = ref<number[]>([])
 const manualId = ref('')
+const manualEntry = ref(false)
+const manualInput = ref<HTMLInputElement | null>(null)
+watch(manualEntry, async value => { if (value) { await nextTick(); manualInput.value?.focus() } })
 
 function isAdded(pid: number): boolean { return props.sourceIds.includes(pid) }
 
@@ -291,7 +300,7 @@ function publishYear(ts: number): string {
 
 // ── Add actions ──
 async function handleAddSelected() {
-  if (selectedIds.value.length === 0) return
+  if (saving.value || selectedIds.value.length === 0) return
   saving.value = true
   saveError.value = ''
   const isAlbum = dialogType.value === 'album'
@@ -316,8 +325,9 @@ async function handleAddSelected() {
 }
 
 async function handleAddSingle() {
-  const id = parseInt(manualId.value, 10)
-  if (isNaN(id) || id <= 0) return
+  if (saving.value) return
+  const value = manualId.value.trim(), id = Number(value)
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(id) || id <= 0) { saveError.value = '请输入有效的资源 ID（正整数）'; return }
   saving.value = true
   saveError.value = ''
   const isAlbum = dialogType.value === 'album'
@@ -340,6 +350,7 @@ async function handleAddSingle() {
 watch(() => props.visible, (v) => {
   if (v) {
     manualId.value = ''
+    manualEntry.value = false
     selectedIds.value = []
     saveError.value = ''
     clearPlaylistDialogFilters()
@@ -348,3 +359,7 @@ watch(() => props.visible, (v) => {
   }
 })
 </script>
+
+<style scoped>
+.add-collection-dialog{min-height:0}.add-collection-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--border-primary);flex:none}.add-collection-heading h2{font-size:var(--text-md);font-weight:var(--font-weight-semibold)}.add-collection-heading p{font-size:var(--text-xs);color:var(--text-tertiary);margin-top:var(--space-1_5)}.add-collection-error{color:var(--danger);font-size:var(--text-xs);line-height:1.5;overflow-wrap:anywhere;margin-right:auto}.add-collection-dialog :deep(.overflow-y-auto){min-height:0;overscroll-behavior:contain}@media(max-width:520px){.add-collection-dialog>div:last-child{flex-wrap:wrap}.add-collection-error{flex-basis:100%}}
+</style>

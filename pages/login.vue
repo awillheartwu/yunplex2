@@ -5,7 +5,7 @@
         <AppIcon name="shield" :size="22" />
       </span>
       <div>
-        <h1 id="login-title" class="auth-panel__title">登录控制台</h1>
+        <h1 id="login-title" class="auth-panel__title">欢迎回来</h1>
         <p class="auth-panel__copy">输入管理员密码后继续管理同步、下载与系统配置。</p>
       </div>
     </div>
@@ -106,8 +106,11 @@ const resetting = ref(false)
 const authState = computed(() => auth.state.value)
 
 onMounted(async () => {
-  const state = await auth.refreshState()
-  if (state.setupRequired) await navigateTo('/setup')
+  try {
+    const state = await auth.refreshState()
+    if (state.setupRequired) await navigateTo('/setup')
+    else if (state.authenticated || !state.authEnabled) await navigateTo(typeof route.query.redirect === 'string' ? route.query.redirect : '/')
+  } catch { error.value = '暂时无法读取服务状态，可稍后重试登录。' }
 })
 
 async function handleLogin() {
@@ -152,14 +155,15 @@ async function handleReset() {
 <style scoped>
 .auth-panel {
   width: min(100%, 28rem);
-  padding: clamp(1.25rem, 4vw, 1.75rem);
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  box-shadow: var(--shadow-md);
 }
 
 .auth-panel__header {
   display: flex;
-  gap: 0.9rem;
+  gap: var(--space-3_5);
   align-items: flex-start;
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--space-5);
 }
 
 .auth-panel__icon {
@@ -177,44 +181,44 @@ async function handleReset() {
 
 .auth-panel__title {
   margin: 0;
-  font-size: 1.45rem;
+  font-size: var(--text-2xl);
   line-height: 1.2;
-  font-weight: 750;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0;
 }
 
 .auth-panel__copy {
-  margin: 0.35rem 0 0;
+  margin: var(--space-1_5) 0 0;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
 .auth-form {
   display: grid;
-  gap: 0.9rem;
+  gap: var(--space-3_5);
 }
 
 .auth-form--reset {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  margin-top: var(--space-3_5);
+  padding-top: var(--space-3_5);
   border-top: 1px solid var(--border-primary);
 }
 
 .auth-label {
   display: inline-flex;
-  margin-bottom: 0.45rem;
-  font-size: 0.85rem;
-  font-weight: 650;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .auth-error,
 .auth-message {
   margin: 0;
-  padding: 0.7rem 0.8rem;
+  padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-md);
-  font-size: 0.84rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -236,7 +240,7 @@ async function handleReset() {
 
 .auth-reset {
   display: grid;
-  gap: 0.4rem;
-  margin-top: 1rem;
+  gap: var(--space-1_5);
+  margin-top: var(--space-4);
 }
 </style>

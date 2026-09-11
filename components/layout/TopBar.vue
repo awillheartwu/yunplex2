@@ -1,5 +1,5 @@
 <template>
-  <header class="app-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-7 xl:px-8">
+  <header class="app-topbar sticky top-0 z-[var(--z-sticky)] flex shrink-0 items-center justify-between gap-3 px-4 sm:px-6 md:px-7 xl:px-8">
     <div class="flex min-w-0 items-center gap-3 sm:gap-4">
       <button
         class="icon-button"
@@ -12,24 +12,16 @@
       >
         <AppIcon name="menu" :size="18" />
       </button>
-      <h1 class="app-topbar__title truncate">{{ pageTitle }}</h1>
-      <StatusBadge
-        v-if="syncState"
-        class="hidden sm:inline-flex"
-        :status="syncState.isRunning || (syncState.currentStage && syncState.currentStage !== 'idle') ? 'running' : syncState.lastSyncResult === 'success' ? 'ok' : syncState.lastSyncResult === 'partial' ? 'warning' : syncState.lastSyncResult === 'failure' ? 'error' : 'idle'"
-      />
+      <nav class="topbar-breadcrumb" aria-label="面包屑">
+        <span class="hidden sm:inline">{{ context.section }}</span>
+        <span class="hidden sm:inline"><AppIcon name="chevronRight" :size="13" /></span>
+        <NuxtLink v-if="context.parent" :to="context.parent">{{ context.parentLabel }}</NuxtLink>
+        <AppIcon v-if="context.parent" name="chevronRight" :size="13" />
+        <span class="app-topbar__title truncate" aria-current="page">{{ context.title }}</span>
+      </nav>
     </div>
     <div class="flex shrink-0 items-center gap-2 sm:gap-3">
-      <span v-if="syncState?.lastSyncAt" class="hidden text-2xs text-muted lg:inline">
-        上次同步 {{ formatTime(syncState.lastSyncAt) }}
-      </span>
-      <a
-        :href="githubUrl"
-        target="_blank"
-        class="topbar-version-link hidden sm:inline-flex text-2xs cursor-pointer transition-colors hover:text-[var(--text-secondary)]"
-        style="color:var(--text-tertiary)"
-        title="GitHub"
-      >v{{ version }}</a>
+      <CommandMenu />
       <button
         class="icon-button"
         :class="theme === 'dark' ? 'text-warning hover:bg-[var(--bg-hover)]' : 'text-muted hover:bg-[var(--bg-hover)]'"
@@ -55,6 +47,8 @@
 </template>
 
 <script setup lang="ts">
+import { pageContext } from '~/lib/navigation'
+import { confirmUnsavedChanges } from '~/lib/unsaved-changes'
 const props = withDefaults(defineProps<{
   menuOpen?: boolean
   menuMode?: 'desktop' | 'mobile'
@@ -65,13 +59,11 @@ const props = withDefaults(defineProps<{
 defineEmits<{ 'toggle-menu': [] }>()
 
 const route = useRoute()
-const { state: syncState } = useSync()
+const context = computed(() => pageContext(route.path))
 const { theme, toggle: toggleTheme } = useTheme()
 const auth = useAuth()
 
-const version = ref('0.1.0')
 const loggingOut = ref(false)
-const githubUrl = 'https://github.com/awillheartwu/yunplex2'
 const authState = computed(() => auth.state.value)
 
 const menuControls = computed(() => props.menuMode === 'desktop' ? 'app-sidebar' : 'mobile-navigation')
@@ -82,16 +74,13 @@ const menuButtonLabel = computed(() => {
 
 onMounted(async () => {
   await auth.ensureState().catch(() => null)
-  try {
-    const api = useApi()
-    const info = await api.get<{ version: string }>('/system/info')
-    version.value = info.version
-  } catch { /* use default */ }
 })
 
 async function handleLogout() {
+  if (loggingOut.value) return
   loggingOut.value = true
   try {
+    if (!await confirmUnsavedChanges()) return
     await auth.logout()
     await navigateTo('/login')
   } finally {
@@ -99,38 +88,12 @@ async function handleLogout() {
   }
 }
 
-const titles: Record<string, string> = {
-  '/': '仪表盘',
-  '/sync-sources': '同步源',
-  '/match-reviews': '高级媒体关联',
-  '/manual-download': '手动下载',
-  '/task-center': '任务中心',
-  '/config': '设置',
-  '/logs': '日志查看',
-}
-
-const pageTitle = computed(() => {
-  if (route.path.startsWith('/task-center/runs/')) return '运行详情'
-  return titles[route.path] || 'YunPlex2'
-})
-
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins} 分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} 小时前`
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
 </script>
 
 <style scoped>
 .app-topbar {
   min-block-size: var(--app-topbar-block-size);
-  padding-block: 0.55rem;
+  padding-block: var(--space-2);
   border-bottom: 1px solid var(--border-primary);
   background: color-mix(in srgb, var(--bg-app) 92%, transparent);
   backdrop-filter: blur(16px);
@@ -140,10 +103,12 @@ function formatTime(iso: string): string {
   margin: 0;
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-size: 1.28rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0;
 }
+.topbar-breadcrumb { display: flex; align-items: center; gap: var(--space-2_5); min-width: 0; font-size: var(--text-xs); color: var(--text-tertiary); }
+.topbar-breadcrumb a { color: var(--text-secondary); white-space: nowrap; }
 
 .topbar-version-link {
   min-block-size: 2.5rem;
@@ -152,7 +117,7 @@ function formatTime(iso: string): string {
 
 @media (max-width: 767px) {
   .app-topbar__title {
-    font-size: 1.18rem;
+    font-size: var(--text-sm);
   }
 }
 </style>

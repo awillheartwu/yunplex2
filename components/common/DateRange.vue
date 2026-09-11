@@ -31,6 +31,8 @@
         ref="panelEl"
         class="date-range-popover fixed overflow-hidden rounded-xl border shadow-xl"
         role="dialog"
+        aria-modal="true"
+        tabindex="-1"
         aria-label="日期范围"
         :style="{
           top: panelTop + 'px',
@@ -118,6 +120,7 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
 import { useRafThrottleFn } from '~~/composables/useTiming'
+import { useDialogFocus } from '~~/composables/useDialogFocus'
 
 export interface DateRangeValue {
   from: string | null
@@ -130,6 +133,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: DateRangeValue] }>()
 const open = ref(false)
 const triggerEl = ref<HTMLElement | null>(null)
 const panelEl = ref<HTMLElement | null>(null)
+useDialogFocus(open, panelEl, closePanel)
 const panelTop = ref(0)
 const panelLeft = ref(0)
 const panelWidth = ref(420)
@@ -300,15 +304,15 @@ function dayCellStyle(day: DayCell): Record<string, string> {
   // Highlight from/to endpoints
   if (day.date === v?.from || day.date === v?.to) {
     s.background = 'var(--accent)'
-    s.color = '#fff'
-    s.borderRadius = '6px'
+    s.color = 'var(--on-accent)'
+    s.borderRadius = 'var(--radius-sm)'
   }
 
   // Highlight picking-from
   if (pickingFrom.value && day.date === pickingFrom.value) {
     s.background = 'var(--accent)'
-    s.color = '#fff'
-    s.borderRadius = '6px'
+    s.color = 'var(--on-accent)'
+    s.borderRadius = 'var(--radius-sm)'
   }
 
   // Hover effect (managed by CSS class)
@@ -395,15 +399,15 @@ onBeforeUnmount(() => {
   min-block-size: 2.5rem;
   min-inline-size: 0;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1_5);
   overflow: hidden;
   flex-shrink: 0;
-  padding-inline: 0.75rem;
+  padding-inline: var(--space-3);
   border: 1px solid;
   border-radius: var(--radius-md);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
 
 .date-range-trigger:focus-visible,
@@ -422,7 +426,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
 .date-range-nav-button:hover {

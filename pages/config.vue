@@ -1,25 +1,25 @@
 <template>
-  <div class="page-stack">
+  <div class="page-stack config-page">
     <PageHeader
       description="管理网易云音乐和 Plex 的连接、下载与同步策略"
     >
-      <template #actions>
-        <div class="config-header-actions" aria-label="配置操作">
-          <button type="button" class="btn btn-primary" :disabled="saving" @click="handleSave">
-            <AppIcon :name="saving ? 'loader' : 'save'" :size="15" :class="{ 'animate-spin': saving }" />
-            {{ saving ? '保存中...' : '保存配置' }}
-          </button>
-        </div>
-      </template>
+      <template #actions><NuxtLink to="/system" class="btn btn-secondary"><AppIcon name="activity" :size="15" />查看系统状态</NuxtLink></template>
     </PageHeader>
 
+    <div class="config-workspace">
+    <aside class="settings-directory"><p>偏好与管理</p><label class="settings-search"><AppIcon name="search" :size="14" /><input v-model="categorySearch" placeholder="查找设置…" aria-label="查找设置分类"></label>
     <PageTabs
+      class="config-navigation"
       :model-value="activeTab"
-      :tabs="tabs"
+      :tabs="visibleSettingsTabs"
       aria-label="设置分类"
       @update:model-value="activeTab = $event"
     />
 
+    <p v-if="!visibleSettingsTabs.length" class="settings-no-results">没有匹配分类</p></aside>
+    <div class="config-content">
+    <div class="settings-category-intro"><h2>{{ tabs.find(tab => tab.key === activeTab)?.label }}</h2><p>{{ categoryDescriptions[activeTab] }}</p></div>
+    <div v-if="configLoadError" class="section-card config-load-error" role="alert"><h2>无法读取配置</h2><p>{{ configLoadError }}</p><button class="btn btn-secondary" @click="loadConfig">重新加载</button></div>
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-16">
       <span class="text-muted text-sm">加载配置...</span>
@@ -126,7 +126,7 @@
               <span>用 / 分隔目录层级</span>
               <span class="relative inline-flex group">
                 <span class="text-accent cursor-help underline decoration-dotted underline-offset-2">变量说明</span>
-                <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none">
+                <div class="absolute top-full left-0 mt-1 w-72 bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-lg p-3 text-2xs space-y-1.5 font-mono shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[var(--z-modal)] pointer-events-none">
                   <p class="text-muted mb-2">可用变量（/ 表示新建一层目录）：</p>
                   <div v-for="v in pathVarHelp" :key="v.key" class="flex gap-4">
                     <code class="text-accent w-32 shrink-0">{{ '{' + v.key + '}' }}</code>
@@ -180,7 +180,7 @@
       <!-- ═══ Tab: 同步 ═══ -->
       <!-- Sync strategy -->
       <!-- Sync schedule -->
-      <ConfigSection v-if="activeTab === 'general'" title="同步调度" description="控制自动同步的间隔和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
+      <ConfigSection v-if="activeTab === 'sync'" title="同步调度" description="控制自动同步的间隔和资源占用" :collapsed="!!collapsed.schedule" @toggle="toggle('schedule')">
         <template #icon><SidebarIcon name="play" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="同步间隔（分钟）" hint="建议 30-60 分钟"><input v-model.number="form.sync.intervalMinutes" type="number" min="1" max="1440" class="form-input" /></FormField>
@@ -191,7 +191,7 @@
       </ConfigSection>
 
       <!-- Sync strategy -->
-      <ConfigSection v-if="activeTab === 'advanced'" title="同步内部策略" description="对比、重试和删除保护等低频行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
+      <ConfigSection v-if="activeTab === 'sync'" title="同步策略" description="对比、重试和删除保护等低频行为" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
         <template #icon><SidebarIcon name="sync" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField label="Plex 扫描重试次数" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
@@ -245,7 +245,15 @@
         </fieldset>
       </ConfigSection>
 
-      <ConfigSection v-if="activeTab === 'media'" title="未验证媒体" description="没有强身份可复用时，决定自动下载还是留给人工选择" :collapsed="!!collapsed.mediaPolicy" @toggle="toggle('mediaPolicy')">
+      <ConfigSection v-if="activeTab === 'sync'" title="首次媒体接管" description="首次同步前先分析现有 Plex 媒体并等待人工确认" :collapsed="!!collapsed.initialMedia" @toggle="toggle('initialMedia')">
+        <ToggleField
+          v-model="form.sync.initializeMediaOnFirstSync"
+          label="首次同步前启用媒体接管"
+          hint="只生成候选方案，不下载也不修改 Plex；每个歌单可在详情页继承或覆盖此设置"
+        />
+      </ConfigSection>
+
+      <ConfigSection v-if="activeTab === 'sync'" title="未验证媒体" description="没有强身份可复用时，决定自动下载还是留给人工选择" :collapsed="!!collapsed.mediaPolicy" @toggle="toggle('mediaPolicy')">
         <template #icon><SidebarIcon name="search" :active="true" /></template>
         <fieldset class="removal-policy" aria-describedby="unverified-media-policy-help">
           <legend class="removal-policy__legend">默认处理方式</legend>
@@ -278,7 +286,7 @@
       </ConfigSection>
 
       <!-- Album Sync -->
-      <ConfigSection v-if="activeTab === 'media'" title="专辑同步" description="收藏专辑的下载行为与默认产物" :collapsed="!!collapsed.album" @toggle="toggle('album')">
+      <ConfigSection v-if="activeTab === 'sync'" title="专辑同步" description="收藏专辑的下载行为与默认产物" :collapsed="!!collapsed.album" @toggle="toggle('album')">
         <template #icon><SidebarIcon name="album" :active="true" /></template>
         <div class="space-y-3">
           <ToggleField v-model="form.sync.autoDownloadAlbum" label="添加后自动下载" hint="添加收藏专辑源时自动触发全量下载" />
@@ -286,10 +294,10 @@
         </div>
       </ConfigSection>
       <!-- ═══ Tab: 偏好 ═══ -->
-      <template v-if="activeTab === 'general'">
+      <template v-if="activeTab === 'display'">
       <ConfigSection title="界面" description="调整管理界面的显示大小" :collapsed="!!collapsed.other" @toggle="toggle('other')">
         <template #icon><SidebarIcon name="settings" :active="true" /></template>
-        <FormField label="字体缩放" hint="全局字体大小缩放，1.0 为默认 16px">
+        <FormField label="字体缩放" hint="按比例调整文字与控件，1.0 为标准大小（正文 14px）">
           <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
             <div class="flex w-full max-w-xl items-center gap-3">
               <input
@@ -399,6 +407,11 @@
       </template>
     </template>
 
+    </div>
+    </div>
+
+    <ConfigSaveBar :changed="hasChanges" :saving="saving" :disabled="!form || loading" @save="handleSave" @discard="discardConfig" />
+    <UnsavedChangesGuard :dirty="hasChanges" :saving="saving" />
     <!-- Reset confirm dialog -->
     <ConfirmDialog
       :visible="showResetConfirm"
@@ -431,9 +444,9 @@
     >
       <div class="space-y-4 mb-6">
         <!-- Warning banner -->
-        <div class="flex items-start gap-3 p-3 rounded-lg border" style="border-color:var(--warning,#f59e0b);background:rgba(245,158,11,0.08)">
+        <div class="flex items-start gap-3 p-3 rounded-lg border" style="border-color:var(--warning);background:var(--warning-soft)">
           <AppIcon name="warn" :size="16" class="shrink-0 mt-0.5" />
-          <div class="text-xs" style="color:var(--warning,#f59e0b)">
+          <div class="text-xs" style="color:var(--warning)">
             <p class="font-semibold mb-1">此操作不可逆，系统不会自动迁移已有文件</p>
           </div>
         </div>
@@ -443,7 +456,7 @@
           <p>更改后会发生以下情况：</p>
           <ol class="space-y-2 list-decimal pl-4">
             <li><span class="text-[var(--text-primary)] font-medium">已有歌曲文件保留在原路径</span>，不会被移动或删除，但系统无法再定位它们。</li>
-            <li><span class="font-medium" style="color:var(--danger,#e74c3c)">尚未同步到 Plex 的歌曲将被重新下载</span>到新路径，造成磁盘空间浪费。</li>
+            <li><span class="font-medium" style="color:var(--danger)">尚未同步到 Plex 的歌曲将被重新下载</span>到新路径，造成磁盘空间浪费。</li>
             <li>歌词文件（<code class="px-1 py-0.5 rounded text-2xs" style="background:var(--bg-input)">.lrc</code>）和封面图（<code class="px-1 py-0.5 rounded text-2xs" style="background:var(--bg-input)">cover.jpg</code>）与音频文件同目录存放，路径变更后同样无法定位。</li>
           </ol>
 
@@ -459,6 +472,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAppearance } from '~/composables/useAppearance'
+const appearance = useAppearance()
 import type { AppConfig, StorageVisibilityDiagnostic as StorageVisibilityDiagnosticType } from '~~/server/lib/config/types'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { PATH_PRESETS } from '~~/server/lib/config/types'
@@ -602,12 +617,24 @@ watch(storageConfigFingerprint, (current, previous) => {
 })
 
 // ── Tab navigation ──
-const activeTab = ref<string>('general')
+const route = useRoute(), router = useRouter()
+const activeTab = ref<string>(['general','media','sync','display','advanced'].includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
+const categorySearch = ref('')
+const configLoadError = ref('')
+const hasChanges = computed(() => !!form.value && JSON.stringify(form.value) !== JSON.stringify(savedConfig.value))
 const tabs = [
-  { key: 'general', label: '日常' },
-  { key: 'media', label: '媒体产物' },
-  { key: 'advanced', label: '高级' },
+  { key: 'general', label: '服务连接' },
+  { key: 'media', label: '下载与文件' },
+  { key: 'sync', label: '同步策略' },
+  { key: 'display', label: '外观' },
+  { key: 'advanced', label: '安全与维护' },
 ]
+
+const categoryDescriptions: Record<string,string> = { general: '音乐从哪里来，又到哪里去。管理网易云与 Plex 的连接。', media: '决定音乐文件如何保存，以及歌词、封面和标签的处理方式。', sync: '控制更新节奏、首次接管与媒体处理的默认规则。', display: '调整文字大小，让工作台适合你的屏幕。', advanced: '管理员账户、数据保留、导入导出与维护操作。' }
+const visibleSettingsTabs = computed(() => tabs.filter(tab => `${tab.label} ${categoryDescriptions[tab.key]}`.toLocaleLowerCase().includes(categorySearch.value.trim().toLocaleLowerCase())))
+watch(activeTab, tab => { void router.replace({query:{...route.query,tab}}) })
+watch(() => route.query.tab, tab => { if(tabs.some(item => item.key === tab)) activeTab.value = String(tab) })
+function discardConfig(){if(savedConfig.value){form.value=JSON.parse(JSON.stringify(savedConfig.value));applyFontScale(form.value!.other.fontScale)}}
 
 // ── Collapsible sections ──
 type SectionKey = 'netease' | 'plex' | 'download' | 'filePolicy' | 'aliases' | 'schedule' | 'sync' | 'mediaPolicy' | 'album' | 'security' | 'retention' | 'other' | 'import' | 'danger'
@@ -619,28 +646,28 @@ function toggle(key: SectionKey) {
 
 async function loadConfig() {
   loading.value = true
+  configLoadError.value = ''
   try {
     const loaded = await api.get<AppConfig>('/config')
     form.value = loaded
     savedConfig.value = structuredClone(loaded)
     applyFontScale(loaded.other.fontScale)
-  } catch {
-    const fallback = structuredClone(DEFAULT_CONFIG)
-    form.value = fallback
-    savedConfig.value = structuredClone(fallback)
-    applyFontScale(fallback.other.fontScale)
+  } catch (err) {
+    form.value = null
+    configLoadError.value = err instanceof Error ? err.message : '请检查连接后重试'
   } finally {
     loading.value = false
   }
 }
 
 async function handleSave() {
-  if (!form.value) return
+  if (!form.value || saving.value) return
   saving.value = true
+  const submitted: AppConfig = JSON.parse(JSON.stringify(form.value))
   try {
     const previous = savedConfig.value
-    const updated = await api.put<AppConfig>('/config', form.value)
-    form.value = updated
+    const updated = await api.put<AppConfig>('/config', submitted)
+    if (JSON.stringify(form.value) === JSON.stringify(submitted)) form.value = updated
     savedConfig.value = structuredClone(updated)
     applyFontScale(updated.other.fontScale)
 
@@ -753,7 +780,7 @@ function showConfigFeedback(type: 'success' | 'error', title: string, message?: 
 
 function applyFontScale(scale: number) {
   if (import.meta.server) return
-  document.documentElement.style.setProperty('--font-scale', String(scale || 1))
+  appearance.setScale(scale || 1)
 }
 
 // ── Import / Export ──

@@ -36,13 +36,13 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
   min-height: 3.5rem;
-  padding: 0.55rem 0.7rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-input);
-  transition: border-color 160ms ease, background 160ms ease;
+  transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease;
 }
 
 .toggle-field:hover {
@@ -59,7 +59,7 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: transparent;
   cursor: pointer;
 }
@@ -74,9 +74,9 @@ const emit = defineEmits<{
   display: block;
   inline-size: 2.25rem;
   block-size: 1.25rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--border-secondary);
-  transition: background 150ms ease;
+  transition: background var(--duration-fast) ease;
 }
 
 .toggle-field__track--on {
@@ -90,10 +90,10 @@ const emit = defineEmits<{
   display: block;
   inline-size: 1rem;
   block-size: 1rem;
-  border-radius: 999px;
-  background: #fff;
+  border-radius: var(--radius-full);
+  background: var(--on-solid);
   box-shadow: var(--shadow-xs);
-  transition: transform 150ms ease;
+  transition: transform var(--duration-fast) ease;
 }
 
 .toggle-field__thumb--on {

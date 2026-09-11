@@ -1,21 +1,23 @@
 <template>
   <div class="manual-page">
     <PageHeader
-      description="解析网易云链接或资源 ID，选择歌曲并提交下载"
+      description="把一段链接，变成音乐库里的一部分。"
     />
 
+    <ol class="manual-steps" aria-label="下载步骤">
+      <li :aria-current="parseState === 'idle' || parseState === 'parsing' ? 'step' : undefined"><span>1</span>粘贴链接</li>
+      <li :aria-current="parseState === 'preview' && !downloadResult ? 'step' : undefined"><span>2</span>确认歌曲</li>
+      <li :aria-current="downloadResult ? 'step' : undefined"><span>3</span>提交下载</li>
+    </ol>
     <div class="manual-workspace">
     <div class="manual-top-grid">
-      <section class="section-card manual-input-card">
+      <details class="section-card manual-input-card" :open="parseState !== 'preview'"><summary class="manual-input-summary"><AppIcon name="link" :size="17" /><span>{{ parseState === 'preview' ? '已解析来源 · 修改链接' : '粘贴你的网易云链接' }}</span><AppIcon name="chevronDown" :size="15" /></summary>
         <div class="manual-card-header">
           <div>
             <h3>下载工作台</h3>
             <p>支持链接、纯数字 ID、多首换行、逗号或分号分隔。</p>
           </div>
-          <button class="manual-help-link" type="button" aria-label="查看如何获取链接或 ID">
-            如何获取链接或 ID?
-            <AppIcon name="info" :size="14" />
-          </button>
+          <details class="manual-help"><summary class="manual-help-link">输入帮助<AppIcon name="info" :size="14" /></summary><p>在网易云的歌曲、歌单或专辑页面选择「分享 → 复制链接」，粘贴到下方。也可输入资源 ID，多项用换行、逗号或分号分隔。</p></details>
         </div>
 
         <label class="sr-only" for="manual-download-input">网易云链接、歌单 ID、专辑 ID 或歌曲 ID</label>
@@ -37,47 +39,6 @@
           <span>多行批量输入</span>
         </div>
 
-        <div class="manual-alert-stack" aria-live="polite">
-          <div v-if="detectHint && parseState === 'preview'" class="manual-alert manual-alert--success">
-            <AppIcon name="check-circle" :size="16" />
-            <div>
-              <strong>{{ detectHint }}</strong>
-              <span>{{ parsedTargetLine }}</span>
-            </div>
-          </div>
-
-          <div v-if="downloadResult" class="manual-alert manual-alert--success">
-            <AppIcon name="download" :size="16" />
-            <div>
-              <strong>下载已启动，共 {{ downloadResult.total }} 首歌曲</strong>
-              <span>
-                任务已提交，可前往
-                <NuxtLink class="manual-inline-link" to="/task-center">任务中心</NuxtLink>
-                查看执行状态。
-              </span>
-            </div>
-          </div>
-
-          <div v-if="saveError" class="manual-alert manual-alert--danger">
-            <AppIcon name="warn" :size="16" />
-            <div>
-              <strong>保存同步源失败</strong>
-              <span>{{ saveError }}</span>
-            </div>
-            <button class="manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
-              <AppIcon name="x" :size="14" />
-            </button>
-          </div>
-
-          <div v-if="error" class="manual-alert manual-alert--danger">
-            <AppIcon name="warn" :size="16" />
-            <div>
-              <strong>解析或启动失败</strong>
-              <span>{{ error }}</span>
-            </div>
-          </div>
-        </div>
-
         <div class="manual-action-row">
           <button
             class="btn btn-primary"
@@ -97,27 +58,11 @@
             <AppIcon name="refresh" :size="14" />
             <span>重新解析</span>
           </button>
-          <button
-            v-if="canSaveAsSource"
-            class="btn btn-ghost"
-            type="button"
-            :disabled="downloading || selectedCount === 0"
-            @click="handleDownloadAndSave"
-          >
-            <AppIcon name="save" :size="14" />
-            <span>下载并保存为同步源</span>
-          </button>
-        </div>
-      </section>
 
-      <aside class="section-card manual-config-card" aria-label="下载配置">
-        <div class="manual-card-header">
-          <div>
-            <h3>下载配置</h3>
-            <p>当前下载配置</p>
-          </div>
         </div>
+      </details>
 
+      <details class="manual-config-card" aria-label="下载配置"><summary class="manual-options-summary"><AppIcon name="settings" :size="16" /><span>下载选项</span><small>{{ qualityLabel }} · {{ downloadLyrics ? '含歌词' : '无歌词' }} · {{ embedMetadata ? '写入标签' : '不写标签' }}</small><AppIcon name="chevronDown" :size="14" /></summary>
         <div class="manual-config-list">
           <label class="manual-config-row" for="manual-quality">
             <span class="manual-config-icon manual-config-icon--accent">
@@ -171,8 +116,61 @@
           <AppIcon name="rotate-ccw" :size="14" />
           <span>恢复默认设置</span>
         </button>
-      </aside>
+      </details>
     </div>
+
+        <div class="manual-alert-stack" aria-live="polite">
+          <div v-if="detectHint && parseState === 'preview'" class="manual-alert manual-alert--success">
+            <AppIcon name="check-circle" :size="16" />
+            <div>
+              <strong>{{ detectHint }}</strong>
+              <span>{{ parsedTargetLine }}</span>
+            </div>
+          </div>
+
+          <div v-if="downloadResult" class="manual-alert manual-alert--success">
+            <AppIcon name="download" :size="16" />
+            <div>
+              <strong>下载已启动，共 {{ downloadResult.total }} 首歌曲</strong>
+              <span>
+                任务已提交，可前往
+                <NuxtLink class="manual-inline-link" to="/task-center">活动</NuxtLink>
+                查看执行状态。
+              </span>
+            </div>
+          </div>
+
+          <div v-if="resourceFailures.length" class="manual-alert manual-alert--warning">
+            <AppIcon name="warn" :size="16" />
+            <div>
+              <strong>{{ resourceFailures.length }} 首歌曲未能加入</strong>
+              <span>
+                ID {{ resourceFailures.slice(0, 5).map(item => item.songId).join('、') }}
+                <template v-if="resourceFailures.length > 5">等</template>
+                ：{{ resourceFailures[0]?.reason }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="saveError" class="manual-alert manual-alert--danger">
+            <AppIcon name="warn" :size="16" />
+            <div>
+              <strong>保存同步源失败</strong>
+              <span>{{ saveError }}</span>
+            </div>
+            <button class="manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
+              <AppIcon name="x" :size="14" />
+            </button>
+          </div>
+
+          <div v-if="error" class="manual-alert manual-alert--danger">
+            <AppIcon name="warn" :size="16" />
+            <div>
+              <strong>解析或启动失败</strong>
+              <span>{{ error }}</span>
+            </div>
+          </div>
+        </div>
 
     <section v-if="parseHistory.length > 0" class="section-card manual-parse-history-card">
       <div class="manual-parse-history-header">
@@ -205,7 +203,7 @@
       </div>
     </section>
 
-    <section class="section-card manual-results-card">
+    <section v-if="parseState !== 'idle'" class="section-card manual-results-card">
       <div class="manual-results-header" :class="{ 'manual-results-header--parsed': parseState === 'preview' }">
         <div class="manual-resource-summary">
           <div class="manual-cover" :class="{ 'manual-cover--empty': !coverUrl }">
@@ -242,6 +240,16 @@
         </div>
 
         <div class="manual-results-actions">
+          <button
+            v-if="canSaveAsSource"
+            class="btn btn-ghost"
+            type="button"
+            :disabled="downloading || selectedCount === 0"
+            @click="handleDownloadAndSave"
+          >
+            <AppIcon name="save" :size="14" />
+            <span>下载并保存为同步源</span>
+          </button>
           <button
             v-if="parseState === 'preview'"
             class="btn btn-primary manual-result-download"
@@ -317,7 +325,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(track, index) in tracks" :key="track.id" :class="{ 'manual-row-muted': !track.selected }">
+              <tr v-for="(track, index) in pageTracks" :key="track.id" :class="{ 'manual-row-muted': !track.selected }">
                 <td>
                   <label class="sr-only" :for="`manual-track-${track.id}`">选择 {{ track.name }}</label>
                   <input
@@ -327,7 +335,7 @@
                     @change="toggleTrack(track.id)"
                   />
                 </td>
-                <td class="manual-table-index">{{ index + 1 }}</td>
+                <td class="manual-table-index">{{ trackOffset + index + 1 }}</td>
                 <td>
                   <div class="manual-song-cell">
                     <strong :title="track.name">{{ track.name }}</strong>
@@ -352,6 +360,7 @@
             <span>资源已解析，但没有返回可下载曲目。</span>
           </div>
         </div>
+        <PageNavigator :page="trackPage" :page-size="trackPageSize" :total="tracks.length" label="歌曲" @change="changeTrackPage" />
       </div>
 
     </section>
@@ -368,12 +377,24 @@ const {
   embedMetadata, error, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse,
   handlePrimaryAction, hideBrokenImage, inputValue, invertSelection, manualResourceTypeLabel, onPaste, parsedTargetLine, parseHistory, parseState, placeholderText,
   primaryActionDisabled, primaryActionIcon, primaryActionLabel, quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
-  resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine, saveError, selectedCount,
+  resetOptions, resourceDescription, resourceFailures, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine, saveError, selectedCount,
   title, toggleAll, toggleTrack, totalDurationLabel, trackCount, tracks,
 } = useManualDownloadPage()
+const trackPageSize = 100
+const trackPage = ref(1)
+const trackOffset = computed(() => (trackPage.value - 1) * trackPageSize)
+const pageTracks = computed(() => tracks.value.slice(trackOffset.value, trackOffset.value + trackPageSize))
+watch(tracks, () => { trackPage.value = 1 })
+function changeTrackPage(page: number) {
+  trackPage.value = page
+  const table = document.querySelector('.manual-track-table-shell')
+  table?.scrollTo({ top: 0 })
+  table?.scrollIntoView({ block: 'start' })
+}
 </script>
 
 <style scoped>
 @import '~/assets/css/pages/manual-download-workspace.css';
+@import '~/assets/css/pages/manual-download-input.css';
 @import '~/assets/css/pages/manual-download-results.css';
 </style>

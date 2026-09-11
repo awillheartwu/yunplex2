@@ -35,16 +35,21 @@ export function useAuth() {
   const state = useState<AuthState | null>('yunplex-auth-state', () => null)
   const loading = useState<boolean>('yunplex-auth-loading', () => false)
 
-  async function refreshState(): Promise<AuthState> {
+  async function refreshState(force = false): Promise<AuthState> {
+    if (stateRequest && !force) return stateRequest
+    stateController?.abort()
+    const generation = ++stateGeneration
+    const controller = new AbortController()
+    stateController = controller
     loading.value = true
-    try {
-      const response = await fetch('/api/auth/state', { credentials: 'same-origin' })
-      const next = await parseAuthResponse<AuthState>(response)
-      state.value = next
+    stateRequest = (async () => { try {
+      const next = await fetchWithTimeout('/api/auth/state', { credentials: 'same-origin', signal: controller.signal }, 4000, parseAuthResponse<AuthState>)
+      if (generation === stateGeneration) state.value = next
       return next
     } finally {
-      loading.value = false
-    }
+      if (generation === stateGeneration) { loading.value = false; stateRequest = null; stateController = null }
+    } })()
+    return stateRequest
   }
 
   async function ensureState(): Promise<AuthState> {
@@ -65,7 +70,7 @@ export function useAuth() {
 
   async function login(password: string): Promise<LoginResult> {
     const result = await authPost<LoginResult>('/auth/login', { password })
-    await refreshState()
+    await refreshState(true)
     return result
   }
 
@@ -74,6 +79,7 @@ export function useAuth() {
     if (current.authEnabled && current.authenticated) {
       await authPost('/auth/logout', {}, current.csrfToken)
     }
+    stateGeneration++; stateController?.abort(); stateRequest = null; stateController = null; loading.value = false
     state.value = {
       ...current,
       authenticated: false,
@@ -83,7 +89,7 @@ export function useAuth() {
 
   async function createAdmin(password: string): Promise<LoginResult> {
     const result = await authPost<LoginResult>('/setup/admin', { password })
-    await refreshState()
+    await refreshState(true)
     return result
   }
 
@@ -121,3 +127,8 @@ export function useAuth() {
     reinitializeSetup,
   }
 }
+import { fetchWithTimeout } from '~/lib/fetch-with-timeout'
+
+let stateRequest: Promise<AuthState> | null = null
+let stateController: AbortController | null = null
+let stateGeneration = 0

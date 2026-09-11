@@ -18,14 +18,14 @@ defineProps<{ cards: SystemKpiCard[] }>()
 .system-kpi {
   position: relative;
   overflow: hidden;
-  padding: 1rem;
+  padding: var(--space-5);
 }
 
 .system-kpi::before {
   position: absolute;
   inset-block: 0;
   left: 0;
-  width: 3px;
+  width: 2px;
   content: '';
   background: var(--border-primary);
 }
@@ -35,22 +35,23 @@ defineProps<{ cards: SystemKpiCard[] }>()
 .system-kpi--error::before { background: var(--danger); }
 
 .system-kpi p {
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
 }
 
 .system-kpi strong {
   display: block;
   color: var(--text-primary);
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: var(--text-2xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
 }
 
 .system-kpi span {
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
   display: block;
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
 }
 </style>

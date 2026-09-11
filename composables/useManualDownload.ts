@@ -19,6 +19,13 @@ export interface ParsedTrack {
 
 export type ParseState = 'idle' | 'parsing' | 'preview'
 export type ResourceType = 'playlist' | 'album' | 'songs'
+export interface ManualDownloadSelectionFailure { songId: number; reason: string }
+export interface ManualDownloadResult {
+  batchId: string
+  total: number
+  sourceId?: string
+  selectionFailures?: ManualDownloadSelectionFailure[]
+}
 
 interface PlaylistSongsResponse {
   songs: ParsedTrack[]
@@ -118,7 +125,8 @@ export function useManualDownload() {
   // ── Messages ──
   const error = ref('')
   const saveError = ref('')
-  const downloadResult = ref<{ batchId: string; total: number } | null>(null)
+  const resourceFailures = ref<ManualDownloadSelectionFailure[]>([])
+  const downloadResult = ref<ManualDownloadResult | null>(null)
   const downloading = ref(false)
 
   // ── Computed ──
@@ -205,15 +213,21 @@ export function useManualDownload() {
     resourceUpdatedAt.value = null
 
     const results: ParsedTrack[] = []
+    const failures: ManualDownloadSelectionFailure[] = []
     for (const id of ids) {
       try {
         const song = await api.get<ParsedTrack>('/netease/song-detail', { id: String(id) })
         results.push({ ...song, selected: true })
         if (!coverUrl.value) coverUrl.value = song.album.picUrl || ''
-      } catch {
-        // Skip individual failures
+      } catch (err) {
+        failures.push({
+          songId: id,
+          reason: err instanceof Error ? err.message : '获取歌曲信息失败',
+        })
       }
     }
+    resourceFailures.value = failures
+    if (results.length === 0) throw new Error(`${failures.length} 首歌曲均解析失败`)
     tracks.value = results
     if (results.length > 0 && results[0]) {
       const a = results[0].artists.map((ar) => ar.name).join(' / ')
@@ -233,6 +247,7 @@ export function useManualDownload() {
     parseState.value = 'parsing'
     error.value = ''
     saveError.value = ''
+    resourceFailures.value = []
     downloadResult.value = null
 
     try {
@@ -306,7 +321,7 @@ export function useManualDownload() {
 
   // ═══ Download ═══
 
-  async function download(): Promise<{ batchId: string; total: number } | null> {
+  async function download(): Promise<ManualDownloadResult | null> {
     if (selectedCount.value === 0) {
       error.value = '请至少选择一首歌曲'
       return null
@@ -335,16 +350,7 @@ export function useManualDownload() {
         embedMetadata: embedMetadata.value,
       }
 
-      const partialSelection = selectedIds.length < tracks.value.length
-
       if (resourceType.value === 'songs') {
-        payload = {
-          type: 'songs',
-          songIds: selectedIds,
-          ...base,
-        }
-      } else if (partialSelection) {
-        // User deselected some tracks — pass filtered songIds
         payload = {
           type: 'songs',
           songIds: selectedIds,
@@ -354,11 +360,13 @@ export function useManualDownload() {
         payload = {
           type: resourceType.value!,
           neteaseId: neteaseId.value!,
+          songIds: selectedIds,
           ...base,
         }
       }
 
-      const result = await api.post<{ batchId: string; total: number }>('/download', payload)
+      const result = await api.post<ManualDownloadResult>('/download', payload)
+      resourceFailures.value = result.selectionFailures ?? []
       downloadResult.value = result
       return result
     } catch (err) {
@@ -369,31 +377,42 @@ export function useManualDownload() {
     }
   }
 
-  async function downloadAndSave(): Promise<{ batchId: string; total: number; savedAsSource?: boolean; saveError?: string } | null> {
-    const result = await download()
-    if (!result) return null
-
-    // Save as sync source via dedicated bridge endpoint
-    if (resourceType.value && neteaseId.value && resourceType.value !== 'songs') {
-      try {
-        await api.post('/manual-download/save-as-source', {
-          neteaseId: neteaseId.value,
-          type: resourceType.value,
-          trackCount: trackCount.value,
-          name: title.value || undefined,
-          artist: artist.value || undefined,
-          coverUrl: coverUrl.value || undefined,
-        })
-        return { ...result, savedAsSource: true }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : '保存同步源失败'
-        // Surface error to UI — download succeeded but save failed
-        saveError.value = msg
-        return { ...result, saveError: msg }
-      }
+  async function downloadAndSave(): Promise<ManualDownloadResult & { savedAsSource?: boolean; saveError?: string } | null> {
+    if (!resourceType.value || !neteaseId.value || resourceType.value === 'songs') {
+      error.value = '只有歌单或专辑可以保存为同步源'
+      return null
+    }
+    const selectedSongIds = tracks.value.filter(track => track.selected).map(track => track.id)
+    if (selectedSongIds.length === 0) {
+      error.value = '请至少选择一首歌曲'
+      return null
     }
 
-    return result
+    downloading.value = true
+    error.value = ''
+    saveError.value = ''
+    try {
+      const result = await api.post<ManualDownloadResult>('/manual-download/save-as-source', {
+        neteaseId: neteaseId.value,
+        type: resourceType.value,
+        selectedSongIds,
+        trackCount: trackCount.value,
+        name: title.value || undefined,
+        coverUrl: coverUrl.value || undefined,
+        quality: quality.value,
+        downloadLyrics: downloadLyrics.value,
+        downloadImages: downloadImages.value,
+        embedMetadata: embedMetadata.value,
+      })
+      resourceFailures.value = result.selectionFailures ?? []
+      downloadResult.value = result
+      return { ...result, savedAsSource: true }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '创建同步源并下载失败'
+      return null
+    } finally {
+      downloading.value = false
+    }
   }
 
   // ═══ Track selection ═══
@@ -425,6 +444,7 @@ export function useManualDownload() {
     resourceUpdatedAt.value = null
     error.value = ''
     saveError.value = ''
+    resourceFailures.value = []
     downloadResult.value = null
     downloading.value = false
   }
@@ -454,6 +474,7 @@ export function useManualDownload() {
     // Messages
     error,
     saveError,
+    resourceFailures,
     downloadResult,
     downloading,
     // Computed

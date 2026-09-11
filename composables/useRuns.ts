@@ -22,7 +22,7 @@ export function useRuns(initial: RunFilter = {}) {
   const fetchGuard = createLatestAsyncGuard()
 
   const hasMore = computed(() => items.value.length < total.value)
-  const activeRuns = computed(() => items.value.filter(run => run.status === 'running'))
+  const activeRuns = computed(() => items.value.filter(run => run.status === 'running' || run.status === 'awaiting_action'))
 
   function params(offset = 0): Record<string, string> {
     const result: Record<string, string> = {

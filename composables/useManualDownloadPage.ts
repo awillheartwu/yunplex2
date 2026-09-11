@@ -43,6 +43,7 @@ export function useManualDownloadPage() {
     embedMetadata,
     error,
     saveError,
+    resourceFailures,
     downloadResult,
     downloading,
     allSelected,
@@ -135,7 +136,11 @@ export function useManualDownloadPage() {
   async function handleDownload() {
     const result = await download()
     if (result) {
-      feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
+      if (result.selectionFailures?.length) {
+        feedback.warning('下载任务已创建', `已加入 ${result.total} 首，${result.selectionFailures.length} 首在最新资源中不可用`)
+      } else {
+        feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
+      }
     } else if (error.value) {
       feedback.error('下载任务创建失败', error.value)
     }
@@ -143,14 +148,12 @@ export function useManualDownloadPage() {
 
   async function handleDownloadAndSave() {
     const result = await downloadAndSave()
-    if (result?.saveError) {
-      feedback.warning('下载已创建，同步源保存失败', result.saveError)
-    } else if (result?.savedAsSource) {
-      feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲，并保存为同步源`)
+    if (result?.savedAsSource) {
+      feedback.success('已创建禁用的同步源', `已加入 ${result.total} 首托管下载，来源不会自动同步`)
     } else if (result) {
       feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
     } else if (error.value) {
-      feedback.error('下载任务创建失败', error.value)
+      feedback.error('创建同步源并下载失败', error.value)
     }
   }
 
@@ -238,7 +241,7 @@ export function useManualDownloadPage() {
     parsedTargetLine, parseHistory, parseState, placeholderText, primaryActionDisabled, primaryActionIcon, primaryActionLabel,
     quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
     rememberParsedResource, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine,
-    saveError,
+    resourceFailures, saveError,
     saveParseHistory, selectedCount, title, toggleAll, toggleTrack, totalDurationLabel, trackCount,
     tracks,
   }

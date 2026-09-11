@@ -1,0 +1,32 @@
+/* Media adoption shared styles; imported by its owning component. */
+.source-adoption__eyebrow {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.source-adoption__tier {
+  display: inline-flex;
+  width: max-content;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+}
+.source-adoption__tier--strong_id {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.source-adoption__tier--high_confidence {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.source-adoption__tier--ambiguous {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+.source-adoption__tier--conflict {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
