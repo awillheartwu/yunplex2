@@ -39,3 +39,9 @@ jobs:
 
       - name: Run repository quality gates
         run: pnpm check:ci
+
+      - name: Install browser test runtime
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run browser journeys
+        run: pnpm test:browser

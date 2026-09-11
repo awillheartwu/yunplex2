@@ -8,6 +8,8 @@ data/data.db-shm
 data/backups/
 data/seed.json
 *.log
+test-results/
+playwright-report/
 .env
 .env.local
 test/

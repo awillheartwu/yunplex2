@@ -2,6 +2,8 @@ node_modules/
 .output/
 .nuxt/
 dist/
+test-results/
+playwright-report/
 data/data.db
 data/data.db-wal
 data/data.db-shm
