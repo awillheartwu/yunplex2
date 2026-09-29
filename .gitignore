@@ -22,3 +22,6 @@ CLAUDE.md
 .husky/
 skills-lock.json
 data/app.db
+
+# Local issue screenshots
+/问题/

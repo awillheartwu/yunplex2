@@ -3,7 +3,7 @@ services:
     build: .
     container_name: yunplex2
     ports:
-      - '3000:3000'
+      - '${YUNPLEX2_BIND_ADDRESS:-0.0.0.0}:3000:3000'
     volumes:
       - ./data:/app/data
       # 下载目录也需要挂载
@@ -11,6 +11,7 @@ services:
     environment:
       - NITRO_HOST=0.0.0.0
       - NITRO_PORT=3000
+      - YUNPLEX2_TRUSTED_PROXIES=${YUNPLEX2_TRUSTED_PROXIES:-}
       # ── 以下为可选配置注入（首次启动时生效，之后在 Web UI 修改） ──
       # - YUNPLEX2_NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx
       # - YUNPLEX2_NETEASE_PLAYLIST_IDS=123456789,987654321
@@ -23,4 +24,5 @@ services:
       # - YUNPLEX2_SYNC_INTERVAL=30
       # - YUNPLEX2_SYNC_LIMIT=10
       # - YUNPLEX2_SYNC_ENABLED=true
+    stop_grace_period: 2m
     restart: unless-stopped

@@ -10,12 +10,15 @@
 
 - [当前架构](architecture.md)：运行拓扑、模块责任、主要调用链、数据责任和系统不变量。
 - [同步与身份匹配流程](sync-flow.md)：入口、模式、配置继承、匹配顺序和删除保护。
+- [初始化匹配](initialization-matching.md)：候选规则、独立别名字典、同快照试算与草案参数。
 - [同步比较决策](compare-decision.md)：跳过、完整比较、纯重排与结果分类。
 - [统一错误分类](error-classification.md)：错误码、重试策略和诊断投影。
 - [界面设计系统](design-system.md)：视觉令牌、组件、响应式和无障碍规则。
 - [音乐工作台改版计划](ui-redesign-plan.md)：本轮范围、参考与验收清单。
 
 ## 运行与验收
+
+- [首版运行维护](release-operations.md)：安装、可信反代、停机备份恢复与发布门槛。
 
 - [自动同步诊断](auto-sync-runbook.md)：受控验收、只读数据库诊断和真实同步检查。
 - [CI 门禁](ci-runbook.md)：本地复现、浏览器测试和 Forgejo 平台配置。
