@@ -1,4 +1,5 @@
-import { constants, accessSync, realpathSync, statSync } from 'node:fs'
+import { constants, accessSync, realpathSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { hostname, networkInterfaces } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import type {
@@ -15,8 +16,10 @@ import {
   mapPlexPathToLocal,
   normalizePathPrefix,
 } from '../sync/path-map'
+import { ConnectionTestError } from './connection-test-error'
 
 export const PATH_MAPPING_DISCLOSURE = '路径映射只负责换算文件名，不会上传、复制或同步任何文件到 Plex 服务器。'
+export const DOWNLOAD_WRITE_PROBE_PREFIX = '.yunplex-write-probe-'
 const DIAGNOSTIC_RELATIVE_PATH = join('路径诊断', '示例专辑', '01 - 示例歌曲.flac')
 
 export function resolveConnectionTestConfig(candidate?: unknown): AppConfig {
@@ -44,21 +47,23 @@ export function testDownloadPathConfig(
   options: StorageVisibilityOptions = {},
 ): DownloadPathTestResult {
   const downloadDir = normalizePathPrefix(config.download.dir)
-  if (!downloadDir) throw new Error('未配置下载目录')
+  if (!downloadDir) throw new ConnectionTestError('validation_failed', '未配置下载目录')
 
   let stat: ReturnType<typeof statSync>
   try {
     stat = statSync(downloadDir)
   } catch {
-    throw new Error(`下载目录不存在或不可访问: ${downloadDir}`)
+    throw new ConnectionTestError('validation_failed', `下载目录不存在或不可访问: ${downloadDir}`)
   }
-  if (!stat.isDirectory()) throw new Error(`下载目录不是有效文件夹: ${downloadDir}`)
+  if (!stat.isDirectory()) throw new ConnectionTestError('validation_failed', `下载目录不是有效文件夹: ${downloadDir}`)
 
   try {
     accessSync(downloadDir, constants.W_OK)
   } catch {
-    throw new Error(`下载目录不可写: ${downloadDir}`)
+    throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}`)
   }
+
+  assertDownloadDirWritable(downloadDir)
 
   const plexPrefix = normalizePathPrefix(config.download.plexLibraryPathPrefix)
   return {
@@ -68,6 +73,39 @@ export function testDownloadPathConfig(
     downloadDir,
     ...(plexPrefix ? { mappedPrefix: `${plexPrefix}/... -> ${downloadDir}/...` } : {}),
     storageVisibility: diagnoseStorageVisibility(config, options),
+  }
+}
+
+/**
+ * Proves the directory can actually take a new file and is not out of space, instead of trusting
+ * permission bits alone. The unique probe file is always removed in `finally`.
+ */
+function assertDownloadDirWritable(downloadDir: string): void {
+  if (readAvailableBlocks(downloadDir) === 0) {
+    throw new ConnectionTestError('filesystem_failed', `下载目录所在存储已无可用空间: ${downloadDir}`)
+  }
+
+  const probePath = join(downloadDir, `${DOWNLOAD_WRITE_PROBE_PREFIX}${randomUUID()}.tmp`)
+  try {
+    writeFileSync(probePath, 'yunplex-write-probe', { flag: 'wx' })
+  } catch (error) {
+    const reason = (error as NodeJS.ErrnoException).code ?? ''
+    if (reason === 'ENOSPC') throw new ConnectionTestError('filesystem_failed', `下载目录所在存储已无可用空间: ${downloadDir}`)
+    if (reason === 'EACCES' || reason === 'EPERM' || reason === 'EROFS') throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}`)
+    throw new ConnectionTestError('filesystem_failed', `下载目录写入测试失败: ${downloadDir}`)
+  } finally {
+    try {
+      rmSync(probePath, { force: true })
+    } catch { /* nothing left to clean up when the probe never landed or the mount vanished */ }
+  }
+}
+
+function readAvailableBlocks(path: string): number | null {
+  try {
+    const blocks = Number(statfsSync(path).bavail)
+    return Number.isFinite(blocks) ? blocks : null
+  } catch {
+    return null
   }
 }
 

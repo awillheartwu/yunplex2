@@ -7,12 +7,12 @@ export interface SyncEvent {
 }
 
 type EventHandler = (event: SyncEvent) => void
-type ClientEntry = { handler: EventHandler; lastPing: number }
+type ClientEntry = { handler: EventHandler; lastPing: number; close?: () => void }
 const clients = new Set<ClientEntry>()
 
 // Clean up zombie clients every 5 minutes
 const ZOMBIE_TIMEOUT_MS = 5 * 60 * 1000
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now()
   for (const entry of clients) {
     if (now - entry.lastPing > ZOMBIE_TIMEOUT_MS) {
@@ -27,8 +27,8 @@ export function emitEvent(event: SyncEvent): void {
   }
 }
 
-export function subscribe(fn: EventHandler): () => void {
-  const entry: ClientEntry = { handler: fn, lastPing: Date.now() }
+export function subscribe(fn: EventHandler, close?: () => void): () => void {
+  const entry: ClientEntry = { handler: fn, lastPing: Date.now(), close }
   clients.add(entry)
   return () => { clients.delete(entry) }
 }
@@ -41,4 +41,11 @@ export function ping(client: EventHandler): void {
       return
     }
   }
+}
+
+export function getEventClientCount() { return clients.size }
+export function closeEventClients() {
+  clearInterval(cleanupTimer)
+  for (const entry of clients) { try { entry.close?.() } catch { /* already disconnected */ } }
+  clients.clear()
 }

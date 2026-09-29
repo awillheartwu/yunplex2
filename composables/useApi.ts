@@ -28,6 +28,17 @@ interface RequestOptions {
   params?: Record<string, string>
 }
 
+const GET_TIMEOUT_MS = 15_000
+/** Connection tests call external services; setup/complete runs all three of them in series. */
+const CONNECTION_TEST_TIMEOUT_MS = 60_000
+
+/** Only the actual connection-test endpoints get a timeout. Other writes stay unbounded and never retry on their own. */
+function connectionTestTimeout(path: string): number | undefined {
+  return path === '/setup/check' || path === '/setup/complete' || path.startsWith('/config/test')
+    ? CONNECTION_TEST_TIMEOUT_MS
+    : undefined
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options
 
@@ -54,7 +65,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     fetchOptions.body = JSON.stringify(body)
   }
 
-  if (method === 'GET') return fetchWithTimeout(url, fetchOptions, 15000, readResponse<T>)
+  const timeoutMs = method === 'GET' ? GET_TIMEOUT_MS : connectionTestTimeout(path)
+  if (timeoutMs) return fetchWithTimeout(url, fetchOptions, timeoutMs, readResponse<T>)
   return readResponse<T>(await fetch(url, fetchOptions))
 }
 

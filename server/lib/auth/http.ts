@@ -1,3 +1,4 @@
+import { requestTransport } from './transport'
 import type { AuthSession, CreatedSession } from './store'
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from './store'
 
@@ -22,7 +23,7 @@ export function setSessionCookie(event: AuthHttpEvent, session: CreatedSession):
   setCookie(event as never, SESSION_COOKIE_NAME, session.token, {
     httpOnly: true,
     sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
+    secure: requestTransport(event).secure,
     path: '/',
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
     expires: new Date(session.expiresAt),
@@ -33,15 +34,14 @@ export function clearSessionCookie(event: AuthHttpEvent): void {
   deleteCookie(event as never, SESSION_COOKIE_NAME, {
     httpOnly: true,
     sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
+    secure: requestTransport(event).secure,
     path: '/',
   })
 }
 
 export function getClientMetadata(event: AuthHttpEvent): { ipAddress: string; userAgent: string } {
-  const forwarded = getHeaderValue(event, 'x-forwarded-for')?.split(',')[0]?.trim()
   return {
-    ipAddress: forwarded || event.node.req.socket?.remoteAddress || '',
+    ipAddress: requestTransport(event).ipAddress,
     userAgent: getHeaderValue(event, 'user-agent') || '',
   }
 }
@@ -92,7 +92,7 @@ function getHeaderValue(event: AuthHttpEvent, name: string): string | undefined 
 
 function getRequestOrigin(event: AuthHttpEvent): string {
   const host = getHeaderValue(event, 'host') || 'localhost'
-  const proto = getHeaderValue(event, 'x-forwarded-proto') || (event.node.req.socket?.encrypted ? 'https' : 'http')
+  const proto = requestTransport(event).secure ? 'https' : 'http'
   return `${proto}://${host}`
 }
 
@@ -101,7 +101,7 @@ function readCookie(header: string | undefined, name: string): string | undefine
   const parts = header.split(';')
   for (const part of parts) {
     const [key, ...value] = part.trim().split('=')
-    if (key === name) return decodeURIComponent(value.join('='))
+    if (key === name) { try { return decodeURIComponent(value.join('=')) } catch { return undefined } }
   }
   return undefined
 }

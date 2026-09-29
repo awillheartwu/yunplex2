@@ -5,6 +5,7 @@ export type DomainErrorCode =
   | 'copyright_restricted'
   | 'authentication_failed'
   | 'rate_limited'
+  | 'netease_unavailable'
   | 'plex_unavailable'
   | 'filesystem_failed'
   | 'media_identity_conflict'
@@ -31,6 +32,7 @@ export const DOMAIN_ERROR_CATALOG: Record<DomainErrorCode, DomainErrorDefinition
   copyright_restricted: { code: 'copyright_restricted', category: 'netease', severity: 'info', retryable: false, label: '版权受限', userMessage: '网易云未提供可下载音源，本次已按版权限制跳过。' },
   authentication_failed: { code: 'authentication_failed', category: 'netease', severity: 'error', retryable: false, label: '认证失效', userMessage: '网易云登录状态已失效，请更新 Cookie 后重试。' },
   rate_limited: { code: 'rate_limited', category: 'netease', severity: 'warning', retryable: true, label: '请求受限', userMessage: '服务请求过于频繁，系统稍后可以重试。' },
+  netease_unavailable: { code: 'netease_unavailable', category: 'netease', severity: 'warning', retryable: true, label: '网易云不可用', userMessage: '暂时无法连接网易云服务，请检查网络或代理后重试。' },
   plex_unavailable: { code: 'plex_unavailable', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 不可用', userMessage: '暂时无法连接 Plex，请检查服务状态和网络后重试。' },
   filesystem_failed: { code: 'filesystem_failed', category: 'filesystem', severity: 'error', retryable: true, label: '文件写入失败', userMessage: '媒体目录无法读写，请检查挂载、权限和剩余空间。' },
   media_identity_conflict: { code: 'media_identity_conflict', category: 'media', severity: 'warning', retryable: false, label: '媒体身份冲突', userMessage: '候选媒体无法安全确认，需要手动选择或改为托管下载。' },

@@ -1,4 +1,5 @@
 import type { DomainErrorCode, DomainErrorCategory, DomainErrorSeverity } from '../../shared/domain-errors'
+import { getDomainErrorDefinition } from '../../shared/domain-errors'
 import { describeDomainError } from './domain-error'
 
 export interface ApiResponse<T = unknown> {
@@ -32,6 +33,27 @@ export function fail(error: unknown, code = 1, fallback?: DomainErrorCode): ApiR
       category: detail.category,
       severity: detail.severity,
       retryable: detail.retryable,
+    },
+  }
+}
+
+/**
+ * Keeps an already user-facing message (for example a connection-test finding) while still
+ * attaching the structured domain policy. Use this when the caller knows the domain code and
+ * the message must not be replaced by the catalog's generic copy.
+ */
+export function failDomain(code: DomainErrorCode, message?: string, apiCode = 1): ApiResponse<null> {
+  const definition = getDomainErrorDefinition(code)
+  const trimmed = message?.trim()
+  return {
+    code: apiCode,
+    msg: trimmed || definition.userMessage,
+    data: null,
+    error: {
+      code: definition.code,
+      category: definition.category,
+      severity: definition.severity,
+      retryable: definition.retryable,
     },
   }
 }

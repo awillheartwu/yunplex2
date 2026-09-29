@@ -12,7 +12,7 @@ export default defineEventHandler((event) => {
     event.node.res.write(`event: ${syncEvent.type}\ndata: ${JSON.stringify(syncEvent.data)}\n\n`)
   }
 
-  const unsubscribe = subscribe(handler)
+  const unsubscribe = subscribe(handler, () => cleanup())
 
   // Keep-alive every 30s to prevent proxy timeout and zombie cleanup
   const keepAlive = setInterval(() => {
@@ -22,9 +22,10 @@ export default defineEventHandler((event) => {
     } catch { /* connection gone */ }
   }, 30000)
 
-  event.node.req.on('close', () => {
+  function cleanup() {
     clearInterval(keepAlive)
     unsubscribe()
     event.node.res.end()
-  })
+  }
+  event.node.req.on('close', cleanup)
 })

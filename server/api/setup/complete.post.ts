@@ -1,7 +1,7 @@
 import { markSetupComplete } from '../../lib/auth/store'
 import { applyConfigUpdate } from '../../lib/config/apply'
-import { runRequiredSetupChecks } from '../../lib/setup/checks'
-import { fail, success } from '../../lib/response'
+import { SETUP_CHECK_LABELS, runRequiredSetupChecks } from '../../lib/setup/checks'
+import { failDomain, success } from '../../lib/response'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ config?: unknown }>(event)
@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
     const failed = checks.find(check => !check.ok)
     if (failed) {
       setResponseStatus(event, 400)
-      return fail(failed.message)
+      return failDomain(failed.code ?? 'unknown_error', `「${SETUP_CHECK_LABELS[failed.key]}」未通过：${failed.message}`)
     }
 
     const { updated } = applyConfigUpdate(body.config)
@@ -18,6 +18,6 @@ export default defineEventHandler(async (event) => {
     return success({ setup, config: updated, checks }, '初始化已完成')
   } catch (err) {
     setResponseStatus(event, 400)
-    return fail(err instanceof Error ? err.message : '初始化完成失败')
+    return failDomain('unknown_error', err instanceof Error ? err.message : '初始化完成失败')
   }
 })
