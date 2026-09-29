@@ -6,12 +6,14 @@ import { getSectionKey, getSectionTracks, initPlexClient } from '../plex-client'
 import { getSource } from '../playlist/store'
 import { getRun, saveRun } from '../run/store'
 import { acquireIdentityMutationLock } from '../sync/identity-coordinator'
-import { getSongIdentityBindings, normalizePlexPath, rebindSongIdentity, BindingIdentityConflictError, BindingVersionConflictError } from '../sync/identity-store'
+import { getInitializationIdentityBindings, normalizePlexPath, rebindSongIdentity, BindingIdentityConflictError, BindingVersionConflictError } from '../sync/identity-store'
 import type { TaskRun, TaskRunTrigger } from '../job/types'
 import { INITIALIZATION_RULE_VERSION, type InitializationCommitResult } from './types'
 import { requestSourceInitialization } from './requests'
 import { persistSourceRequest } from '../sync/request-store'
 import { buildInitializationPlans } from './candidate-engine'
+import { captureMatchingPolicy, matchingFingerprint } from './matching-snapshot'
+import { resolveMusicBrainzAliases } from './musicbrainz-aliases'
 import { ensurePendingInitialization, getInitialization, getLatestInitialization, replaceInitializationPlans, setInitializationStatus, upsertMediaDecision } from './store'
 
 const running = new Map<string, AbortController>()
@@ -46,14 +48,20 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
   saveRun(run); setInitializationStatus(initialization.id, 'analyzing', { runId: run.id, error: null })
   try {
     const config = readConfigFromDb(); controller.signal.throwIfAborted()
-    const [playlist] = await Promise.all([fetchPlaylistSongs(source.neteasePlaylistId, source.syncLimit ?? config.sync.songLimit, config.netease.cookie)])
+    const policy = captureMatchingPolicy(config)
+    const [playlist] = await Promise.all([fetchPlaylistSongs(source.neteasePlaylistId, source.syncLimit ?? config.sync.songLimit, config.netease.cookie, { preserveArtistNames: true })])
     controller.signal.throwIfAborted()
     await initPlexClient(config.plex)
     const sectionKey = await getSectionKey(config.plex.section)
     if (!sectionKey) throw new Error('未找到 Plex 音乐库分区')
     const tracks = await getSectionTracks(sectionKey); controller.signal.throwIfAborted()
-    const bindings = getSongIdentityBindings(playlist.songs.map(song => song.id))
-    const plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: config.other.artistAliases })
+    const bindings = getInitializationIdentityBindings(playlist.songs.map(song => song.id))
+    let plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config })
+    if (policy.config.enabled && policy.config.musicBrainzAliases && policy.config.useArtistAliases) {
+      policy.musicBrainz = await resolveMusicBrainzAliases(plans, policy.config, controller.signal)
+      controller.signal.throwIfAborted()
+      plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config, musicBrainz: policy.musicBrainz })
+    }
     const knownIds = new Set(plans.map(plan => plan.neteaseSongId))
     playlist.trackIds.forEach((track, position) => {
       if (knownIds.has(track.id)) return
@@ -62,6 +70,8 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
     plans.sort((a, b) => a.position - b.position)
     getDb().transaction(() => {
       getDb().prepare('UPDATE source_initializations SET rule_version=? WHERE id=?').run(INITIALIZATION_RULE_VERSION, initialization.id)
+      getDb().prepare('UPDATE source_initializations SET matching_config_json=?, matching_config_fingerprint=?, matching_data_fingerprint=? WHERE id=?')
+        .run(JSON.stringify(policy), matchingFingerprint(policy), matchingFingerprint({ songs: playlist.songs, trackIds: playlist.trackIds, tracks }), initialization.id)
       replaceInitializationPlans(initialization.id, plans)
       const neteaseCursor = fingerprint(playlist.trackIds.map(track => track.id))
       const plexFingerprint = fingerprint(tracks.map(track => [track.ratingKey, track.Media?.flatMap(media => media.Part?.map(part => part.file) ?? [])]))

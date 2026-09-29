@@ -17,6 +17,10 @@ export interface PlexTrack {
   Guid?: Array<{ id?: string }> | { id?: string }
   guid?: string
   Media?: Array<{
+    audioCodec?: string
+    bitrate?: number
+    audioBitDepth?: number
+    audioSampleRate?: number
     Part?: Array<{
       file?: string
     }>

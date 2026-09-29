@@ -1,4 +1,5 @@
 import type { AppConfig } from './types'
+import { DEFAULT_INITIALIZATION_MATCHING } from '../../../shared/initialization-matching'
 
 export const DEFAULT_CONFIG: AppConfig = {
   netease: {
@@ -53,4 +54,5 @@ export const DEFAULT_CONFIG: AppConfig = {
     pathFormat: '{artist}/{album}/{title} [netease-{songId}]',
     fontScale: 1.0,
   },
+  initializationMatching: structuredClone(DEFAULT_INITIALIZATION_MATCHING),
 }

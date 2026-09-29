@@ -3,6 +3,10 @@ import type { PlexTrack } from '../plex-client'
 import { normalizePlexPath, type SongIdentityBinding } from '../sync/identity-store'
 import { albumsMatchConservatively, normalizeTitle, stripPunct, titlesMatchConservatively } from '../sync/matchers'
 import { plexCandidate, type InitializationItemPlan } from './types'
+import type { InitializationMatchingConfig, MusicBrainzMatchingEvidence } from '../../../shared/initialization-matching'
+import { withMusicBrainzAliases } from './musicbrainz-aliases'
+import { artistMatchingKey as matchingKey } from '../../../shared/initialization-matching-text'
+import { enhanceInitializationPlans } from './enhanced-matching'
 
 const ARTIST_SEPARATOR = /\s*(?:&|\/|、|,|，|\+|;|；|\b(?:feat(?:uring)?|ft|with|and)\.?\b)\s*/giu
 
@@ -63,6 +67,8 @@ export function buildInitializationPlans(input: {
   tracks: PlexTrack[]
   bindings: Map<number, SongIdentityBinding>
   aliases?: Record<string, string>
+  matching?: InitializationMatchingConfig
+  musicBrainz?: MusicBrainzMatchingEvidence
 }): InitializationItemPlan[] {
   const aliases = input.aliases ?? {}
   const byTitle = new Map<string, PlexTrack[]>()
@@ -84,7 +90,7 @@ export function buildInitializationPlans(input: {
     positions.set(song.id, current ? { first: current.first, count: current.count + 1 } : { first: index, count: 1 })
   })
 
-  return [...positions.entries()].map(([songId, occurrence]) => {
+  const plans: InitializationItemPlan[] = [...positions.entries()].map(([songId, occurrence]) => {
     const song = input.songs[occurrence.first]!
     const binding = input.bindings.get(songId)
     const base = {
@@ -147,5 +153,17 @@ export function buildInitializationPlans(input: {
       return { ...base, tier: 'ambiguous', candidate: null, candidates: candidates.slice(0, 20).map(plexCandidate), evidence: { rule }, decision: 'defer' }
     }
     return { ...base, tier: 'unmatched', candidate: null, candidates: [], evidence: { rule: 'no_local_candidate' }, decision: 'defer' }
+  })
+  if (!input.matching?.enabled) return plans
+  const config = withMusicBrainzAliases(input.matching, input.musicBrainz)
+  const enhanced = enhanceInitializationPlans(plans, input.songs, input.tracks, config, input.bindings)
+  if (config === input.matching) return enhanced
+  const withoutMb = enhanceInitializationPlans(plans, input.songs, input.tracks, input.matching, input.bindings)
+  return enhanced.map((plan, index) => {
+    if (JSON.stringify(plan) === JSON.stringify(withoutMb[index])) return plan
+    const artistKeys = new Set(plan.artists.map(name => matchingKey(name, config)))
+    const records = input.musicBrainz?.groups.filter(group => [group.name, ...group.aliases].some(name => artistKeys.has(matchingKey(name, config))))
+    return { ...plan, evidence: { ...plan.evidence, musicBrainz: records,
+      reasons: [...(plan.evidence.reasons as string[] ?? []), 'MusicBrainz 艺人异名辅助参与比较；不作为媒体身份绑定依据'] } }
   })
 }

@@ -1,15 +1,10 @@
 import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat, UnverifiedMediaPolicy } from './types'
 import { DEFAULT_CONFIG } from './defaults'
 import { deepMerge } from './merge'
+import { ConfigValidationError, MATCHING_KEYS, assertMatchingPatchShape, migrateInitializationMatching, validateInitializationMatching } from './initialization-matching-validation'
 
 export { deepMerge } from './merge'
-
-export class ConfigValidationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'ConfigValidationError'
-  }
-}
+export { ConfigValidationError, validateInitializationMatching } from './initialization-matching-validation'
 
 type PlainRecord = Record<string, unknown>
 
@@ -52,7 +47,8 @@ const UNVERIFIED_MEDIA_POLICIES = new Set<UnverifiedMediaPolicy>([
   'wait_manual',
 ])
 
-const TOP_LEVEL_KEYS = new Set(['netease', 'plex', 'download', 'sync', 'other'])
+const TOP_LEVEL_KEYS = new Set(['netease', 'plex', 'download', 'sync', 'other', 'initializationMatching'])
+const REQUIRED_TOP_LEVEL_KEYS = new Set(['netease', 'plex', 'download', 'sync', 'other'])
 
 const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
   netease: new Set(['cookie', 'quality']),
@@ -99,6 +95,7 @@ const SECTION_KEYS: Record<keyof AppConfig, Set<string>> = {
     'pathFormat',
     'fontScale',
   ]),
+  initializationMatching: MATCHING_KEYS,
 }
 
 const PATH_FILE_VARIABLE_RE = /\{title\}|\{track(?::\d+d)?\}/
@@ -174,6 +171,7 @@ export function validateFullConfig(input: unknown): AppConfig {
       pathFormat: readPathFormat(candidate.other.pathFormat),
       fontScale: readNumber(candidate.other.fontScale, '字体缩放', 0.8, 1.5),
     },
+    initializationMatching: validateInitializationMatching(candidate.initializationMatching),
   }
 }
 
@@ -243,6 +241,7 @@ export function migrateConfig(input: unknown): { config: AppConfig; changed: boo
       pathFormat: coercePathFormat(get(source, 'other', 'pathFormat'), DEFAULT_CONFIG.other.pathFormat),
       fontScale: coerceNumber(get(source, 'other', 'fontScale'), DEFAULT_CONFIG.other.fontScale, 0.8, 1.5),
     },
+    initializationMatching: migrateInitializationMatching(source.initializationMatching),
   }
 
   return {
@@ -266,12 +265,15 @@ function assertConfigPatchShape(input: unknown): asserts input is Partial<AppCon
     if (section === 'other' && Object.hasOwn(value, 'artistAliases')) {
       assertArtistAliasShape(value.artistAliases)
     }
+    if (section === 'initializationMatching') {
+      assertMatchingPatchShape(value)
+    }
   }
 }
 
 function assertFullConfigShape(input: unknown): asserts input is AppConfig {
   assertConfigPatchShape(input)
-  for (const section of TOP_LEVEL_KEYS) {
+  for (const section of REQUIRED_TOP_LEVEL_KEYS) {
     if (!Object.hasOwn(input as PlainRecord, section)) {
       throw new ConfigValidationError(`缺少${sectionLabel(section)}配置`)
     }
@@ -419,6 +421,7 @@ function sectionLabel(section: string): string {
     case 'download': return '下载'
     case 'sync': return '同步'
     case 'other': return '高级'
+    case 'initializationMatching': return '初始化匹配'
     default: return section
   }
 }

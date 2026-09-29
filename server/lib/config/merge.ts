@@ -17,7 +17,11 @@ export function deepMerge<T extends object>(base: T, partial: Partial<T>, path =
     const value = (partial as PlainRecord)[key]
     const childPath = path ? `${path}.${key}` : key
 
-    if (isPlainRecord(value)) {
+    if (Array.isArray(value)) {
+      // Arrays represent complete settings collections, so a patch replaces
+      // the previous collection instead of merging entries by index.
+      result[key] = value
+    } else if (isPlainRecord(value)) {
       result[key] = childPath === 'other.artistAliases'
         ? { ...value }
         : deepMerge(

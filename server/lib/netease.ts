@@ -109,6 +109,7 @@ export async function fetchPlaylistSongs(
   playlistId: number,
   limit: number | undefined,
   cookie: string,
+  options: { preserveArtistNames?: boolean } = {},
 ): Promise<{
   songs: NeteaseSong[]
   trackUpdateTime: number | null
@@ -207,7 +208,7 @@ export async function fetchPlaylistSongs(
         // Source Convergence applies deletion protection instead of inventing
         // a path such as "null/未知专辑" or crashing alias normalization.
         if (findInvalidRawSongField(s)) continue
-        const song = mapRawSong(s)
+        const song = mapRawSong(s, options)
         // Fallback: old API often has publishTime when v3 doesn't
         if (!song.album.publishTime && oldData?.songs) {
           const match = oldData.songs.find(os => os.id === s.id)
@@ -305,7 +306,7 @@ function applyAlias(name: string): string {
   return name
 }
 
-export function mapRawSong(raw: RawSong): NeteaseSong {
+export function mapRawSong(raw: RawSong, options: { preserveArtistNames?: boolean } = {}): NeteaseSong {
   const invalidField = findInvalidRawSongField(raw)
   if (invalidField) {
     throw new Error(`网易云歌曲 ${raw.id} 元数据不完整：${invalidField}`)
@@ -318,13 +319,13 @@ export function mapRawSong(raw: RawSong): NeteaseSong {
     no: raw.no ?? 0,
     dt: raw.dt ?? 0,
     disc: raw.cd || '1',
-    artists: (raw.ar ?? []).map(a => ({ ...a, name: applyAlias(a.name) })),
+    artists: (raw.ar ?? []).map(a => ({ ...a, name: options.preserveArtistNames ? a.name : applyAlias(a.name) })),
     album: {
       id: raw.al?.id ?? 0,
       name: raw.al?.name ?? '未知专辑',
       picUrl: raw.al?.picUrl ?? '',
       publishTime: pubTime,
-      artist: raw.al?.artist ? { ...raw.al.artist, name: applyAliasToAlbum ? applyAlias(raw.al.artist.name) : raw.al.artist.name } : undefined,
+      artist: raw.al?.artist ? { ...raw.al.artist, name: !options.preserveArtistNames && applyAliasToAlbum ? applyAlias(raw.al.artist.name) : raw.al.artist.name } : undefined,
     },
   }
 }
@@ -557,7 +558,7 @@ export async function fetchAlbumSongs(
 ): Promise<NeteaseSong[]> {
   const res = await album({ id: albumId, cookie })
   const body = (res as NeteaseResponse<SongDetailBody>).body
-  return (body?.songs ?? []).map(mapRawSong)
+  return (body?.songs ?? []).map(song => mapRawSong(song))
 }
 
 export async function fetchPlaylistName(playlistId: number): Promise<string | null> {

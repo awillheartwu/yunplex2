@@ -244,6 +244,9 @@ export function createSchema(db: Database.Database): void {
       started_at TEXT,
       analyzed_at TEXT,
       completed_at TEXT,
+      matching_config_json TEXT,
+      matching_config_fingerprint TEXT,
+      matching_data_fingerprint TEXT,
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_source_initializations_source

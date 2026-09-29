@@ -1,3 +1,5 @@
+import type { InitializationMatchingConfig } from '../../../shared/initialization-matching'
+
 export interface NeteaseConfig {
   cookie: string
   quality: AudioQuality
@@ -119,6 +121,8 @@ export interface AppConfig {
   download: DownloadConfig
   sync: SyncStrategyConfig
   other: OtherConfig
+  /** Optional in the type so legacy fixtures can omit the newly added block. */
+  initializationMatching?: InitializationMatchingConfig
 }
 
 export type ConfigSection = keyof AppConfig
