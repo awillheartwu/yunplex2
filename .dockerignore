@@ -11,3 +11,10 @@ data/data.db-shm
 .env
 .env.local
 .DS_Store
+
+.git/
+.agents/
+.codex/
+data/
+backups/
+.env.*

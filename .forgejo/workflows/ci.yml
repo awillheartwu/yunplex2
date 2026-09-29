@@ -45,3 +45,6 @@ jobs:
 
       - name: Run browser journeys
         run: pnpm test:browser
+
+      - name: Run production browser journeys
+        run: PLAYWRIGHT_PRODUCTION=1 pnpm test:browser

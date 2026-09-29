@@ -20,6 +20,8 @@ ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
 COPY --from=build /app/.output ./.output
+COPY scripts/maintenance ./maintenance
+COPY package.json ./release.json
 
 VOLUME ["/app/data"]
 EXPOSE 3000

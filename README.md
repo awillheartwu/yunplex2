@@ -78,6 +78,9 @@ node .output/server/index.mjs
 
 ## Docker 部署
 
+首版安装、局域网 HTTP / HTTPS 反代、可信代理配置、停机备份与升级回滚见 [运行维护手册](docs/release-operations.md)。增强初始化匹配为默认关闭的实验功能。
+
+
 ```bash
 # 构建并启动
 docker compose up -d

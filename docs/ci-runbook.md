@@ -12,7 +12,7 @@ pnpm exec playwright install chromium
 pnpm test:browser
 ```
 
-`check:ci` 顺序执行 lint、TypeScript 类型检查、完整测试、设计变量检查、仓库体积检查、生产构建和 `git diff --check`。测试套件包含全新 SQLite 数据库建表与有界结构升级验证。Forgejo 随后安装 Chromium（含系统依赖）并执行隔离浏览器旅程。
+`check:ci` 顺序执行 lint、TypeScript 类型检查、完整测试、设计变量检查、仓库体积检查、生产构建和 `git diff --check`。测试套件包含全新 SQLite 数据库建表与有界结构升级验证。Forgejo 随后安装 Chromium（含系统依赖）并执行开发模式及生产构建的隔离浏览器旅程。
 
 Node 版本读取 `.nvmrc`，pnpm 版本读取 `package.json#packageManager`。CI 只缓存 pnpm 依赖，不缓存 `data/` 或任何运行时 SQLite 数据库。
 
