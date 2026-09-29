@@ -1,123 +1,97 @@
-<template>
-  <div class="sync-hover-card__header">
-    <div class="sync-hover-card__cover">
-      <img v-if="source.coverUrl" :src="coverSrc" :alt="`${displayName} 封面`">
-      <div v-else class="sync-hover-card__cover-fallback">
-        <AppIcon :name="source.type === 'album' ? 'album' : 'music'" :size="22" />
-      </div>
-    </div>
-    <div class="min-w-0">
-      <div class="sync-hover-card__title-row">
-        <span class="sync-hover-card__title">{{ displayName }}</span>
-        <SourceBadge :type="source.type" :subscribed="source.subscribed" />
-      </div>
-      <p v-if="originName !== displayName" class="sync-hover-card__origin">{{ originName }}</p>
-      <p class="sync-hover-card__meta">ID {{ source.neteasePlaylistId }} · Plex {{ plexTargetName }}</p>
-    </div>
-    <slot name="header-action" />
-  </div>
-  <div class="sync-hover-card__stats">
-    <span>{{ source.trackCount }} 首</span>
-    <span>{{ issueSummary }}</span>
-    <span>{{ repairing ? '修复中' : resultLabel }}</span>
-  </div>
-  <p class="sync-hover-card__footer">{{ lastActivity }}</p>
-</template>
-
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import {
-  formatSyncSourceRelativeTime,
-  getIssueSummaryLabel,
-  getPlexTargetName,
-  getSourceDisplayName,
-  getSourceOriginName,
   getSyncResultLabel,
-  getSyncSourceCoverUrl,
-} from '~~/composables/useSyncSourcePresentation'
-
-const props = defineProps<{
-  source: PlaylistSource
-  repairing: boolean
-}>()
-
-const displayName = computed(() => getSourceDisplayName(props.source))
-const originName = computed(() => getSourceOriginName(props.source))
-const plexTargetName = computed(() => getPlexTargetName(props.source))
-const issueSummary = computed(() => getIssueSummaryLabel(props.source))
-const resultLabel = computed(() => getSyncResultLabel(props.source))
-const coverSrc = computed(() => getSyncSourceCoverUrl(props.source.coverUrl))
-const lastActivity = computed(() => props.source.lastSyncedAt
-  ? `${props.source.type === 'album' ? '上次下载' : '上次同步'} ${formatSyncSourceRelativeTime(props.source.lastSyncedAt)}`
-  : props.source.type === 'album' ? '尚未下载' : '尚未同步')
+  getIssueCount,
+  getIssueSummaryLabel,
+  formatSyncSourceRelativeTime,
+} from '~/composables/useSyncSourcePresentation'
+defineProps<{ source: PlaylistSource }>()
+const emit = defineEmits<{ runs: [] }>()
 </script>
 
+<template>
+  <section class="section-card source-detail__status" aria-label="收藏同步状态">
+    <div class="source-detail__status-main">
+      <AppIcon
+        :name="source.lastStatus === 'failed' ? 'warn' : source.lastStatus === 'success' ? 'checkCircle' : 'sync'"
+        :size="24"
+      />
+      <div>
+        <span>最近结果</span>
+        <h2>{{ getSyncResultLabel(source) }}</h2>
+        <p>
+          {{
+            source.lastSyncedAt
+              ? `上次同步 ${formatSyncSourceRelativeTime(source.lastSyncedAt)}`
+              : '同步后可在这里查看结果'
+          }}
+        </p>
+      </div>
+      <button class="btn btn-secondary btn-sm" aria-label="查看运行记录" title="查看此收藏的接管、同步与修复记录" @click="emit('runs')">
+        <AppIcon name="activity" :size="14" />运行记录
+      </button>
+    </div>
+    <div class="source-detail__attention" :class="{ 'source-detail__attention--warning': getIssueCount(source) > 0 }">
+      <AppIcon :name="getIssueCount(source) > 0 ? 'warn' : 'check'" :size="16" /><span>{{
+        getIssueSummaryLabel(source)
+      }}</span
+      ><NuxtLink
+        v-if="getIssueCount(source) > 0"
+        :to="`/task-center?tab=failures&failureSource=${source.id}`"
+        class="btn btn-ghost btn-sm"
+        >处理异常<AppIcon name="arrowRight" :size="14"
+      /></NuxtLink>
+    </div>
+  </section>
+</template>
+
 <style scoped>
-.sync-hover-card__header {
-  display: flex;
-  gap: var(--space-3_5);
-  min-width: 0;
+.source-detail__status {
+  padding: var(--space-5);
 }
-
-.sync-hover-card__cover,
-.sync-hover-card__cover img,
-.sync-hover-card__cover-fallback {
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: var(--radius-xl);
-  flex-shrink: 0;
-}
-
-.sync-hover-card__cover {
-  overflow: hidden;
-  background: var(--bg-input);
-}
-
-.sync-hover-card__cover img {
-  display: block;
-  object-fit: cover;
-}
-
-.sync-hover-card__cover-fallback {
+.source-detail__status-main {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-  background: var(--bg-input);
+  gap: var(--space-4);
 }
-
-.sync-hover-card__title-row {
+.source-detail__status-main > svg {
+  color: var(--accent);
+}
+.source-detail__status-main > div {
+  flex: 1;
+  min-width: 0;
+}
+.source-detail__status-main span,
+.source-detail__status-main p {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.source-detail__status-main h2 {
+  margin: var(--space-1) 0;
+}
+.source-detail__attention {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
-}
-
-.sync-hover-card__title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.sync-hover-card__origin,
-.sync-hover-card__meta,
-.sync-hover-card__footer {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
-  line-height: 1.45;
-  color: var(--text-tertiary);
-}
-
-.sync-hover-card__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  margin-top: var(--space-3_5);
-  font-size: var(--text-sm);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-primary);
   color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.source-detail__attention--warning {
+  color: var(--warning);
+}
+.source-detail__attention > span {
+  flex: 1;
+}
+@media (max-width: 560px) {
+  .source-detail__status-main {
+    flex-wrap: wrap;
+  }
+  .source-detail__status-main > .btn {
+    margin-left: var(--space-10);
+  }
 }
 </style>

@@ -10,8 +10,8 @@
   position: relative;
   background: var(--bg-surface);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xs);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
 }
 .section-card > * {
   position: relative;
@@ -142,7 +142,7 @@
   display: none;
 }
 .filter-advanced-button {
-  min-width: 7.75rem;
+  min-width: 0;
 }
 .filter-advanced-button--active {
   color: var(--accent);
@@ -184,14 +184,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1_5);
-  min-height: 2rem;
+  min-height: var(--control-height);
   padding: 0 var(--space-3);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition:
     color var(--duration-fast) ease,
@@ -202,7 +202,8 @@
   color: var(--text-primary);
   border-color: var(--border-secondary);
 }
-.filter-chip-active {
+.filter-chip-active,
+.filter-chip-active:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-muted);

@@ -66,6 +66,6 @@ onUpdated(associateLabel)
   margin-top: var(--space-1_5);
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: var(--body-leading);
 }
 </style>

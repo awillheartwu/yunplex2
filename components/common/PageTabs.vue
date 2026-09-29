@@ -129,7 +129,8 @@ function selectTab(key: string) {
   background: var(--bg-hover);
 }
 
-.page-tabs__tab--active {
+.page-tabs__tab--active,
+.page-tabs__tab--active:hover:not(:disabled) {
   color: var(--accent);
   background: var(--accent-muted);
 }

@@ -90,6 +90,11 @@ describe('sync source presentation helpers', () => {
       .toBe('https://img.example/cover.jpg?token=one&param=160y160')
   })
 
+  it('replaces existing thumbnail sizes without duplicating params or losing the fragment', () => {
+    expect(getSyncSourceCoverUrl('https://img.example/cover.jpg?param=80y80&token=one&param=40y40#cover', 800))
+      .toBe('https://img.example/cover.jpg?param=800y800&token=one#cover')
+  })
+
   it('formats relative time against now', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-11T12:00:00.000Z'))

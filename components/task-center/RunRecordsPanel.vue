@@ -61,7 +61,7 @@
     <EmptyState v-else-if="runs.items.value.length === 0" title="暂无运行记录" description="当前筛选条件下没有匹配的运行" />
     <div v-else class="run-groups">
       <section v-for="group in groupedRuns" :key="group.key" class="run-group">
-        <h3>{{ group.label }}</h3>
+        <div class="run-group__heading"><h3>{{ group.label }}</h3><span>{{ group.items.length }} 次运行</span></div>
         <div class="run-group__list"><RunCard v-for="run in group.items" :key="run.id" :run="run" /></div>
       </section>
       <Pagination :has-more="runs.hasMore.value" :loading="runs.loadingMore.value" :current-count="runs.items.value.length" :total="runs.total.value" @load-more="runs.loadMore()" />
@@ -84,4 +84,8 @@ const {
 @import '~/assets/css/pages/task-center.css';
 .run-records{padding-bottom:var(--space-2)}
 .run-records__loading{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary);font-size:var(--text-base)}
+.run-groups{display:flex;flex-direction:column;gap:var(--space-6)}
+.run-group__heading{display:flex;align-items:baseline;gap:var(--space-2);margin-bottom:var(--space-2)}
+.run-group__heading h3{margin:0}
+.run-group__heading span{font-size:var(--text-xs);color:var(--text-tertiary)}
 </style>

@@ -19,10 +19,14 @@
       <PageTabs v-model="activeTab" :tabs="tabs" aria-label="同步源详情" @change="syncTabQuery" />
 
       <section v-if="activeTab==='overview'" class="source-detail__overview">
-        <div class="source-detail__metrics"><article class="section-card"><span>首次媒体接管</span><strong>{{ initializationLabel }}</strong><small>首次同步前的媒体确认</small></article><article class="section-card"><span>最近结果</span><strong>{{ { idle: '尚未同步', success: '同步成功', partial: '部分完成', failed: '同步失败' }[source.lastStatus] }}</strong><small>{{ source.lastSyncedAt ? new Date(source.lastSyncedAt).toLocaleString() : '尚未同步' }}</small></article><article class="section-card"><span>Plex 目标</span><strong>{{ source.plexPlaylistName || source.neteasePlaylistName }}</strong><small>{{ source.plexPlaylistRatingKey ? `#${source.plexPlaylistRatingKey}` : '尚未绑定' }}</small></article><article class="section-card"><span>下次排期</span><strong>{{ source.nextSyncAt ? new Date(source.nextSyncAt).toLocaleString() : '未排期' }}</strong><small>{{ source.syncIntervalMinutes ? `${source.syncIntervalMinutes} 分钟` : '继承全局' }}</small></article></div>
-        <section class="section-card source-detail__section"><header><div><h2>来源状态</h2><p>网易云目标、Plex 对齐和待处理异常。</p></div></header><div class="source-detail__summary"><SourceSummaryContent :source="source" :repairing="false" /></div></section>
-        <details class="source-maintenance"><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><button class="btn btn-secondary btn-sm" :disabled="acting" @click="sync('full')">完整比较</button><button class="btn btn-secondary btn-sm" :disabled="acting" @click="confirmRebuild=true">重建托管关联</button><button v-if="source.type==='playlist'" class="btn btn-secondary btn-sm" :disabled="acting" @click="openRedownload">重新下载托管媒体</button><button class="btn btn-secondary btn-sm" :disabled="acting" @click="repair">补全媒体</button><button class="btn btn-danger btn-sm" @click="confirmDelete=true">删除来源</button></div></details>
-        <section v-if="recentRuns.length" class="section-card source-detail__section"><header><div><h2>最近运行</h2><p>该来源最近的任务记录。</p></div><button class="btn btn-ghost btn-xs" @click="openTab('runs')">查看全部</button></header><div class="source-detail__runs"><RunCard v-for="run in recentRuns.slice(0,3)" :key="run.id" :run="run" /></div></section>
+        <SourceSummaryContent :source="source" @runs="openTab('runs')" />
+        <div class="source-detail__metrics">
+          <article class="section-card"><span><AppIcon name="shield" :size="16" />首次媒体接管</span><strong>{{ initializationLabel }}</strong><button class="btn btn-ghost btn-sm" @click="openTab('initialization')">{{ source.initializationStatus === 'awaiting_review' ? '确认接管方案' : '查看接管详情' }}<AppIcon name="arrowRight" :size="14" /></button></article>
+          <article class="section-card"><span><AppIcon name="source" :size="16" />Plex 目标</span><strong :title="source.plexPlaylistName || source.neteasePlaylistName">{{ source.plexPlaylistName || source.neteasePlaylistName }}</strong><small>{{ source.plexPlaylistRatingKey ? '已绑定目标歌单' : '尚未绑定' }}</small></article>
+          <article class="section-card"><span><AppIcon name="calendar" :size="16" />下次同步</span><strong>{{ source.nextSyncAt ? new Date(source.nextSyncAt).toLocaleString() : '未排期' }}</strong><small>{{ source.syncIntervalMinutes ? `每 ${source.syncIntervalMinutes} 分钟` : '间隔继承全局设置' }}</small></article>
+        </div>
+        <details class="source-maintenance"><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新读取网易云与 Plex 的完整歌单，检查增删和顺序；会按当前同步策略执行。"><button aria-label="完整比较" class="btn btn-secondary btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />完整比较</button></ActionHint><ActionHint text="保留人工决定，重新评估此收藏的自动媒体关联，然后执行完整同步。"><button aria-label="重建托管关联" class="btn btn-secondary btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重建关联</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载托管音频；新文件通过校验后才替换旧文件，失败时保留原文件。"><button aria-label="重新下载托管媒体" class="btn btn-secondary btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="检查并补全缺失媒体，不会重排或删除 Plex 歌单条目。"><button aria-label="补全媒体" class="btn btn-secondary btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补全媒体</button></ActionHint><ActionHint text="删除此收藏及其接管工作区和排期，保留媒体文件；需要再次确认。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
+        <section v-if="recentRuns.length" class="section-card source-detail__section"><header><div><h2>最近运行</h2><p>该来源最近的任务记录。</p></div><button class="btn btn-ghost btn-xs" @click="openTab('runs')"><AppIcon name="activity" :size="14" />全部记录</button></header><div class="source-detail__runs"><RunCard v-for="run in recentRuns.slice(0,3)" :key="run.id" :run="run" /></div></section>
       </section>
       <SourceInitializationPanel v-else-if="activeTab==='initialization'" :source-id="source.id" :source-type="source.type" @changed="refresh" />
       <section v-else-if="activeTab==='media'" class="section-card source-detail__section"><SourceMediaDetails :source-id="source.id" @changed="refresh" /></section>
@@ -146,9 +150,6 @@ onUnmounted(() => resumeUnsubscribe?.())
 }
 .source-detail__identity h1 {
   overflow-wrap: anywhere;
-  font-size: var(--text-4xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.3;
   margin: var(--space-1) 0 var(--space-0_5);
   color: var(--text-primary);
 }
@@ -165,15 +166,11 @@ onUnmounted(() => resumeUnsubscribe?.())
   color: var(--danger);
   overflow-wrap: anywhere;
 }
-.source-detail__load-error h1 {
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
-}
 .source-detail__load-error p {
   flex-basis: 100%;
 }
 .source-detail__header {
-  padding: var(--space-8);
+  padding: var(--space-6);
   background: var(--bg-sidebar);
   border: 0;
   box-shadow: none;
@@ -185,8 +182,8 @@ onUnmounted(() => resumeUnsubscribe?.())
 }
 .source-detail__header > img,
 .source-detail__cover {
-  width: 8rem;
-  height: 8rem;
+  width: 6rem;
+  height: 6rem;
   border-radius: var(--radius-lg);
   object-fit: cover;
 }
@@ -251,7 +248,7 @@ onUnmounted(() => resumeUnsubscribe?.())
 }
 .source-detail__metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
 }
 .source-detail__metrics article {
@@ -291,34 +288,12 @@ onUnmounted(() => resumeUnsubscribe?.())
 .source-detail__section h2,
 .source-detail__runs-header h2 {
   color: var(--text-primary);
-  font-size: var(--text-base);
 }
 .source-detail__section header p,
 .source-detail__runs-header p {
   margin-top: var(--space-1);
   color: var(--text-muted);
   font-size: var(--text-xs);
-}
-.source-detail__summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3) var(--space-5);
-  align-items: center;
-  padding: var(--space-3);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-}
-.source-detail__summary:deep(.sync-hover-card__header) {
-  grid-row: 1 / span 2;
-}
-.source-detail__summary:deep(.sync-hover-card__stats) {
-  justify-content: flex-end;
-  margin: 0;
-}
-.source-detail__summary:deep(.sync-hover-card__footer) {
-  margin: 0;
-  text-align: right;
 }
 .source-detail__runs-header {
   align-items: center;
@@ -372,31 +347,16 @@ onUnmounted(() => resumeUnsubscribe?.())
   border: 1px solid var(--danger-border);
 }
 @media (max-width: 900px) {
-  .source-detail__metrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .source-detail__header {
     grid-template-columns: auto minmax(0, 1fr);
   }
   .source-detail__header-actions {
     grid-column: 1/-1;
   }
-  .source-detail__summary {
-    grid-template-columns: 1fr;
-  }
-  .source-detail__summary:deep(.sync-hover-card__header) {
-    grid-row: auto;
-  }
-  .source-detail__summary:deep(.sync-hover-card__stats) {
-    justify-content: flex-start;
-  }
-  .source-detail__summary:deep(.sync-hover-card__footer) {
-    text-align: left;
-  }
 }
 @media (max-width: 560px) {
   .source-detail__metrics {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
   .source-detail__operations {
     align-items: stretch;
@@ -424,13 +384,12 @@ onUnmounted(() => resumeUnsubscribe?.())
   .source-detail__header {
     padding: var(--space-5);
   }
-  .source-detail__identity h1 {
-    font-size: var(--text-2xl);
-  }
   .source-detail__header > img,
   .source-detail__cover {
     width: 5rem;
     height: 5rem;
   }
 }
+.source-detail__metrics article > span { display: flex; align-items: center; gap: var(--space-2); }
+.source-detail__metrics article > .btn { margin-top: var(--space-2); }
 </style>

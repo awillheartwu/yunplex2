@@ -94,12 +94,10 @@ describe('responsive layout sizing', () => {
     const runCard = readProjectFile('components/task-center/RunCard.vue')
 
     expect(sourceMedia).toContain('min-width: 0')
-    expect(sourceMedia).toContain('@media (max-width: 760px)')
-    expect(runCard).toContain('run-card__source-column')
-    expect(runCard).toContain('run-card__column-label')
-    expect(runCard).toContain('grid-template-columns:auto minmax(17rem,1.15fr) minmax(24rem,1.5fr)')
-    expect(runCard).toContain('@media(max-width:1280px)')
-    expect(runCard).toContain('@media(max-width:720px)')
+    expect(sourceMedia).toContain('@media (max-width: 900px)')
+    expect(runCard).toContain('minmax(0, 1fr)')
+    expect(runCard).toContain('flex-wrap: wrap')
+    expect(runCard).toContain('@media (max-width: 720px)')
   })
 
   it('keeps shared empty and form controls accessible without fixed padding hacks', () => {
@@ -159,7 +157,8 @@ describe('responsive layout sizing', () => {
     expect(monitor).not.toContain('<SystemInfoPanel')
     expect(monitor).not.toContain('lg:grid-cols-[minmax(18rem')
     expect(health).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
-    expect(kpis).toContain('grid-cols-2 gap-3 xl:grid-cols-4')
+    expect(kpis).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
+    expect(kpis).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
     expect(jobDetail).toContain('run-detail__song-group-name')
     expect(jobDetail).toContain('flex:1 1 calc(100% - 7rem)')
     expect(jobDetail).toContain('padding-left:var(--space-12)')

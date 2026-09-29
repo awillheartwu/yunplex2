@@ -65,6 +65,11 @@ export function tierLabel(value: string): string {
 }
 
 export function evidenceRuleLabel(item: InitializationReviewItem): string {
+  if (item.evidence.rule === 'enhanced_metadata') {
+    const reasons = Array.isArray(item.evidence.reasons) ? item.evidence.reasons : []
+    const conflicts = Array.isArray(item.evidence.conflicts) ? item.evidence.conflicts : []
+    return [...reasons, ...conflicts].join('；') || '增强匹配候选，请检查证据后确认。'
+  }
   const rule = String(item.evidence.rule || '')
   return evidenceLabels[rule] || (item.kind === 'preserved' ? '现有绑定将直接保留，无需重新选择。' : '该项需要结合两侧字段和路径人工核对。')
 }

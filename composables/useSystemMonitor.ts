@@ -114,15 +114,15 @@ export function useSystemMonitor() {
   const kpiCards = computed<SystemKpiCard[]>(() => [
     { label: 'CPU', value: stats.value ? `${stats.value.cpu}%` : '--', detail: '当前进程采样', tone: toneForCpu(stats.value?.cpu) },
     { label: '应用内存', value: stats.value ? `${stats.value.mem.rss} MB` : '--', detail: stats.value ? `Heap ${stats.value.mem.heapUsed}/${stats.value.mem.heapTotal} MB` : '等待采样', tone: toneForMemory(stats.value) },
-    { label: '运行时间', value: formatUptime(stats.value?.uptime || 0), detail: stats.value ? `PID ${stats.value.pid}` : '等待进程信息', tone: stats.value ? 'ok' : 'idle' },
+    { label: '运行时间', value: stats.value ? formatUptime(stats.value.uptime) : '--', detail: stats.value ? `PID ${stats.value.pid}` : '等待进程信息', tone: stats.value ? 'ok' : 'idle' },
     { label: '数据库', value: stats.value ? `${stats.value.dbSize} MB` : '--', detail: '自动执行有界保留', tone: toneForDb(stats.value?.dbSize) },
   ])
 
   const healthItems = computed<SystemHealthItem[]>(() => [
-    { key: 'plex', label: 'Plex', value: stats.value?.plexOk ? '可连接' : '无法连接', detail: '媒体库与歌单更新', tone: stats.value?.plexOk ? 'ok' : 'error' },
-    { key: 'netease', label: '网易云', value: stats.value?.neteaseOk ? '已登录' : '未登录/失效', detail: '歌单与下载链接', tone: stats.value?.neteaseOk ? 'ok' : 'error' },
-    { key: 'download-dir', label: '下载目录', value: stats.value?.dirWritable ? '可写入' : '不可写', detail: '音频与标签写入', tone: stats.value?.dirWritable ? 'ok' : 'error' },
-    { key: 'sync', label: '同步', value: syncState.value?.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : syncState.value?.lastSyncResult === 'partial' ? '需关注' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: syncState.value?.isRunning || syncState.value?.lastSyncResult === 'partial' ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
+    { key: 'plex', label: 'Plex', value: !stats.value ? '待检测' : stats.value.plexOk ? '可连接' : '无法连接', detail: '媒体库与歌单更新', tone: !stats.value ? 'idle' : stats.value.plexOk ? 'ok' : 'error' },
+    { key: 'netease', label: '网易云', value: !stats.value ? '待检测' : stats.value.neteaseOk ? '已登录' : '未登录/失效', detail: '歌单与下载链接', tone: !stats.value ? 'idle' : stats.value.neteaseOk ? 'ok' : 'error' },
+    { key: 'download-dir', label: '下载目录', value: !stats.value ? '待检测' : stats.value.dirWritable ? '可写入' : '不可写', detail: '音频与标签写入', tone: !stats.value ? 'idle' : stats.value.dirWritable ? 'ok' : 'error' },
+    { key: 'sync', label: '同步', value: !syncState.value ? '读取中' : syncState.value.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : syncState.value?.lastSyncResult === 'partial' ? '需关注' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: !syncState.value ? 'idle' : syncState.value.isRunning || syncState.value?.lastSyncResult === 'partial' ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
   ])
 
   const overallTone = computed<Tone>(() => {

@@ -2,9 +2,8 @@
   <section class="section-card system-health">
     <div class="system-health__header">
       <div>
-        <p class="text-2xs text-muted-deep">健康概览</p>
-        <h2 :class="headlineClass">{{ headline }}</h2>
-        <p class="text-2xs text-muted">依赖检测于 {{ dependencyCheckedLabel }}</p>
+        <div class="system-health__title"><h2>服务状态</h2><span class="system-health__summary" :class="headlineClass"><i aria-hidden="true" />{{ headline }}</span></div>
+        <p class="system-health__checked">最近检测 · {{ dependencyCheckedLabel }}</p>
       </div>
       <div class="system-health__actions">
         <NuxtLink to="/system?tab=logs" class="btn btn-secondary btn-xs">
@@ -24,14 +23,9 @@
 
     <div class="system-health__grid">
       <article v-for="item in items" :key="item.key" class="system-health__item" :class="`system-health__item--${item.tone}`">
-        <div class="system-health__icon">
-          <AppIcon :name="item.tone === 'ok' ? 'checkCircle' : item.tone === 'warning' ? 'warn' : item.tone === 'error' ? 'failure' : 'info'" :size="15" />
-        </div>
-        <div>
-          <p>{{ item.label }}</p>
-          <strong>{{ item.value }}</strong>
-          <span>{{ item.detail }}</span>
-        </div>
+        <div class="system-health__icon"><AppIcon :name="serviceIcon(item.key)" :size="19" /></div>
+        <div class="system-health__identity"><h3>{{ item.label }}</h3><p>{{ item.detail }}</p></div>
+        <span class="system-health__value"><AppIcon :name="item.tone === 'ok' ? 'checkCircle' : item.tone === 'idle' ? 'clock' : 'warn'" :size="14" />{{ item.value }}</span>
       </article>
     </div>
   </section>
@@ -52,8 +46,10 @@ defineEmits<{
   'copy-diagnostics': []
 }>()
 
+function serviceIcon(key: string) { return ({ plex: 'source', netease: 'music', 'download-dir': 'folder', sync: 'sync' } as Record<string, string>)[key] || 'info' }
+
 const headline = computed(() => {
-  if (props.overallTone === 'error') return '有依赖需要处理'
+  if (props.overallTone === 'error') return '有项目需要处理'
   if (props.overallTone === 'warning') return '系统运行中，建议关注'
   if (props.overallTone === 'ok') return '系统状态正常'
   return '等待健康检查'
@@ -66,101 +62,34 @@ const headlineClass = computed(() => ({
 </script>
 
 <style scoped>
-.system-health {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-}
-
-.system-health__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.system-health__header h2 {
-  margin-top: var(--space-0_5);
-  font-size: var(--text-md);
-  font-weight: var(--font-weight-bold);
-}
-
-.system-health__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.system-health__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.system-health__item {
-  display: flex;
-  min-width: 0;
-  gap: var(--space-2_5);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  background: var(--bg-elevated);
-}
-
-.system-health__item p,
-.system-health__item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.system-health__item p {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.system-health__item strong {
-  display: block;
-  margin-block: 0.1rem;
-  color: var(--text-primary);
-  font-size: var(--text-base);
-}
-
-.system-health__item span {
-  display: block;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.system-health__icon {
-  display: flex;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: 0 0 1.75rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-}
-
-.system-health__item--ok .system-health__icon { color: var(--success); background: var(--success-soft); }
-.system-health__item--warning .system-health__icon { color: var(--warning); background: var(--warning-soft); }
-.system-health__item--error .system-health__icon { color: var(--danger); background: var(--danger-soft); }
-.system-health__item--idle .system-health__icon { color: var(--text-tertiary); background: var(--bg-input); }
-
-@media (max-width: 1024px) {
-  .system-health__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 640px) {
-  .system-health__header { flex-direction: column; }
-  .system-health__actions { width: 100%; justify-content: stretch; }
-  .system-health__actions .btn { flex: 1; }
-  .system-health__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 350px) {
+.system-health { padding: var(--space-5); }
+.system-health__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+.system-health__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.system-health__title h2 { margin: 0; }
+.system-health__summary { display: inline-flex; align-items: center; gap: var(--space-1_5); font-size: var(--text-xs); }
+.system-health__summary i { width: .375rem; height: .375rem; border-radius: var(--radius-full); background: currentColor; }
+.system-health__checked { margin: var(--space-1) 0 0; color: var(--text-tertiary); font-size: var(--text-xs); }
+.system-health__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.system-health__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border-primary); }
+.system-health__item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-4) 0; min-width: 0; }
+.system-health__item:nth-child(odd) { padding-right: var(--space-5); }
+.system-health__item:nth-child(even) { padding-left: var(--space-5); border-left: 1px solid var(--border-primary); }
+.system-health__item:nth-child(n+3) { border-top: 1px solid var(--border-primary); }
+.system-health__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); color: var(--text-secondary); background: var(--bg-input); }
+.system-health__identity { min-width: 0; }
+.system-health__identity h3 { margin: 0; }
+.system-health__identity p { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+.system-health__value { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); white-space: nowrap; color: var(--text-secondary); }
+.system-health__item--ok .system-health__value { color: var(--success); }
+.system-health__item--warning .system-health__value { color: var(--warning); }
+.system-health__item--error .system-health__value { color: var(--danger); }
+@media(max-width:900px) {
   .system-health__grid { grid-template-columns: 1fr; }
+  .system-health__item:nth-child(odd),.system-health__item:nth-child(even) { padding: var(--space-4) 0; border-left: 0; }
+  .system-health__item + .system-health__item { border-top: 1px solid var(--border-primary); }
+}
+@media(max-width:480px) {
+  .system-health { padding: var(--space-4); }
+  .system-health__item { gap: var(--space-2); }
 }
 </style>

@@ -16,8 +16,7 @@
       </template>
     </PageHeader>
 
-    <div class="library-facts"><span><strong>{{ totalSourceCount }}</strong> 个收藏</span><span><strong>{{ enabledCount }}</strong> 个自动管理</span><span v-if="totalActionableFailures" class="text-warning">{{ totalActionableFailures }} 个待处理问题</span><span v-if="totalCopyright">{{ totalCopyright }} 首版权受限</span></div>
-
+    <div class="library-heading">
     <PageTabs
       :model-value="filterType"
       :tabs="sourcePageTabs"
@@ -25,6 +24,10 @@
       @change="onSourceTabChange"
     />
 
+    <div class="library-facts"><span><strong>{{ totalSourceCount }}</strong> 个收藏</span><span><strong>{{ enabledCount }}</strong> 个自动管理</span><span v-if="totalActionableFailures" class="text-warning">{{ totalActionableFailures }} 个待处理问题</span><span v-if="totalCopyright">{{ totalCopyright }} 首版权受限</span></div>
+    </div>
+
+    <div class="library-controls">
     <FilterBar
       :search="sourceSearch"
       placeholder="搜索名称、歌单 ID、Plex 名称或来源 ID"
@@ -119,27 +122,24 @@
           </div>
         </div>
       </template>
-      <template #summary>
-        <div class="sync-sources-page__list-summary">
-          <span>显示 {{ filteredSources.length }} 个来源</span>
-          <span v-if="!canDragReorder">筛选中已暂停拖拽排序</span>
-        </div>
-      </template>
+
     </FilterBar>
 
     <div class="library-viewbar"><label class="library-select-all"><input type="checkbox" :checked="allVisibleSelected" :indeterminate="someVisibleSelected" aria-label="选择全部收藏" @change="toggleSelectAllVisible">全选筛选结果</label><span>{{ orderedSources.length }} 个{{ filterType === 'album' ? '专辑' : '歌单' }}</span><div class="library-viewbar__right"><select v-model="sort" class="form-input" aria-label="收藏排序"><option value="manual">自定义顺序</option><option value="name">名称 A–Z</option><option value="recent">最近更新</option></select><div class="library-view-toggle" aria-label="收藏展示方式"><button class="icon-button" aria-label="网格视图" :aria-pressed="view === 'grid'" @click="view = 'grid'"><AppIcon name="dashboard" :size="17" /></button><button class="icon-button" aria-label="列表视图" :aria-pressed="view === 'list'" @click="view = 'list'"><AppIcon name="list" :size="17" /></button></div></div></div>
+    </div>
     <div v-if="loading" class="flex items-center justify-center py-16">
       <span class="text-muted text-sm">加载中...</span>
     </div>
 
     <div v-else-if="loadError" class="library-load-error" role="alert"><h2>无法读取音乐库</h2><p>{{ loadError }}</p><button class="btn btn-secondary" @click="refreshSources">重新加载</button></div>
-    <div v-else-if="filteredSources.length === 0" class="section-card p-8">
+    <div v-else-if="filteredSources.length === 0" class="section-card">
       <EmptyState
-        :title="filterType === 'album' ? '暂无已保存专辑' : '还没有收藏歌单'"
-        :description="filterType === 'album' ? '从添加音乐页面可将专辑保存到音乐库' : '添加网易云歌单 ID 以开始同步管理'"
+        :title="hasResultFilters ? '没有匹配的收藏' : filterType === 'album' ? '暂无已保存专辑' : '还没有收藏歌单'"
+        :description="hasResultFilters ? '试试其他关键词，或清除筛选查看全部收藏。' : filterType === 'album' ? '从添加音乐页面可将专辑保存到音乐库' : '添加网易云歌单 ID 以开始同步管理'"
       >
         <template #default>
-          <button v-if="filterType !== 'album'" class="btn btn-primary mt-4" @click="openAddPlaylist">添加歌单</button>
+          <button v-if="hasResultFilters" class="btn btn-secondary" @click="clearSourceFilters">清除筛选</button>
+          <button v-else-if="filterType !== 'album'" class="btn btn-primary mt-4" @click="openAddPlaylist">添加歌单</button>
           <NuxtLink v-else to="/manual-download" class="btn btn-primary mt-4 inline-block">去添加音乐</NuxtLink>
         </template>
       </EmptyState>
@@ -171,6 +171,7 @@ const orderedSources = computed(() => {
   if (sort.value === 'manual') return filteredSources.value
   return [...filteredSources.value].sort((a, b) => sort.value === 'name' ? (a.name || a.neteasePlaylistName).localeCompare(b.name || b.neteasePlaylistName, 'zh-CN') : (b.lastSyncedAt || b.updatedAt).localeCompare(a.lastSyncedAt || a.updatedAt))
 })
+const hasResultFilters = computed(() => Boolean(sourceSearch.value.trim()) || advancedFilterCount.value > 0)
 const pageSize = 60
 const page = ref(1)
 const pageCount = computed(() => Math.max(1, Math.ceil(orderedSources.value.length / pageSize)))
@@ -190,5 +191,8 @@ watch(view, value => { try { localStorage.setItem('reyunplex-library-view', valu
 <style>
 
 .library-load-error{display:grid;justify-items:start;gap:var(--space-3);padding:var(--space-8);border:1px solid var(--danger-border);border-radius:var(--radius-lg);color:var(--danger);background:var(--danger-soft)}
-.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar select{width:9rem;font-size:var(--text-xs);min-height:2.25rem}.library-view-toggle{display:flex;gap:.1rem;padding:var(--space-0_5);border:1px solid var(--border-primary);border-radius:var(--radius-md)}.library-view-toggle button{min-height:2rem;min-width:2rem}.library-view-toggle button[aria-pressed="true"]{background:var(--bg-surface);color:var(--accent);box-shadow:var(--shadow-xs)}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page__list-summary{color:var(--text-tertiary);font-size:var(--text-xs)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
+.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar select{width:9rem;font-size:var(--text-base);min-height:var(--control-height)}.library-view-toggle{display:flex;gap:var(--space-1)}.library-view-toggle button{min-height:var(--control-height);min-width:var(--control-height)}.library-view-toggle button[aria-pressed="true"]{background:var(--bg-surface);color:var(--accent);border-color:var(--accent)}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
+.library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.library-controls { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+@media(max-width:720px) { .library-heading { align-items: flex-start; flex-direction: column; } }
 </style>

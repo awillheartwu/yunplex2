@@ -36,7 +36,7 @@ describe('operations information architecture', () => {
     expect(monitor).not.toContain('SystemDataStats')
     expect(composable).toContain('}, 10000)')
     expect(readProjectFile('components/system/SystemHealthOverview.vue')).toContain('to="/system?tab=logs"')
-    expect(readProjectFile('components/system/SystemHealthOverview.vue')).toContain('repeat(4, minmax(0, 1fr))')
+    expect(readProjectFile('components/system/SystemHealthOverview.vue')).toContain('repeat(2, minmax(0, 1fr))')
     expect(composable).not.toContain('schedulerHealth(stats.value),')
     expect(composable).toContain('schedulerScheduleLabel')
     expect(dashboard).toContain('config?.sync.intervalMinutes')

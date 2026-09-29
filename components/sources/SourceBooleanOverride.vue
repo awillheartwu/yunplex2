@@ -3,7 +3,9 @@
     <div class="source-boolean-override__copy">
       <span class="source-boolean-override__label">{{ label }}</span>
       <p class="source-boolean-override__hint">
-        <template v-if="hint">{{ hint }} · </template>设置效果：{{ effectiveValue === null ? '尚未读取全局设置' : effectiveValue ? '开启' : '关闭' }}
+        <template v-if="hint">{{ hint }} · </template>设置效果：{{
+          effectiveValue === null ? '尚未读取全局设置' : effectiveValue ? '开启' : '关闭'
+        }}
       </p>
     </div>
     <select
@@ -29,9 +31,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean | null] }>()
 
-const serializedValue = computed(() =>
-  props.modelValue === null ? 'inherit' : String(props.modelValue),
-)
+const serializedValue = computed(() => (props.modelValue === null ? 'inherit' : String(props.modelValue)))
 const effectiveValue = computed(() => props.modelValue ?? props.globalValue)
 
 function updateValue(event: Event) {
@@ -48,6 +48,8 @@ function updateValue(event: Event) {
   align-items: center;
   width: 100%;
   min-width: 0;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .source-boolean-override__copy {
@@ -57,22 +59,22 @@ function updateValue(event: Event) {
 .source-boolean-override__label {
   display: block;
   color: var(--text-primary);
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   font-weight: var(--font-weight-semibold);
-  line-height: 1.4;
+  line-height: var(--body-leading);
 }
 
 .source-boolean-override__hint {
   margin-top: var(--space-0_5);
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  line-height: 1.45;
+  line-height: var(--body-leading);
 }
 
 .source-boolean-override__select {
   width: 8.5rem;
   min-width: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
 }
 
 @media (max-width: 480px) {

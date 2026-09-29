@@ -77,8 +77,6 @@
 .source-adoption__drawer h4 {
   margin: 0 0 var(--space-2);
   color: var(--text-primary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-bold);
 }
 .source-adoption__drawer-path dd {
   overflow-wrap: anywhere;
@@ -86,7 +84,7 @@
 .source-adoption__drawer-empty {
   color: var(--text-muted);
   font-size: var(--text-xs);
-  line-height: 1.55;
+  line-height: var(--body-leading);
 }
 .source-adoption__evidence-summary {
   display: flex;
@@ -99,7 +97,7 @@
 .source-adoption__evidence-summary p {
   color: var(--text-secondary);
   font-size: var(--text-xs);
-  line-height: 1.55;
+  line-height: var(--body-leading);
 }
 .source-adoption__drawer details {
   margin-top: var(--space-2_5);

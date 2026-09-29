@@ -438,7 +438,7 @@ test('source detail settings keep override controls readable on desktop and mobi
       content: document.documentElement.scrollWidth,
     }))
     expect(dimensions.content, tab).toBeLessThanOrEqual(dimensions.viewport)
-    if (tab === '概览') await expect(page.locator('.source-detail__summary .sync-hover-card__stats')).toHaveCSS('display', 'flex')
+    if (tab === '概览') await expect(page.locator('.source-detail__status-main')).toHaveCSS('display', 'flex')
     if (process.env.UI_SCREENSHOTS === '1') await page.screenshot({ path: testInfo.outputPath(`source-mobile-${tab}.png`), fullPage: true })
   }
 })
@@ -475,7 +475,7 @@ test('first media adoption handles a 3450-song review with cross-page selection'
   await expect(page.getByText('浏览器验收歌单 · 3450 首（接管快照）')).toBeVisible()
   await expect(page.getByText('3450', { exact: true })).toBeVisible()
   await expect(page.locator('.source-adoption__metrics').getByText('已有绑定', { exact: true })).toBeVisible()
-  await expect(page.locator('.source-adoption__metrics').getByText('可能候选', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('候选证据分布')).toContainText('可能候选')
   await page.getByRole('button', { name: '查看证据', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: '歌曲 1 证据详情' })).toContainText('/music/1.flac')
   await page.keyboard.press('Escape')
@@ -523,6 +523,9 @@ test('failed reanalysis keeps the current review draft visible', async ({ page }
   const reviewItem = actionableInitializationItem(601, { initializationId: initialization.id })
   await mockInitializationReview(page, initialization, [reviewItem])
   let restartBody: Record<string, unknown> | null = null
+  await page.route('**/api/initialization-matching/preview', route => route.fulfill({ json: ok({
+    before: { recommended: 1, unmatched: 0 }, after: { recommended: 1, unmatched: 0 }, items: [],
+  }) }))
   await page.route('**/api/playlist-sources/source-browser/initialization/restart', async route => {
     restartBody = await route.request().postDataJSON() as Record<string, unknown>
     await route.fulfill({ json: { code: 1, msg: '重新分析请求失败', data: null } })
@@ -532,8 +535,8 @@ test('failed reanalysis keeps the current review draft visible', async ({ page }
   const reviewRow = page.locator('.source-adoption__table tbody tr').filter({ hasText: '歌曲 601' })
   await expect(reviewRow).toBeVisible()
   await page.getByRole('button', { name: '放弃方案并重新分析', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '重新分析首次媒体接管' })).toBeVisible()
-  await page.getByRole('button', { name: '重新分析', exact: true }).click()
+  await expect(page.getByRole('region', { name: '重新分析前比较' })).toBeVisible()
+  await page.getByRole('button', { name: '确认创建新草案', exact: true }).click()
 
   await expect(page.getByRole('alert')).toContainText('重新分析请求失败')
   await expect(reviewRow).toBeVisible()
@@ -612,9 +615,8 @@ test('dashboard renders mixed sync outcomes by count and source', async ({ page 
   await page.goto('/')
   await page.getByRole('button', { name: '立即同步', exact: true }).click()
 
-  const toast = page.locator('.toast-region')
-  await expect(toast).toContainText('已接受 2 个来源请求，1 个来源等待确认')
-  const result = page.getByRole('region', { name: '同步请求结果', exact: true })
+  await expect(page.getByRole('dialog', { name: '同步请求结果', exact: true })).toContainText('已受理 2 个 · 待确认 1 个')
+  const result = page.getByRole('dialog', { name: '同步请求结果', exact: true })
   await expect(result).toBeVisible()
   await expect(result).toContainText('source-convergence')
   await expect(result).toContainText('已接受同步请求')

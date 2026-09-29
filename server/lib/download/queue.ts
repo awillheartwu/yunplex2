@@ -1,3 +1,5 @@
+import { getQueueStatus } from './queue-status'
+export { getQueueStatus } from './queue-status'
 import { AWAITING_SOURCE_SYNC_PROJECTION } from './task-status-projection'
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
@@ -238,24 +240,6 @@ export function listDownloadTasks(opts: {
   }
 }
 
-export function getQueueStatus(): QueueStatus {
-  const db = getDb()
-  const rows = db.prepare(
-    'SELECT status, COUNT(*) as cnt FROM download_tasks GROUP BY status',
-  ).all() as { status: string; cnt: number }[]
-
-  const map: Record<string, number> = {}
-  for (const r of rows) map[r.status] = r.cnt
-
-  return {
-    pending: map.pending ?? 0,
-    downloading: map.downloading ?? 0,
-    tagging: map.tagging ?? 0,
-    done: map.done ?? 0,
-    failed: map.failed ?? 0,
-    total: Object.values(map).reduce((a, b) => a + b, 0),
-  }
-}
 
 export function listPendingDownloadTaskIds(limit = 1000): string[] {
   return (getDb().prepare(`

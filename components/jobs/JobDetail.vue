@@ -1,7 +1,7 @@
 <template>
   <div class="run-detail">
     <div class="run-detail__nav">
-      <button class="run-detail__back" type="button" @click="$emit('back')">
+      <button class="btn btn-secondary run-detail__back" type="button" @click="$emit('back')">
         <AppIcon name="chevronLeft" :size="14" />
         返回运行记录
       </button>
@@ -62,7 +62,7 @@
 
     <section v-if="mediaPolicyItems.length > 0" class="section-card p-4" aria-label="缺失媒体策略统计">
       <div class="mb-3">
-        <h3 class="text-sm font-semibold">缺失媒体策略</h3>
+        <h3>缺失媒体策略</h3>
         <p class="mt-1 text-2xs text-muted">按已登记资产和人工决定统计本轮处理路径</p>
       </div>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -112,7 +112,7 @@
           <h3>变化与异常</h3>
           <button
             type="button"
-            class="run-detail__collapse-all"
+            class="icon-button run-detail__collapse-all"
             :disabled="songGroups.length === 0"
             title="全部折叠"
             aria-label="全部折叠歌曲来源"
@@ -126,7 +126,7 @@
             v-for="f in songFilters"
             :key="f.key"
             type="button"
-            class="run-detail__song-filter"
+            class="filter-chip run-detail__song-filter"
             :class="[semanticToneClass(f.tone), { 'is-active': songFilter === f.key }]"
             :aria-pressed="songFilter === f.key"
             @click="songFilter = f.key"
@@ -175,7 +175,7 @@
             </button>
             <button
               v-if="hasFailedSongs(group)"
-              class="run-detail__retry-source"
+              class="btn btn-secondary run-detail__retry-source"
               :class="retryingSources.has(group.sourceId) ? 'text-muted-deep cursor-not-allowed' : 'text-accent hover:bg-[var(--accent-muted)]'"
               :disabled="retryingSources.has(group.sourceId)"
               @click.stop="handleRetryAll(group.sourceId)"
@@ -206,7 +206,7 @@
     <!-- Repair task: no per-song details -->
     <section v-else-if="!job.detailsExpired && job.type === 'repair'" class="section-card overflow-hidden">
       <div class="px-5 py-3 border-b border-[var(--border-primary)]">
-        <h3 class="text-sm font-semibold">歌曲清单</h3>
+        <h3>歌曲清单</h3>
       </div>
       <div class="p-5">
         <p class="text-xs text-muted">补全任务不记录单首歌曲详情，请查看上方统计数字或日志页。</p>
@@ -492,7 +492,6 @@ onUnmounted(() => {
 <style scoped>
 .run-detail{display:flex;flex-direction:column;gap:var(--space-5)}
 .run-detail__nav{display:flex;min-height:2.75rem;align-items:center;justify-content:space-between;gap:var(--space-4)}
-.run-detail__back{display:inline-flex;min-height:2.75rem;align-items:center;gap:var(--space-2);padding:0;border:0;background:transparent;color:var(--text-secondary);font-size:var(--text-sm);font-weight:var(--font-weight-semibold);cursor:pointer;transition:color var(--duration-fast) ease}
 .run-detail__back:hover{color:var(--text-primary)}
 .run-detail__id{overflow:hidden;color:var(--text-tertiary);font-family:var(--font-mono);font-size:var(--text-xs);text-overflow:ellipsis;white-space:nowrap}
 .run-detail__expired{display:flex;align-items:center;gap:var(--space-3_5);padding:var(--space-4);color:var(--text-secondary)}
@@ -506,8 +505,8 @@ onUnmounted(() => {
 .run-detail__hero-copy{min-width:0;color:var(--text-primary)}
 .run-detail__hero-labels{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
 .run-detail__preview{display:inline-flex;min-height:1.75rem;align-items:center;padding:0 var(--space-2);border:1px solid var(--ignored-border);border-radius:var(--radius-full);background:var(--ignored-soft);color:var(--ignored);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
-.run-detail__hero h2{margin:var(--space-3) 0 0;color:var(--text-primary);font-size:var(--text-md);font-weight:var(--font-weight-bold);line-height:1.45}
-.run-detail__hero>div>p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-sm);line-height:1.55}
+.run-detail__hero h2{margin:var(--space-3) 0 0;color:var(--text-primary)}
+.run-detail__hero>div>p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-sm);line-height:var(--body-leading)}
 .run-detail__hero-meta{display:flex;align-items:center;gap:var(--space-2_5) var(--space-4);flex-wrap:wrap;margin-top:var(--space-3);color:var(--text-tertiary);font-size:var(--text-xs)}
 .run-detail__hero-meta span{display:inline-flex;align-items:center;gap:var(--space-1_5)}
 .run-detail__stats{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--space-3)}
@@ -523,23 +522,20 @@ onUnmounted(() => {
 .run-detail__timeline{padding:var(--space-4)}
 .run-detail__song-toolbar{display:flex;min-height:4rem;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-5);border-bottom:1px solid var(--border-primary)}
 .run-detail__song-title{display:flex;align-items:center;gap:var(--space-2_5);min-width:0}
-.run-detail__song-title h3{margin:0;color:var(--text-primary);font-size:var(--text-base);font-weight:var(--font-weight-bold);white-space:nowrap}
-.run-detail__collapse-all{display:inline-flex;width:2.25rem;height:2.25rem;align-items:center;justify-content:center;border:1px solid var(--border-primary);border-radius:var(--radius-lg);background:var(--bg-input);color:var(--text-secondary);cursor:pointer;transition:background var(--duration-fast) ease,color var(--duration-fast) ease,border-color var(--duration-fast) ease,transform var(--duration-fast) ease}
+.run-detail__song-title h3{margin:0;color:var(--text-primary);white-space:nowrap}
 .run-detail__collapse-all:hover:not(:disabled){border-color:var(--accent-border);background:var(--accent-muted);color:var(--accent-strong);transform:translateY(-1px)}
 .run-detail__collapse-all:disabled{opacity:.45;cursor:not-allowed}
 .run-detail__collapse-all:focus-visible,.run-detail__song-filter:focus-visible,.run-detail__song-group-toggle:focus-visible,.run-detail__retry-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .run-detail__song-filters{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2);flex-wrap:wrap}
-.run-detail__song-filter{display:inline-flex;min-height:2.25rem;align-items:center;gap:var(--space-1_5);padding:var(--space-1) var(--space-2_5);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);line-height:1;cursor:pointer;transition:transform var(--duration-fast) ease,box-shadow var(--duration-fast) ease,filter var(--duration-fast) ease}
 .run-detail__song-filter:hover{filter:saturate(1.08);transform:translateY(-1px)}
 .run-detail__song-filter.is-active{box-shadow:0 0 0 2px color-mix(in srgb,currentColor 18%,transparent),var(--shadow-xs)}
 .run-detail__song-filter strong{font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;opacity:.88}
 .run-detail__song-group{display:flex;min-height:3.25rem;align-items:center;gap:var(--space-3);padding:var(--space-1_5) var(--space-5);border-bottom:1px solid var(--border-primary);background:var(--bg-app)}
 .run-detail__song-group-toggle{display:flex;min-width:0;min-height:2.75rem;flex:1;align-items:center;gap:var(--space-2_5);padding:0;border:0;background:transparent;color:var(--text-primary);text-align:left;cursor:pointer}
-.run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:1.4;overflow-wrap:anywhere}
+.run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:var(--body-leading);overflow-wrap:anywhere}
 .run-detail__song-group-toggle:hover .run-detail__song-group-stats{filter:saturate(1.08)}
 .run-detail__song-group-stats{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-1_5);flex-wrap:wrap;transition:filter var(--duration-fast) ease}
 .run-detail__song-group-stat{display:inline-flex;min-height:1.35rem;align-items:center;gap:var(--space-1);padding:.08rem var(--space-2);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;white-space:nowrap}
-.run-detail__retry-source{display:inline-flex;min-height:2.25rem;align-items:center;justify-content:center;padding:var(--space-1) var(--space-2_5);border:0;border-radius:var(--radius-lg);background:transparent;font-size:var(--text-xs);font-weight:var(--font-weight-bold);transition:background var(--duration-fast) ease,color var(--duration-fast) ease;cursor:pointer;flex:none}
 @media(max-width:1180px){.run-detail__stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:720px){
   .run-detail__hero{grid-template-columns:1fr}
@@ -552,7 +548,7 @@ onUnmounted(() => {
   .run-detail__song-filters{justify-content:flex-start}
   .run-detail__song-group{align-items:flex-start;flex-direction:column;gap:var(--space-1_5);padding:var(--space-2) var(--space-4)}
   .run-detail__song-group-toggle{width:100%;align-items:flex-start;flex-wrap:wrap;gap:var(--space-2)}
-  .run-detail__song-group-name{flex:1 1 calc(100% - 7rem);font-size:var(--text-sm);line-height:1.45}
+  .run-detail__song-group-name{flex:1 1 calc(100% - 7rem);font-size:var(--text-sm);line-height:var(--body-leading)}
   .run-detail__song-group-stats{flex:1 1 100%;justify-content:flex-start;padding-left:var(--space-12)}
 }
 </style>

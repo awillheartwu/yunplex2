@@ -21,7 +21,7 @@ describe('auth settings integration', () => {
     const advancedTab = source.indexOf("activeTab === 'advanced'")
     const pathFormat = source.indexOf('存储路径格式')
     const translatedLyric = source.indexOf('下载翻译歌词')
-    const artistAliases = source.indexOf('艺人名替换映射')
+    const artistAliases = source.indexOf('管理艺人名称与写入替换')
     const danger = source.indexOf('title="危险操作"')
     const reinitialize = source.indexOf('进入重新初始化')
 
