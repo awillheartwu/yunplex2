@@ -1,6 +1,6 @@
 import type { PlexTrack } from '../plex-client'
 
-export const INITIALIZATION_RULE_VERSION = 1
+export const INITIALIZATION_RULE_VERSION = 8
 
 export type SourceInitializationStatus = 'pending' | 'analyzing' | 'awaiting_review' | 'applying' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 export type InitializationTier = 'preserved' | 'strong_id' | 'high_confidence' | 'possible' | 'ambiguous' | 'unmatched' | 'metadata_missing' | 'conflict'
@@ -43,6 +43,9 @@ export interface SourceInitializationSummary {
   status: SourceInitializationStatus
   ruleVersion: number
   rulesCompatible: boolean
+  matchingConfig?: import('./matching-snapshot').MatchingPolicySnapshot | null
+  matchingConfigFingerprint?: string | null
+  matchingDataFingerprint?: string | null
   requestId: string | null
   requestStatus: string | null
   neteaseCursor: string | null

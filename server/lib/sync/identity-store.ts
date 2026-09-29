@@ -98,6 +98,14 @@ export function getSongIdentityBindings(songIds: number[]): Map<number, SongIden
   return new Map(rows.map(row => [row.netease_song_id, fromRow(row)]))
 }
 
+/** Initialization must also see media already owned by songs outside this source. */
+export function getInitializationIdentityBindings(songIds: number[]): Map<number, SongIdentityBinding> {
+  const bindings = getSongIdentityBindings(songIds)
+  const active = getDb().prepare("SELECT * FROM song_identity_bindings WHERE status='active' AND binding_method IN ('path','manual')").all() as BindingRow[]
+  for (const row of active) bindings.set(row.netease_song_id, fromRow(row))
+  return bindings
+}
+
 export function getActiveSongIdentityBindings(songIds: number[]): Map<number, SongIdentityBinding> {
   const bindings = getSongIdentityBindings(songIds)
   for (const [songId, binding] of bindings) {
