@@ -59,7 +59,7 @@ test('mobile navigation traps focus, closes on Escape and releases page interact
   await dialog.getByRole('link', { name: '活动', exact: true }).click()
   await expect(page).toHaveURL('/task-center')
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('button', { name: '运行记录', exact: true })).toBeEnabled()
+  await expect(page.getByRole('tab', { name: '运行记录', exact: true })).toBeEnabled()
   await expect(page.locator('.app-content')).not.toHaveAttribute('inert')
 })
 
@@ -97,9 +97,9 @@ test('mobile input help stays inside the viewport and maintenance settings remai
   expect(help!.x).toBeGreaterThanOrEqual(0)
   expect(help!.x + help!.width).toBeLessThanOrEqual(375)
   await page.goto('/config')
-  const maintenance = page.getByRole('tab', { name: '安全与维护', exact: true })
-  await expect(maintenance).toBeInViewport()
-  await maintenance.click()
+  const categories = page.getByRole('combobox', { name: '设置分类', exact: true })
+  await expect(categories).toBeInViewport()
+  await categories.selectOption('advanced')
   await expect(page.getByRole('button', { name: /危险操作/ })).toBeVisible()
 })
 

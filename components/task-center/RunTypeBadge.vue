@@ -1,5 +1,5 @@
 <template>
-  <span class="run-type-badge" :class="`run-type-badge--${identity.tone}`">
+  <span class="run-type-badge" :class="[`run-type-badge--${identity.tone}`, { 'run-type-badge--sm': size === 'sm' }]">
     <span class="run-type-badge__icon" aria-hidden="true">
       <AppIcon :name="identity.icon" :size="iconSize" />
     </span>
@@ -25,10 +25,11 @@ const iconSize = computed(() => props.size === 'sm' ? 13 : 15)
 </script>
 
 <style scoped>
-.run-type-badge{display:inline-flex;min-height:2rem;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3) var(--space-1) var(--space-1_5);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);line-height:1}
-.run-type-badge__icon{display:inline-flex;width:1.45rem;height:1.45rem;align-items:center;justify-content:center;border-radius:var(--radius-full);background:color-mix(in srgb,currentColor 12%,transparent)}
+.run-type-badge{display:inline-flex;min-height:2rem;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3) var(--space-1) var(--space-1_5);border:1px solid;border-radius:var(--radius-sm);font-size:var(--text-xs);font-weight:var(--font-weight-medium);line-height:1}
+.run-type-badge__icon{display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius-sm);}
 .run-type-badge--sync{color:var(--run-sync);background:var(--run-sync-soft);border-color:var(--run-sync-border)}
 .run-type-badge--download{color:var(--run-download);background:var(--run-download-soft);border-color:var(--run-download-border)}
 .run-type-badge--repair{color:var(--run-repair);background:var(--run-repair-soft);border-color:var(--run-repair-border)}
 .run-type-badge--initialization{color:var(--run-sync);background:var(--run-sync-soft);border-color:var(--run-sync-border)}
+.run-type-badge--sm{min-height:1.5rem;gap:var(--space-1);padding:var(--space-1) var(--space-1_5)}
 </style>

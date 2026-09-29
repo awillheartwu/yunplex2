@@ -9,7 +9,7 @@
       <span class="config-section__heading">
         <span class="config-section__title-row">
           <span class="config-section__icon"><slot name="icon" /></span>
-          <span class="config-section__title">{{ title }}</span>
+          <span class="config-section__title type-h3" role="heading" aria-level="3">{{ title }}</span>
         </span>
         <span class="config-section__description">{{ description }}</span>
       </span>
@@ -80,14 +80,12 @@ defineEmits<{ toggle: [] }>()
 
 .config-section__title {
   color: var(--text-primary);
-  font-size: var(--text-base);
-  font-weight: var(--font-weight-bold);
 }
 
 .config-section__description {
   color: var(--text-tertiary);
   font-size: var(--text-sm);
-  line-height: 1.45;
+  line-height: var(--body-leading);
 }
 
 .config-section__body {

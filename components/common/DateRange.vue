@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .date-range-trigger {
   display: flex;
-  min-block-size: 2.5rem;
+  min-block-size: var(--control-height);
   min-inline-size: 0;
   align-items: center;
   gap: var(--space-1_5);
@@ -405,7 +405,7 @@ onBeforeUnmount(() => {
   padding-inline: var(--space-3);
   border: 1px solid;
   border-radius: var(--radius-md);
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   cursor: pointer;
   transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
 }
@@ -420,11 +420,13 @@ onBeforeUnmount(() => {
 
 .date-range-nav-button {
   display: flex;
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: var(--control-height);
+  block-size: var(--control-height);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-surface);
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
 }

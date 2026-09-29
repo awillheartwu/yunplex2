@@ -31,6 +31,7 @@ export type SyncStage =
   | 'repair'
 
 export interface SyncState {
+  currentRunId?: string | null
   isRunning: boolean
   currentStage: SyncStage
   startedAt: string | null

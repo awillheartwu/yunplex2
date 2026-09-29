@@ -42,7 +42,7 @@
     display: none;
   }
   .source-adoption__commit span {
-    line-height: 1.45;
+    line-height: var(--body-leading);
   }
   .source-adoption__commit small {
     display: none;

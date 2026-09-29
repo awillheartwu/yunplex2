@@ -47,7 +47,7 @@ export function getSyncService(getConfig: () => AppConfig) {
   let currentSourceId: string | null = null
   let currentRun: RunBuilder | null = null
 
-  function getState(): SyncState { return { ...state } }
+  function getState(): SyncState { return { ...state, currentRunId: currentRun?.getId() ?? null } }
 
   function throwIfCancelled(): void {
     if (!cancelRequested) return

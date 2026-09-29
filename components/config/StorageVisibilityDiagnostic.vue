@@ -111,7 +111,7 @@ defineProps<{
   margin: var(--space-1) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
-  line-height: 1.55;
+  line-height: var(--body-leading);
 }
 
 .storage-diagnostic__paths {
@@ -190,7 +190,7 @@ defineProps<{
   overflow-wrap: anywhere;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  line-height: 1.45;
+  line-height: var(--body-leading);
 }
 
 .storage-diagnostic__action {

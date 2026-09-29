@@ -27,8 +27,11 @@ export function getPlexTargetHint(source: Pick<PlaylistSource, 'plexPlaylistName
 
 export function getSyncSourceCoverUrl(url: string, size = 80): string {
   if (!url) return ''
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}param=${size}y${size}`
+  const [address, fragment] = url.split('#', 2)
+  const [path, query = ''] = address!.split('?', 2)
+  const params = new URLSearchParams(query)
+  params.set('param', `${size}y${size}`)
+  return `${path}?${params}${fragment === undefined ? '' : `#${fragment}`}`
 }
 
 export function getCopyrightCount(source: Pick<PlaylistSource, 'copyrightRestrictedCount'>): number {

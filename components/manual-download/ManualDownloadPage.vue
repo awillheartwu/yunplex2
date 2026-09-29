@@ -4,65 +4,26 @@
       description="把一段链接，变成音乐库里的一部分。"
     />
 
-    <ol class="manual-steps" aria-label="下载步骤">
-      <li :aria-current="parseState === 'idle' || parseState === 'parsing' ? 'step' : undefined"><span>1</span>粘贴链接</li>
-      <li :aria-current="parseState === 'preview' && !downloadResult ? 'step' : undefined"><span>2</span>确认歌曲</li>
-      <li :aria-current="downloadResult ? 'step' : undefined"><span>3</span>提交下载</li>
-    </ol>
+    <ManualDownloadSteps :parse-state="parseState" :dirty="inputChanged" :downloading="downloading" :submitted="Boolean(downloadResult)" :error="error" :has-warnings="resourceFailures.length > 0 || Boolean(downloadResult && !downloadResult.total)" :empty="tracks.length === 0" />
     <div class="manual-workspace">
-    <div class="manual-top-grid">
-      <details class="section-card manual-input-card" :open="parseState !== 'preview'"><summary class="manual-input-summary"><AppIcon name="link" :size="17" /><span>{{ parseState === 'preview' ? '已解析来源 · 修改链接' : '粘贴你的网易云链接' }}</span><AppIcon name="chevronDown" :size="15" /></summary>
-        <div class="manual-card-header">
-          <div>
-            <h3>下载工作台</h3>
-            <p>支持链接、纯数字 ID、多首换行、逗号或分号分隔。</p>
+      <section v-if="parseState !== 'preview' || inputExpanded" class="section-card manual-input-card" aria-labelledby="manual-input-title">
+        <header class="manual-card-header">
+          <div><h2 id="manual-input-title">{{ parseState === 'preview' ? '音乐来源' : '输入音乐来源' }}</h2><p>{{ parseState === 'preview' ? title : '支持网易云歌曲、歌单或专辑链接，也支持资源 ID。' }}</p></div>
+          <button v-if="parseState === 'preview' && !downloadResult" class="btn btn-secondary" :disabled="downloading" @click="inputExpanded = !inputExpanded">{{ inputExpanded ? '收起输入' : '修改链接' }}</button>
+          <details v-if="parseState !== 'preview' || inputExpanded" class="manual-help"><summary class="btn btn-ghost">输入帮助<AppIcon name="info" :size="14" /></summary><p>在网易云资源页面选择“分享 → 复制链接”。粘贴链接会自动解析；多个歌曲 ID 可用换行、逗号或分号分隔。</p></details>
+        </header>
+        <form v-if="parseState !== 'preview' || inputExpanded" class="manual-input-form" @submit.prevent="handleParse">
+          <label for="manual-download-input">网易云链接或资源 ID</label>
+          <textarea id="manual-download-input" v-model="inputValue" class="form-input manual-textarea" aria-label="网易云链接、歌单 ID、专辑 ID 或歌曲 ID" aria-describedby="manual-input-hint" :placeholder="placeholderText" :disabled="parseState === 'parsing' || downloading" :aria-invalid="Boolean(error && parseState === 'idle')" @keydown.enter.ctrl.prevent="handleParse" @keydown.enter.meta.prevent="handleParse" @paste="onPaste" />
+          <div class="manual-action-row">
+            <p id="manual-input-hint">多个歌曲 ID 可分行输入 · Ctrl / ⌘ + Enter 解析</p>
+            <button class="btn btn-primary" type="submit" :disabled="!inputValue.trim() || parseState === 'parsing' || downloading"><AppIcon :name="parseState === 'parsing' ? 'loader' : 'search'" :size="16" :class="{ 'animate-spin': parseState === 'parsing' }" />{{ parseState === 'parsing' ? '解析中…' : '解析并预览' }}</button>
           </div>
-          <details class="manual-help"><summary class="manual-help-link">输入帮助<AppIcon name="info" :size="14" /></summary><p>在网易云的歌曲、歌单或专辑页面选择「分享 → 复制链接」，粘贴到下方。也可输入资源 ID，多项用换行、逗号或分号分隔。</p></details>
-        </div>
+        </form>
+        <p v-if="inputChanged" class="manual-input-changed" role="status">输入已修改，请重新解析后再下载。</p>
+      </section>
 
-        <label class="sr-only" for="manual-download-input">网易云链接、歌单 ID、专辑 ID 或歌曲 ID</label>
-        <textarea
-          id="manual-download-input"
-          v-model="inputValue"
-          class="form-input manual-textarea"
-          :placeholder="placeholderText"
-          :disabled="parseState === 'parsing'"
-          @keydown.enter.ctrl.prevent="handleParse"
-          @paste="onPaste"
-        />
-
-        <div class="manual-input-hints" aria-label="输入帮助">
-          <span><AppIcon name="keyboard" :size="13" /> Ctrl+Enter 快速解析</span>
-          <span>链接</span>
-          <span>歌单 ID</span>
-          <span>歌曲 ID</span>
-          <span>多行批量输入</span>
-        </div>
-
-        <div class="manual-action-row">
-          <button
-            class="btn btn-primary"
-            type="button"
-            :disabled="primaryActionDisabled"
-            @click="handlePrimaryAction"
-          >
-            <AppIcon :name="primaryActionIcon" :size="15" :class="{ 'animate-spin': parseState === 'parsing' || downloading }" />
-            <span>{{ primaryActionLabel }}</span>
-          </button>
-          <button
-            v-if="parseState === 'preview'"
-            class="btn btn-secondary"
-            type="button"
-            @click="handleParse"
-          >
-            <AppIcon name="refresh" :size="14" />
-            <span>重新解析</span>
-          </button>
-
-        </div>
-      </details>
-
-      <details class="manual-config-card" aria-label="下载配置"><summary class="manual-options-summary"><AppIcon name="settings" :size="16" /><span>下载选项</span><small>{{ qualityLabel }} · {{ downloadLyrics ? '含歌词' : '无歌词' }} · {{ embedMetadata ? '写入标签' : '不写标签' }}</small><AppIcon name="chevronDown" :size="14" /></summary>
+      <details v-if="!downloadResult" class="manual-config-card" aria-label="下载配置"><summary class="manual-options-summary"><AppIcon name="settings" :size="16" /><span>下载选项</span><small>{{ qualityLabel }} · {{ downloadLyrics ? '含歌词' : '无歌词' }} · {{ embedMetadata ? '写入标签' : '不写标签' }}</small><AppIcon name="chevronDown" :size="14" /></summary>
         <div class="manual-config-list">
           <label class="manual-config-row" for="manual-quality">
             <span class="manual-config-icon manual-config-icon--accent">
@@ -71,7 +32,7 @@
             <span>
               <strong>音质</strong>
             </span>
-            <select id="manual-quality" v-model="quality" class="manual-quality-select" aria-label="选择下载音质">
+            <select id="manual-quality" v-model="quality" :disabled="downloading" class="form-input manual-quality-select" aria-label="选择下载音质">
               <option v-for="option in qualityOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
               </option>
@@ -86,7 +47,7 @@
               <strong>下载歌词</strong>
               <small>{{ downloadLyrics ? '已开启' : '已关闭' }}</small>
             </span>
-            <input v-model="downloadLyrics" type="checkbox" aria-label="下载歌词" />
+            <input v-model="downloadLyrics" :disabled="downloading" type="checkbox" aria-label="下载歌词" />
           </label>
 
           <label class="manual-config-row manual-config-row--toggle">
@@ -97,7 +58,7 @@
               <strong>下载封面</strong>
               <small>{{ downloadImages ? '已开启' : '已关闭' }}</small>
             </span>
-            <input v-model="downloadImages" type="checkbox" aria-label="下载封面" />
+            <input v-model="downloadImages" :disabled="downloading" type="checkbox" aria-label="下载封面" />
           </label>
 
           <label class="manual-config-row manual-config-row--toggle">
@@ -108,36 +69,21 @@
               <strong>写入元数据</strong>
               <small>{{ embedMetadata ? '已开启' : '已关闭' }}</small>
             </span>
-            <input v-model="embedMetadata" type="checkbox" aria-label="写入元数据" />
+            <input v-model="embedMetadata" :disabled="downloading" type="checkbox" aria-label="写入元数据" />
           </label>
         </div>
 
-        <button class="btn btn-secondary manual-reset-button" type="button" @click="resetOptions">
+        <button class="btn btn-secondary manual-reset-button" type="button" :disabled="downloading" @click="resetOptions">
           <AppIcon name="rotate-ccw" :size="14" />
           <span>恢复默认设置</span>
         </button>
       </details>
-    </div>
 
-        <div class="manual-alert-stack" aria-live="polite">
-          <div v-if="detectHint && parseState === 'preview'" class="manual-alert manual-alert--success">
-            <AppIcon name="check-circle" :size="16" />
-            <div>
-              <strong>{{ detectHint }}</strong>
-              <span>{{ parsedTargetLine }}</span>
-            </div>
-          </div>
-
-          <div v-if="downloadResult" class="manual-alert manual-alert--success">
-            <AppIcon name="download" :size="16" />
-            <div>
-              <strong>下载已启动，共 {{ downloadResult.total }} 首歌曲</strong>
-              <span>
-                任务已提交，可前往
-                <NuxtLink class="manual-inline-link" to="/task-center">活动</NuxtLink>
-                查看执行状态。
-              </span>
-            </div>
+        <div v-if="error || saveError || resourceFailures.length || downloadResult" class="manual-alert-stack" aria-live="polite">
+          <div v-if="downloadResult" class="manual-alert manual-submitted" :class="downloadResult.total ? 'manual-alert--success' : 'manual-alert--warning'" role="status">
+            <AppIcon :name="downloadResult.total ? 'checkCircle' : 'warn'" :size="20" />
+            <div><h2>{{ downloadResult.total ? `已提交 ${downloadResult.total} 首歌曲` : '本次没有加入歌曲' }}</h2><p>提交结果已返回。文件下载与后续状态请在活动中查看。</p></div>
+            <div class="manual-submitted__actions"><NuxtLink v-if="downloadResult.total" class="btn btn-primary" to="/task-center">查看活动<AppIcon name="arrowRight" :size="15" /></NuxtLink><button class="btn btn-secondary" @click="startNew">继续添加</button></div>
           </div>
 
           <div v-if="resourceFailures.length" class="manual-alert manual-alert--warning">
@@ -158,28 +104,27 @@
               <strong>保存同步源失败</strong>
               <span>{{ saveError }}</span>
             </div>
-            <button class="manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
+            <button class="icon-button manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
               <AppIcon name="x" :size="14" />
             </button>
           </div>
 
-          <div v-if="error" class="manual-alert manual-alert--danger">
+          <div v-if="error" class="manual-alert manual-alert--danger" role="alert">
             <AppIcon name="warn" :size="16" />
             <div>
-              <strong>解析或启动失败</strong>
+              <strong>{{ parseState === 'preview' ? '提交失败，请重试' : '解析失败，请检查输入' }}</strong>
               <span>{{ error }}</span>
             </div>
           </div>
         </div>
 
-    <section v-if="parseHistory.length > 0" class="section-card manual-parse-history-card">
+    <section v-if="parseHistory.length > 0 && parseState === 'idle'" class="section-card manual-parse-history-card">
       <div class="manual-parse-history-header">
         <div>
           <div class="manual-parse-history-title">
-            <h3>最近解析</h3>
+            <h2>最近解析</h2>
             <span>{{ parseHistory.length }}</span>
           </div>
-          <p>回到常用歌单或刚刚试过的资源。</p>
         </div>
         <button class="btn btn-ghost btn-xs" type="button" @click="clearParseHistory">清空</button>
       </div>
@@ -216,74 +161,30 @@
             <AppIcon v-else name="music" :size="24" />
           </div>
           <div class="min-w-0">
-            <div class="manual-heading-line manual-heading-line--compact">
-              <h3>解析结果</h3>
-              <span class="manual-count-chip">共 {{ trackCount || 0 }} 首</span>
-            </div>
-            <p class="manual-resource-title" :title="title || undefined">{{ title || resultEmptyTitle }}</p>
-            <p class="manual-resource-meta" :title="resultMetaLine">{{ resultMetaLine }}</p>
-            <p
-              v-if="parseState === 'preview' && resourceDescription"
-              class="manual-resource-description"
-              :title="resourceDescription"
-            >
-              {{ resourceDescription }}
-            </p>
-            <div v-if="parseState === 'preview'" class="manual-resource-facts">
-              <span><strong>{{ trackCount }}</strong> 首歌曲</span>
-              <span>{{ totalDurationLabel }}</span>
-              <span>{{ manualResourceTypeLabel(resourceType) }}</span>
-              <span v-if="resourceUpdatedAt">更新于 {{ formatResourceDate(resourceUpdatedAt) }}</span>
-              <span v-if="artist">{{ resourceType === 'playlist' ? '创建者' : '艺人' }}：{{ artist }}</span>
-            </div>
+            <span class="manual-resource-eyebrow">{{ parseState === 'parsing' ? '正在获取资源' : '解析结果' }}</span>
+            <h2 class="manual-resource-title" :title="title || undefined">{{ parseState === 'parsing' ? '正在解析…' : title }}</h2>
+            <p class="manual-resource-meta">{{ resultMetaLine }}<template v-if="parseState === 'preview'"> · {{ tracks.length }} 首 · {{ totalDurationLabel }}</template></p>
+            <p v-if="parseState === 'preview' && resourceDescription" class="manual-resource-description">{{ resourceDescription }}</p>
           </div>
         </div>
-
-        <div class="manual-results-actions">
-          <button
-            v-if="canSaveAsSource"
-            class="btn btn-ghost"
-            type="button"
-            :disabled="downloading || selectedCount === 0"
-            @click="handleDownloadAndSave"
-          >
-            <AppIcon name="save" :size="14" />
-            <span>下载并保存为同步源</span>
-          </button>
-          <button
-            v-if="parseState === 'preview'"
-            class="btn btn-primary manual-result-download"
-            type="button"
-            :disabled="downloading || selectedCount === 0"
-            @click="handleDownload"
-          >
-            <AppIcon :name="downloading ? 'loader' : 'download'" :size="15" :class="{ 'animate-spin': downloading }" />
-            <span>{{ downloading ? '启动中...' : `下载 ${selectedCount} 首` }}</span>
-          </button>
-        </div>
+        <button v-if="parseState === 'preview' && !downloadResult && !inputExpanded" class="btn btn-secondary" :disabled="downloading" @click="inputExpanded = true">修改链接</button>
       </div>
 
-      <div v-if="parseState === 'idle'" class="manual-state-panel manual-state-panel--result-empty">
-        <AppIcon name="search" :size="26" />
-        <strong>等待解析资源</strong>
-        <span>粘贴网易云歌单、专辑或歌曲后，这里会生成可选择的下载表格。</span>
-      </div>
-
-      <div v-else-if="parseState === 'parsing'" class="manual-table-skeleton" aria-live="polite">
+      <div v-if="parseState === 'parsing'" class="manual-table-skeleton" aria-live="polite">
         <div v-for="row in 7" :key="row" class="manual-skeleton-row" />
       </div>
 
       <div v-else class="manual-track-list">
         <div class="manual-track-list-header">
           <div>
-            <h4>歌曲列表</h4>
+            <h3>{{ downloadResult ? '已确认歌曲' : '确认要下载的歌曲' }}</h3>
             <p aria-live="polite">已选择 {{ selectedCount }} / {{ tracks.length }} 首</p>
           </div>
           <div class="manual-track-list-actions">
             <button
               class="btn btn-secondary btn-xs"
               type="button"
-              :disabled="tracks.length === 0"
+              :disabled="tracks.length === 0 || downloading || Boolean(downloadResult)"
               @click="toggleAll"
             >
               <AppIcon name="check" :size="13" />
@@ -292,7 +193,7 @@
             <button
               class="btn btn-secondary btn-xs"
               type="button"
-              :disabled="tracks.length === 0"
+              :disabled="tracks.length === 0 || downloading || Boolean(downloadResult)"
               @click="invertSelection"
             >
               <AppIcon name="sync" :size="13" />
@@ -312,7 +213,7 @@
                     type="checkbox"
                     :checked="allSelected"
                     :indeterminate.prop="!allSelected && selectedCount > 0"
-                    :disabled="tracks.length === 0"
+                    :disabled="tracks.length === 0 || downloading || Boolean(downloadResult)"
                     @change="toggleAll"
                   />
                 </th>
@@ -332,6 +233,7 @@
                     :id="`manual-track-${track.id}`"
                     type="checkbox"
                     :checked="track.selected"
+                    :disabled="downloading || Boolean(downloadResult)"
                     @change="toggleTrack(track.id)"
                   />
                 </td>
@@ -339,12 +241,7 @@
                 <td>
                   <div class="manual-song-cell">
                     <strong :title="track.name">{{ track.name }}</strong>
-                    <span>
-                      <span v-if="qualityBadgeTone" class="manual-quality-badge" :class="`manual-quality-badge--${qualityBadgeTone}`">
-                        {{ qualityShortLabel }}
-                      </span>
-                      <span v-if="embedMetadata" class="manual-quality-badge manual-quality-badge--green">元数据</span>
-                    </span>
+
                   </div>
                 </td>
                 <td>{{ artistsLine(track) }}</td>
@@ -361,6 +258,13 @@
           </div>
         </div>
         <PageNavigator :page="trackPage" :page-size="trackPageSize" :total="tracks.length" label="歌曲" @change="changeTrackPage" />
+        <div v-if="!downloadResult" class="manual-submit-bar">
+          <p>已选 <strong>{{ selectedCount }}</strong> 首 · {{ qualityLabel }}<span v-if="inputChanged"> · 请先重新解析</span></p>
+          <div class="manual-results-actions">
+            <button v-if="canSaveAsSource" class="btn btn-secondary" type="button" :disabled="downloading || !selectedCount || inputChanged" @click="handleDownloadAndSave"><AppIcon name="save" :size="15" />下载并保存为同步源</button>
+            <button class="btn btn-primary" type="button" :disabled="downloading || !selectedCount || inputChanged" @click="handleDownload"><AppIcon :name="downloading ? 'loader' : 'download'" :size="16" :class="{ 'animate-spin': downloading }" />{{ downloading ? '提交中…' : `下载 ${selectedCount} 首` }}</button>
+          </div>
+        </div>
       </div>
 
     </section>
@@ -373,13 +277,14 @@
 import { useManualDownloadPage } from '~~/composables/useManualDownloadPage'
 
 const {
-  allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, detectHint, downloadImages, downloading, downloadLyrics, downloadResult,
-  embedMetadata, error, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse,
-  handlePrimaryAction, hideBrokenImage, inputValue, invertSelection, manualResourceTypeLabel, onPaste, parsedTargetLine, parseHistory, parseState, placeholderText,
-  primaryActionDisabled, primaryActionIcon, primaryActionLabel, quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
-  resetOptions, resourceDescription, resourceFailures, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine, saveError, selectedCount,
-  title, toggleAll, toggleTrack, totalDurationLabel, trackCount, tracks,
+  allSelected, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, downloadImages, downloading, downloadLyrics, downloadResult,
+  embedMetadata, error, formatManualDuration, formatManualRelativeTime, handleDownload, handleDownloadAndSave, handleParse, inputChanged, startNew,
+  hideBrokenImage, inputValue, invertSelection, manualResourceTypeLabel, onPaste, parseHistory, parseState, placeholderText,
+  quality, qualityLabel, qualityOptions, resetOptions, resourceDescription, resourceFailures, restoreParseHistory, resultMetaLine, saveError, selectedCount,
+  title, toggleAll, toggleTrack, totalDurationLabel, tracks,
 } = useManualDownloadPage()
+const inputExpanded = ref(false)
+watch(parseState, state => { if (state === 'preview') inputExpanded.value = false })
 const trackPageSize = 100
 const trackPage = ref(1)
 const trackOffset = computed(() => (trackPage.value - 1) * trackPageSize)

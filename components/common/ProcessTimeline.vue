@@ -53,7 +53,7 @@
         <button
           v-if="item.details.length > 0"
           type="button"
-          class="process-timeline__toggle"
+          class="btn btn-secondary process-timeline__toggle"
           :aria-expanded="expanded.has(item.id)"
           @click="toggle(item.id)"
         >
@@ -144,8 +144,8 @@ function formatDuration(ms: number): string {
 .process-timeline__heading{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4)}
 .process-timeline__heading>div:first-child{min-width:0}
 .process-timeline__title-row{display:flex;align-items:center;gap:var(--space-2);min-width:0}
-.process-timeline__heading h4{min-width:0;margin:0;color:var(--text-primary);font-size:var(--text-base);font-weight:var(--font-weight-bold);line-height:1.45;overflow-wrap:anywhere}
-.process-timeline__heading p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-xs);line-height:1.55}
+.process-timeline__heading h4{min-width:0;margin:0;color:var(--text-primary);overflow-wrap:anywhere}
+.process-timeline__heading p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-xs);line-height:var(--body-leading)}
 .process-timeline__subject{display:inline-flex;max-width:min(28rem,52vw);min-height:1.45rem;align-items:center;gap:var(--space-1);overflow:hidden;padding:.12rem var(--space-2);border:1px solid var(--border-primary);border-radius:var(--radius-full);background:var(--bg-input);color:var(--text-secondary);font-size:var(--text-xs);font-weight:var(--font-weight-bold);line-height:1;text-overflow:ellipsis;white-space:nowrap}
 .process-timeline__meta{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2);flex:none}
 .process-timeline__duration{color:var(--text-tertiary);font-family:var(--font-mono);font-size:var(--text-xs)}
@@ -154,7 +154,7 @@ function formatDuration(ms: number): string {
 .process-timeline__action{display:inline-flex;min-height:2.25rem;align-items:center;gap:var(--space-1);padding:0 var(--space-3);border:1px solid color-mix(in srgb,var(--accent) 34%,var(--border-secondary));border-radius:var(--radius-full);background:var(--accent-muted);color:var(--accent);font-size:var(--text-xs);font-weight:var(--font-weight-bold);text-decoration:none;transition:background var(--duration-fast) ease,border-color var(--duration-fast) ease,color var(--duration-fast) ease,transform var(--duration-fast) ease}
 .process-timeline__action:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--border-secondary));background:var(--accent-muted);color:var(--accent-strong)}
 .process-timeline__action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.process-timeline__toggle{display:inline-flex;min-height:2.25rem;align-items:center;gap:var(--space-1_5);margin-top:var(--space-2);padding:0 var(--space-1_5) 0 0;border:0;background:transparent;color:var(--accent);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);cursor:pointer}
+.process-timeline__toggle{margin-top:var(--space-2);}
 .process-timeline__toggle:hover{color:var(--accent-strong)}
 .process-timeline__toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-sm)}
 .process-timeline__toggle-icon{transition:transform var(--duration-fast) ease}
@@ -165,7 +165,7 @@ function formatDuration(ms: number): string {
 .process-timeline__detail-title{display:flex;align-items:center;gap:var(--space-1_5);min-width:0}
 .process-timeline__detail strong{display:block;overflow:hidden;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);text-overflow:ellipsis;white-space:nowrap}
 .process-timeline__detail-subject{display:inline-flex;max-width:45%;overflow:hidden;padding:.08rem var(--space-1_5);border-radius:var(--radius-full);background:var(--bg-input);color:var(--text-tertiary);font-size:var(--text-xs);font-weight:var(--font-weight-bold);text-overflow:ellipsis;white-space:nowrap}
-.process-timeline__detail p{margin:.12rem 0 0;overflow:hidden;color:var(--text-tertiary);font-size:var(--text-xs);line-height:1.45;text-overflow:ellipsis;white-space:nowrap}
+.process-timeline__detail p{margin:.12rem 0 0;overflow:hidden;color:var(--text-tertiary);font-size:var(--text-xs);line-height:var(--body-leading);text-overflow:ellipsis;white-space:nowrap}
 .process-timeline--wide-time .process-timeline__item{grid-template-columns:8.9rem 2rem minmax(0,1fr)}
 .process-timeline--compact .process-timeline__item{grid-template-columns:3.65rem 1.85rem minmax(0,1fr);column-gap:var(--space-2_5);padding-bottom:var(--space-3)}
 .process-timeline--compact .process-timeline__time{font-size:var(--text-xs)}
@@ -173,7 +173,6 @@ function formatDuration(ms: number): string {
 .process-timeline--compact .process-timeline__dot{width:1.85rem;height:1.85rem}
 .process-timeline--compact .process-timeline__content{padding:.05rem 0 var(--space-2)}
 .process-timeline--compact .process-timeline__heading{gap:var(--space-2_5)}
-.process-timeline--compact .process-timeline__heading h4{font-size:var(--text-sm)}
 .process-timeline--compact .process-timeline__heading p{display:-webkit-box;overflow:hidden;-webkit-line-clamp:1;-webkit-box-orient:vertical;font-size:var(--text-xs)}
 .process-timeline--compact .process-timeline__subject{display:none}
 .process-timeline--compact .process-timeline__status{display:none}
@@ -190,8 +189,6 @@ function formatDuration(ms: number): string {
   .process-timeline--compact .process-timeline__content{grid-column:2;grid-row:2;padding:.05rem 0 var(--space-3)}
   .process-timeline__heading{display:block}
   .process-timeline__title-row{align-items:flex-start;flex-direction:column;gap:var(--space-1_5)}
-  .process-timeline__heading h4{font-size:var(--text-base);line-height:1.45}
-  .process-timeline--compact .process-timeline__heading h4{font-size:var(--text-base)}
   .process-timeline--compact .process-timeline__heading p{display:block;overflow:visible;-webkit-line-clamp:unset;font-size:var(--text-xs)}
   .process-timeline__subject{max-width:100%}
   .process-timeline__meta{justify-content:flex-start;flex-wrap:wrap;margin-top:var(--space-2)}

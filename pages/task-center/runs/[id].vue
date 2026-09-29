@@ -96,7 +96,7 @@ onUnmounted(() => { polling.stop(); resumeUnsubscribe?.() })
 .run-detail-page{display:flex;flex-direction:column;gap:var(--space-5);padding-bottom:var(--space-8)}
 .run-detail-page__title{display:flex;align-items:center;justify-content:space-between}
 .run-detail-page__title>div{display:flex;align-items:center;gap:var(--space-2_5)}
-.run-detail-page__title h1{margin:0;color:var(--text-primary);font-size:var(--text-md)}
+.run-detail-page__title h1{margin:0;color:var(--text-primary)}
 .run-detail-page__live{display:flex;align-items:center;gap:var(--space-2);color:var(--accent);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
 .run-detail-page__live span{width:.5rem;height:.5rem;border-radius:var(--radius-full);background:var(--success);box-shadow:0 0 0 5px var(--success-soft)}
 .run-detail-state{display:flex;min-height:18rem;align-items:center;justify-content:center;color:var(--text-secondary)}

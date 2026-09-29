@@ -1,3 +1,11 @@
+.source-adoption__filter {
+  width: 10rem;
+}
+@media (max-width: 767px) {
+  .source-adoption__filter {
+    width: 100%;
+  }
+}
 /* Media adoption review styles; imported by its owning component. */
 .source-adoption__table span:not(.source-adoption__tier) {
   color: var(--text-tertiary);

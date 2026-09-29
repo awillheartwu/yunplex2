@@ -120,4 +120,9 @@ async function handleLogout() {
     font-size: var(--text-sm);
   }
 }
+@media (max-width: 480px) {
+  .topbar-breadcrumb > a,
+  .topbar-breadcrumb > a + .app-icon { display: none; }
+  .topbar-breadcrumb { overflow: hidden; }
+}
 </style>

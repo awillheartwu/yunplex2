@@ -3,13 +3,14 @@
     <article class="section-card dashboard-chart-card">
       <header class="dashboard-chart-card__header">
         <div>
-          <h2>近七日下载</h2>
+          <h3>近七日下载</h3>
           <p>完成的歌曲下载任务</p>
         </div>
         <strong>{{ downloadTotal }} 首</strong>
       </header>
 
-      <div class="download-bars" role="img" :aria-label="downloadAriaLabel">
+      <div v-if="!downloadTrend.length || downloadTotal === 0" class="dashboard-chart-empty" role="status">{{ downloadTrend.length ? '近七日暂无已完成下载' : '暂无下载统计' }}</div>
+      <div v-else class="download-bars" role="img" :aria-label="downloadAriaLabel">
         <div v-for="point in downloadTrend" :key="point.date" class="download-bars__item">
           <div class="download-bars__plot">
             <span class="download-bars__value">{{ point.count }}</span>
@@ -33,7 +34,7 @@
     <article class="section-card dashboard-chart-card">
       <header class="dashboard-chart-card__header dashboard-chart-card__header--resource">
         <div>
-          <h2>CPU 与内存</h2>
+          <h3>CPU 与内存</h3>
           <p>本页最近 5 分钟采样</p>
         </div>
         <div class="resource-legend" aria-label="当前资源占用">
@@ -42,7 +43,7 @@
         </div>
       </header>
 
-      <div v-if="resourceTrend.length === 0" class="dashboard-chart-empty" role="status">等待资源采样</div>
+      <div v-if="resourceTrend.length < 2" class="dashboard-chart-empty" role="status">{{ resourceTrend.length ? '已收到首次采样，等待下一次更新生成趋势' : '等待资源采样' }}</div>
       <figure v-else class="resource-chart">
         <svg viewBox="0 0 600 180" preserveAspectRatio="none" role="img" :aria-label="resourceAriaLabel">
           <line v-for="line in gridLines" :key="line" x1="0" x2="600" :y1="line" :y2="line" class="resource-chart__grid" />
@@ -116,12 +117,12 @@ const resourceAriaLabel = computed(() => latestResource.value
 <style scoped>
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .dashboard-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3_5); }
-.dashboard-chart-card { min-width: 0; min-height: 15rem; padding: var(--space-4); }
+.dashboard-chart-card { min-width: 0; min-height: 13rem; padding: var(--space-4); }
 .dashboard-chart-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-3); }
-.dashboard-chart-card__header h2 { margin: 0; color: var(--text-primary); font-size: var(--text-sm); font-weight: var(--font-weight-bold); }
+.dashboard-chart-card__header h3 { margin: 0; color: var(--text-primary); }
 .dashboard-chart-card__header p { margin: var(--space-1) 0 0; color: var(--text-tertiary); font-size: var(--text-xs); }
 .dashboard-chart-card__header > strong { color: var(--accent); font-size: var(--text-sm); }
-.download-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(.35rem, 1vw, .75rem); min-height: 11rem; }
+.download-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(.35rem, 1vw, .75rem); min-height: 8rem; }
 .download-bars__item { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-2); min-width: 0; }
 .download-bars__plot { display: flex; align-items: center; justify-content: flex-end; flex-direction: column; min-height: 8.6rem; border-bottom: 1px solid var(--border-primary); }
 .download-bars__value { margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
@@ -135,7 +136,7 @@ const resourceAriaLabel = computed(() => latestResource.value
 .resource-legend i { width: .48rem; height: .48rem; border-radius: var(--radius-full); }
 .resource-legend__cpu { background: var(--accent); }
 .resource-legend__memory { background: var(--success); }
-.resource-chart { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 11rem; margin: 0; }
+.resource-chart { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 8rem; margin: 0; }
 .resource-chart svg { width: 100%; height: 9.6rem; overflow: visible; }
 .resource-chart__grid { stroke: var(--border-primary); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .resource-chart__line { fill: none; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
@@ -143,7 +144,7 @@ const resourceAriaLabel = computed(() => latestResource.value
 .resource-chart__line--memory, .resource-chart__point--memory { stroke: var(--success); }
 .resource-chart__point { fill: var(--bg-surface); stroke-width: 2.5; }
 .resource-chart__axis { display: flex; justify-content: space-between; padding-top: var(--space-2); color: var(--text-tertiary); font-size: var(--text-xs); }
-.dashboard-chart-empty { display: grid; place-items: center; min-height: 11rem; color: var(--text-tertiary); font-size: var(--text-xs); }
+.dashboard-chart-empty { display: grid; place-items: center; min-height: 8rem; color: var(--text-tertiary); font-size: var(--text-xs); }
 @media (max-width: 900px) { .dashboard-charts { grid-template-columns: 1fr; } }
 @media (max-width: 560px) {
   .dashboard-chart-card { min-height: 13.5rem; padding: var(--space-3_5); }

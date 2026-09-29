@@ -20,7 +20,7 @@
           :value="row.key"
           type="text"
           placeholder="旧名"
-          class="form-input text-xs py-1 px-2"
+          class="form-input py-1 px-2"
           :aria-label="`第 ${i + 1} 行原艺人名`"
           :class="{ '!border-danger': row.key && duplicateKeys.has(row.key) }"
           :title="row.key && duplicateKeys.has(row.key) ? '此名称已存在，保存时将覆盖前面的映射' : undefined"
@@ -30,7 +30,7 @@
           :value="row.value"
           type="text"
           placeholder="新名"
-          class="form-input text-xs py-1 px-2"
+          class="form-input py-1 px-2"
           :aria-label="`第 ${i + 1} 行替换为`"
           @input="updateRow(row.id, 'value', ($event.target as HTMLInputElement).value)"
         />
@@ -81,7 +81,7 @@
     <div v-if="jsonExpanded" class="mt-2">
       <textarea
         v-model="jsonText"
-        class="form-input font-mono text-xs alias-editor__json"
+        class="form-input font-mono alias-editor__json"
         :class="{ '!border-danger': jsonError }"
         placeholder='{ "旧名": "新名" }'
         @input="onJsonInput"

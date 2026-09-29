@@ -53,13 +53,16 @@ export function useManualDownloadPage() {
     downloadAndSave,
     toggleAll,
     toggleTrack,
+    reset,
   } = useManualDownload()
 
+  const parsedInput = ref('')
+  const inputChanged = computed(() => parseState.value === 'preview' && inputValue.value.trim() !== parsedInput.value)
   const parseHistory = ref<ParseHistoryItem[]>([])
   const PARSE_HISTORY_KEY = 'yunplex-manual-parse-history'
   const PARSE_HISTORY_LIMIT = 10
 
-  const placeholderText = '粘贴网易云链接、歌单 ID、专辑 ID 或歌曲 ID\n例如：https://music.163.com/#/playlist?id=123456\n也支持多首歌曲 ID 换行输入'
+  const placeholderText = 'https://music.163.com/playlist?id=123456\n或输入歌曲、歌单、专辑 ID'
 
   const qualityOptions = Object.entries(MANUAL_DOWNLOAD_QUALITY_LABELS).map(([value, label]) => ({ value, label }))
   const qualityLabel = computed(() => manualQualityLabel(quality.value))
@@ -95,22 +98,6 @@ export function useManualDownloadPage() {
     return parts.join(' · ')
   })
 
-  const primaryActionLabel = computed(() => {
-    if (parseState.value === 'parsing') return '解析中...'
-    if (parseState.value === 'preview') return downloading.value ? '启动中...' : `下载选中 (${selectedCount.value})`
-    return '解析并预览'
-  })
-  const primaryActionIcon = computed(() => {
-    if (parseState.value === 'parsing' || downloading.value) return 'loader'
-    if (parseState.value === 'preview') return 'download'
-    return 'search'
-  })
-  const primaryActionDisabled = computed(() => {
-    if (parseState.value === 'parsing' || downloading.value) return true
-    if (parseState.value === 'preview') return selectedCount.value === 0
-    return !inputValue.value.trim()
-  })
-
   function onPaste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData('text') || ''
     if (URL_PATTERNS.some((p) => p.pattern.test(text))) {
@@ -120,20 +107,16 @@ export function useManualDownloadPage() {
     }
   }
 
-  async function handlePrimaryAction() {
-    if (parseState.value === 'preview') {
-      await handleDownload()
-      return
-    }
-    await handleParse()
-  }
-
   async function handleParse() {
+    if (parseState.value === 'parsing' || downloading.value) return
+    const input = inputValue.value.trim()
     await parse()
+    if (parseState.value === 'preview') parsedInput.value = input
     rememberParsedResource()
   }
 
   async function handleDownload() {
+    if (inputChanged.value || downloading.value || downloadResult.value) return
     const result = await download()
     if (result) {
       if (result.selectionFailures?.length) {
@@ -147,6 +130,7 @@ export function useManualDownloadPage() {
   }
 
   async function handleDownloadAndSave() {
+    if (inputChanged.value || downloading.value || downloadResult.value) return
     const result = await downloadAndSave()
     if (result?.savedAsSource) {
       feedback.success('已创建禁用的同步源', `已加入 ${result.total} 首托管下载，来源不会自动同步`)
@@ -155,6 +139,12 @@ export function useManualDownloadPage() {
     } else if (error.value) {
       feedback.error('创建同步源并下载失败', error.value)
     }
+  }
+
+  function startNew() {
+    reset()
+    inputValue.value = ''
+    parsedInput.value = ''
   }
 
   function resetOptions() {
@@ -236,9 +226,9 @@ export function useManualDownloadPage() {
   return {
     albumInfo, allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, detectHint,
     download, downloadAndSave, downloadImages, downloading, downloadLyrics, downloadResult, embedMetadata, error,
-    formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, handlePrimaryAction,
+    formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, inputChanged, startNew,
     hideBrokenImage, inputValue, invertSelection, loadParseHistory, manualResourceTypeLabel, neteaseId, onPaste, parse, PARSE_HISTORY_KEY, PARSE_HISTORY_LIMIT,
-    parsedTargetLine, parseHistory, parseState, placeholderText, primaryActionDisabled, primaryActionIcon, primaryActionLabel,
+    parsedTargetLine, parseHistory, parseState, placeholderText,
     quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
     rememberParsedResource, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine,
     resourceFailures, saveError,

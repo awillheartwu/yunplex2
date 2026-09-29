@@ -35,7 +35,7 @@ describe('sync source UI modules', () => {
   it('keeps page CSS global so extracted child markup receives its BEM styles', () => {
     expect(sourcePage).toContain('<style>')
     expect(sourcePage).not.toContain('<style scoped>')
-    expect(sourceSummary).toContain('sync-hover-card__cover')
+    expect(sourceSummary).toContain('source-detail__status-main')
   })
 
   it('lets an awaiting-review initialization be safely discarded and reanalyzed', () => {

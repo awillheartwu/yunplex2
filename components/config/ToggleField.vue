@@ -7,6 +7,7 @@
     <button
       type="button"
       role="switch"
+      :disabled="disabled"
       :aria-checked="modelValue"
       :aria-label="label"
       class="toggle-field__switch"
@@ -24,6 +25,7 @@ defineProps<{
   modelValue: boolean
   label: string
   hint?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{

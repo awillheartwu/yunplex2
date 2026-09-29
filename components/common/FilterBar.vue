@@ -82,8 +82,8 @@
         aria-label="筛选条件"
       >
         <div class="filter-popover__header">
-          <h3 class="text-sm font-semibold">{{ advancedTitle }}</h3>
-          <button class="icon-button h-9 w-9" type="button" aria-label="关闭筛选" @click="closePanel">
+          <h3>{{ advancedTitle }}</h3>
+          <button class="icon-button" type="button" aria-label="关闭筛选" @click="closePanel">
             <AppIcon name="close" :size="16" />
           </button>
         </div>
@@ -112,8 +112,8 @@
           <div ref="mobilePanelRef" tabindex="-1" class="filter-sheet" role="dialog" aria-modal="true" aria-label="筛选条件">
             <div class="sheet-handle" />
             <div class="flex items-center justify-between gap-3">
-              <h3 class="text-sm font-semibold">{{ advancedTitle }}</h3>
-              <button class="icon-button h-9 w-9" type="button" aria-label="关闭筛选" @click="closePanel">
+              <h3>{{ advancedTitle }}</h3>
+              <button class="icon-button" type="button" aria-label="关闭筛选" @click="closePanel">
                 <AppIcon name="close" :size="16" />
               </button>
             </div>

@@ -1,4 +1,4 @@
-/* Activity page frame and navigation. */
+/* The global sidebar owns app navigation; activity views are horizontal tabs. */
 .task-center-page {
   display: flex;
   flex-direction: column;
@@ -6,87 +6,25 @@
   padding-bottom: var(--space-6);
 }
 .activity-workspace {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
-  gap: var(--space-8);
-  min-height: 65vh;
-}
-.activity-navigation {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  border-right: 1px solid var(--border-primary);
-  padding-right: var(--space-5);
+  gap: var(--space-5);
+  min-width: 0;
 }
-.activity-navigation > button {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2_5);
-  min-height: 2.8rem;
-  padding: var(--space-2_5) var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  text-align: left;
-}
-.activity-navigation > button > span {
-  flex: 1;
-}
-.activity-navigation > button[aria-pressed="true"] {
-  background: var(--accent-muted);
-  color: var(--accent);
-  font-weight: var(--font-weight-semibold);
-}
-.activity-navigation > button small {
-  background: var(--bg-surface);
-  border-radius: var(--radius-xs);
-  padding: 0.1rem var(--space-1_5);
-  font-size: var(--text-xs);
-}
-.activity-navigation__hint {
-  display: flex;
-  align-items: start;
-  gap: var(--space-2);
-  margin-top: var(--space-8);
-  padding: var(--space-3);
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  line-height: 1.7;
-}
-.activity-navigation__hint svg {
-  flex: none;
-  margin-top: var(--space-1);
+.activity-navigation {
+  align-self: flex-start;
+  max-width: 100%;
 }
 .activity-content {
   min-width: 0;
 }
-@media (max-width: 900px) {
-  .activity-workspace {
-    grid-template-columns: 1fr;
-    gap: var(--space-4);
-  }
+@media (max-width: 720px) {
   .activity-navigation {
-    flex-direction: row;
-    border: 0;
-    padding: 0;
-    border-bottom: 1px solid var(--border-primary);
-    padding-bottom: var(--space-3);
+    align-self: stretch;
   }
-  .activity-navigation > button {
+  .activity-navigation :deep(.page-tabs__tab) {
     flex: 1;
-    justify-content: center;
-  }
-  .activity-navigation > button > span {
-    flex: none;
-  }
-  .activity-navigation__hint {
-    display: none;
-  }
-}
-@media (max-width: 520px) {
-  .activity-navigation > button {
-    font-size: var(--text-xs);
-    padding: var(--space-2_5) var(--space-1_5);
-    gap: var(--space-1_5);
+    min-width: 0;
+    padding-inline: var(--space-2);
   }
 }

@@ -75,7 +75,7 @@ function errorLabel(code: string) {
 .system-logs-error{display:grid;justify-items:start;gap:var(--space-2_5);padding:var(--space-4);border:1px solid var(--danger-border);border-radius:var(--radius-md);background:var(--danger-soft);color:var(--danger);font-size:var(--text-sm)}
 .system-logs-panel{display:grid;gap:var(--space-4);padding:var(--space-4) var(--space-4)}
 .system-logs-panel__header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap}
-.system-logs-panel__header h2{margin:0;color:var(--text-primary);font-size:var(--text-md);font-weight:var(--font-weight-bold)}
+.system-logs-panel__header h2{margin:0;color:var(--text-primary)}
 .system-logs-panel__header p{margin:var(--space-1) 0 0;color:var(--text-tertiary);font-size:var(--text-xs)}
 .system-logs-panel__actions,.system-logs-panel__filters{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
 .system-log-list{overflow:hidden;border:1px solid var(--border-primary);border-radius:var(--radius-lg);background:var(--bg-input)}
@@ -88,7 +88,7 @@ function errorLabel(code: string) {
 .system-log-row__level--error{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-border)}
 .system-log-row__content{min-width:0}
 .system-log-row__summary{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
-.system-log-row__message{min-width:0;margin:0;color:var(--text-secondary);font-size:var(--text-xs);line-height:1.55;overflow-wrap:anywhere}
+.system-log-row__message{min-width:0;margin:0;color:var(--text-secondary);font-size:var(--text-xs);line-height:var(--body-leading);overflow-wrap:anywhere}
 .system-log-row__error-code{display:inline-flex;align-items:center;border:1px solid var(--border-primary);border-radius:var(--radius-full);padding:.12rem var(--space-2);color:var(--text-tertiary);background:var(--bg-app);font-size:var(--text-xs);white-space:nowrap}
 .system-log-row__detail{margin-top:var(--space-1_5);color:var(--text-tertiary);font-size:var(--text-xs)}.system-log-row__detail summary{cursor:pointer;color:var(--text-secondary)}.system-log-row__detail pre{max-height:16rem;margin:var(--space-1_5) 0 0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:var(--radius-md);background:var(--bg-app);padding:var(--space-2_5)}
 .system-logs-panel__state{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary)}

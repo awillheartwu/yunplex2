@@ -5,18 +5,13 @@
     >
       <template #actions><NuxtLink to="/system" class="btn btn-secondary"><AppIcon name="activity" :size="15" />查看系统状态</NuxtLink></template>
     </PageHeader>
-
     <div class="config-workspace">
-    <aside class="settings-directory"><p>偏好与管理</p><label class="settings-search"><AppIcon name="search" :size="14" /><input v-model="categorySearch" placeholder="查找设置…" aria-label="查找设置分类"></label>
-    <PageTabs
-      class="config-navigation"
-      :model-value="activeTab"
-      :tabs="visibleSettingsTabs"
-      aria-label="设置分类"
-      @update:model-value="activeTab = $event"
-    />
-
-    <p v-if="!visibleSettingsTabs.length" class="settings-no-results">没有匹配分类</p></aside>
+    <section class="settings-directory" aria-label="设置导航">
+      <label class="settings-search"><AppIcon name="search" :size="16" /><input v-model="categorySearch" type="search" class="form-input" placeholder="查找设置分类…" aria-label="查找设置分类"></label>
+      <PageTabs v-if="visibleSettingsTabs.length" class="config-navigation" :model-value="activeTab" :tabs="visibleSettingsTabs" aria-label="设置分类" @update:model-value="activeTab = $event" />
+      <p v-if="!visibleSettingsTabs.length" class="settings-no-results" role="status">没有匹配分类，请调整搜索词。</p>
+      <label class="settings-mobile-category" for="settings-category-select"><span>设置分类</span><select id="settings-category-select" v-model="activeTab" class="form-input"><option v-for="tab in tabs" :key="tab.key" :value="tab.key">{{ tab.label }}</option></select></label>
+    </section>
     <div class="config-content">
     <div class="settings-category-intro"><h2>{{ tabs.find(tab => tab.key === activeTab)?.label }}</h2><p>{{ categoryDescriptions[activeTab] }}</p></div>
     <div v-if="configLoadError" class="section-card config-load-error" role="alert"><h2>无法读取配置</h2><p>{{ configLoadError }}</p><button class="btn btn-secondary" @click="loadConfig">重新加载</button></div>
@@ -24,7 +19,6 @@
     <div v-if="loading" class="flex items-center justify-center py-16">
       <span class="text-muted text-sm">加载配置...</span>
     </div>
-
     <!-- Form -->
     <template v-else-if="form">
       <!-- ═══ Tab: 连接 ═══ -->
@@ -59,7 +53,6 @@
             </span>
           </div>
         </ConfigSection>
-
         <!-- Plex -->
         <ConfigSection title="Plex Media Server" description="连接 Plex 媒体服务器以同步歌单" :collapsed="!!collapsed.plex" @toggle="toggle('plex')">
           <template #icon><SidebarIcon name="sync" :active="true" /></template>
@@ -168,13 +161,7 @@
         </FormField>
       </ConfigSection>
 
-      <ConfigSection title="艺人写入规则" description="控制艺人名称如何写入文件路径和媒体标签" :collapsed="!!collapsed.aliases" @toggle="toggle('aliases')">
-        <template #icon><SidebarIcon name="music" :active="true" /></template>
-        <ToggleField v-model="form.other.applyAliasToAlbum" label="别名替换应用到专辑艺人" hint="开启后，album.artist 也会进行别名替换" />
-        <FormField label="艺人名替换映射" hint="替换影响文件路径和 ID3 标签。重复的原艺人名以后出现的为准。">
-          <AliasEditor v-model="form.other.artistAliases" />
-        </FormField>
-      </ConfigSection>
+      <button class="btn btn-secondary" @click="activeTab = 'artists'">管理艺人名称与写入替换<AppIcon name="arrowRight" :size="16" /></button>
       </template>
 
       <!-- ═══ Tab: 同步 ═══ -->
@@ -294,6 +281,16 @@
         </div>
       </ConfigSection>
       <!-- ═══ Tab: 偏好 ═══ -->
+      <template v-if="activeTab === 'matching'">
+        <InitializationMatchingSettings
+          v-model="matchingConfig"
+          :saved-config="savedMatchingConfig"
+          @open-artist-names="activeTab = 'artists'"
+        />
+      </template>
+
+      <ArtistNamesSettings v-show="activeTab === 'artists'" v-model:apply-to-album="form.other.applyAliasToAlbum" :matching="matchingConfig.artistAliases" :replacements="form.other.artistAliases" :matching-active="matchingConfig.enabled && matchingConfig.useArtistAliases" :reset-key="form" :disabled="saving" @update="applyArtistNames" @invalid="artistNamesError = $event" />
+      <p v-if="artistNamesError && activeTab !== 'artists'" role="alert">艺人名称规则尚未完成。<button class="btn btn-secondary" @click="activeTab = 'artists'">返回修正</button></p>
       <template v-if="activeTab === 'display'">
       <ConfigSection title="界面" description="调整管理界面的显示大小" :collapsed="!!collapsed.other" @toggle="toggle('other')">
         <template #icon><SidebarIcon name="settings" :active="true" /></template>
@@ -376,7 +373,7 @@
           <button class="btn btn-secondary" @click="handleExport(form)">导出</button>
         </div>
         <div v-if="showImportTextarea" class="space-y-3">
-          <textarea v-model="importJson" class="form-input font-mono h-32" placeholder="粘贴完整配置 JSON 或旧 yunplex 格式..." />
+          <textarea v-model="importJson" class="form-input font-mono" placeholder="粘贴完整配置 JSON 或旧 yunplex 格式..." />
           <div class="flex items-center gap-4">
             <button class="btn btn-primary" :disabled="!importJson || importing" @click="handleImportJson">{{ importing ? '导入中...' : '导入' }}</button>
             <span v-if="importResult" class="inline-flex items-center gap-1 text-sm" :class="importResult.ok ? 'text-success' : 'text-danger'">
@@ -391,13 +388,13 @@
         <template #icon><SidebarIcon name="warn" :active="true" /></template>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
-            <h4 class="text-sm font-semibold text-[var(--text-primary)]">恢复默认配置</h4>
-            <p class="mt-1 text-2xs leading-5 text-muted">覆盖当前连接、下载和同步设置，不删除媒体或运行数据。</p>
+            <h4 class="text-[var(--text-primary)]">恢复默认配置</h4>
+            <p class="mt-1 text-2xs text-muted">覆盖当前连接、下载和同步设置，不删除媒体或运行数据。</p>
             <button type="button" class="btn btn-danger btn-sm mt-3" @click="showResetConfirm = true">恢复默认</button>
           </div>
           <div class="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-soft)] p-4">
-            <h4 class="text-sm font-semibold text-[var(--text-primary)]">重新初始化</h4>
-            <p class="mt-1 text-2xs leading-5 text-muted">保留配置和管理员密码，重新进入 setup 并验证三个必需条件。</p>
+            <h4 class="text-[var(--text-primary)]">重新初始化</h4>
+            <p class="mt-1 text-2xs text-muted">保留配置和管理员密码，重新进入 setup 并验证三个必需条件。</p>
             <button class="btn btn-danger btn-sm mt-3" type="button" :disabled="reinitializing" @click="showReinitializeConfirm = true">
               {{ reinitializing ? '处理中...' : '进入重新初始化' }}
             </button>
@@ -409,8 +406,7 @@
 
     </div>
     </div>
-
-    <ConfigSaveBar :changed="hasChanges" :saving="saving" :disabled="!form || loading" @save="handleSave" @discard="discardConfig" />
+    <ConfigSaveBar :changed="hasChanges" :saving="saving" :disabled="!form || loading || !!artistNamesError" @save="handleSave" @discard="discardConfig" />
     <UnsavedChangesGuard :dirty="hasChanges" :saving="saving" />
     <!-- Reset confirm dialog -->
     <ConfirmDialog
@@ -470,18 +466,19 @@
 
   </div>
 </template>
-
 <script setup lang="ts">
+import type { ArtistNameSettings } from '~~/shared/artist-names'
+import { tabs, categoryDescriptions } from '~/lib/settings-navigation'
 import { useAppearance } from '~/composables/useAppearance'
 const appearance = useAppearance()
 import type { AppConfig, StorageVisibilityDiagnostic as StorageVisibilityDiagnosticType } from '~~/server/lib/config/types'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { PATH_PRESETS } from '~~/server/lib/config/types'
+import { DEFAULT_INITIALIZATION_MATCHING, type InitializationMatchingConfig } from '~~/shared/initialization-matching'
 import { useConfigImport } from '~~/composables/useConfigImport'
 import { useFeedback } from '~~/composables/useFeedback'
 
 const pathPresets = PATH_PRESETS
-
 const extraTrackRemovalPolicyOptions = [
   {
     value: 'strict',
@@ -502,7 +499,6 @@ const extraTrackRemovalPolicyOptions = [
     recommended: false,
   },
 ] as const
-
 const unverifiedMediaPolicyOptions = [
   {
     value: 'download_managed',
@@ -517,7 +513,6 @@ const unverifiedMediaPolicyOptions = [
     recommended: false,
   },
 ] as const
-
 const pathVarHelp = [
   { key: 'artist', desc: '专辑艺人，如 Don Toliver' },
   { key: 'album', desc: '专辑名，如 Love Sick' },
@@ -527,7 +522,6 @@ const pathVarHelp = [
   { key: 'title', desc: '歌曲名，如 Lose My Mind' },
   { key: 'songId', desc: '网易云歌曲 ID，用于稳定识别托管文件' },
 ]
-
 const pathFormatMode = computed({
   get: () => {
     const v = form.value?.other?.pathFormat
@@ -539,7 +533,6 @@ const pathFormatMode = computed({
     form.value.other.pathFormat = val === '__custom__' ? '' : val
   },
 })
-
 // ── Path format change warning ──
 const showPathFormatConfirm = ref(false)
 const pendingPathFormat = ref('')
@@ -569,7 +562,6 @@ function confirmPathFormatChange() {
 function cancelPathFormatChange() {
   showPathFormatConfirm.value = false
 }
-
 const api = useApi()
 const feedback = useFeedback()
 const auth = useAuth()
@@ -580,6 +572,13 @@ const showResetConfirm = ref(false)
 const showReinitializeConfirm = ref(false)
 const form = ref<AppConfig | null>(null)
 const savedConfig = ref<AppConfig | null>(null)
+const matchingConfig = computed<InitializationMatchingConfig>({
+  get: () => form.value?.initializationMatching ?? structuredClone(DEFAULT_INITIALIZATION_MATCHING),
+  set: value => {
+    if (form.value) form.value.initializationMatching = value
+  },
+})
+const savedMatchingConfig = computed(() => savedConfig.value?.initializationMatching ?? DEFAULT_INITIALIZATION_MATCHING)
 const testing = ref<string | null>(null)
 type TestResultTone = 'success' | 'warning' | 'error'
 interface TestResultState { tone: TestResultTone; msg: string }
@@ -596,7 +595,6 @@ const passwordForm = ref({
   next: '',
   confirm: '',
 })
-
 const storageConfigFingerprint = computed(() => JSON.stringify({
   server: form.value?.plex.server ?? '',
   port: form.value?.plex.port ?? 0,
@@ -618,19 +616,12 @@ watch(storageConfigFingerprint, (current, previous) => {
 
 // ── Tab navigation ──
 const route = useRoute(), router = useRouter()
-const activeTab = ref<string>(['general','media','sync','display','advanced'].includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
+const activeTab = ref<string>(['general','media','sync','matching','artists','display','advanced'].includes(String(route.query.tab)) ? String(route.query.tab) : 'general')
 const categorySearch = ref('')
 const configLoadError = ref('')
-const hasChanges = computed(() => !!form.value && JSON.stringify(form.value) !== JSON.stringify(savedConfig.value))
-const tabs = [
-  { key: 'general', label: '服务连接' },
-  { key: 'media', label: '下载与文件' },
-  { key: 'sync', label: '同步策略' },
-  { key: 'display', label: '外观' },
-  { key: 'advanced', label: '安全与维护' },
-]
-
-const categoryDescriptions: Record<string,string> = { general: '音乐从哪里来，又到哪里去。管理网易云与 Plex 的连接。', media: '决定音乐文件如何保存，以及歌词、封面和标签的处理方式。', sync: '控制更新节奏、首次接管与媒体处理的默认规则。', display: '调整文字大小，让工作台适合你的屏幕。', advanced: '管理员账户、数据保留、导入导出与维护操作。' }
+const artistNamesError = ref('')
+const hasChanges = computed(() => !!artistNamesError.value || (!!form.value && JSON.stringify(form.value) !== JSON.stringify(savedConfig.value)))
+function applyArtistNames(value: ArtistNameSettings) { if(form.value) { matchingConfig.value = {...matchingConfig.value, artistAliases: value.matching}; form.value.other.artistAliases = value.replacements } }
 const visibleSettingsTabs = computed(() => tabs.filter(tab => `${tab.label} ${categoryDescriptions[tab.key]}`.toLocaleLowerCase().includes(categorySearch.value.trim().toLocaleLowerCase())))
 watch(activeTab, tab => { void router.replace({query:{...route.query,tab}}) })
 watch(() => route.query.tab, tab => { if(tabs.some(item => item.key === tab)) activeTab.value = String(tab) })
@@ -649,8 +640,9 @@ async function loadConfig() {
   configLoadError.value = ''
   try {
     const loaded = await api.get<AppConfig>('/config')
-    form.value = loaded
-    savedConfig.value = structuredClone(loaded)
+    const normalized = { ...loaded, initializationMatching: loaded.initializationMatching ?? structuredClone(DEFAULT_INITIALIZATION_MATCHING) }
+    form.value = normalized
+    savedConfig.value = structuredClone(normalized)
     applyFontScale(loaded.other.fontScale)
   } catch (err) {
     form.value = null
@@ -661,7 +653,7 @@ async function loadConfig() {
 }
 
 async function handleSave() {
-  if (!form.value || saving.value) return
+  if (!form.value || saving.value || artistNamesError.value) return
   saving.value = true
   const submitted: AppConfig = JSON.parse(JSON.stringify(form.value))
   try {

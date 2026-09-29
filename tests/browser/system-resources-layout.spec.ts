@@ -1,0 +1,42 @@
+import { expect, test } from './fixtures'
+const ok = (data: unknown) => ({ code: 0, msg: 'ok', data })
+for (const width of [1440, 390]) {
+  test(`service and resources shows honest states with clear hierarchy at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.addInitScript(() => localStorage.setItem('yunplex2-theme', 'light'))
+    await page.goto('/login')
+    await page.getByLabel('管理员密码', { exact: true }).fill('browser-test-password')
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await expect(page).toHaveURL('/')
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const stats = { cpu: 12, mem: { rss: 256, heapUsed: 80, heapTotal: 100, external: 0 }, uptime: 3661, pid: 1234, dbSize: 4, plexOk: false, neteaseOk: true, dirWritable: false, dependencyCheckedAt: Date.now(), scheduler: null, timestamp: Date.now() }
+    await page.route('**/api/system/stats', async route => { await gate; await route.fulfill({ json: ok(stats) }) })
+    let refreshes = 0
+    await page.route('**/api/system/health/check', route => { refreshes++; return route.fulfill({ json: ok({ plexOk: true, neteaseOk: true, dirWritable: true, dependencyCheckedAt: Date.now() }) }) })
+    await page.goto('/system')
+    await expect(page.locator('.system-health__value').filter({ hasText: '待检测' })).toHaveCount(3)
+    await expect(page.locator('.system-health')).not.toContainText('无法连接')
+    await expect(page.locator('.system-kpi').filter({ hasText: '运行时间' })).toContainText('--')
+    release()
+    await expect(page.locator('.system-health')).toContainText('有项目需要处理')
+    await expect(page.getByRole('heading', { name: '服务状态', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '进程资源', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '近期趋势', exact: true })).toBeVisible()
+    await expect(page.locator('.system-kpi')).toHaveCount(4)
+    await expect(page.locator('.system-kpi').first()).toContainText('12%')
+    await expect(page.getByRole('heading', { name: 'CPU 与内存', exact: true })).toHaveCSS('font-size', '16px')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath('services-light.png'), fullPage: true, animations: 'disabled' })
+    await page.getByRole('button', { name: '重新检测', exact: true }).click()
+    await expect(page.locator('.system-health')).toContainText('系统状态正常')
+    expect(refreshes).toBe(1)
+    await page.getByRole('button', { name: '关闭提示', exact: true }).click()
+    await page.getByRole('button', { name: '切换到深色主题' }).click()
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.screenshot({ path: testInfo.outputPath('services-dark.png'), fullPage: true, animations: 'disabled' })
+    await page.getByRole('link', { name: '查看日志', exact: true }).click()
+    await expect(page.getByRole('tab', { name: '运行日志', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.system-logs-panel')).toBeVisible()
+  })
+}

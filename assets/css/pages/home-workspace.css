@@ -52,8 +52,6 @@
   margin-bottom: var(--space-5);
 }
 .workspace-section-heading h2 {
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-semibold);
   margin: 0;
 }
 .workspace-section-heading h2 > span {
@@ -152,14 +150,10 @@
   color: var(--accent);
   margin-bottom: var(--space-2);
 }
-.home-start h3 {
-  font-size: var(--text-2xl);
-  font-weight: var(--font-weight-semibold);
-}
 .home-start p {
   max-width: 26rem;
   font-size: var(--text-base);
-  line-height: 1.8;
+  line-height: var(--body-leading);
   color: var(--text-secondary);
 }
 .home-start__help {
@@ -198,14 +192,11 @@
 }
 .home-sync h2 {
   margin: var(--space-3) 0;
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.4;
 }
 .home-sync__copy {
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: var(--body-leading);
   overflow-wrap: anywhere;
   min-height: 2.5rem;
 }
@@ -270,8 +261,6 @@
   padding: var(--space-4) var(--space-1);
 }
 .home-library-status h2 {
-  font-size: var(--text-md);
-  font-weight: var(--font-weight-semibold);
   margin: var(--space-2) 0 var(--space-4);
 }
 .home-library-status > div {
@@ -331,7 +320,7 @@
 }
 .home-inbox p {
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: var(--body-leading);
   margin-top: var(--space-1);
   color: var(--text-tertiary);
 }
@@ -413,9 +402,6 @@
   .workspace-section-heading {
     align-items: start;
   }
-  .workspace-section-heading h2 {
-    font-size: var(--text-md);
-  }
   .workspace-section-heading p {
     font-size: var(--text-xs);
   }
@@ -425,9 +411,6 @@
   .home-start {
     padding: var(--space-8) var(--space-5);
     min-height: 20rem;
-  }
-  .home-start h3 {
-    font-size: var(--text-xl);
   }
   .home-rail {
     display: grid;

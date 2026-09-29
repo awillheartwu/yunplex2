@@ -13,7 +13,7 @@
             <p class="toast-title">{{ toast.title }}</p>
             <p v-if="toast.message" class="toast-message">{{ toast.message }}</p>
           </div>
-          <button class="icon-button h-8 w-8" type="button" aria-label="关闭提示" @click="dismiss(toast.id)">
+          <button class="icon-button" type="button" aria-label="关闭提示" @click="dismiss(toast.id)">
             <AppIcon name="close" :size="15" />
           </button>
         </div>

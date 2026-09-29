@@ -181,17 +181,13 @@ async function handleReset() {
 
 .auth-panel__title {
   margin: 0;
-  font-size: var(--text-2xl);
-  line-height: 1.2;
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0;
 }
 
 .auth-panel__copy {
   margin: var(--space-1_5) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-base);
-  line-height: 1.6;
+  line-height: var(--body-leading);
 }
 
 .auth-form {
@@ -219,7 +215,7 @@ async function handleReset() {
   padding: var(--space-3) var(--space-3);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--body-leading);
 }
 
 .auth-error {

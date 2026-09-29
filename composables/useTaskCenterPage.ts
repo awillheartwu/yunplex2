@@ -1,6 +1,6 @@
 import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
 import type { FailureRecord, FailureRecordStatus } from '~~/server/lib/tasks/failure-records'
-import type { TaskRunSummary, TaskRunType } from '~~/server/lib/job/types'
+import type { TaskRunType } from '~~/server/lib/job/types'
 import {
   countActiveFilters,
   formatDateFilterLabel,
@@ -10,7 +10,7 @@ import {
 import { useFeedback } from '~~/composables/useFeedback'
 import { useDebounceFn } from '~~/composables/useTiming'
 import { sseSubscribe } from '~~/composables/sse'
-import { formatRunDuration, runTypeLabel } from '~~/lib/run-presentation'
+import { runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
 import { getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
 
@@ -34,15 +34,13 @@ export function useTaskCenterPage() {
   }
   const requestedTab = String(route.query.tab || 'overview')
   const activeTab = ref<TaskCenterTab>(legacyTabs[requestedTab] || (['overview', 'failures', 'runs'].includes(requestedTab) ? requestedTab as TaskCenterTab : 'overview'))
+  watch(() => route.query.tab, value => {
+    const tab = String(value || 'overview')
+    activeTab.value = legacyTabs[tab] || (['overview', 'failures', 'runs'].includes(tab) ? tab as TaskCenterTab : 'overview')
+  })
 
-  const { state: syncState, cancelSync } = useSync()
   const failures = useFailures()
   const sourceOptions = ref<TaskSourceOption[]>([])
-  const activeRunItems = ref<TaskRunSummary[]>([])
-  const primaryActiveRun = computed(() => activeRunItems.value.find(run => run.type === 'sync' || run.type === 'repair') || activeRunItems.value[0] || null)
-  const primaryActiveRunId = computed(() => primaryActiveRun.value?.id || null)
-  const downloadQueue = useDownloadQueue({ liveRunId: primaryActiveRunId, liveLimit: 12 })
-  const secondaryActiveRuns = computed(() => activeRunItems.value.filter(run => run.id !== primaryActiveRun.value?.id))
   const openFailureTotal = ref(0)
   const taskCenterTabs = computed(() => tabs.map(tab => ({
     ...tab,
@@ -50,81 +48,6 @@ export function useTaskCenterPage() {
     badgeTone: tab.key === 'failures' ? 'danger' as const : 'neutral' as const,
   })))
   const selectedFailures = ref(new Set<string>())
-
-  const stageLabels: Record<string, string> = {
-    fetching_playlist: '获取歌单',
-    comparing: '分析差异',
-    downloading: '下载歌曲',
-    processing_tags: '写入元数据',
-    refreshing_plex: '刷新 Plex',
-    updating_plex_playlist: '更新歌单',
-    reorder: '校准顺序',
-    repair: '补全资源',
-  }
-  const stageDescriptions: Record<string, string> = {
-    fetching_playlist: '正在读取本轮同步范围和最新曲目。',
-    comparing: '正在判断新增、移除和顺序变化。',
-    downloading: '正在下载缺失歌曲并准备写入文件。',
-    processing_tags: '正在写入歌词、封面和音频标签。',
-    refreshing_plex: '正在等待 Plex 识别新文件。',
-    updating_plex_playlist: '正在更新 Plex 歌单成员。',
-    reorder: '正在将 Plex 顺序校准为目标顺序。',
-    repair: '正在补齐缺失的歌词、封面或元数据。',
-  }
-  const stageWeights: Record<string, number> = {
-    fetching_playlist: 8, comparing: 22, downloading: 56, processing_tags: 68,
-    refreshing_plex: 82, updating_plex_playlist: 92, reorder: 98, repair: 50,
-  }
-  const stageRanges: Record<string, readonly [number, number]> = {
-    fetching_playlist: [4, 8],
-    comparing: [8, 22],
-    downloading: [22, 56],
-    processing_tags: [56, 68],
-    refreshing_plex: [68, 82],
-    updating_plex_playlist: [82, 92],
-    reorder: [92, 99],
-    repair: [4, 99],
-  }
-  const syncStageSequence = [
-    { key: 'fetching_playlist', label: '读取歌单' },
-    { key: 'comparing', label: '分析差异' },
-    { key: 'downloading', label: '下载歌曲' },
-    { key: 'processing_tags', label: '写入标签' },
-    { key: 'refreshing_plex', label: '刷新 Plex' },
-    { key: 'updating_plex_playlist', label: '更新歌单' },
-    { key: 'reorder', label: '校准顺序' },
-  ] as const
-  const stageLabel = computed(() => stageLabels[syncState.value?.currentStage || ''] || '准备运行')
-  const liveDescription = computed(() => stageDescriptions[syncState.value?.currentStage || ''] || '任务正在推进。')
-  const liveTitle = computed(() => syncState.value?.currentSourceName ? `${stageLabel.value} · ${syncState.value.currentSourceName}` : stageLabel.value)
-  const livePercent = computed(() => {
-    const progress = syncState.value?.progress
-    const currentStage = syncState.value?.currentStage || ''
-    const range = stageRanges[currentStage]
-    if (progress?.total && range) {
-      const ratio = Math.max(0, Math.min(1, progress.current / progress.total))
-      return Math.min(99, Math.round(range[0] + (range[1] - range[0]) * ratio))
-    }
-    return stageWeights[currentStage] || 4
-  })
-  const overviewStageItems = computed(() => {
-    const currentStage = syncState.value?.currentStage || ''
-    if (currentStage === 'repair') {
-      return [{ key: 'repair', label: stageLabels.repair, state: 'current' as const }]
-    }
-    const currentIndex = syncStageSequence.findIndex(stage => stage.key === currentStage)
-    return syncStageSequence.map((stage, index) => ({
-      ...stage,
-      state: currentIndex < 0
-        ? 'upcoming' as const
-        : index < currentIndex
-          ? 'complete' as const
-          : index === currentIndex
-            ? 'current' as const
-            : 'upcoming' as const,
-    }))
-  })
-  const elapsedLabel = computed(() => formatElapsed(syncState.value?.startedAt || ''))
 
   const failureTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
     { label: '全部类型', value: '' },
@@ -280,14 +203,6 @@ export function useTaskCenterPage() {
     else feedback.warning(result.msg || '没有可处理项目')
   }
 
-  async function handleCancelSync() {
-    try {
-      await cancelSync()
-      feedback.success('已发送取消请求')
-    } catch (err) {
-      feedback.error('取消同步失败', err instanceof Error ? err.message : '请稍后重试')
-    }
-  }
   function failureKindLabel(kind: string) {
     return isDomainErrorCode(kind) ? getDomainErrorDefinition(kind).label : failureKindFilters.find(item => item.value === kind)?.label || kind
   }
@@ -318,21 +233,15 @@ export function useTaskCenterPage() {
     return `${fallback}（已删除）`
   }
   function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
-  function formatElapsed(value: string) {
-    if (!value) return '刚开始'
-    return formatRunDuration(Math.max(0, Date.now() - new Date(value).getTime()))
-  }
   async function refreshOverview() {
-    const [activeResponse, awaitingResponse, failureResponse] = await Promise.all([
-      api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '20', status: 'running' }),
-      api.get<{ items: TaskRunSummary[]; total: number }>('/runs', { limit: '20', status: 'awaiting_action' }),
-      api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', { limit: '1', status: 'open' }),
-    ])
-    activeRunItems.value = [...activeResponse.items, ...awaitingResponse.items]
-    openFailureTotal.value = failureResponse.total
+    const response = await api.get<{ total: number }>('/tasks/failures', { limit: '1', status: 'open' })
+    openFailureTotal.value = response.total
   }
 
   onMounted(async () => {
+    syncCompletionUnsubscribe = sseSubscribe('stage-change', (data) => {
+      if (data.stage === 'idle') void refreshOverview().catch(() => {})
+    })
     repairProgressUnsubscribe = sseSubscribe('repair-progress', (data) => {
       if (data.finished === true) void refreshOverview()
     })
@@ -369,30 +278,29 @@ export function useTaskCenterPage() {
     await Promise.all([failures.fetch(), refreshOverview()])
   })
 
+  let syncCompletionUnsubscribe: (() => void) | null = null
   let repairProgressUnsubscribe: (() => void) | null = null
   let resumeUnsubscribe: (() => void) | null = null
   onUnmounted(() => {
+    syncCompletionUnsubscribe?.()
     repairProgressUnsubscribe?.()
     resumeUnsubscribe?.()
     repairProgressUnsubscribe = null
   })
 
-  watch(() => syncState.value?.isRunning, (running, previous) => {
-    if (running !== previous) void refreshOverview()
-  })
 
   return {
-    activeRunItems, activeTab, applyFailureDraftFilters, applyFailureFilters, batchIgnore, batchReopen,
+    activeTab, applyFailureDraftFilters, applyFailureFilters, batchIgnore, batchReopen,
     batchRetry, clearFailureFilters, draftFailureDateFilter, draftFailureFrom, draftFailureKind, draftFailureSource,
     draftFailureTo, draftFailureType,
-    downloadQueue, elapsedLabel, failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
+    failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
-    formatElapsed, formatRunDuration, formatTime, handleCancelSync, ignoreFailure,
-    isRetryable, liveDescription, livePercent, liveTitle, onFailureSearch,
-    onTaskCenterTabChange, openFailureTotal, overviewStageItems, prepareFailureDraftFilters, primaryActiveRun, refreshOverview, removeFailureFilter,
-    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel, secondaryActiveRuns, selectedFailures,
+    formatTime, ignoreFailure,
+    isRetryable, onFailureSearch,
+    onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, refreshOverview, removeFailureFilter,
+    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel, selectedFailures,
     semanticToneClass, setDraftFailureDate, setFailureStatus, showMutationResult, sourceOptionLabel, sourceOptions,
-    stageLabel, switchTab, syncState, taskCenterTabs, toggleFailure,
+    switchTab, taskCenterTabs, toggleFailure,
   }
 }

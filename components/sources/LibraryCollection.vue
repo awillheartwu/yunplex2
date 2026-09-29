@@ -3,7 +3,7 @@
     <article v-for="(source, index) in sources" :key="source.id" class="collection-item" :class="{ 'is-selected': selected.has(source.id), 'is-drag-over': dragOver === index }" :data-tint="index % 4" :draggable="reorder" @dragstart="reorder && $emit('drag-start', index, $event)" @dragover.prevent="reorder && $emit('drag-over', index)" @dragleave="reorder && $emit('drag-leave')" @drop.prevent="reorder && $emit('drop', index)" @dragend="reorder && $emit('drag-end')">
       <div class="collection-item__art">
         <NuxtLink :to="`/sync-sources/${source.id}`" :aria-label="`打开 ${getSourceDisplayName(source)}`" :draggable="false" tabindex="-1">
-          <img v-if="source.coverUrl && !broken.has(source.id)" :src="getSyncSourceCoverUrl(source.coverUrl)" alt="" :draggable="false" loading="lazy" @error="broken.add(source.id)">
+          <img v-if="source.coverUrl && !broken.has(source.id)" :src="getSyncSourceCoverUrl(source.coverUrl, view === 'grid' ? 800 : 80)" alt="" :draggable="false" loading="lazy" @error="broken.add(source.id)">
           <div v-else class="collection-item__placeholder"><AppIcon :name="source.type === 'album' ? 'album' : 'music'" :size="40" /><span>{{ source.type === 'album' ? 'ALBUM' : 'PLAYLIST' }}</span></div>
         </NuxtLink>
         <label class="collection-item__select" :class="{ 'is-visible': selected.size > 0 }"><input type="checkbox" :checked="selected.has(source.id)" :aria-label="`选择 ${getSourceDisplayName(source)}`" @change="$emit('select', source.id)"></label>
@@ -18,7 +18,7 @@
       <div class="collection-item__status"><span :class="`text-${getSyncResultTone(source) === 'danger' ? 'danger' : getSyncResultTone(source) === 'success' ? 'success' : 'muted'}`">{{ getSyncResultLabel(source) }}</span><small>{{ source.lastSyncedAt ? formatSyncSourceRelativeTime(source.lastSyncedAt) : '等待首次同步' }}</small></div>
       <div class="collection-item__actions">
         <NuxtLink v-if="getActionableFailureCount(source)" :to="`/task-center?tab=failures&failureSource=${source.id}`" class="collection-item__issue"><AppIcon name="warn" :size="13" />{{ getActionableFailureCount(source) }} 个问题</NuxtLink>
-        <button v-if="source.type === 'playlist'" class="icon-button" :aria-label="source.enabled ? '暂停此来源' : '启用此来源'" :disabled="toggling === source.id" @click="$emit('toggle', source)"><AppIcon :name="source.enabled ? 'pause' : 'play'" :size="15" /></button>
+        <button v-if="source.type === 'playlist'" class="icon-button" :aria-label="source.enabled ? '暂停此来源' : '启用此来源'" :title="source.enabled ? '暂停自动排期，保留收藏和已有媒体' : '启用此收藏的自动排期'" :disabled="toggling === source.id" @click="$emit('toggle', source)"><AppIcon :name="source.enabled ? 'pause' : 'play'" :size="15" /></button>
         <button class="btn btn-secondary btn-sm" :disabled="busy || (source.type === 'playlist' && !source.enabled)" @click="$emit('sync', source)"><AppIcon :name="syncing === source.id ? 'loader' : source.type === 'album' ? 'download' : 'sync'" :size="14" :class="{ 'animate-spin': syncing === source.id }" />{{ source.type === 'album' ? '下载' : '同步' }}</button>
       </div>
     </article>

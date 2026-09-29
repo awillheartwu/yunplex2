@@ -26,6 +26,7 @@ const context = computed(() => pageContext(route.path))
 <style scoped>
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   min-height: 2.25rem;
   align-items: flex-end;
@@ -35,25 +36,27 @@ const context = computed(() => pageContext(route.path))
 
 .page-header__copy {
   display: grid;
+  flex: 1 1 20rem;
   gap: var(--space-2);
   min-width: 0;
 }
 
 .page-header__eyebrow { margin: 0; color: var(--text-tertiary); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); letter-spacing: .1em; }
-.page-header__title { margin: 0; font-size: var(--text-4xl); line-height: 1.3; font-weight: var(--font-weight-bold); color: var(--text-primary); }
+.page-header__title { margin: 0; color: var(--text-primary); }
 
 .page-header__description {
   max-width: 48rem;
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-base);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.55;
+  font-weight: var(--font-weight-normal);
+  line-height: var(--body-leading);
 }
 
 .page-header__actions {
   display: flex;
   flex: none;
+  max-width: 100%;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
@@ -61,12 +64,13 @@ const context = computed(() => pageContext(route.path))
 }
 
 @media (max-width: 767px) {
-  .page-header__title { font-size: var(--text-2xl); }
   .page-header {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-3_5);
   }
+
+  .page-header__copy { flex: initial; }
 
   .page-header__actions {
     width: 100%;
