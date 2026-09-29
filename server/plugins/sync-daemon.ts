@@ -1,9 +1,12 @@
+import { closeEventClients } from '../lib/sync/events'
+import { validateTrustedProxies } from '../lib/auth/transport'
+import { setRuntimePhase } from '../lib/runtime/readiness'
 import { readConfig, setDataDir } from '../lib/config/store'
 import { initDb } from '../lib/db'
 import { getSyncService } from '../lib/sync/service'
 import { startWorker, stopWorker } from '../lib/sync/worker'
 import { recoverInterruptedSourceRequests } from '../lib/sync/source-schedule-store'
-import { isRepairRunning, setSyncService, setSyncWorker } from '../lib/sync/instance'
+import { isRepairRunning, setSyncService, setSyncWorker, clearSyncWorker } from '../lib/sync/instance'
 import { recoverInterruptedRuns } from '../lib/run/store'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
 import { startDownloadWorker, stopDownloadWorker } from '../lib/download/worker'
@@ -26,6 +29,8 @@ let daemonInitialized = false
 
 export default defineNitroPlugin((nitroApp) => {
   if (daemonInitialized) return
+  validateTrustedProxies()
+  setRuntimePhase('starting')
   daemonInitialized = true
   const config = useRuntimeConfig()
   const dataDir = config.dataDir as string
@@ -78,13 +83,21 @@ export default defineNitroPlugin((nitroApp) => {
   leaseSweep.unref()
   const lifecycleSweep = setInterval(maintainDataLifecycle, DATA_LIFECYCLE_INTERVAL_MS)
   lifecycleSweep.unref()
+  setRuntimePhase('ready')
   nitroApp.hooks.hookOnce('close', async () => {
-      daemonInitialized = false
-      await stopWorker()
-      await stopMediaRepairCommands()
-      await stopDownloadWorker()
-      await waitForMediaRepairCommands()
-      clearInterval(leaseSweep)
-      clearInterval(lifecycleSweep)
+    setRuntimePhase('stopping')
+    closeEventClients()
+    clearInterval(leaseSweep)
+    clearInterval(lifecycleSweep)
+    const results = await Promise.allSettled([
+      stopWorker(),
+      stopMediaRepairCommands(),
+      stopDownloadWorker(),
+    ])
+    await waitForMediaRepairCommands()
+    clearSyncWorker()
+    daemonInitialized = false
+    setRuntimePhase('stopped')
+    if (results.some(result => result.status === 'rejected')) console.error('[shutdown] A consumer failed to stop cleanly')
   })
 })

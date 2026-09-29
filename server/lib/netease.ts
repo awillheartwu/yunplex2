@@ -89,19 +89,32 @@ const QUALITY_LEVELS: Record<string, string> = {
   jymaster: 'jymaster',
 }
 
-export async function checkCookie(cookie: string): Promise<{
+export interface CookieCheckResult {
   valid: boolean
   profile?: { userId: number; nickname: string }
-}> {
+  /** True when NetEase never produced an authenticated answer (network, timeout or upstream 5xx). */
+  networkError?: boolean
+}
+
+// NeteaseCloudMusicApi rejects with its own { status, body } answer for non-200 codes, so only
+// transport-shaped rejections may be reported as network failures instead of an invalid cookie.
+function isNeteaseTransportFailure(reason: unknown): boolean {
+  if (reason instanceof Error) return true
+  const status = Number((reason as { status?: unknown } | null | undefined)?.status)
+  if (!Number.isFinite(status)) return true
+  return status >= 500
+}
+
+export async function checkCookie(cookie: string): Promise<CookieCheckResult> {
   try {
     const res = await login_status({ cookie })
     const data = (res as { body?: { data?: { code?: number; profile?: { userId: number; nickname: string } } } }).body?.data
-    if (data?.code === 200) {
+    if (data?.code === 200 && typeof data.profile?.userId === 'number' && data.profile.userId > 0) {
       return { valid: true, profile: data.profile }
     }
     return { valid: false }
-  } catch {
-    return { valid: false }
+  } catch (reason) {
+    return isNeteaseTransportFailure(reason) ? { valid: false, networkError: true } : { valid: false }
   }
 }
 

@@ -1,6 +1,7 @@
 import { ConfigValidationError } from '../../lib/config/validation'
 import { assertConnectionTestSection, runConnectionTest } from '../../lib/config/connection-test-runner'
-import { fail, success } from '../../lib/response'
+import { ConnectionTestError } from '../../lib/config/connection-test-error'
+import { fail, failDomain, success } from '../../lib/response'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ section?: unknown; config?: unknown }>(event)
@@ -9,6 +10,7 @@ export default defineEventHandler(async (event) => {
     return success(result.data, result.message)
   } catch (error) {
     if (error instanceof ConfigValidationError) return fail(error.message)
+    if (error instanceof ConnectionTestError) return failDomain(error.code, error.message)
     return fail(error instanceof Error ? error.message : '连接测试失败')
   }
 })

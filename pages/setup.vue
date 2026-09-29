@@ -362,6 +362,8 @@ async function completeSetup() {
     await navigateTo('/')
   } catch (err) {
     error.value = err instanceof Error ? err.message : '初始化完成失败'
+    // 服务端复核未通过时，本地的三项结论已失效：回到待验证，修正对应步骤后重新检查。
+    for (const key of requiredChecks) checks[key] = { status: 'idle', message: '' }
   } finally {
     submitting.value = false
   }
@@ -407,17 +409,13 @@ function canOpenStep(key: StepKey): boolean {
 
 .setup-title {
   margin: 0;
-  font-size: var(--text-4xl);
-  line-height: 1.1;
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0;
 }
 
 .setup-copy {
   margin: var(--space-1_5) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-base);
-  line-height: 1.65;
+  line-height: var(--body-leading);
 }
 
 .setup-progress {
@@ -497,9 +495,6 @@ function canOpenStep(key: StepKey): boolean {
 
 .setup-panel__title {
   margin: 0;
-  font-size: var(--text-xl);
-  line-height: 1.25;
-  font-weight: var(--font-weight-bold);
 }
 
 .setup-form {
@@ -519,7 +514,7 @@ function canOpenStep(key: StepKey): boolean {
   margin: var(--space-2) 0 0;
   color: var(--text-tertiary);
   font-size: var(--text-xs);
-  line-height: 1.55;
+  line-height: var(--body-leading);
 }
 
 .setup-path-note strong {
@@ -555,7 +550,7 @@ function canOpenStep(key: StepKey): boolean {
   padding: var(--space-3) var(--space-3_5);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--body-leading);
 }
 
 .setup-error,
@@ -610,9 +605,6 @@ function canOpenStep(key: StepKey): boolean {
 }
 
 @media (max-width: 640px) {
-  .setup-title {
-    font-size: var(--text-3xl);
-  }
 
   .setup-progress {
     grid-template-columns: repeat(2, minmax(0, 1fr));

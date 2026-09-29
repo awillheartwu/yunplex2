@@ -7,6 +7,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; path: string }> = [
   { method: 'POST', path: '/api/auth/reset' },
   { method: 'POST', path: '/api/setup/admin' },
   { method: 'GET', path: '/api/system/health' },
+  { method: 'GET', path: '/api/system/ready' },
 ]
 
 export default defineEventHandler((event) => {

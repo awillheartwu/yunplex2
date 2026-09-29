@@ -9,6 +9,7 @@ import { downloadSingleSong } from './single-song'
 import { resolveSingleSongConfig } from './options'
 
 export interface DownloadWorker {
+  getStatus: () => 'ready' | 'failed' | 'stopping'
   wake: () => Promise<void>
   waitForIdle: () => Promise<void>
   stop: () => Promise<void>
@@ -90,7 +91,7 @@ export function createDownloadWorker(input: {
     await waitForIdle()
   }
 
-  return { wake, waitForIdle, stop }
+  return { wake, waitForIdle, stop, getStatus: () => failure ? 'failed' : stopping ? 'stopping' : 'ready' }
 }
 
 function executionOverrides(task: DownloadTask): Parameters<typeof resolveSingleSongConfig>[1] {
