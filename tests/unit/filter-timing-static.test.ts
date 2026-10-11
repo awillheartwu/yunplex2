@@ -52,7 +52,9 @@ describe('filter timing wiring', () => {
     const systemLogs = readProjectFile('composables/useSystemLogs.ts')
 
     expect(systemLogs).toContain('const pendingRealtimeLogs: LogEntry[] = []')
-    expect(systemLogs).toContain('const realtimeBatch = useThrottleFn(flushRealtimeLogs, 80)')
+    expect(systemLogs).toContain('const realtimeBatch = createThrottledFunction(flushRealtimeLogs, 80)')
+    expect(systemLogs).toContain('pendingRealtimeLogs.length = 0')
+    expect(systemLogs).toContain('realtimeBatch.cancel()')
     expect(systemLogs).toContain("sseSubscribe('log', enqueueRealtimeLog)")
     expect(systemLogs).not.toContain('new EventSource')
   })

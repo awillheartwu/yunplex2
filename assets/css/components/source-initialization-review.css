@@ -35,14 +35,6 @@
   align-items: center;
   gap: var(--space-2);
 }
-.source-adoption__pagination {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
 .source-adoption__table-wrap {
   overflow: auto;
 }

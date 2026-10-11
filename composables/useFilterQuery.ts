@@ -1,7 +1,5 @@
-import type { Ref } from 'vue'
-
-export type FilterQueryValue = string | number | boolean | null | undefined | Array<string | number>
-export type FilterQueryState = Record<string, FilterQueryValue>
+type FilterQueryValue = string | number | boolean | null | undefined | Array<string | number>
+type FilterQueryState = Record<string, FilterQueryValue>
 
 export function normalizeSearchTerm(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ')
@@ -38,7 +36,7 @@ export function formatDateFilterLabel(from?: string | null, to?: string | null):
   return `日期：截至 ${to}`
 }
 
-export function isActiveFilterValue(value: FilterQueryValue): boolean {
+function isActiveFilterValue(value: FilterQueryValue): boolean {
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === 'boolean') return value
   return value !== undefined && value !== null && String(value).trim() !== ''
@@ -46,65 +44,4 @@ export function isActiveFilterValue(value: FilterQueryValue): boolean {
 
 export function countActiveFilters(state: FilterQueryState, ignoredKeys: string[] = []): number {
   return Object.entries(state).filter(([key, value]) => !ignoredKeys.includes(key) && isActiveFilterValue(value)).length
-}
-
-export function serializeFilterQuery(state: FilterQueryState): Record<string, string> {
-  const query: Record<string, string> = {}
-  for (const [key, value] of Object.entries(state)) {
-    if (!isActiveFilterValue(value)) continue
-    if (Array.isArray(value)) query[key] = value.map(String).join(',')
-    else if (typeof value === 'boolean') query[key] = value ? '1' : '0'
-    else query[key] = normalizeSearchTerm(value)
-  }
-  return query
-}
-
-export function parseFilterQuery<T extends FilterQueryState>(
-  query: Record<string, unknown>,
-  defaults: T,
-  arrayKeys: string[] = [],
-  booleanKeys: string[] = [],
-): T {
-  const parsed: FilterQueryState = { ...defaults }
-  for (const key of Object.keys(defaults)) {
-    const raw = query[key]
-    if (raw === undefined || raw === null) continue
-    const value = Array.isArray(raw) ? raw[0] : raw
-    if (arrayKeys.includes(key)) {
-      parsed[key] = String(value).split(',').map(v => v.trim()).filter(Boolean)
-    } else if (booleanKeys.includes(key)) {
-      parsed[key] = value === '1' || value === 'true'
-    } else {
-      parsed[key] = normalizeSearchTerm(value)
-    }
-  }
-  return parsed as T
-}
-
-export function useQueryBackedFilters<T extends FilterQueryState>(
-  defaults: T,
-  options: { arrayKeys?: string[]; booleanKeys?: string[]; ignoredActiveKeys?: string[] } = {},
-) {
-  const route = useRoute()
-  const router = useRouter()
-  const filters = ref(parseFilterQuery(route.query, defaults, options.arrayKeys, options.booleanKeys)) as Ref<T>
-
-  function replaceQuery(next: T) {
-    const serialized = serializeFilterQuery(next)
-    router.replace({ query: { ...route.query, ...Object.fromEntries(Object.keys(defaults).map(k => [k, undefined])), ...serialized } })
-  }
-
-  function patchFilter(partial: Partial<T>) {
-    filters.value = { ...filters.value, ...partial }
-    replaceQuery(filters.value)
-  }
-
-  function clearFilters() {
-    filters.value = { ...defaults }
-    replaceQuery(filters.value)
-  }
-
-  const activeCount = computed(() => countActiveFilters(filters.value, options.ignoredActiveKeys))
-
-  return { filters, activeCount, patchFilter, clearFilters }
 }

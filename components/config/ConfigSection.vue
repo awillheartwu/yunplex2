@@ -1,5 +1,6 @@
 <template>
   <section class="section-card config-section" :class="{ 'config-section--open': !collapsed }">
+    <div class="config-section__top">
     <button
       class="config-section__header"
       type="button"
@@ -15,6 +16,8 @@
       </span>
       <Chevron :open="!collapsed" />
     </button>
+    <div v-if="$slots.actions" class="config-section__actions"><slot name="actions" /></div>
+    </div>
     <div v-show="!collapsed" class="config-section__body">
       <slot />
     </div>
@@ -36,7 +39,12 @@ defineEmits<{ toggle: [] }>()
   border-color: var(--border-primary);
 }
 
+.config-section__top { display: flex; align-items: center; gap: var(--space-3); border-bottom: 1px solid transparent; }
+.config-section--open .config-section__top { border-bottom-color: var(--border-primary); background: var(--bg-input); }
+.config-section__actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding-right: var(--space-4); flex-shrink: 0; }
 .config-section__header {
+  flex: 1;
+  min-width: 0;
   display: flex;
   width: 100%;
   min-height: 4rem;
@@ -57,8 +65,7 @@ defineEmits<{ toggle: [] }>()
 }
 
 .config-section--open .config-section__header {
-  border-bottom-color: var(--border-primary);
-  background: var(--bg-input);
+  background: transparent;
 }
 
 .config-section__heading {
@@ -96,6 +103,9 @@ defineEmits<{ toggle: [] }>()
 }
 
 @media (max-width: 640px) {
+  .config-section__top { flex-wrap: wrap; }
+  .config-section__header { flex-basis: 100%; }
+  .config-section__actions { padding: 0 var(--space-4) var(--space-3); }
   .config-section__header,
   .config-section__body {
     padding-inline: var(--space-4);

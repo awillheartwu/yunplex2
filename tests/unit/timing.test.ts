@@ -5,7 +5,6 @@ import {
   createLatestAsyncGuard,
   createRafThrottledFunction,
   createThrottledFunction,
-  createTimeoutFunction,
 } from '../../composables/useTiming'
 
 describe('timing helpers', () => {
@@ -145,26 +144,6 @@ describe('timing helpers', () => {
 
     guard.cancel()
     expect(guard.isLatest(second)).toBe(false)
-  })
-
-  it('schedules cancellable one-shot timeouts', () => {
-    vi.useFakeTimers()
-    const fn = vi.fn()
-    const timeout = createTimeoutFunction(fn, 100)
-
-    timeout.schedule('first')
-    timeout.schedule('second')
-    vi.advanceTimersByTime(99)
-    expect(fn).not.toHaveBeenCalled()
-
-    vi.advanceTimersByTime(1)
-    expect(fn).toHaveBeenCalledTimes(1)
-    expect(fn).toHaveBeenCalledWith('second')
-
-    timeout.schedule('third')
-    timeout.cancel()
-    vi.advanceTimersByTime(100)
-    expect(fn).toHaveBeenCalledTimes(1)
   })
 
   it('starts, stops, and restarts intervals', () => {

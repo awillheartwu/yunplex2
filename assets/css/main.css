@@ -12,6 +12,8 @@ html {
   font-family: var(--font-ui);
   font-size: calc(16px * var(--font-scale, 1));
   min-height: 100%;
+  /* Keep page and fixed controls the same width while dialogs lock body scrolling. */
+  scrollbar-gutter: stable;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -41,15 +43,6 @@ body {
 
 .app-main {
   min-block-size: 0;
-}
-
-.fluid-panel {
-  min-block-size: var(--panel-fluid-min-block-size);
-}
-
-.fluid-scroll-area {
-  max-block-size: var(--panel-scroll-max-block-size);
-  min-block-size: min(22rem, 58dvh);
 }
 
 ::-webkit-scrollbar {
@@ -116,7 +109,7 @@ a[href] {
 }
 
 /* Semantic typography is shared by every page and dialog. */
-h1, h2, h3, h4, h5, h6, .type-h1, .type-h2, .type-h3, .type-h4 {
+h1, h2, h3, h4, h5, h6, .type-h3, .type-h4 {
   font-family: var(--font-ui);
   font-weight: var(--font-weight-semibold);
   line-height: var(--heading-leading);
@@ -124,15 +117,12 @@ h1, h2, h3, h4, h5, h6, .type-h1, .type-h2, .type-h3, .type-h4 {
   color: var(--text-primary);
   text-wrap: pretty;
 }
-h1, .type-h1 { font-size: var(--heading-1-size); }
-h2, .type-h2 { font-size: var(--heading-2-size); }
+h1 { font-size: var(--heading-1-size); }
+h2 { font-size: var(--heading-2-size); }
 h3, .type-h3 { font-size: var(--heading-3-size); }
 h4, h5, h6, .type-h4 { font-size: var(--heading-4-size); }
 p { line-height: var(--body-leading); font-weight: var(--font-weight-normal); }
 p + p { margin-top: var(--body-paragraph-gap); }
-.body-copy { font-size: var(--text-base); line-height: var(--body-leading); }
-.body-secondary { font-size: var(--text-sm); line-height: var(--body-leading); color: var(--text-secondary); }
-.body-caption { font-size: var(--text-xs); line-height: var(--body-leading); color: var(--text-tertiary); }
 
 code,
 pre,
@@ -149,20 +139,11 @@ pre,
 .text-success {
   color: var(--success);
 }
-.text-existing {
-  color: var(--existing);
-}
-.text-ignored {
-  color: var(--ignored);
-}
 .text-warning {
   color: var(--warning);
 }
 .text-danger {
   color: var(--danger);
-}
-.text-running {
-  color: var(--running);
 }
 .text-accent {
   color: var(--accent);
@@ -179,9 +160,6 @@ pre,
 }
 .bg-existing {
   background: var(--existing);
-}
-.bg-ignored {
-  background: var(--ignored);
 }
 .bg-warning {
   background: var(--warning);

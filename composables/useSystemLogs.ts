@@ -1,21 +1,44 @@
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { LogEntry, LogLevel } from '~~/server/lib/log/types'
 import { sseSubscribe } from '~~/composables/sse'
-import { createLatestAsyncGuard, useThrottleFn } from '~~/composables/useTiming'
+import { createLatestAsyncGuard, createThrottledFunction } from '~~/composables/useTiming'
+import { clampPage, pageCount } from '~/lib/pagination'
 
 const PAGE_SIZE = 50
+/** A shrinking log retention window can move the current page past the end; refetch the last valid page. */
+const MAX_CLAMP_FETCHES = 2
 
-export function useSystemLogs() {
-  const api = useApi()
+export interface LogsPage {
+  items: LogEntry[]
+  total: number
+}
+
+export interface LogsApi {
+  get<T>(path: string, params?: Record<string, string>): Promise<T>
+}
+
+interface UseSystemLogsOptions {
+  api?: LogsApi
+  pageSize?: number
+  registerLifecycle?: boolean
+}
+
+export function useSystemLogs(options: UseSystemLogsOptions = {}) {
+  const api = options.api || useApi()
+  const pageSize = options.pageSize ?? PAGE_SIZE
   const logs = ref<LogEntry[]>([])
   const total = ref(0)
   const error = ref('')
-  const offset = ref(0)
+  const page = ref(1)
   const loading = ref(false)
-  const loadingMore = ref(false)
   const activeFilter = ref<LogLevel | ''>('')
+  const pendingCount = ref(0)
   const fetchGuard = createLatestAsyncGuard()
   const pendingRealtimeLogs: LogEntry[] = []
-  const hasMore = computed(() => logs.value.length < total.value)
+  let disposed = false
+  let loadedFilter: LogLevel | '' | null = null
+
+  const pageCountValue = computed(() => pageCount(total.value, pageSize))
 
   const filters: Array<{ label: string; value: LogLevel | '' }> = [
     { label: '全部', value: '' },
@@ -24,66 +47,99 @@ export function useSystemLogs() {
     { label: '错误', value: 'error' },
   ]
 
-  async function fetchLogs() {
+  function params(targetPage: number): Record<string, string> {
+    const result: Record<string, string> = { limit: String(pageSize), offset: String((targetPage - 1) * pageSize) }
+    if (activeFilter.value) result.level = activeFilter.value
+    return result
+  }
+
+  /**
+   * Loads one page. The refresh button keeps the current page, a level change starts at
+   * page 1, and a failure keeps the page and rows that are already visible.
+   */
+  async function loadLogs(target: number) {
+    if (disposed) return
     const token = fetchGuard.next()
+    const signature = activeFilter.value
+    const filtersChanged = loadedFilter !== null && loadedFilter !== signature
+    // Before the first snapshot the known page count is meaningless, so only a loaded
+    // result set pre-clamps a jump; otherwise the response decides where the page ends.
+    const knownPages = loadedFilter === null ? Number.MAX_SAFE_INTEGER : pageCountValue.value
+    let requested = filtersChanged ? 1 : clampPage(target, knownPages)
     loading.value = true
     error.value = ''
-    loadingMore.value = false
-    offset.value = 0
+    let attempts = 0
     try {
-      const params: Record<string, string> = { limit: String(PAGE_SIZE) }
-      if (activeFilter.value) params.level = activeFilter.value
-      const response = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
-      if (!fetchGuard.isLatest(token)) return
-      logs.value = response.items
-      total.value = response.total
+      while (fetchGuard.isLatest(token) && attempts < MAX_CLAMP_FETCHES) {
+        attempts += 1
+        const response = await api.get<LogsPage>('/logs', params(requested))
+        if (!fetchGuard.isLatest(token)) return
+        const lastPage = pageCount(response.total, pageSize)
+        if (requested > lastPage) {
+          requested = lastPage
+          continue
+        }
+        const buffered = pendingRealtimeLogs.splice(0)
+        const knownIds = new Set(response.items.map(item => item.id))
+        const newEntries = buffered.filter(item => !knownIds.has(item.id))
+        logs.value = requested === 1 ? [...newEntries.reverse(), ...response.items].slice(0, pageSize) : response.items
+        total.value = response.total + (requested === 1 ? newEntries.length : 0)
+        if (requested !== 1) pendingCount.value += buffered.length
+        page.value = requested
+        loadedFilter = signature
+        if (requested === 1) pendingCount.value = 0
+        return
+      }
+      if (fetchGuard.isLatest(token)) error.value = '数据正在变化，请刷新后重试'
     } catch (err) {
       if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '请稍后重试'
     } finally {
-      if (fetchGuard.isLatest(token)) loading.value = false
+      if (fetchGuard.isLatest(token)) { loading.value = false; flushRealtimeLogs() }
     }
   }
 
-  async function loadMore() {
-    if (loadingMore.value || !hasMore.value) return
-    const token = fetchGuard.next()
-    loadingMore.value = true
-    error.value = ''
-    try {
-      const nextOffset = offset.value + PAGE_SIZE
-      const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(nextOffset) }
-      if (activeFilter.value) params.level = activeFilter.value
-      const response = await api.get<{ items: LogEntry[]; total: number }>('/logs', params)
-      if (!fetchGuard.isLatest(token)) return
-      logs.value = [...logs.value, ...response.items]
-      total.value = response.total
-      offset.value = nextOffset
-    } catch (err) {
-      if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '请稍后重试'
-    } finally {
-      if (fetchGuard.isLatest(token)) loadingMore.value = false
-    }
+  /** Refresh stays on the current page; the level filter restarts at page 1. */
+  async function fetchLogs(): Promise<void> {
+    await loadLogs(page.value)
   }
 
-  function setFilter(level: LogLevel | '') {
+  async function goToPage(target: number): Promise<void> {
+    await loadLogs(target)
+  }
+
+  async function setFilter(level: LogLevel | ''): Promise<void> {
     activeFilter.value = level
     pendingRealtimeLogs.length = 0
-    void fetchLogs()
+    pendingCount.value = 0
+    await loadLogs(1)
   }
 
+  /** Live entries only extend the first page; while reading history they are counted instead. */
   function flushRealtimeLogs() {
-    if (pendingRealtimeLogs.length === 0) return
-    const nextLogs = pendingRealtimeLogs.splice(0).reverse()
-    logs.value = [...nextLogs, ...logs.value]
+    if (loading.value || pendingRealtimeLogs.length === 0 || loadedFilter !== activeFilter.value) return
+    const known = new Set(logs.value.map(entry => entry.id))
+    const nextLogs = pendingRealtimeLogs.splice(0).reverse().filter(entry => !known.has(entry.id))
     total.value += nextLogs.length
+    if (page.value !== 1) {
+      pendingCount.value += nextLogs.length
+      return
+    }
+    logs.value = [...nextLogs, ...logs.value].slice(0, pageSize)
   }
 
-  const realtimeBatch = useThrottleFn(flushRealtimeLogs, 80)
+  const realtimeBatch = createThrottledFunction(flushRealtimeLogs, 80)
   function enqueueRealtimeLog(data: Record<string, unknown>) {
+    if (disposed) return
     const entry = data as unknown as LogEntry
+    if (logs.value.some(item => item.id === entry.id) || pendingRealtimeLogs.some(item => item.id === entry.id)) return
     if (activeFilter.value && entry.level !== activeFilter.value) return
     pendingRealtimeLogs.push(entry)
     realtimeBatch.run()
+  }
+
+  /** Return to the newest entries and clear the pending counter. */
+  async function showLatest() {
+    await loadLogs(1)
   }
 
   function levelClass(level: LogLevel): string {
@@ -107,17 +163,22 @@ export function useSystemLogs() {
 
   let unsubscribe: (() => void) | null = null
   let resumeUnsubscribe: (() => void) | null = null
-  onMounted(async () => {
-    unsubscribe = sseSubscribe('log', enqueueRealtimeLog)
-    resumeUnsubscribe = sseSubscribe('resync', () => { void fetchLogs() })
-    await fetchLogs()
-  })
-  onUnmounted(() => {
-    realtimeBatch.flush()
-    unsubscribe?.()
-    resumeUnsubscribe?.()
-    unsubscribe = null
-  })
+  if (options.registerLifecycle !== false) {
+    onMounted(async () => {
+      unsubscribe = sseSubscribe('log', enqueueRealtimeLog)
+      resumeUnsubscribe = sseSubscribe('resync', () => { void fetchLogs() })
+      await fetchLogs()
+    })
+    onUnmounted(() => {
+      disposed = true
+      fetchGuard.next()
+      pendingRealtimeLogs.length = 0
+      realtimeBatch.cancel()
+      unsubscribe?.()
+      resumeUnsubscribe?.()
+      unsubscribe = null
+    })
+  }
 
   return {
     activeFilter,
@@ -125,13 +186,17 @@ export function useSystemLogs() {
     fetchLogs,
     filters,
     formatTime,
-    hasMore,
+    goToPage,
     levelClass,
     loading,
-    loadingMore,
-    loadMore,
     logs,
+    page,
+    pageCount: pageCountValue,
+    pageSize,
+    pendingCount,
+    receiveRealtimeLog: enqueueRealtimeLog,
     setFilter,
+    showLatest,
     total,
   }
 }

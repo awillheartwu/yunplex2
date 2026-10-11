@@ -1,5 +1,5 @@
 <template>
-  <span ref="trigger" class="action-hint" @pointerenter="open" @pointerleave="scheduleClose" @focusin="open" @focusout="scheduleClose" @click="close">
+  <span ref="trigger" class="action-hint" @pointerenter="open" @pointerleave="scheduleClose" @focusin="open" @focusout="scheduleClose" @click="onClick">
     <slot />
     <Teleport to="body">
       <div v-if="visible" :id="id" ref="tooltip" role="tooltip" class="action-hint__tip" :style="position" @pointerenter="cancelClose" @pointerleave="scheduleClose">{{ text }}</div>
@@ -8,14 +8,25 @@
 </template>
 <script setup lang="ts">
 import { useId, onUpdated, onBeforeUnmount } from 'vue'
-const props = defineProps<{ text: string }>()
+const props = defineProps<{ text: string; clickToggle?: boolean }>()
 const id = `action-hint-${useId()}`
 const trigger = ref<HTMLElement | null>(null), tooltip = ref<HTMLElement | null>(null)
-const visible = ref(false), position = ref<Record<string, string>>({})
+const visible = ref(false), pinned = ref(false), position = ref<Record<string, string>>({})
 let timer: ReturnType<typeof setTimeout> | undefined
 function cancelClose() { clearTimeout(timer) }
-function close() { cancelClose(); visible.value = false }
-function scheduleClose() { cancelClose(); timer = setTimeout(close, 120) }
+function close() { cancelClose(); pinned.value = false; visible.value = false }
+function scheduleClose() { if (pinned.value) return; cancelClose(); timer = setTimeout(close, 120) }
+function onClick() {
+  if (!props.clickToggle || pinned.value) { close(); return }
+  pinned.value = true
+  void open()
+}
+function onOutsidePointer(event: Event) {
+  if (!pinned.value) return
+  const target = event.target as Node | null
+  if (!target || trigger.value?.contains(target) || tooltip.value?.contains(target)) return
+  close()
+}
 async function open() {
   cancelClose()
   if (!props.text) return
@@ -30,12 +41,14 @@ async function open() {
 }
 function describe() {
   const control = trigger.value?.querySelector<HTMLElement>('button, a, input, select, summary')
-  if (control) control.setAttribute('aria-describedby', [control.getAttribute('aria-describedby'), id].filter(Boolean).join(' ').split(' ').filter((value, index, values) => values.indexOf(value) === index).join(' '))
+  if (!control) return
+  control.setAttribute('aria-describedby', [control.getAttribute('aria-describedby'), id].filter(Boolean).join(' ').split(' ').filter((value, index, values) => values.indexOf(value) === index).join(' '))
+  if (props.clickToggle) control.setAttribute('aria-expanded', String(visible.value))
 }
 function onKey(event: KeyboardEvent) { if (event.key === 'Escape' && visible.value) { event.stopPropagation(); close() } }
-onMounted(() => { describe(); document.addEventListener('keydown', onKey, true); window.addEventListener('resize', close); window.addEventListener('scroll', close, true) })
+onMounted(() => { describe(); document.addEventListener('keydown', onKey, true); document.addEventListener('pointerdown', onOutsidePointer, true); window.addEventListener('resize', close); window.addEventListener('scroll', close, true) })
 onUpdated(describe)
-onBeforeUnmount(() => { cancelClose(); document.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true) })
+onBeforeUnmount(() => { cancelClose(); document.removeEventListener('keydown', onKey, true); document.removeEventListener('pointerdown', onOutsidePointer, true); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true) })
 </script>
 <style scoped>
 .action-hint { display: inline-flex; min-width: 0; }

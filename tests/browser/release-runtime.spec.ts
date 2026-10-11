@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures'
+import { MEBIBYTE } from '../../shared/system-memory'
 test('runtime readiness is public and diagnostics require a session; HTTP login persists', async ({ page, context }) => {
   await page.goto('/login')
   const initial = await page.evaluate(async () => {
@@ -17,5 +18,18 @@ test('runtime readiness is public and diagnostics require a session; HTTP login 
   const metrics = await page.evaluate(async () => (await fetch('/api/system/runtime')).json())
   expect(metrics.code).toBe(0)
   expect(metrics.data.memory.rss).toBeGreaterThan(0)
+  expect(metrics.data.memory.arrayBuffers).toBeGreaterThanOrEqual(0)
+  expect(metrics.data.memoryContext).toMatchObject({
+    mode: process.env.PLAYWRIGHT_PRODUCTION === '1' ? 'production' : 'development',
+    rssScope: 'process', detailsScope: 'thread', isMainThread: process.env.PLAYWRIGHT_PRODUCTION === '1',
+  })
+  if (process.env.PLAYWRIGHT_PRODUCTION === '1') expect(metrics.data.memoryContext.threadId).toBe(0)
+  else expect(metrics.data.memoryContext.threadId).toBeGreaterThan(0)
   expect(metrics.data.readiness.ready).toBe(true)
+  const stats = await page.evaluate(async () => (await fetch('/api/system/stats')).json())
+  expect(stats.data.memoryContext).toEqual(metrics.data.memoryContext)
+  for (const key of ['rss', 'heapUsed', 'heapTotal', 'external', 'arrayBuffers']) {
+    expect(stats.data.memory[key]).toBeGreaterThanOrEqual(0)
+    expect(stats.data.mem[key]).toBe(Math.round(stats.data.memory[key] / MEBIBYTE))
+  }
 })

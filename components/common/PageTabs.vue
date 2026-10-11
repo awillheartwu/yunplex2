@@ -8,12 +8,14 @@
       class="page-tabs__tab"
       :class="{ 'page-tabs__tab--active': modelValue === tab.key }"
       :aria-selected="modelValue === tab.key"
+      :aria-label="tab.label"
       :disabled="tab.disabled"
       :tabindex="focusKey === tab.key ? 0 : -1"
       @keydown="onTabKeydown($event, tab.key)"
       @click="selectTab(tab.key)"
     >
       <span>{{ tab.label }}</span>
+      <span v-if="tab.badge" class="page-tabs__badge">{{ tab.badge }}</span>
       <span
         v-if="tab.count !== undefined"
         class="page-tabs__badge"
@@ -31,6 +33,7 @@ import { useAttrs } from 'vue'
 export interface PageTab {
   key: string
   label: string
+  badge?: string
   count?: number
   badgeTone?: 'neutral' | 'danger'
   disabled?: boolean

@@ -1,3 +1,4 @@
+import { selectListOption } from './helpers/list-select'
 import { expect, test, type Page } from './fixtures'
 
 const ok = (data: unknown) => ({ code: 0, msg: 'ok', data })
@@ -103,9 +104,9 @@ test('collection overview, adoption filters, media rows and settings preserve hi
       expect(Math.abs(a!.y - b!.y)).toBeLessThan(2)
       expect(a!.x + a!.width).toBeLessThanOrEqual(b!.x)
     }
-    await evidence.selectOption('high_confidence')
+    await selectListOption(page, evidence, 'high_confidence')
     await expect.poll(() => filterQueries.at(-1)?.get('tier')).toBe('high_confidence')
-    await decision.selectOption('download')
+    await selectListOption(page, decision, 'download')
     await expect.poll(() => filterQueries.at(-1)?.get('decision')).toBe('download')
     if (width < 768) {
       await page.getByRole('button', { name: '完成', exact: true }).click()

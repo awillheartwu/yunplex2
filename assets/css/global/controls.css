@@ -104,11 +104,6 @@ select.form-input {
 .btn-danger:hover:not(:disabled) {
   box-shadow: var(--focus-ring);
 }
-.btn-warning {
-  background: var(--warning-soft);
-  color: var(--warning);
-  border-color: var(--warning-border);
-}
 .btn-ghost {
   background: var(--bg-surface);
   color: var(--text-secondary);
@@ -197,6 +192,7 @@ input[type='checkbox']:disabled {
 .icon-button:focus-visible,
 .btn:focus-visible,
 .form-input:focus-visible,
+.list-select__trigger:focus-visible,
 .filter-chip:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-offset);

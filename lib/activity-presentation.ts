@@ -17,6 +17,7 @@ export function activityStage(run: ActivityRun): string {
   if (state === 'waiting') return '分析已完成，等待你确认接管方案'
   if (state === 'queued') return '等待执行，轮到此任务后会自动开始'
   if (run.type === 'source_initialization') return '正在分析媒体关联，完成后需要你确认方案'
+  if (run.files?.paused) return '下载已暂停领取新任务，当前文件处理完成后停止'
   if (run.live && stages[run.live.currentStage]) return stages[run.live.currentStage]!
   if (run.files?.counts.downloading) return '正在下载歌曲'
   if (run.files?.counts.tagging) return '正在写入标签'

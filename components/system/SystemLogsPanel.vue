@@ -24,8 +24,12 @@
     </header>
 
     <div v-if="error" class="system-logs-error" role="alert"><strong>日志读取失败</strong><p>{{ error }}</p><button class="btn btn-secondary btn-sm" :disabled="loading" @click="fetchLogs">重新加载</button></div>
-    <div v-if="loading" class="system-logs-panel__state">加载日志中…</div>
-    <div v-else-if="logs.length > 0" class="system-log-list" role="list" aria-label="系统日志列表">
+    <div v-if="pendingCount > 0 && page > 1" class="system-logs-new" role="status">
+      <span>浏览历史时有 {{ pendingCount }} 条新日志</span>
+      <button class="btn btn-secondary btn-sm" type="button" :disabled="loading" @click="showLatest">查看最新</button>
+    </div>
+    <div v-if="loading && logs.length === 0" class="system-logs-panel__state">加载日志中…</div>
+    <div v-else-if="logs.length > 0" ref="listRoot" class="system-log-list" role="list" aria-label="系统日志列表">
       <article v-for="log in logs" :key="log.id" class="system-log-row" role="listitem">
         <time class="system-log-row__time" :datetime="log.timestamp">{{ formatTime(log.timestamp) }}</time>
         <span class="system-log-row__level" :class="levelClass(log.level)">{{ log.level.toUpperCase() }}</span>
@@ -46,13 +50,7 @@
     </div>
     <EmptyState v-else-if="!error" title="暂无诊断日志" :description="activeFilter ? '当前级别下没有日志' : '暂时没有诊断事件，服务连接状况可在总览查看'" />
 
-    <Pagination
-      :has-more="hasMore"
-      :loading="loadingMore"
-      :current-count="logs.length"
-      :total="total"
-      @load-more="loadMore"
-    />
+    <PageNavigator :page="page" :page-size="pageSize" :total="total" label="日志" :loading="loading" @change="changePage" />
   </section>
 
 </template>
@@ -62,9 +60,16 @@ import { useSystemLogs } from '~~/composables/useSystemLogs'
 import { getDomainErrorDefinition } from '~~/shared/domain-errors'
 
 const {
-  activeFilter, error, fetchLogs, filters, formatTime, hasMore, levelClass,
-  loading, loadingMore, loadMore, logs, setFilter, total,
+  activeFilter, error, fetchLogs, filters, formatTime, goToPage, levelClass,
+  loading, logs, page, pageSize, pendingCount, setFilter, showLatest, total,
 } = useSystemLogs()
+
+const listRoot = ref<HTMLElement | null>(null)
+async function changePage(target: number) {
+  const previous = page.value
+  await goToPage(target)
+  if (page.value !== previous) { await nextTick(); listRoot.value?.scrollIntoView({ block: 'start' }) }
+}
 
 function errorLabel(code: string) {
   return getDomainErrorDefinition(code).label
@@ -92,5 +97,6 @@ function errorLabel(code: string) {
 .system-log-row__error-code{display:inline-flex;align-items:center;border:1px solid var(--border-primary);border-radius:var(--radius-full);padding:.12rem var(--space-2);color:var(--text-tertiary);background:var(--bg-app);font-size:var(--text-xs);white-space:nowrap}
 .system-log-row__detail{margin-top:var(--space-1_5);color:var(--text-tertiary);font-size:var(--text-xs)}.system-log-row__detail summary{cursor:pointer;color:var(--text-secondary)}.system-log-row__detail pre{max-height:16rem;margin:var(--space-1_5) 0 0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:var(--radius-md);background:var(--bg-app);padding:var(--space-2_5)}
 .system-logs-panel__state{display:flex;min-height:12rem;align-items:center;justify-content:center;color:var(--text-secondary)}
+.system-logs-new{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-2) var(--space-3);border:1px solid var(--accent-border);border-radius:var(--radius-md);background:var(--accent-muted);color:var(--text-secondary);font-size:var(--text-xs)}
 @media(max-width:760px){.system-log-row{grid-template-columns:1fr;gap:var(--space-1_5)}.system-log-row__level{justify-self:start;padding:0 var(--space-2)}}
 </style>

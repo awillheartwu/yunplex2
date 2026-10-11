@@ -35,11 +35,11 @@
       <header class="dashboard-chart-card__header dashboard-chart-card__header--resource">
         <div>
           <h3>CPU 与内存</h3>
-          <p>本页最近 5 分钟采样</p>
+          <p>本页最近 5 分钟采样 · 内存为进程 RSS</p>
         </div>
         <div class="resource-legend" aria-label="当前资源占用">
           <span><i class="resource-legend__cpu" />CPU <strong>{{ latestResource ? `${latestResource.cpu}%` : '--' }}</strong></span>
-          <span><i class="resource-legend__memory" />内存 <strong>{{ latestResource ? `${latestResource.memory} MB` : '--' }}</strong></span>
+          <span><i class="resource-legend__memory" />RSS <strong>{{ formatMemoryMiB(latestResource?.memory) }}</strong></span>
         </div>
       </header>
 
@@ -60,7 +60,7 @@
 
       <table class="sr-only">
         <caption>CPU 与内存采样</caption>
-        <thead><tr><th>时间</th><th>CPU 百分比</th><th>内存 MB</th></tr></thead>
+        <thead><tr><th>时间</th><th>CPU 百分比</th><th>进程 RSS（MiB）</th></tr></thead>
         <tbody><tr v-for="point in resourceTrend" :key="point.timestamp"><td>{{ formatTime(point.timestamp) }}</td><td>{{ point.cpu }}</td><td>{{ point.memory }}</td></tr></tbody>
       </table>
     </article>
@@ -70,6 +70,7 @@
 <script setup lang="ts">
 import type { SystemResourceTrendPoint } from '~~/composables/useSystemMonitor'
 import type { DashboardDownloadTrendPoint } from '~~/types/dashboard'
+import { formatMemoryMiB } from '~~/lib/system-memory'
 
 const props = defineProps<{
   downloadTrend: DashboardDownloadTrendPoint[]
@@ -110,7 +111,7 @@ const firstResourceTime = computed(() => props.resourceTrend[0] ? formatTime(pro
 const latestResourceTime = computed(() => latestResource.value ? formatTime(latestResource.value.timestamp) : '')
 const downloadAriaLabel = computed(() => `近七日共完成 ${downloadTotal.value} 首下载。${props.downloadTrend.map(point => `${point.label} ${point.count} 首`).join('，')}`)
 const resourceAriaLabel = computed(() => latestResource.value
-  ? `CPU 与内存趋势，当前 CPU ${latestResource.value.cpu}%，内存 ${latestResource.value.memory} MB`
+  ? `CPU 与内存趋势，当前 CPU ${latestResource.value.cpu}%，进程 RSS ${formatMemoryMiB(latestResource.value.memory)}`
   : 'CPU 与内存趋势，等待采样')
 </script>
 

@@ -33,26 +33,14 @@
           <template #advanced>
             <div class="filter-sheet-group">
               <p class="filter-sheet-group__label">运行类型</p>
-              <div class="filter-sheet-group__controls">
-                <FilterChip v-for="item in failureTypeFilters" :key="item.value || 'all'" :active="draftFailureType === item.value" @click="draftFailureType = item.value">
-                  {{ item.label }}
-                </FilterChip>
-              </div>
+              <FilterSegmentGroup v-model="draftFailureType" aria-label="运行类型" :options="failureTypeFilters" />
             </div>
             <div class="filter-sheet-group">
               <p class="filter-sheet-group__label">失败阶段</p>
-              <div class="filter-sheet-group__controls">
-                <FilterChip v-for="item in failureKindFilters" :key="item.value || 'all'" :active="draftFailureKind === item.value" @click="draftFailureKind = item.value">
-                  {{ item.label }}
-                </FilterChip>
-              </div>
+              <ListSelect v-model="draftFailureKind" class="list-select--block" aria-label="失败阶段" :options="failureKindFilters" />
             </div>
             <div class="filter-sheet-group">
-              <label class="filter-sheet-group__label" for="failure-source-filter">来源</label>
-              <select id="failure-source-filter" v-model="draftFailureSource" class="form-input">
-                <option value="">全部来源</option>
-                <option v-for="source in sourceOptions" :key="source.id" :value="source.id">{{ sourceOptionLabel(source) }}</option>
-              </select>
+              <ListSelect v-model="draftFailureSource" class="list-select--block" label="来源" aria-label="来源" :options="[{ value: '', label: '全部来源' }, ...sourceOptions.map(source => ({ value: source.id, label: sourceOptionLabel(source) }))]" />
             </div>
             <FilterDateRange :model-value="draftFailureDateFilter" :min-date="null" @update:model-value="setDraftFailureDate" />
           </template>
@@ -95,8 +83,9 @@
           <button class="btn btn-ghost btn-xs" type="button" @click="selectedFailures.clear()">取消选择</button>
         </div>
 
-        <div v-if="failures.loading.value && failures.items.value.length === 0" class="task-loading">正在加载异常记录…</div>
-        <EmptyState v-else-if="failures.items.value.length === 0" :title="failureEmptyTitle" :description="failureEmptyDescription" />
+        <p v-if="failures.error.value" role="alert" class="text-danger">读取失败，保留上次结果：{{ failures.error.value }}</p>
+        <div v-if="failures.loading.value && failures.items.value.length === 0 && !failures.error.value" class="task-loading">正在加载异常记录…</div>
+        <EmptyState v-else-if="failures.items.value.length === 0 && !failures.error.value" :title="failureEmptyTitle" :description="failureEmptyDescription" />
         <div v-else class="section-card failure-list">
           <article v-for="record in failures.items.value" :key="record.id" class="failure-row">
             <input type="checkbox" :checked="selectedFailures.has(record.id)" :aria-label="`选择 ${record.songName}`" @change="toggleFailure(record.id)" />
@@ -139,7 +128,7 @@
               <button v-if="record.status === 'ignored'" class="btn btn-secondary btn-xs" type="button" @click="reopenFailure(record.id)">恢复提醒</button>
             </div>
           </article>
-          <Pagination :has-more="failures.hasMore.value" :loading="failures.loadingMore.value" :current-count="failures.items.value.length" :total="failures.total.value" @load-more="failures.loadMore()" />
+          <PageNavigator :page="failures.page.value" :page-size="failures.pageSize" :total="failures.total.value" label="异常记录" :loading="failures.loading.value" @change="failures.goToPage" />
         </div>
       </section>
 
