@@ -1,3 +1,5 @@
+import { quickMediaPermissions } from './quick-permissions'
+import { sharedMediaPermissions } from './shared-media'
 import { InitializationConflictError } from './errors'
 import { createHash, randomUUID } from 'node:crypto'
 import { readConfigFromDb, getDb } from '../db'
@@ -73,6 +75,7 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
       getDb().prepare('UPDATE source_initializations SET matching_config_json=?, matching_config_fingerprint=?, matching_data_fingerprint=? WHERE id=?')
         .run(JSON.stringify(policy), matchingFingerprint(policy), matchingFingerprint({ songs: playlist.songs, trackIds: playlist.trackIds, tracks }), initialization.id)
       replaceInitializationPlans(initialization.id, plans)
+      getDb().prepare('UPDATE source_initializations SET score_version=1 WHERE id=?').run(initialization.id)
       const neteaseCursor = fingerprint(playlist.trackIds.map(track => track.id))
       const plexFingerprint = fingerprint(tracks.map(track => [track.ratingKey, track.Media?.flatMap(media => media.Part?.map(part => part.file) ?? [])]))
       const summary = `分析完成：${plans.length} 首，${plans.filter(plan => plan.tier === 'strong_id').length} 首强身份，${plans.filter(plan => plan.tier === 'high_confidence').length} 首高置信`
@@ -119,7 +122,7 @@ export function stopInitializationAnalyses(): void {
   for (const controller of running.values()) controller.abort(new Error('服务停止'))
 }
 
-async function applySourceInitialization(initializationId: string): Promise<InitializationCommitResult> {
+async function applySourceInitialization(initializationId: string, allowDisabled = false): Promise<InitializationCommitResult> {
   const initialization = getInitialization(initializationId)
   if (initialization?.status === 'completed') {
     const row = getDb().prepare('SELECT commit_result_json FROM source_initializations WHERE id=?').get(initializationId) as { commit_result_json: string | null }
@@ -150,8 +153,23 @@ async function applySourceInitialization(initializationId: string): Promise<Init
   try {
     const db = getDb()
     db.transaction(() => {
+      const cancelledQuick = db.prepare("SELECT 1 FROM initialization_quick_operations op JOIN source_sync_queue q ON q.id=op.request_id WHERE op.initialization_id=? AND op.status='queued' AND q.cancel_requested_at IS NOT NULL").get(initialization.id)
+      if (cancelledQuick) throw new InitializationConflictError('快速处理已取消')
       const currentSource = getSource(source.id)
       if (!currentSource) throw new Error('歌单来源不存在')
+      const sharedPermissions = new Map([...sharedMediaPermissions(initialization.id), ...quickMediaPermissions(initialization.id)])
+      // Validate every selected member before any shared identity is written.
+      for (const [songId, peers] of [...sharedPermissions]) {
+        const valid = peers.every(id => {
+          const peer = rows.find(row => Number(row.netease_song_id) === id)
+          if (!peer) return true // Existing owners were version/path checked by the permission builder.
+          const track = trackByRatingKey.get(String(peer.candidate_rating_key || ''))
+          const paths = track?.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? []) ?? []
+          return paths.length === 1 && normalizePlexPath(paths[0]!) === normalizePlexPath(String(peer.candidate_file_path || ''))
+        })
+        if (!valid) for (const id of peers) sharedPermissions.delete(id)
+        if (!valid) sharedPermissions.delete(songId)
+      }
       for (const row of rows) {
         const songId = Number(row.netease_song_id); const decision = String(row.decision)
         if (decision === 'defer') {
@@ -165,11 +183,13 @@ async function applySourceInitialization(initializationId: string): Promise<Init
           continue
         }
         try {
+          const sharedEvidence = JSON.parse(String(row.evidence_json || '{}'))
+          if ((sharedEvidence.sharedMedia || sharedEvidence.quickDecision?.origin === 'threshold_match' || sharedEvidence.quickDecision?.origin === 'rule_recommended') && !sharedPermissions.has(songId)) throw new BindingVersionConflictError()
           const ratingKey = String(row.candidate_rating_key || '')
           const track = ratingKey ? trackByRatingKey.get(ratingKey) : null
           const filePath = track?.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [])[0]
           if (!track || !filePath || normalizePlexPath(filePath) !== normalizePlexPath(String(row.candidate_file_path || ''))) throw new BindingVersionConflictError()
-          rebindSongIdentity({ neteaseSongId: songId, expectedBindingUpdatedAt: row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null, sourceId: source.id, binding: { plexSectionKey: sectionKey, plexSectionRoot: config.download.plexLibraryPathPrefix, plexFilePath: filePath, plexRatingKey: ratingKey, evidence: { selectedBy: 'user', source: 'first_media_adoption', initializationId: initialization.id, tier: row.tier } } })
+          rebindSongIdentity({ neteaseSongId: songId, sharedWithSongIds: sharedPermissions.get(songId), expectedBindingUpdatedAt: row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null, sourceId: source.id, binding: { plexSectionKey: sectionKey, plexSectionRoot: config.download.plexLibraryPathPrefix, plexFilePath: filePath, plexRatingKey: ratingKey, evidence: { selectedBy: 'user', source: 'first_media_adoption', initializationId: initialization.id, tier: row.tier, sharedMedia: sharedEvidence.sharedMedia ?? null, sharedMediaConfirmed: sharedEvidence.sharedMediaConfirmed ?? null, quickDecision: sharedEvidence.quickDecision ?? null } } })
           db.prepare('DELETE FROM source_media_decisions WHERE source_id=? AND netease_song_id=?').run(source.id, songId)
           db.prepare("UPDATE source_initialization_items SET decision_status='applied', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
           applied++
@@ -191,19 +211,21 @@ async function applySourceInitialization(initializationId: string): Promise<Init
         }
         saveRun(existing)
       }
-      const followUpRequestId = currentSource.enabled ? persistSourceRequest({ sourceId: source.id, kind: 'convergence', trigger: 'user', followUpOf: initialization.id }) : null
-      result = { applied, deferred, downloads, conflicts, shouldSync: currentSource.enabled, sourceId: source.id, followUpRequestId }
+      const followUpRequestId = (currentSource.enabled || allowDisabled) ? persistSourceRequest({ sourceId: source.id, kind: 'convergence', trigger: 'user', followUpOf: initialization.id, allowDisabled }) : null
+      result = { applied, deferred, downloads, conflicts, shouldSync: currentSource.enabled || allowDisabled, sourceId: source.id, followUpRequestId }
       db.prepare('UPDATE source_initializations SET commit_result_json=? WHERE id=?').run(JSON.stringify(result), initialization.id)
-      db.prepare("DELETE FROM source_initialization_items WHERE initialization_id=? AND (decision_status='applied' OR tier='preserved')").run(initialization.id)
+      // Keep the executed review and score evidence for audit and later correction.
     })()
   } finally { release() }
   return result
 }
 
-export async function commitSourceInitialization(initializationId: string): Promise<InitializationCommitResult> {
+export async function commitSourceInitialization(initializationId: string, allowQueued = false): Promise<InitializationCommitResult> {
+  const quick = getDb().prepare("SELECT status FROM initialization_quick_operations WHERE initialization_id=? AND status='queued'").get(initializationId)
+  if (quick && !allowQueued) throw new InitializationConflictError('快速方案已排队，不能重复提交')
   if (getInitialization(initializationId)?.status === 'applying') throw new InitializationConflictError('首次媒体接管方案正在应用，请稍后刷新')
   try {
-    return await applySourceInitialization(initializationId)
+    return await applySourceInitialization(initializationId, allowQueued || Boolean(getInitialization(initializationId)?.quickStatus))
   } catch (error) {
     const current = getInitialization(initializationId)
     if (current?.status === 'applying') {

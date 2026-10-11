@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cloneConfig } from '../config/validation'
-import { DEFAULT_CONFIG } from '../config/defaults'
-import { closeDb, getDb, initDb } from '../db'
-import { getSource, updateSource } from '../playlist/store'
-import { assertSourcesReadyForConvergence, groupSourcesByInitializationGate, resolveInitializationGate } from './gate'
+import { cloneConfig } from '~~/server/lib/config/validation'
+import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
+import { closeDb, getDb, initDb } from '~~/server/lib/db'
+import { getSource, updateSource } from '~~/server/lib/playlist/store'
+import { assertSourcesReadyForConvergence, groupSourcesByInitializationGate, resolveInitializationGate } from '~~/server/lib/source-initialization/gate'
 import {
   effectiveInitializationEnabled,
   ensurePendingInitialization,
@@ -19,7 +19,7 @@ import {
   setInitializationDecisions,
   setInitializationStatus,
   upsertMediaDecision,
-} from './store'
+} from '~~/server/lib/source-initialization/store'
 
 let directory = ''
 
@@ -39,6 +39,20 @@ afterEach(() => {
 })
 
 describe('source initialization persistence and gate', () => {
+  it('groups evidence before pagination and keeps exact evidence and decisions filterable', () => {
+    const initialization = ensurePendingInitialization('source-1')
+    const tiers = ['strong_id', 'high_confidence', 'possible', 'ambiguous', 'unmatched', 'metadata_missing', 'conflict', 'preserved'] as const
+    replaceInitializationPlans(initialization.id, tiers.map((tier, index) => ({
+      neteaseSongId: index + 1, position: index, occurrenceCount: 1, title: `Song ${index}`, artists: [], album: '',
+      trackNumber: null, durationMs: null, tier, candidate: null, candidates: [], evidence: {}, expectedBindingUpdatedAt: null, decision: 'defer' as const,
+    })))
+    expect(queryInitializationItems({ initializationId: initialization.id, tier: 'recommended', pageSize: 1, page: 2 })).toMatchObject({ total: 2, items: [{ tier: 'high_confidence' }] })
+    expect(queryInitializationItems({ initializationId: initialization.id, tier: 'needs_review' }).items.map(item => item.tier)).toEqual(['possible', 'ambiguous'])
+    expect(queryInitializationItems({ initializationId: initialization.id, tier: 'no_candidate' }).items.map(item => item.tier)).toEqual(['unmatched', 'metadata_missing'])
+    expect(queryInitializationItems({ initializationId: initialization.id, tier: 'ambiguous', decision: 'defer' }).total).toBe(1)
+    expect(queryInitializationItems({ initializationId: initialization.id, tier: 'recommended', decision: 'adopt' }).total).toBe(0)
+  })
+
   it('inherits the global setting and supports a per-source override', () => {
     const config = cloneConfig(DEFAULT_CONFIG)
     config.sync.initializeMediaOnFirstSync = true

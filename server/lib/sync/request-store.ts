@@ -5,7 +5,7 @@ import type { SyncMode } from './service-state'
 
 export interface SourceRequestInput {
   sourceId: string
-  kind: 'analysis' | 'convergence'
+  kind: 'analysis' | 'convergence' | 'initialization_apply'
   trigger: TaskRunTrigger
   mode?: SyncMode
   batchId?: string

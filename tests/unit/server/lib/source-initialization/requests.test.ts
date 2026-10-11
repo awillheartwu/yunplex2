@@ -2,22 +2,22 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { closeDb, getDb, initDb, readConfigFromDb } from '../db'
-import { getSource, updateSource } from '../playlist/store'
-import { getRun, saveRun } from '../run/store'
-import { analyzeSourceInitialization, commitSourceInitialization, skipSourceInitialization } from './service'
-import { requestSourceInitialization, restartSourceInitialization } from './requests'
-import { getInitialization, setInitializationDecisions, setInitializationStatus } from './store'
-import { resolveInitializationGate } from './gate'
-import { cancelSourceRequests } from '../sync/source-request-cancellation'
-import { initializationFailure, InitializationConflictError } from './errors'
-import { requestSources } from '../sync/source-requests'
-import { startWorker, stopWorker } from '../sync/worker'
-import { recoverInterruptedSourceRequests } from '../sync/source-schedule-store'
+import { closeDb, getDb, initDb, readConfigFromDb } from '~~/server/lib/db'
+import { getSource, updateSource } from '~~/server/lib/playlist/store'
+import { getRun, saveRun } from '~~/server/lib/run/store'
+import { analyzeSourceInitialization, commitSourceInitialization, skipSourceInitialization } from '~~/server/lib/source-initialization/service'
+import { requestSourceInitialization, restartSourceInitialization } from '~~/server/lib/source-initialization/requests'
+import { getInitialization, setInitializationDecisions, setInitializationStatus } from '~~/server/lib/source-initialization/store'
+import { resolveInitializationGate } from '~~/server/lib/source-initialization/gate'
+import { cancelSourceRequests } from '~~/server/lib/sync/source-request-cancellation'
+import { initializationFailure, InitializationConflictError } from '~~/server/lib/source-initialization/errors'
+import { requestSources } from '~~/server/lib/sync/source-requests'
+import { startWorker, stopWorker } from '~~/server/lib/sync/worker'
+import { recoverInterruptedSourceRequests } from '~~/server/lib/sync/source-schedule-store'
 
 const remote = vi.hoisted(() => ({ tracks: vi.fn(), playlist: vi.fn() }))
-vi.mock('../netease', () => ({ fetchPlaylistSongs: remote.playlist }))
-vi.mock('../plex-client', () => ({ initPlexClient: vi.fn(), getSectionKey: vi.fn(async () => '1'), getSectionTracks: remote.tracks }))
+vi.mock('~~/server/lib/netease', () => ({ fetchPlaylistSongs: remote.playlist }))
+vi.mock('~~/server/lib/plex-client', () => ({ initPlexClient: vi.fn(), getSectionKey: vi.fn(async () => '1'), getSectionTracks: remote.tracks }))
 let directory = ''
 function insertSource(id: string, enabled = false) {
   const now = new Date().toISOString()
@@ -125,8 +125,8 @@ describe('durable source operations', () => {
     vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
     vi.stubGlobal('getRouterParam', () => 'source-1')
     vi.stubGlobal('readBody', async () => ({ initializationId: old.initializationId, songIds: [42], decision: 'download' }))
-    const edits = (await import('../../api/playlist-sources/[id]/initialization/decisions.put')).default
-    const commits = (await import('../../api/playlist-sources/[id]/initialization/commit.post')).default
+    const edits = (await import('~~/server/api/playlist-sources/[id]/initialization/decisions.put')).default
+    const commits = (await import('~~/server/api/playlist-sources/[id]/initialization/commit.post')).default
     for (const handler of [edits, commits]) {
       expect(await handler({} as never)).toMatchObject({ code: 409, msg: expect.stringContaining('请刷新') })
     }

@@ -432,7 +432,8 @@ export function recordPlaylistAlignmentValidation(
 
 export function queryMatchOverview(filters: {
   sourceId: string | 'orphaned'
-  state?: MatchOverviewState
+  origin?: 'scored'
+  state?: MatchOverviewState | 'needs_action' | 'problem'
   search?: string
   includeRemoved?: boolean
   page?: number

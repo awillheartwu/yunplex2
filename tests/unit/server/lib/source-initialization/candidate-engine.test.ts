@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { NeteaseSong } from '../netease'
-import type { PlexTrack } from '../plex-client'
-import type { SongIdentityBinding } from '../sync/identity-store'
-import { buildInitializationPlans } from './candidate-engine'
+import type { NeteaseSong } from '~~/server/lib/netease'
+import type { PlexTrack } from '~~/server/lib/plex-client'
+import type { SongIdentityBinding } from '~~/server/lib/sync/identity-store'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
 
 function song(overrides: Partial<NeteaseSong> = {}): NeteaseSong {
   return {

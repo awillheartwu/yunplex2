@@ -1,3 +1,4 @@
+import { DEFAULT_INITIALIZATION_MATCHING } from '../../../shared/initialization-matching'
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
 import { normalizePlexPath, type SongIdentityBinding } from '../sync/identity-store'
@@ -154,7 +155,10 @@ export function buildInitializationPlans(input: {
     }
     return { ...base, tier: 'unmatched', candidate: null, candidates: [], evidence: { rule: 'no_local_candidate' }, decision: 'defer' }
   })
-  if (!input.matching?.enabled) return plans
+  if (!input.matching?.enabled) {
+    const scorePlans = enhanceInitializationPlans(plans,input.songs,input.tracks,{...DEFAULT_INITIALIZATION_MATCHING,...input.matching},input.bindings)
+    return plans.map((plan,index)=>({...plan,evidence:{...plan.evidence,scoreVersion:1,scoredCandidates:scorePlans[index]?.evidence.scoredCandidates??[],scoredCandidateCount:scorePlans[index]?.evidence.scoredCandidateCount??0}}))
+  }
   const config = withMusicBrainzAliases(input.matching, input.musicBrainz)
   const enhanced = enhanceInitializationPlans(plans, input.songs, input.tracks, config, input.bindings)
   if (config === input.matching) return enhanced

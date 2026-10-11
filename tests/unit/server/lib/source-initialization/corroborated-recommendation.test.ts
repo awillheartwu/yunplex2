@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { matchingPreset, type InitializationMatchingConfig } from '../../../shared/initialization-matching'
-import type { NeteaseSong } from '../netease'
-import type { PlexTrack } from '../plex-client'
-import { buildInitializationPlans } from './candidate-engine'
+import { matchingPreset, type InitializationMatchingConfig } from '~~/shared/initialization-matching'
+import type { NeteaseSong } from '~~/server/lib/netease'
+import type { PlexTrack } from '~~/server/lib/plex-client'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
 
 const song: NeteaseSong = { id: 42, name: '麦子', no: 9, dt: 266000, disc: '1', artists: [{ name: '汉堡黄' }], album: { id: 1, name: '少女，飞', picUrl: '', publishTime: 0 } }
 const track: PlexTrack = { ratingKey: '100', title: '麦子', grandparentTitle: 'Hanbao Huang', parentTitle: '少女，飞', index: 9, duration: 266000, Media: [{ Part: [{ file: '/music/汉堡黄/少女，飞 (2025)/09 - 麦子.flac' }] }] }

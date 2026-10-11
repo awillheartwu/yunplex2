@@ -1,10 +1,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type {
+  InitializationCandidate,
   InitializationDecision,
   InitializationItemsPage,
   InitializationReviewItem,
   SourceInitializationSummary,
 } from '../server/lib/source-initialization/types'
+import type { CandidateScore } from '../shared/initialization-scoring'
 
 export type { InitializationDecision, InitializationItemsPage, InitializationReviewItem, SourceInitializationSummary }
 
@@ -74,6 +76,23 @@ export function evidenceRuleLabel(item: InitializationReviewItem): string {
   return evidenceLabels[rule] || (item.kind === 'preserved' ? '现有绑定将直接保留，无需重新选择。' : '该项需要结合两侧字段和路径人工核对。')
 }
 
+/** Scores are presentation-only ranking aids; they never authorize a media binding. */
+export interface ScoredCandidate {
+  candidate: InitializationCandidate
+  score: CandidateScore
+}
+
+/** Older drafts and non-scored candidates omit `scoredCandidates`; unknown shapes are skipped. */
+export function scoredCandidatesOf(item: InitializationReviewItem): ScoredCandidate[] {
+  const value = item.evidence.scoredCandidates
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is ScoredCandidate => {
+    if (!entry || typeof entry !== 'object') return false
+    const { candidate, score } = entry as { candidate?: unknown; score?: { total?: unknown } }
+    return Boolean(candidate) && typeof score?.total === 'number'
+  })
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
@@ -98,7 +117,8 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
 
   const isAnalyzing = computed(() => ['analyzing', 'applying'].includes(initialization.value?.status || ''))
   const isWaitingAnalysis = computed(() => initialization.value?.status === 'pending' && initialization.value.requestStatus === 'pending')
-  const isEditable = computed(() => initialization.value?.status === 'awaiting_review' && initialization.value.rulesCompatible)
+  const isQuickQueued = computed(() => initialization.value?.quickStatus === 'queued')
+  const isEditable = computed(() => initialization.value?.status === 'awaiting_review' && initialization.value.rulesCompatible && !isQuickQueued.value)
   const needsRestart = computed(() => Boolean(initialization.value && ['awaiting_review', 'completed'].includes(initialization.value.status) && !initialization.value.rulesCompatible))
   const canReview = computed(() => Boolean(initialization.value && ['awaiting_review', 'completed'].includes(initialization.value.status)))
   const itemRules = new Map<number, InitializationReviewItem>()
@@ -178,7 +198,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   function ensureEditable(): boolean {
     if (acting.value) return false
     if (!isEditable.value) {
-      setActionError(needsRestart.value ? '候选规则已更新，请先重新分析' : '当前接管方案不可编辑')
+      setActionError(isQuickQueued.value ? '快速方案已提交，等待后台处理' : needsRestart.value ? '候选规则已更新，请先重新分析' : '当前接管方案不可编辑')
       return false
     }
     return true
@@ -249,13 +269,16 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   async function setDecision(payload: { songIds?: number[]; tier?: string; decision: InitializationDecision }): Promise<void> {
     if (!ensureEditable()) return
     const ids = payload.songIds || []
-    const candidateItems = payload.tier
-      ? [...itemRules.values()].filter(item => item.tier === payload.tier)
-      : ids.map(id => itemRules.get(id))
-    if (!candidateItems.length || candidateItems.some(item => !item || !canChoose(item, payload.decision))) {
-      setActionError('所选歌曲当前不允许这个处理决定，请刷新后重试')
-      return
+    // A tier-wide action includes unloaded pages; cached rows cannot establish its eligibility.
+    // The server validates the draft and limits adoption to rows with a candidate.
+    if (!payload.tier) {
+      const candidateItems = ids.map(id => itemRules.get(id))
+      if (!candidateItems.length || candidateItems.some(item => !item || !canChoose(item, payload.decision))) {
+        setActionError('所选歌曲当前不允许这个处理决定，请刷新后重试')
+        return
+      }
     }
+    error.value = ''
     acting.value = true
     try {
       await api.put(`/playlist-sources/${options.sourceId}/initialization/decisions`, {
@@ -369,10 +392,24 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     }
   }
 
+  async function confirmSharedMedia(item: InitializationReviewItem): Promise<void> {
+    if (!ensureEditable() || item.kind !== 'actionable' || !item.evidence.sharedMediaFingerprint) return
+    error.value = ''
+    acting.value = true
+    try {
+      await api.put(`/playlist-sources/${options.sourceId}/initialization/shared-media`, {
+        initializationId: initialization.value?.id, songId: item.neteaseSongId, fingerprint: item.evidence.sharedMediaFingerprint,
+      })
+      drawerItem.value = null
+      await load()
+    } catch (value) { error.value = errorMessage(value, '确认共享媒体失败') }
+    finally { acting.value = false }
+  }
+
   async function commit(): Promise<void> {
     const current = initialization.value
     if (acting.value || !current || !isEditable.value) {
-      if (current && !isEditable.value) setActionError('候选规则已更新，请先重新分析')
+      if (current && !isEditable.value) setActionError(isQuickQueued.value ? '快速方案已提交，等待后台处理' : '候选规则已更新，请先重新分析')
       return
     }
     acting.value = true
@@ -425,6 +462,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     isAnalyzing,
     isWaitingAnalysis,
     isEditable,
+    isQuickQueued,
     needsRestart,
     canReview,
     tierLabel,
@@ -447,6 +485,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     openDrawer,
     searchPlex,
     chooseCandidate,
+    confirmSharedMedia,
     commit,
     dispose,
   }

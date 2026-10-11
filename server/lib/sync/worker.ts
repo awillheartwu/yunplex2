@@ -5,7 +5,7 @@ import { getDb } from '../db'
 import { getRun, saveRun } from '../run/store'
 import { getSource } from '../playlist/store'
 import { resolveInitializationGate } from '../source-initialization/gate'
-import { analyzeSourceInitialization, stopInitializationAnalyses } from '../source-initialization/service'
+import { analyzeSourceInitialization, commitSourceInitialization, stopInitializationAnalyses } from '../source-initialization/service'
 import type { SyncRunOptions } from './service-state'
 import { getLatestInitialization, setInitializationStatus } from '../source-initialization/store'
 import {
@@ -97,6 +97,7 @@ export function startWorker(
         const gate = source ? resolveInitializationGate(source, config) : { action: 'sync' as const }
         const cancelled = (getDb().prepare('SELECT cancel_requested_at FROM source_sync_queue WHERE id=?').get(request.id) as { cancel_requested_at: string | null }).cancel_requested_at
         if (cancelled) {
+          if (request.kind === 'initialization_apply') getDb().prepare("UPDATE initialization_quick_operations SET status='cancelled' WHERE request_id=?").run(request.id)
           if (request.initializationId) {
             setInitializationStatus(request.initializationId, 'cancelled', { summary: '用户取消分析' })
             const run = request.runId ? getRun(request.runId) : null
@@ -105,10 +106,23 @@ export function startWorker(
           finishSourceRequest(request, 'success', getConfig(), '用户取消')
           continue
         }
+        if (request.kind === 'initialization_apply') {
+          const operationId = request.followUpOf?.replace(/^quick:/, '')
+          const id = (getDb().prepare('SELECT initialization_id FROM initialization_quick_operations WHERE id=?').get(operationId) as {initialization_id:string} | undefined)?.initialization_id
+          if (!id) throw new Error('快速处理请求缺少草案')
+          await commitSourceInitialization(id, true)
+          getDb().prepare("UPDATE initialization_quick_operations SET status='executed' WHERE initialization_id=? AND status='queued'").run(id)
+          finishSourceRequest(request, 'success', getConfig(), null)
+          continue
+        }
         if (request.kind === 'analysis') {
           if (stopping) break
           await analyzeSourceInitialization(request.sourceId, request.trigger, request.initializationId ?? undefined)
           finishSourceRequest(request, 'success', getConfig(), null)
+          continue
+        }
+        if (gate.action !== 'sync' && request.followUpOf?.startsWith('identity:')) {
+          getDb().prepare("UPDATE source_sync_queue SET status='pending',lease_owner=NULL,lease_expires_at=NULL,available_at=?,last_error='等待首次接管完成后对齐' WHERE id=?").run(new Date(Date.now()+15_000).toISOString(),request.id)
           continue
         }
         if (gate.action !== 'sync') {
@@ -151,6 +165,7 @@ export function startWorker(
           }
           break
         }
+        if (request.kind === 'initialization_apply') getDb().prepare("UPDATE initialization_quick_operations SET status='failed' WHERE request_id=?").run(request.id)
         finishSourceRequest(
           request,
           'failure',

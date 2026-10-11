@@ -1,3 +1,4 @@
+import { scoredCandidates } from './scored-candidates'
 import type { InitializationMatchingConfig } from '../../../shared/initialization-matching'
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
@@ -68,7 +69,7 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
     if (plan.tier === 'strong_id' && plan.candidate) {
       const entry = indexed.find(item => String(item.track.ratingKey) === plan.candidate!.ratingKey)
       const version = entry && versionEvidence(title, entry.title, config)
-      if (version && entry && !otherOwner(entry, song.id) && !version.excluded && !version.conflicts.length && !version.review.length) return plan
+      if (version && entry && !otherOwner(entry, song.id) && !version.excluded && !version.conflicts.length && !version.review.length) return { ...plan, evidence: {...plan.evidence, scoreVersion:1, scoredCandidates:scoredCandidates(song,[entry.track],config)} }
     }
     const titleKeys = new Set(title.variants)
     for (const key of aliasKeys(song.name, config.titleAliases, config)) titleKeys.add(key)
@@ -98,14 +99,10 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
         if (song.dt > 0 && Number(entry.track.duration) > 0 && Math.abs(song.dt - Number(entry.track.duration)) <= config.recommendDurationMs) recall(entry, '艺人、专辑、曲序与接近时长补充召回：标题不同，需确认')
       }
     }
+    const scored = scoredCandidates(song, [...pool].map(entry=>entry.track), config)
+    const rank = new Map(scored.map((value,index)=>[value.candidate.ratingKey,index]))
     const evaluations = [...pool].map(entry => evaluate(song, title, entry, titleKeys, config, otherOwner(entry, song.id), recallReasons.get(entry) ?? [])).filter((value): value is Evaluation => value !== null)
-    evaluations.sort((a, b) => Number(b.recommend) - Number(a.recommend)
-      || Number(b.review) - Number(a.review)
-      || (config.albumPolicy === 'prefer' ? Number(b.album) - Number(a.album) : 0)
-      || (config.trackPolicy === 'prefer' ? Number(b.number) - Number(a.number) : 0)
-      || Number(inDirectory(b.entry, config.preferredDirectory)) - Number(inDirectory(a.entry, config.preferredDirectory))
-      || (config.preferLossless ? Number(lossless(b.entry)) - Number(lossless(a.entry)) : 0)
-      || a.entry.track.ratingKey.localeCompare(b.entry.track.ratingKey))
+    evaluations.sort((a,b)=>(rank.get(String(a.entry.track.ratingKey))??Infinity)-(rank.get(String(b.entry.track.ratingKey))??Infinity))
     const recommended = evaluations.filter(item => item.recommend)
     const reviewable = evaluations.filter(item => item.review)
     let selected = recommended.length === 1 && reviewable.length === 1 ? recommended[0] : reviewable.length === 1 ? reviewable[0] : undefined
@@ -134,6 +131,7 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
       candidates: visible.map(item => plexCandidate(item.entry.track)),
       decision: strong ? 'adopt' : 'defer',
       evidence: {
+        scoreVersion: 1, scoredCandidates: scored.slice(0,20), scoredCandidateCount: scored.length,
         rule: 'enhanced_metadata', classification: duplicates ? 'duplicates' : versionConflicts ? 'version_conflict' : tier,
         reasons: lead?.reasons ?? [pool.size ? '已找到候选，但被版本或缺失时长规则排除' : '没有满足当前检索规则的候选'], conflicts: lead?.conflicts ?? [],
         durationDeltaMs: lead?.delta ?? null, candidateCount: evaluations.length,
@@ -143,15 +141,27 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
   })
   const claims = new Map<string, Set<number>>()
   for (const plan of result) if (plan.candidate) {
-    for (const key of [`key:${plan.candidate.ratingKey}`, `path:${normalizePlexPath(plan.candidate.filePath || '')}`]) {
+    for (const key of [`key:${plan.candidate.ratingKey}`, ...(plan.candidate.filePath ? [`path:${normalizePlexPath(plan.candidate.filePath)}`] : [])]) {
       if (!claims.has(key)) claims.set(key, new Set())
       claims.get(key)!.add(plan.neteaseSongId)
     }
   }
   return result.map(plan => {
     if (!plan.candidate || plan.tier === 'preserved') return plan
-    const shared = [`key:${plan.candidate.ratingKey}`, `path:${normalizePlexPath(plan.candidate.filePath || '')}`].some(key => (claims.get(key)?.size ?? 0) > 1)
+    const shared = [`key:${plan.candidate.ratingKey}`, ...(plan.candidate.filePath ? [`path:${normalizePlexPath(plan.candidate.filePath)}`] : [])].some(key => (claims.get(key)?.size ?? 0) > 1)
     if (!shared) return plan
+    const peers = result.filter(other => other.candidate && (other.candidate.ratingKey === plan.candidate!.ratingKey || (plan.candidate!.filePath && normalizePlexPath(other.candidate.filePath || '') === normalizePlexPath(plan.candidate!.filePath))))
+    const safe = plan.candidate.filePath && peers.every(other =>
+      ['high_confidence', 'strong_id', 'preserved'].includes(other.tier)
+      && other.candidate?.ratingKey === plan.candidate!.ratingKey
+      && normalizePlexPath(other.candidate?.filePath || '') === normalizePlexPath(plan.candidate!.filePath!)
+      && !/\[netease-\d+\]/i.test(other.candidate?.filePath || ''))
+    if (!safe && ['strong_id','high_confidence'].includes(plan.tier) && peers.filter(other=>['strong_id','high_confidence','preserved'].includes(other.tier)).length===1) return plan
+    if (safe) return { ...plan, tier: 'ambiguous', decision: 'defer', candidate: null,
+      evidence: { ...plan.evidence, classification: 'shared_media', conflicts: [], sharedMedia: {
+        ratingKey: plan.candidate.ratingKey, filePath: plan.candidate.filePath,
+        songs: peers.map(other => ({ songId: other.neteaseSongId, title: other.title, artists: other.artists, album: other.album, albumId: songMap.get(other.neteaseSongId)?.album.id, publishTime: songMap.get(other.neteaseSongId)?.album.publishTime, durationMs: other.durationMs, bindingVersion: other.expectedBindingUpdatedAt })),
+      } } }
     return { ...plan, tier: 'conflict', decision: 'defer', candidate: null,
       evidence: { ...plan.evidence, classification: 'conflict', conflicts: ['同一媒体同时被本歌单的多首网易云歌曲选中，需要逐项确认身份'] } }
   })
@@ -194,8 +204,6 @@ function evaluate(song: NeteaseSong, title: TitleParts, entry: IndexedTrack, key
   if (entry.paths.length !== 1) reasons.push('媒体路径缺失或包含多个文件，需确认')
   return { entry, reasons, conflicts, strictAlbumMatch: recommend && complete && album && number && delta !== null && delta <= 500, identityConflict, versionConflict: version.conflicts.length > 0, recommend, review, delta, album, number }
 }
-function inDirectory(entry: IndexedTrack, directory: string): boolean { return Boolean(directory && entry.paths.some(path => path.startsWith(directory.replace(/\/+$/, '') + '/'))) }
-function lossless(entry: IndexedTrack): boolean { return entry.paths.some(path => /\.(flac|alac|wav|aiff)$/i.test(path)) }
 function artistSupport(song: NeteaseSong, entry: IndexedTrack, config: InitializationMatchingConfig, title: TitleParts): { complete: boolean; primary: boolean; pathArtist: boolean; missingOneContributor: boolean; missingCollaborators: boolean } {
   const names = [...new Set(song.artists.map(artist => artist.name).filter(Boolean))]
   const desired = names.map(name => aliasKeys(name, config.useArtistAliases ? config.artistAliases : [], config, true))

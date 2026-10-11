@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { matchingPreset, type InitializationMatchingConfig } from '../../../shared/initialization-matching'
-import type { NeteaseSong } from '../netease'
-import type { PlexTrack } from '../plex-client'
-import { buildInitializationPlans } from './candidate-engine'
+import { matchingPreset, type InitializationMatchingConfig } from '~~/shared/initialization-matching'
+import type { NeteaseSong } from '~~/server/lib/netease'
+import type { PlexTrack } from '~~/server/lib/plex-client'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
 
 const song: NeteaseSong = { id: 42, name: 'Signal', no: 1, dt: 180000, disc: '1', artists: [{ name: 'Alpha' }], album: { id: 1, name: 'Single', picUrl: '', publishTime: 0 } }
 const track: PlexTrack = { ratingKey: '100', title: 'Signal', grandparentTitle: 'Alpha', parentTitle: 'Single', index: 1, duration: 180000, Media: [{ Part: [{ file: '/music/Alpha/Signal.flac' }] }] }
@@ -100,6 +100,14 @@ describe('configurable initialization candidate evidence', () => {
   })
   it('detects collisions between two songs before either is adopted', () => {
     const result = buildInitializationPlans({ songs: [song, { ...song, id: 43 }], tracks: [track], bindings: new Map(), matching: matchingPreset('balanced') })
-    expect(result.every(item => item.tier === 'conflict' && !item.candidate && item.decision === 'defer')).toBe(true)
+    expect(result.every(item => item.tier === 'ambiguous' && item.evidence.classification === 'shared_media' && !item.candidate && item.decision === 'defer')).toBe(true)
   })
+})
+
+
+it('does not offer shared confirmation for missing paths or explicit file identities', () => {
+  for (const file of ['', '/music/Signal [netease-42].flac']) {
+    const results = buildInitializationPlans({songs:[song,{...song,id:43}],tracks:[{...track,Media:[{Part:[{file}]}]}],bindings:new Map(),matching:matchingPreset('balanced')})
+    expect(results.some(item=>item.evidence.sharedMedia)).toBe(false)
+  }
 })
