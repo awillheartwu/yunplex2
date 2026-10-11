@@ -1,103 +1,59 @@
-# Project instructions
+# 项目指引
 
-This file provides repository guidance for coding agents working on reYunPlex.
+reYunPlex 用 Nuxt 4、Nitro 和 SQLite，把网易云歌单或专辑同步为本地音乐与 Plex 歌单。按用户当前目标完成工作，保留无关的工作区改动。
 
-## Project
+## 开发方式
 
-reYunPlex (package name `yunplex2`) mirrors NetEase playlist or album intent into local media and Plex. It is a Nuxt 4 SPA with a Nitro backend, SQLite persistence, SSE progress and a single-process background scheduler.
+- 项目尚未发布。优先解决当前需求，不为假想的旧版本增加兼容分支、历史迁移或备用流程。
+- 用最小、直接的实现。校验实际输入和外部操作，不为没有证据的问题堆叠防御代码。
+- 改动前读相关代码和文档即可，不要求通读全部文档。
+- 当前模块位置见 `docs/architecture.md`；同步和首次接管分别见 `docs/sync-flow.md`、`docs/initialization-matching.md`。
 
-Use these sources when relevant to the requested behavior; a local edit does not require reading the full set:
-
-- `CONTEXT.md` — canonical domain vocabulary.
-- `ROADMAP.md` — priorities, validation debt and completion criteria.
-- `docs/README.md` — current implementation docs and ADR index.
-- `docs/sync-flow.md` and `docs/compare-decision.md` — current synchronization behavior.
-
-## Commands
+## 命令与验证
 
 ```bash
-pnpm dev                  # development server on localhost:3001
-pnpm build                # production build in .output/
-pnpm start                # run the production build
-pnpm test                 # all Vitest tests
-pnpm test:watch           # Vitest watch mode
-pnpm lint                 # ESLint
-pnpm typecheck            # TypeScript without emit
-pnpm check:repo-size      # repository-wide 800-line source gate
-pnpm diagnose:sync-source -- --source <id> --runs 2
+pnpm dev                  # localhost:3001
+pnpm test                 # tests/unit/ 下的单元与集成测试
+pnpm test:browser         # tests/browser/ 下的浏览器测试
+pnpm lint
+pnpm typecheck
+pnpm check:styles
+pnpm check:repo-size      # 源码每文件最多 800 行
+pnpm build                # 生成 .output/
+pnpm start                # 运行生产构建
+pnpm check:ci             # CI 使用的完整本地检查
 ```
 
-Validate according to the change. For documentation or instruction edits, check formatting, references and the changed diff. For source changes, run focused behavior tests and applicable lint/type checks; use `pnpm check:repo-size` for source-size changes. Run `pnpm build` for bundling, dependency, runtime integration or release changes. Preserve required CI/release checks. After relevant checks pass, broaden or repeat only for new changes or unresolved concerns. Report unrelated baseline failures separately. A build or mocked test is not a real NetEase/Plex E2E; report external validation separately.
+文档改动检查格式、引用和差异；代码改动运行相关行为测试与 lint/typecheck；涉及构建、依赖或运行集成时执行 build。通过后只为新改动、失败或未解决的问题追加检查。测试使用临时数据库和文件，不连接正式网易云/Plex。真实环境验收另行说明。
 
-Use Conventional Commits (`feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `chore`, `test`). Preserve unrelated working-tree changes.
+所有测试、夹具和测试专用工具集中放在 `tests/`，目录与命令见 `tests/README.md`。不要在业务目录旁新增测试文件，也不要在 `scripts/` 放测试脚本。
 
-## Architecture
+提交使用 Conventional Commits。提交、推送和部署按用户授权范围执行。
 
-```text
-Browser SPA
-  pages -> composables -> useApi -> /api
-  composables/sse.ts <- /api/sync/events
+## 主要代码入口
 
-Nitro server
-  server/api                 HTTP boundary
-  server/plugins/sync-daemon startup, recovery, scheduler and lease sweep
-  server/lib/config          typed config, defaults, validation and persistence
-  server/lib/db              current schema, migrations and introspection
-  server/lib/playlist        Playlist Source persistence and batch actions
-  server/lib/download        persistent queue and one-song download pipeline
-  server/lib/run             unified task-run history
-  server/lib/sync            Source Convergence and identity system
-```
+- `server/api/` 处理 HTTP 请求，调用业务模块；响应统一通过 `server/lib/response.ts`。
+- `server/lib/sync/source-requests.ts` 接受来源请求，`request-store.ts` 保存，`worker.ts` 串行执行，`source-schedule-store.ts` 负责定时与恢复。
+- `server/lib/sync/service.ts` 统一执行同步。下载准备、Plex 更新和结果保存分别在 `source-downloads.ts`、`source-plex-reconciliation.ts`、`source-finalization.ts`。
+- `server/lib/download/worker.ts` 统一执行文件任务；`options.ts::resolveSingleSongConfig()` 组装单曲配置。
+- `server/lib/source-initialization/` 负责首次接管分析和用户确认。
+- `server/lib/db/schema.ts` 定义数据库结构，数据库文件是 `<dataDir>/data.db`。
+- `server/plugins/sync-daemon.ts` 负责启动、任务恢复与关闭。
 
-### Source Convergence
+## 当前行为要求
 
-`server/lib/sync/service.ts` is the only orchestration path. Keep its domain seams intact:
+- 媒体关联保存在 `song_identity_bindings`，本地文件保存在 `local_media_assets`。手动选择优先；只有唯一的托管文件准确路径可以自动建立关联，元数据相似仅用于推荐。
+- Plex 歌单增删经过 `reconciliation-plan.ts` 和 `identity-coordinator.ts`，以具体 `playlistItemID` 操作；执行前核对关联，写后重新读取结果。同步不删除音乐文件。
+- 下载并发是全局上限。替换文件先校验临时文件再切换，失败保留原文件。
+- 路径前缀只换算 reYunPlex 与 Plex 的路径，文件共享由实际挂载提供。
+- 配置先校验再合并；来源覆盖中的 `null` 继承全局值，不能把明确的 `false` 当成未设置。
+- 不在代码和注释中硬编码个人路径或凭据。Cookie、Token 和密码不进入日志或提交产物。
+- SSE 页面订阅在卸载时释放连接引用、监听器和计时器。
+- Nuxt 自动导入 Vue API、组件和 composable。子组件内部样式由子组件负责，页面公共布局放在对应页面样式中。
 
-- `source-downloads.ts` — download planning, media replacement and post-download state.
-- `source-plex-reconciliation.ts` — Plex lookup, binding, deletion protection, reorder and read-back.
-- `source-pure-reorder.ts` — verified pure-reorder fast path.
-- `source-finalization.ts` — source cursors, failure memory, and task run finalization.
-- `lookup.ts` and its focused modules — path/manual Media Link resolution and managed-download fallback.
-- `reconciliation-plan.ts` — occurrence-specific Plex mutation authorization.
-- `identity-coordinator.ts` — binding version snapshots and safe commit order.
+## 文档
 
-All global, source, batch, retry and scheduled entrypoints must call this service. Do not create another download/Plex mutation sequence in an API handler.
-
-### Identity invariants
-
-- Formal identity lives in `song_identity_bindings`; local file provenance and continuity live in `local_media_assets`.
-- `song_lookup` is retired. It appears only in historical migration compatibility tests and must not be restored as a runtime fact.
-- Metadata similarity, provider identity and MusicBrainz data are presentation or search aids only; they cannot establish a Media Link.
-- Manual decisions take priority. A unique, continuous managed exact path is the only automatic Media Link evidence.
-- Identity resolution does not authorize deletion. Removal is per Plex `playlistItemID` and requires a complete target, unchanged binding versions, explicit plan authorization and Plex write/read-back validation.
-- Inside the mutation lock, verify external binding versions, apply the current run's verified bindings, then mutate Plex and read back.
-
-### Download invariants
-
-- `server/lib/download/options.ts::resolveSingleSongConfig()` is the shared default assembly point for sync, repair and retries.
-- Download concurrency is global. New scheduling work must not multiply it per Playlist Source.
-- Replacements validate a staged file before atomic rename. A failure preserves the old Local Media Asset, Identity Binding and Plex Playlist Occurrence.
-- Path mapping only translates names between reYunPlex and Plex. It does not copy or publish files to a remote Plex host.
-
-### Persistence and runtime
-
-- `server/lib/db/schema.ts` defines the current fresh schema.
-- `server/lib/db/source-request-upgrade.ts` and `file-task-schema.ts` own bounded, idempotent upgrades for existing records; `schema.ts` invokes them. The retired full historical migration system must not be restored.
-- Fresh-install tests must validate critical tables and columns, not only `PRAGMA user_version`.
-- The live database is `<dataDir>/data.db`; do not create a guessed SQLite filename during diagnosis.
-- `server/lib/sync/source-requests.ts` accepts and routes source requests; `worker.ts` runs analysis and convergence through one persistent consumer. `request-store.ts` persists requests; `source-schedule-store.ts` owns scheduling, claiming, leases and recovery.
-- SSE uses an in-process event bus. Client subscriptions are reference-counted and should always release listeners and timers on unmount.
-
-### API and frontend patterns
-
-- API responses use `{ code: 0, msg: "ok", data: T }` through `server/lib/response.ts`. Failures retain that envelope and include structured error details from `shared/domain-errors.ts`.
-- Config writes are validated and deep-merged. Source boolean overrides are nullable: `null` inherits global policy, while `true` and `false` are explicit.
-- Nuxt auto-imports Vue APIs, components under `components/` without path prefixes, and composables under `composables/`.
-- Extracted Vue children do not inherit a parent's scoped selectors for their internal DOM. Keep page-specific shared styles in the relevant global page stylesheet and preserve static layout tests.
-
-## Documentation policy
-
-- Current behavior belongs in `docs/sync-flow.md` or another indexed current-state document.
-- Long-lived architectural decisions belong in numbered ADRs. Mark replaced ADRs `Superseded`; do not rewrite their historical context as if it were current.
-- Future work belongs in `ROADMAP.md`, with acceptance criteria and explicit validation status.
-- Do not commit one-off screenshot QA notes, machine-local paths or temporary investigation logs as permanent root documentation.
+- 只写当前用法、实现和未完成事项，用直接好懂的语言。
+- 同一内容保留一处，修改时合并重复说明。已完成的待办从 `ROADMAP.md` 删除。
+- 历史决定和变更过程由 Git 保存，不维护 ADR、阶段总结或按日期保存的验收报告。
+- 临时排查记录、截图、测试结果和机器路径放到仓库外，不新增永久清理报告。

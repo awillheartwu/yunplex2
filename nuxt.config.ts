@@ -19,7 +19,7 @@ export default defineNuxtConfig({
     },
     server: {
       watch: {
-        ignored: ['**/node_modules/**', '**/data/**', '**/test/**', '**/../yunplex/**', '**/../yunPlexBackend/**', '**/../yunPlexFrontend/**'],
+        ignored: ['**/node_modules/**', '**/data/**', '**/tests/**'],
       },
     },
   },

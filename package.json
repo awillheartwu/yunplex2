@@ -31,8 +31,8 @@
     "check:repo-size": "node scripts/check-repo-size.mjs",
     "diagnose:sync-source": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-sync-source.ts",
     "diagnose:auto-sync": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-auto-sync.ts",
-    "acceptance:auto-sync": "vitest run tests/unit/auto-sync-acceptance.test.ts server/lib/sync/source-schedule-store.test.ts server/lib/sync/worker.test.ts --reporter=verbose",
-    "acceptance:media-reuse": "vitest run server/lib/sync/lookup.test.ts server/lib/sync/identity-store.test.ts server/lib/sync/identity-coordinator.test.ts server/lib/sync/reconciliation-plan.test.ts server/lib/plex-client-path-index.test.ts --reporter=verbose",
+    "acceptance:auto-sync": "vitest run tests/unit/auto-sync-acceptance.test.ts tests/unit/server/lib/sync/source-schedule-store.test.ts tests/unit/server/lib/sync/worker.test.ts --reporter=verbose",
+    "acceptance:media-reuse": "vitest run tests/unit/server/lib/sync/lookup.test.ts tests/unit/server/lib/sync/identity-store.test.ts tests/unit/server/lib/sync/identity-coordinator.test.ts tests/unit/server/lib/sync/reconciliation-plan.test.ts tests/unit/server/lib/plex-client-path-index.test.ts --reporter=verbose",
     "format": "prettier --write .",
     "prepare": "husky",
     "check:styles": "node scripts/check-design-tokens.mjs"

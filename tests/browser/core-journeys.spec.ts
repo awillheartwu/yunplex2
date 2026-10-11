@@ -1,18 +1,9 @@
+import { login } from './helpers/config'
+import { selectListOption } from './helpers/list-select'
 import { expect, test, type Page } from './fixtures'
 
 const PASSWORD = 'browser-test-password'
 
-async function login(page: Page): Promise<void> {
-  await page.goto('/')
-  const passwordField = page.getByLabel('管理员密码')
-  await expect(passwordField.or(page.getByRole('heading', { name: '工作台', exact: true }))).toBeVisible()
-  if (await passwordField.isVisible()) {
-    await passwordField.fill(PASSWORD)
-    await page.getByRole('button', { name: '登录' }).click()
-    await expect(page).toHaveURL('/')
-  }
-  await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible()
-}
 
 function ok(data: unknown) {
   return { code: 0, msg: 'ok', data }
@@ -473,9 +464,9 @@ test('first media adoption handles a 3450-song review with cross-page selection'
 
   await page.goto('/sync-sources/source-browser?tab=initialization')
   await expect(page.getByText('浏览器验收歌单 · 3450 首（接管快照）')).toBeVisible()
-  await expect(page.getByText('3450', { exact: true })).toBeVisible()
+  await expect(page.locator('.source-adoption__metrics').getByText('3450', { exact: true })).toBeVisible()
   await expect(page.locator('.source-adoption__metrics').getByText('已有绑定', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('候选证据分布')).toContainText('可能候选')
+  await expect(page.getByRole('navigation', { name: '候选分组' })).toContainText('需要核对')
   await page.getByRole('button', { name: '查看证据', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: '歌曲 1 证据详情' })).toContainText('/music/1.flac')
   await page.keyboard.press('Escape')
@@ -757,12 +748,47 @@ test('library sorting is local and manual drag order persists the displayed sour
   })
   await page.goto('/sync-sources')
   await page.getByRole('button', { name: '列表视图', exact: true }).click()
-  await page.getByLabel('收藏排序', { exact: true }).selectOption('name')
+  await selectListOption(page, page.getByLabel('收藏排序', { exact: true }), 'name')
   await expect(page.locator('.collection-item__title')).toHaveText(['A collection', 'Z collection'])
   await expect(page.locator('.collection-item').first()).toHaveAttribute('draggable', 'false')
   expect(orderedIds).toEqual([])
-  await page.getByLabel('收藏排序', { exact: true }).selectOption('manual')
+  await selectListOption(page, page.getByLabel('收藏排序', { exact: true }), 'manual')
   await expect(page.locator('.collection-item__title')).toHaveText(['Z collection', 'A collection'])
   await page.locator('.collection-item').first().dragTo(page.locator('.collection-item').last())
   await expect.poll(() => orderedIds).toEqual(['a-source', 'z-source'])
+})
+
+test('media groups keep detail reasons and distinguish filtered empty results from missing snapshots', async ({ page }) => {
+  await login(page)
+  await mockSourceMedia(page)
+  await page.goto('/sync-sources/source-browser?tab=media')
+  await page.getByRole('combobox', { name: '媒体状态', exact: true }).click()
+  await expect(page.getByRole('listbox', { name: '媒体状态', exact: true }).getByRole('option')).toHaveCount(6)
+  await page.keyboard.press('Escape')
+  await page.route('**/api/match-management/overview**', route => route.fulfill({ json: ok({ items: [], total: 0, page: 1, pageSize: 25, staleAfterMinutes: 10 }) }))
+  const request = page.waitForRequest(request => request.url().includes('/match-management/overview') && new URL(request.url()).searchParams.get('state') === 'problem')
+  await selectListOption(page, page.getByLabel('媒体状态'), 'problem')
+  await request
+  await expect(page.getByText('没有符合当前筛选条件的歌曲，请调整筛选。')).toBeVisible()
+  await page.getByRole('combobox', { name: '具体原因', exact: true }).click()
+  await expect(page.getByRole('listbox', { name: '具体原因', exact: true }).getByRole('option')).toHaveCount(4)
+  await page.keyboard.press('Escape')
+  const exact = page.waitForRequest(request => request.url().includes('/match-management/overview') && new URL(request.url()).searchParams.get('state') === 'binding_stale')
+  await selectListOption(page, page.getByLabel('具体原因'), 'binding_stale')
+  await exact
+  await selectListOption(page, page.getByLabel('媒体状态'), '')
+  await expect(page.getByLabel('媒体状态')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '刷新快照' })).toBeVisible()
+})
+test('bulk high-confidence adoption submits even when the visible page only has unmatched songs', async ({ page }) => {
+  await login(page)
+  const initialization = initializationFixture({ highConfidenceItems: 2241 })
+  await mockInitializationReview(page, initialization, [actionableInitializationItem(601, { tier: 'unmatched', candidate: null, allowedDecisions: ['download', 'defer'] })])
+  await page.route('**/api/playlist-sources/source-browser/initialization/decisions', route => route.fulfill({ json: ok({ changed: 2241 }) }))
+  await page.goto('/sync-sources/source-browser?tab=initialization')
+  await page.getByRole('button', { name: '将 2241 首高置信候选设为使用 Plex', exact: true }).click()
+  const request = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/initialization/decisions'))
+  await page.getByRole('button', { name: '更新草案', exact: true }).click()
+  expect((await request).postDataJSON()).toEqual({ initializationId: initialization.id, tier: 'high_confidence', decision: 'adopt' })
+  await expect(page.getByText('所选歌曲当前不允许这个处理决定，请刷新后重试')).toHaveCount(0)
 })

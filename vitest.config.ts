@@ -12,12 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: [
-      'tests/unit/**/*.test.ts',
-      'components/**/*.test.ts',
-      'composables/**/*.test.ts',
-      'lib/**/*.test.ts',
-      'server/**/*.test.ts',
-    ],
+    include: ['tests/unit/**/*.test.ts'],
+    maxWorkers: 2,
   },
 })
