@@ -1,0 +1,48 @@
+name: reyunplex
+
+services:
+  yunplex2:
+    image: ${REYUNPLEX_IMAGE:?An immutable local image is required}
+    pull_policy: never
+    container_name: reyunplex
+    user: '${NAS_UID:?Set NAS_UID}:${NAS_GID:?Set NAS_GID}'
+    init: true
+    ports:
+      - '${NAS_BIND_ADDRESS:-0.0.0.0}:${NAS_PORT:-3000}:3000'
+    volumes:
+      - type: bind
+        source: ${NAS_APP_ROOT:?Set NAS_APP_ROOT}/data
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NAS_MUSIC_DIR:?Set NAS_MUSIC_DIR}
+        target: /mnt/nas
+        bind:
+          create_host_path: false
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: '3000'
+      NUXT_DATA_DIR: /app/data
+      YUNPLEX2_TRUSTED_PROXIES: ''
+      # Seeds only an empty database. Subsequent configuration lives in SQLite.
+      YUNPLEX2_DOWNLOAD_DIR: /mnt/nas
+      YUNPLEX2_PLEX_LIBRARY_PATH_PREFIX: ${NAS_MUSIC_DIR:?Set NAS_MUSIC_DIR}
+      YUNPLEX2_SYNC_ENABLED: 'false'
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${NAS_MEMORY:-1g}
+    memswap_limit: ${NAS_MEMORY:-1g}
+    cpus: ${NAS_CPUS:-2}
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    stop_grace_period: 2m
+    restart: unless-stopped

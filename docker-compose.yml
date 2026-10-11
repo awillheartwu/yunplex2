@@ -2,6 +2,8 @@ services:
   yunplex2:
     build: .
     container_name: yunplex2
+    user: '${YUNPLEX2_UID:-1000}:${YUNPLEX2_GID:-1000}'
+    init: true
     ports:
       - '${YUNPLEX2_BIND_ADDRESS:-0.0.0.0}:3000:3000'
     volumes:
@@ -12,17 +14,22 @@ services:
       - NITRO_HOST=0.0.0.0
       - NITRO_PORT=3000
       - YUNPLEX2_TRUSTED_PROXIES=${YUNPLEX2_TRUSTED_PROXIES:-}
-      # ── 以下为可选配置注入（首次启动时生效，之后在 Web UI 修改） ──
-      # - YUNPLEX2_NETEASE_COOKIE=MUSIC_U=xxx; __csrf=xxx
-      # - YUNPLEX2_NETEASE_PLAYLIST_IDS=123456789,987654321
-      # - YUNPLEX2_NETEASE_QUALITY=jymaster
-      # - YUNPLEX2_PLEX_SERVER=192.168.1.100
-      # - YUNPLEX2_PLEX_PORT=32400
-      # - YUNPLEX2_PLEX_TOKEN=your-plex-token
-      # - YUNPLEX2_PLEX_SECTION=音乐
-      # - YUNPLEX2_DOWNLOAD_DIR=/mnt/nas
-      # - YUNPLEX2_SYNC_INTERVAL=30
-      # - YUNPLEX2_SYNC_LIMIT=10
-      # - YUNPLEX2_SYNC_ENABLED=true
+      - NUXT_DATA_DIR=/app/data
+      - YUNPLEX2_DOWNLOAD_DIR=/mnt/nas
+      - YUNPLEX2_SYNC_ENABLED=false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${YUNPLEX2_MEMORY:-1g}
+    memswap_limit: ${YUNPLEX2_MEMORY:-1g}
+    cpus: ${YUNPLEX2_CPUS:-2}
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
     stop_grace_period: 2m
     restart: unless-stopped
