@@ -64,6 +64,7 @@ export function validateInitializationMatching(input: unknown = {}): Initializat
     recommendDurationMs: readInteger(candidate.recommendDurationMs, '初始化匹配.recommendDurationMs', 0, 30000),
     reviewDurationMs: readInteger(candidate.reviewDurationMs, '初始化匹配.reviewDurationMs', 0, 30000),
     recommendDurationPercent: readNumber(candidate.recommendDurationPercent, '初始化匹配.recommendDurationPercent', 0, 10),
+    quickMatchThreshold: readInteger(candidate.quickMatchThreshold, '初始化匹配.quickMatchThreshold', 0, 100),
     missingDuration: readEnum(candidate.missingDuration, MISSING_DURATION_POLICIES, '初始化匹配.missingDuration'),
     remasterPolicy: readEnum(candidate.remasterPolicy, REMASTER_POLICIES, '初始化匹配.remasterPolicy'),
     editionPolicy: readEnum(candidate.editionPolicy, EDITION_POLICIES, '初始化匹配.editionPolicy'),
@@ -119,6 +120,7 @@ export function migrateInitializationMatching(input: unknown): InitializationMat
     config.recommendDurationMs = coerceInteger(source.recommendDurationMs, config.recommendDurationMs, 0, 30000)
     config.reviewDurationMs = coerceInteger(source.reviewDurationMs, config.reviewDurationMs, 0, 30000)
     config.recommendDurationPercent = coerceNumber(source.recommendDurationPercent, config.recommendDurationPercent, 0, 10)
+    config.quickMatchThreshold = coerceInteger(source.quickMatchThreshold, config.quickMatchThreshold, 0, 100)
     config.preferredDirectory = typeof source.preferredDirectory === 'string'
       ? source.preferredDirectory
       : config.preferredDirectory

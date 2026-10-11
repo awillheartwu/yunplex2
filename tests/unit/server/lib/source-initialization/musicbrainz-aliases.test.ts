@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { matchingPreset, type MusicBrainzMatchingEvidence } from '../../../shared/initialization-matching'
-import { resolveMusicBrainzAliases, uniqueMusicBrainzArtist, withMusicBrainzAliases } from './musicbrainz-aliases'
-import { buildInitializationPlans } from './candidate-engine'
-import type { InitializationItemPlan } from './types'
+import { matchingPreset, type MusicBrainzMatchingEvidence } from '~~/shared/initialization-matching'
+import { resolveMusicBrainzAliases, uniqueMusicBrainzArtist, withMusicBrainzAliases } from '~~/server/lib/source-initialization/musicbrainz-aliases'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
+import type { InitializationItemPlan } from '~~/server/lib/source-initialization/types'
 
 // node:timers/promises is not replaced by Vitest's global fake timers.
 vi.mock('node:timers/promises', async (importOriginal) => {

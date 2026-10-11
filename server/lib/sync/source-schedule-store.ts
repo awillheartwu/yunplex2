@@ -15,7 +15,7 @@ export interface SourceConvergenceRequest {
   attempts: number
   leaseOwner: string
   trigger: SourceRequestInput['trigger']
-  kind: 'analysis' | 'convergence'
+  kind: 'analysis' | 'convergence' | 'initialization_apply'
   mode: NonNullable<SourceRequestInput['mode']>
   initializationId: string | null
   followUpOf: string | null
@@ -36,7 +36,7 @@ interface QueueRow {
   source_id: string
   schedule_window: string
   attempts: number
-  request_kind: 'analysis' | 'convergence'
+  request_kind: 'analysis' | 'convergence' | 'initialization_apply'
   mode: NonNullable<SourceRequestInput['mode']>
   trigger: SourceRequestInput['trigger']
   initialization_id: string | null

@@ -1,3 +1,5 @@
+import { matchingFingerprint } from './matching-snapshot'
+import { evidenceGroups, filterMembers } from '../../../shared/review-filter-groups'
 import { InitializationConflictError } from './errors'
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
@@ -10,10 +12,14 @@ import { INITIALIZATION_RULE_VERSION, type InitializationItemsPage, type Initial
 type SummaryRow = Record<string, unknown>
 
 function mapSummary(row: SummaryRow): SourceInitializationSummary {
+  const quick = row.quick_operation_id ? getDb().prepare('SELECT id,token,status,applied_revision FROM initialization_quick_operations WHERE id=?').get(row.quick_operation_id) as {id:string;token:string;status:string;applied_revision:number}|undefined : undefined
   return {
     id: String(row.id), sourceId: String(row.source_id), runId: row.run_id ? String(row.run_id) : null,
     followUpRunId: row.follow_up_run_id ? String(row.follow_up_run_id) : null,
     trigger: String(row.trigger), status: row.status as SourceInitializationStatus,
+    revision: Number(row.revision ?? 0), quickThreshold: row.quick_threshold as number | null, scoreVersion: row.score_version as number | null,
+    quickStatus: quick?.status ?? null,
+    savedQuickOperation: quick?.status === 'saved' && quick.applied_revision === row.revision ? {operationId:quick.id,token:quick.token} : null,
     ruleVersion: Number(row.rule_version ?? 0),
     rulesCompatible: Number(row.rule_version ?? 0) === INITIALIZATION_RULE_VERSION,
     matchingConfig: row.matching_config_json ? JSON.parse(String(row.matching_config_json)) : null,
@@ -112,7 +118,7 @@ export function replaceInitializationPlans(initializationId: string, plans: Init
 
 export function queryInitializationItems(input: { initializationId: string; tier?: string; decision?: string; search?: string; page?: number; pageSize?: number }): InitializationItemsPage {
   const conditions = ['initialization_id = ?']; const params: unknown[] = [input.initializationId]
-  if (input.tier) { conditions.push('tier = ?'); params.push(input.tier) }
+  if (input.tier) { const tiers = filterMembers(evidenceGroups, input.tier); conditions.push(`tier IN (${tiers.map(() => '?').join(',')})`); params.push(...tiers) }
   if (input.decision) { conditions.push('decision = ?'); params.push(input.decision) }
   if (input.search?.trim()) { conditions.push('(LOWER(title) LIKE ? OR LOWER(candidate_title) LIKE ? OR CAST(netease_song_id AS TEXT) LIKE ?)'); const q = `%${input.search.toLowerCase()}%`; params.push(q, q, q) }
   const where = conditions.join(' AND '); const pageSize = Math.min(Math.max(Math.trunc(input.pageSize ?? 50), 1), 100); const page = Math.max(Math.trunc(input.page ?? 1), 1)
@@ -134,6 +140,7 @@ export function queryInitializationItems(input: { initializationId: string; tier
       expectedBindingUpdatedAt: row.expected_binding_updated_at as string | null,
       decisionStatus: row.decision_status as InitializationReviewItem['decisionStatus'],
     }
+    if (base.evidence.sharedMedia) base.evidence.sharedMediaFingerprint = matchingFingerprint(base.evidence.sharedMedia)
     if (base.tier === 'preserved') return { ...base, kind: 'preserved', decision: null, allowedDecisions: [], canSearch: false, unavailableReason: '保留已验证绑定，无需重新选择' }
     return { ...base, kind: 'actionable', decision: row.decision as InitializationDecision,
       allowedDecisions: editable ? (base.candidate ? ['adopt', 'download', 'defer'] : ['download', 'defer']) : [],
@@ -142,10 +149,12 @@ export function queryInitializationItems(input: { initializationId: string; tier
   return { items, total, page, pageSize }
 }
 
-function assertAwaitingReview(initializationId: string): void {
+export function assertAwaitingReview(initializationId: string): void {
   const row = getDb().prepare('SELECT status, rule_version FROM source_initializations WHERE id = ?').get(initializationId) as { status?: string; rule_version: number } | undefined
   if (row?.status !== 'awaiting_review') throw new InitializationConflictError('当前接管方案不在等待确认状态')
   if (row.rule_version !== INITIALIZATION_RULE_VERSION) throw new InitializationConflictError('候选规则已更新，请重新分析后提交')
+  const queued = getDb().prepare("SELECT 1 FROM initialization_quick_operations WHERE initialization_id=? AND status='queued'").get(initializationId)
+  if (queued) throw new InitializationConflictError('快速方案已提交，正在等待后台处理')
 }
 
 export function setInitializationDecisions(input: { initializationId: string; songIds?: number[]; tier?: InitializationTier; decision: InitializationDecision }): number {
@@ -156,7 +165,7 @@ export function setInitializationDecisions(input: { initializationId: string; so
     else if (input.tier) { conditions.push('tier = ?'); params.push(input.tier) }
     else throw new Error('请选择歌曲或证据等级')
     if (input.decision === 'adopt') conditions.push('candidate_rating_key IS NOT NULL')
-    const result = getDb().prepare(`UPDATE source_initialization_items SET decision = ?, decision_status = 'proposed', updated_at = ? WHERE ${conditions.join(' AND ')}`)
+    const result = getDb().prepare(`UPDATE source_initialization_items SET decision = ?, decision_status = 'proposed', evidence_json=json_set(json_remove(evidence_json, '$.quickDecision'), '$.decisionOrigin', 'manual'), updated_at = ? WHERE ${conditions.join(' AND ')}`)
       .run(input.decision, new Date().toISOString(), ...params)
     refreshDecisionCounts(input.initializationId)
     return result.changes
@@ -166,8 +175,14 @@ export function setInitializationDecisions(input: { initializationId: string; so
 export function setInitializationCandidate(input: { initializationId: string; songId: number; candidate: { ratingKey: string; filePath: string; title: string; artist: string; album: string; durationMs?: number | null } }): void {
   getDb().transaction(() => {
     assertAwaitingReview(input.initializationId)
-    const result = getDb().prepare(`UPDATE source_initialization_items SET candidate_rating_key=?, candidate_file_path=?, candidate_title=?, candidate_artist=?, candidate_album=?, candidate_duration_ms=?, decision='adopt', decision_status='proposed', updated_at=? WHERE initialization_id=? AND netease_song_id=? AND tier != 'preserved'`)
-      .run(input.candidate.ratingKey, input.candidate.filePath, input.candidate.title, input.candidate.artist, input.candidate.album, input.candidate.durationMs ?? null, new Date().toISOString(), input.initializationId, input.songId)
+    const existing = getDb().prepare('SELECT evidence_json FROM source_initialization_items WHERE initialization_id=? AND netease_song_id=?').get(input.initializationId, input.songId) as { evidence_json: string } | undefined
+    const evidence = JSON.parse(existing?.evidence_json || '{}')
+    delete evidence.sharedMedia
+    delete evidence.sharedMediaConfirmed
+    delete evidence.quickDecision
+    evidence.decisionOrigin = 'manual'
+    const result = getDb().prepare(`UPDATE source_initialization_items SET evidence_json=?, candidate_rating_key=?, candidate_file_path=?, candidate_title=?, candidate_artist=?, candidate_album=?, candidate_duration_ms=?, decision='adopt', decision_status='proposed', updated_at=? WHERE initialization_id=? AND netease_song_id=? AND tier != 'preserved'`)
+      .run(JSON.stringify(evidence), input.candidate.ratingKey, input.candidate.filePath, input.candidate.title, input.candidate.artist, input.candidate.album, input.candidate.durationMs ?? null, new Date().toISOString(), input.initializationId, input.songId)
     if (!result.changes) throw new Error('初始化歌曲不存在或已有绑定不可修改')
     refreshDecisionCounts(input.initializationId)
   })()

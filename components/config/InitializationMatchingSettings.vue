@@ -4,23 +4,20 @@
       <AppIcon name="info" :size="16" />
       <div>
         <strong>实验功能：增强初始化匹配。</strong>
-        <p>默认关闭；保持关闭时，新用户的标准首次接管流程仍然可用，不需要在本页做任何配置。标注为实验不改变已有配置：只有在本页保存后，之后新发起的首次接管分析才会使用这些候选规则，且不会自动下载、建立媒体关联或修改 Plex。</p>
+        <p>默认关闭；标准首次接管流程仍然可用。保存后仅对新发起的接管分析生效，候选仍需人工确认，不会自动下载、建立媒体关联或修改 Plex。</p>
       </div>
     </div>
 
-    <div class="initialization-matching-settings__notice" role="note">
-      <AppIcon name="info" :size="16" />
-      <div><strong>这里只调整首次接管的候选规划。</strong><p>匹配结果需要人工确认，设置和预览不会自动下载、建立媒体关联 或修改 Plex。保存后由新的首次接管分析使用。</p><p v-if="hasUnsavedMatchingChanges">当前匹配设置有未保存的修改，请使用页面底部的保存条。</p></div>
-    </div>
+    <p v-if="hasUnsavedMatchingChanges" class="initialization-matching-settings__presets-hint">当前匹配设置有未保存的修改，请使用页面底部的保存条。</p>
 
     <ConfigSection title="匹配总开关与预设" description="先选择整体宽松程度，再按需要关闭单项规则" :collapsed="!!collapsed['匹配总开关与预设']" @toggle="collapsed['匹配总开关与预设'] = !collapsed['匹配总开关与预设']">
       <ToggleField :model-value="modelValue.enabled" label="启用增强初始化匹配" hint="默认关闭；启用后首次接管会使用这里的候选规则" @update:model-value="update('enabled', $event)" />
-      <div class="initialization-matching-settings__presets" aria-label="匹配预设">
-        <button v-for="preset in presets" :key="preset.value" type="button" class="initialization-matching-settings__preset" :class="{ 'is-selected': selectedPreset === preset.value }" @click="applyPreset(preset.value)">
+      <div class="initialization-matching-settings__presets" role="group" aria-label="匹配预设">
+        <button v-for="preset in presetOptions" :key="preset.value" type="button" class="initialization-matching-settings__preset" :class="{ 'is-selected': selectedPreset === preset.value }" :aria-pressed="selectedPreset === preset.value" @click="applyPreset(preset.value)">
           <strong>{{ preset.label }}</strong><span>{{ preset.description }}</span>
         </button>
       </div>
-      <p class="initialization-matching-settings__presets-hint">切换预设会保留当前的艺人别名、标题别名和首选目录。</p>
+      <p class="initialization-matching-settings__presets-hint">切换预设会保留当前的艺人别名、标题别名、首选目录和快速初始化分数线；继续手动调整即为「自定义」。</p>
     </ConfigSection>
 
     <ConfigSection title="标题与艺人规则" description="控制名称归一化和候选使用的标题、艺人字段" :collapsed="!!collapsed['标题与艺人规则']" @toggle="collapsed['标题与艺人规则'] = !collapsed['标题与艺人规则']">
@@ -59,6 +56,10 @@
       </div>
     </ConfigSection>
 
+    <ConfigSection title="快速初始化" description="快速接管分数线，仅作为新预览默认" :collapsed="!!collapsed['快速初始化']" @toggle="collapsed['快速初始化'] = !collapsed['快速初始化']">
+      <FormField label="快速初始化分数线" hint="0–100，默认 85；仅影响新预览默认，不重写草案。"><input :value="modelValue.quickMatchThreshold" class="form-input" type="number" min="0" max="100" step="1" @input="updateNumber('quickMatchThreshold', $event)" /></FormField>
+    </ConfigSection>
+
     <ConfigSection title="时长与版本规则" description="区分可直接推荐的候选和需要人工确认的候选" :collapsed="!!collapsed['时长与版本规则']" @toggle="collapsed['时长与版本规则'] = !collapsed['时长与版本规则']">
       <div class="initialization-matching-settings__field-grid">
         <FormField label="推荐时长差（毫秒）" hint="低于此差值可进入推荐"><input :value="modelValue.recommendDurationMs" class="form-input" type="number" min="0" max="30000" step="100" @input="updateNumber('recommendDurationMs', $event)" /></FormField>
@@ -89,8 +90,8 @@
 </template>
 
 <script setup lang="ts">
-import type { InitializationMatchingConfig, MatchingAlias, MatchingPreset } from '~~/shared/initialization-matching'
-import { matchingPreset } from '~~/shared/initialization-matching'
+import type { InitializationMatchingConfig, MatchingAlias, MatchingPreset, MatchingPresetSelection } from '~~/shared/initialization-matching'
+import { matchingPreset, matchingPresetSelection } from '~~/shared/initialization-matching'
 
 const props = defineProps<{
   modelValue: InitializationMatchingConfig
@@ -108,37 +109,41 @@ const presets: Array<{ value: MatchingPreset; label: string; description: string
   { value: 'discovery', label: '发现', description: '扩大标题和主艺人候选，适合整理探索。' },
 ]
 
+const selectedPreset = computed(() => matchingPresetSelection(props.modelValue))
+const presetOptions = computed<Array<{ value: MatchingPresetSelection; label: string; description: string }>>(() => [
+  ...presets,
+  {
+    value: 'custom', label: '自定义',
+    description: selectedPreset.value === 'custom'
+      ? '当前参数与三个预设都不同，按自定义保留；不会重置任何字段。'
+      : '手动调整任意参数后自动选中；选择自定义不会重置现有参数。',
+  },
+])
+
 const titleAliases = computed<MatchingAlias[]>({
   get: () => props.modelValue.titleAliases,
   set: value => update('titleAliases', value),
 })
 const hasUnsavedMatchingChanges = computed(() => JSON.stringify(props.modelValue) !== JSON.stringify(props.savedConfig))
-const selectedPreset = computed<MatchingPreset | ''>(() => {
-  for (const preset of presets) {
-    const candidate = matchingPreset(preset.value)
-    const current = props.modelValue
-    const keys: Array<keyof InitializationMatchingConfig> = ['enabled', 'foldChinese', 'normalizeTypography', 'foldArtistDiacritics', 'corroboratedBilingualTitles', 'ignoreContextNotes', 'bilingualTitles', 'fuzzyTitles', 'supplementalTitleRecall', 'metadataFallback', 'corroboratedRecommendations', 'preferExactAlbum', 'duplicatePolicy', 'ignoreMissingCollaborators', 'musicBrainzAliases', 'musicBrainzMinScore', 'musicBrainzMaxArtists', 'useTrackArtist', 'useArtistAliases', 'artistPolicy', 'usePathHints', 'albumPolicy', 'trackPolicy', 'recommendDurationMs', 'reviewDurationMs', 'recommendDurationPercent', 'missingDuration', 'remasterPolicy', 'editionPolicy', 'explicitPolicy', 'showVersionConflicts', 'unknownVersion', 'preferLossless']
-    if (keys.every(key => current[key] === candidate[key])) return preset.value
-  }
-  return ''
-})
 
 function update<K extends keyof InitializationMatchingConfig>(key: K, value: InitializationMatchingConfig[K]) {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 
-function updateNumber(key: 'recommendDurationMs' | 'reviewDurationMs' | 'recommendDurationPercent' | 'musicBrainzMinScore' | 'musicBrainzMaxArtists', event: Event) {
+function updateNumber(key: 'recommendDurationMs' | 'reviewDurationMs' | 'recommendDurationPercent' | 'musicBrainzMinScore' | 'musicBrainzMaxArtists' | 'quickMatchThreshold', event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
   update(key, Number.isFinite(value) ? value : 0)
 }
 
-function applyPreset(preset: MatchingPreset) {
+function applyPreset(preset: MatchingPresetSelection) {
+  if (preset === 'custom') return
   const next = matchingPreset(preset)
   emit('update:modelValue', {
     ...next,
     artistAliases: props.modelValue.artistAliases.map(rule => ({ ...rule, aliases: [...rule.aliases] })),
     titleAliases: props.modelValue.titleAliases.map(rule => ({ ...rule, aliases: [...rule.aliases] })),
     preferredDirectory: props.modelValue.preferredDirectory,
+    quickMatchThreshold: props.modelValue.quickMatchThreshold,
   })
 }
 
@@ -194,7 +199,7 @@ const collapsed = reactive<Record<string, boolean>>({})
 
 .initialization-matching-settings__presets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
@@ -254,6 +259,7 @@ const collapsed = reactive<Record<string, boolean>>({})
 }
 
 @media (max-width: 900px) {
+  .initialization-matching-settings__presets,
   .initialization-matching-settings__field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

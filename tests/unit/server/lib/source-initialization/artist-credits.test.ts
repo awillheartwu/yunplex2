@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { matchingPreset } from '../../../shared/initialization-matching'
-import { buildInitializationPlans } from './candidate-engine'
-import type { NeteaseSong } from '../netease'
-import type { PlexTrack } from '../plex-client'
+import { matchingPreset } from '~~/shared/initialization-matching'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
+import type { NeteaseSong } from '~~/server/lib/netease'
+import type { PlexTrack } from '~~/server/lib/plex-client'
 const song: NeteaseSong = { id: 42, name: 'Song', no: 1, dt: 180000, disc: '1', artists: [], album: { id: 1, name: 'Album', picUrl: '', publishTime: 0 } }
 const track: PlexTrack = { ratingKey: '100', title: 'Song', grandparentTitle: 'Various Artists', parentTitle: 'Album', index: 1, duration: 180000, Media: [{ Part: [{ file: '/music/Song.flac' }] }] }
 const config = { ...matchingPreset('balanced'), corroboratedRecommendations: false }

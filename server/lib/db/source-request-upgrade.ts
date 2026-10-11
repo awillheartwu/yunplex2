@@ -1,3 +1,4 @@
+import { upgradeQuickInitialization } from './quick-initialization-schema'
 import type Database from 'better-sqlite3'
 
 /** Bounded, repeatable upgrade of the pre-release source request schema. */
@@ -18,6 +19,7 @@ export function upgradeSourceRequests(db: Database.Database): void {
       allow_disabled: 'INTEGER NOT NULL DEFAULT 0', take_over_external: 'INTEGER NOT NULL DEFAULT 0',
     })
     add('source_initializations', { rule_version: 'INTEGER NOT NULL DEFAULT 0', commit_result_json: 'TEXT', matching_config_json: 'TEXT', matching_config_fingerprint: 'TEXT', matching_data_fingerprint: 'TEXT' })
+    upgradeQuickInitialization(db)
     db.exec(`
       UPDATE source_sync_queue SET trigger='user' WHERE schedule_window LIKE 'manual:%' AND trigger='schedule' AND request_kind='convergence';
       CREATE UNIQUE INDEX IF NOT EXISTS idx_source_request_initialization

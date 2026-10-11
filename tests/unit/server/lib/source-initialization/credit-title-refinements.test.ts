@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { matchingPreset, type InitializationMatchingConfig } from '../../../shared/initialization-matching'
-import { artistMatchingKey } from '../../../shared/initialization-matching-text'
-import { buildInitializationPlans } from './candidate-engine'
-import { artistCreditKeys } from './artist-credits'
-import { validateInitializationMatching } from '../config/initialization-matching-validation'
-import { uniqueMusicBrainzArtist } from './musicbrainz-aliases'
+import { matchingPreset, type InitializationMatchingConfig } from '~~/shared/initialization-matching'
+import { artistMatchingKey } from '~~/shared/initialization-matching-text'
+import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
+import { artistCreditKeys } from '~~/server/lib/source-initialization/artist-credits'
+import { validateInitializationMatching } from '~~/server/lib/config/initialization-matching-validation'
+import { uniqueMusicBrainzArtist } from '~~/server/lib/source-initialization/musicbrainz-aliases'
 
 const song = { id: 42, name: '红', no: 1, dt: 180000, disc: '1', artists: [{ name: 'Alpha' }], album: { id: 1, name: 'Album', picUrl: '', publishTime: 0 } }
 const track = { ratingKey: '10', title: '红 Love', grandparentTitle: 'Alpha', parentTitle: 'Album', index: 1, duration: 180000, Media: [{ Part: [{ file: '/music/Alpha/Red.flac' }] }] }

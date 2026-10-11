@@ -1,3 +1,4 @@
+import { mediaGroups, filterMembers } from '../../../shared/review-filter-groups'
 import { getDb } from '../db'
 import { parseJsonOr } from '../json'
 import type {
@@ -100,7 +101,8 @@ function buildOverviewTarget(
 
 export function queryMatchOverviewReadModel(filters: {
   sourceId: string | 'orphaned'
-  state?: MatchOverviewState
+  origin?: 'scored'
+  state?: MatchOverviewState | 'needs_action' | 'problem'
   search?: string
   includeRemoved?: boolean
   page?: number
@@ -190,7 +192,8 @@ export function queryMatchOverviewReadModel(filters: {
       })
   const query = filters.search?.trim().toLocaleLowerCase()
   const filtered = candidates.filter(item => {
-    if (filters.state && item.state !== filters.state) return false
+    if (filters.origin === 'scored' && !item.binding?.evidence?.quickDecision) return false
+    if (filters.state && !filterMembers(mediaGroups, filters.state).includes(item.state)) return false
     if (!query) return true
     return [
       item.target.title,

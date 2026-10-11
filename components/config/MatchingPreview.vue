@@ -11,13 +11,18 @@
     </div>
 
     <div class="matching-preview__controls">
-      <label class="matching-preview__source">
+      <div class="matching-preview__source">
         <span class="matching-preview__label">预览来源</span>
-        <select v-model="sourceId" class="form-input" aria-label="预览来源" :disabled="sourcesLoading || previewLoading">
-          <option value="">选择歌单</option>
-          <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name || source.neteasePlaylistName }} · {{ source.trackCount }} 首</option>
-        </select>
-      </label>
+        <ListSelect
+          v-model="sourceId"
+          class="matching-preview__source-select"
+          aria-label="预览来源"
+          placeholder="选择歌单"
+          :loading="sourcesLoading"
+          :disabled="previewLoading"
+          :options="sourceSelectOptions"
+        />
+      </div>
       <div class="matching-preview__actions">
         <button type="button" class="btn btn-primary" :disabled="!sourceId || previewLoading" @click="runPreview()">
           <AppIcon :name="previewLoading ? 'loader' : 'search'" :class="{ 'animate-spin': previewLoading }" :size="15" />
@@ -92,17 +97,21 @@
           <h4 class="type-h4">逐首变化</h4>
           <p>展开条目查看规则理由、冲突和候选。没有任何外部写入动作。</p>
         </div>
-        <div class="matching-preview__filters">
-          <label>
-            <span class="sr-only">搜索预览结果</span>
-            <input v-model="search" class="form-input" type="search" placeholder="搜索歌曲、艺人或候选" aria-label="搜索预览结果">
-          </label>
-          <select v-model="changeFilter" class="form-input" aria-label="预览结果筛选">
-            <option value="changed">仅显示变化</option>
-            <option value="all">显示全部</option>
-          </select>
-        </div>
       </div>
+      <FilterBar
+        :search="search"
+        placeholder="搜索歌曲、艺人或候选"
+        search-label="搜索预览结果"
+        :active-count="changeFilter === 'changed' ? 1 : 0"
+        :can-clear="Boolean(search) || changeFilter !== 'changed'"
+        @update:search="search = $event"
+        @clear="clearPreviewFilters"
+      >
+        <template #filters>
+          <ListSelect v-model="changeFilter" class="matching-preview__filter" aria-label="预览结果筛选" :options="changeFilterOptions" />
+        </template>
+        <template #summary><span>显示 {{ filteredItems.length }} / {{ result?.items.length ?? 0 }} 首</span></template>
+      </FilterBar>
       <div v-if="filteredItems.length" class="matching-preview__items">
         <article v-for="item in pagedItems" :key="item.songId" class="matching-preview__item">
           <div class="matching-preview__item-summary">
@@ -151,7 +160,7 @@ const result = ref<MatchingPreviewResult | null>(null)
 const snapshotId = ref<string | null>(null)
 const runFingerprint = ref('')
 const search = ref('')
-const changeFilter = ref<'changed' | 'all'>('changed')
+const changeFilter = ref('changed')
 const page = ref(1)
 const pageSize = 12
 const now = ref(Date.now())
@@ -170,6 +179,20 @@ const countMetrics: Array<{ key: keyof MatchingCounts; label: string }> = [
   { key: 'unmatched', label: '未匹配' },
   { key: 'metadataMissing', label: '缺少元数据' },
 ]
+
+const changeFilterOptions = [
+  { value: 'changed', label: '仅显示变化' },
+  { value: 'all', label: '显示全部' },
+]
+const sourceSelectOptions = computed(() => sources.value.map(source => ({
+  value: source.id,
+  label: `${source.name || source.neteasePlaylistName} · ${source.trackCount} 首`,
+})))
+
+function clearPreviewFilters() {
+  search.value = ''
+  changeFilter.value = 'changed'
+}
 
 const expired = computed(() => Boolean(result.value && new Date(result.value.expiresAt).getTime() <= now.value))
 const stale = computed(() => Boolean(result.value && runFingerprint.value !== configFingerprint(props.config)))
@@ -341,8 +364,7 @@ function formatDate(value: string): string {
   font-weight: var(--font-weight-semibold);
 }
 
-.matching-preview__actions,
-.matching-preview__filters {
+.matching-preview__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -471,7 +493,8 @@ function formatDate(value: string): string {
   font-size: var(--text-xs);
 }
 
-.matching-preview__filters .form-input {
+.matching-preview__source-select,
+.matching-preview__filter {
   min-width: 11rem;
 }
 
@@ -606,10 +629,10 @@ function formatDate(value: string): string {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .matching-preview__filters,
-  .matching-preview__filters label,
-  .matching-preview__filters .form-input {
+  .matching-preview__source-select,
+  .matching-preview__filter {
     width: 100%;
+    min-width: 0;
   }
 
   .matching-preview__suggestions li {

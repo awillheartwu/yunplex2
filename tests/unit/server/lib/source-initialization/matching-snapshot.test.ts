@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { closeDb, getDb, initDb, writeConfigToDb } from '../db'
-import { DEFAULT_CONFIG } from '../config/defaults'
-import { captureMatchingPolicy, matchingFingerprint } from './matching-snapshot'
-import { analyzeSourceInitialization } from './service'
-import { getInitialization } from './store'
-import { matchingPreset } from '../../../shared/initialization-matching'
-import { upsertSongIdentityBinding } from '../sync/identity-store'
-import { resolveMusicBrainzAliases } from './musicbrainz-aliases'
+import { closeDb, getDb, initDb, writeConfigToDb } from '~~/server/lib/db'
+import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
+import { captureMatchingPolicy, matchingFingerprint } from '~~/server/lib/source-initialization/matching-snapshot'
+import { analyzeSourceInitialization } from '~~/server/lib/source-initialization/service'
+import { getInitialization } from '~~/server/lib/source-initialization/store'
+import { matchingPreset } from '~~/shared/initialization-matching'
+import { upsertSongIdentityBinding } from '~~/server/lib/sync/identity-store'
+import { resolveMusicBrainzAliases } from '~~/server/lib/source-initialization/musicbrainz-aliases'
 
 const { fetchPlaylistSongs, initPlexClient, getSectionKey, getSectionTracks } = vi.hoisted(() => ({
   fetchPlaylistSongs: vi.fn(),
@@ -18,10 +18,10 @@ const { fetchPlaylistSongs, initPlexClient, getSectionKey, getSectionTracks } = 
   getSectionTracks: vi.fn(),
 }))
 
-vi.mock('../netease', () => ({ fetchPlaylistSongs }))
-vi.mock('../plex-client', () => ({ initPlexClient, getSectionKey, getSectionTracks }))
-vi.mock('./musicbrainz-aliases', async importOriginal => ({
-  ...await importOriginal<typeof import('./musicbrainz-aliases')>(),
+vi.mock('~~/server/lib/netease', () => ({ fetchPlaylistSongs }))
+vi.mock('~~/server/lib/plex-client', () => ({ initPlexClient, getSectionKey, getSectionTracks }))
+vi.mock('~~/server/lib/source-initialization/musicbrainz-aliases', async importOriginal => ({
+  ...await importOriginal<typeof import('~~/server/lib/source-initialization/musicbrainz-aliases')>(),
   resolveMusicBrainzAliases: vi.fn(),
 }))
 
@@ -112,7 +112,7 @@ describe('initialization matching snapshots', () => {
       FROM source_initialization_items WHERE initialization_id = 'snapshot-initialization'
     `).get()
 
-    expect(after.ruleVersion).toBe(8)
+    expect(after.ruleVersion).toBe(12)
     expect(after.rulesCompatible).toBe(true)
     expect(after.matchingConfig).toEqual(captureMatchingPolicy({
       ...structuredClone(DEFAULT_CONFIG),

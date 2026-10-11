@@ -1,9 +1,10 @@
+import { parseTitleCredits } from './title-credits'
 import { artistMatchingKey, matchingKey } from '../../../shared/initialization-matching-text'
 export { matchingKey } from '../../../shared/initialization-matching-text'
 import { supplementalTitleKeys } from './supplemental-recall'
 import type { InitializationMatchingConfig, MatchingAlias } from '../../../shared/initialization-matching'
 
-const VERSION_PATTERN = /\b(?:instrumental|karaoke|acoustic|live|demo|cover|remix|remaster(?:ed)?|radio edit|album version|single version|original mix|album mix|radio mix|lp version|standard version|tv size|vocal mix|sing along|explicit|clean|piano|sped up|slowed|mandarin|cantonese|japanese|english|korean)\b|カラオケ|インストゥルメンタル|TVサイズ|独唱版|合唱版|朗诵版|吉他版|伴奏|纯音乐|现场|翻唱|混音|重制|母带|不插电|钢琴|国语|粤语|日语|英语|韩语/iu
+const VERSION_PATTERN = /\b(?:instrumental|karaoke|acoustic|live|demo|cover|remix|remaster(?:ed)?|radio edit|album version|single version|original mix|album mix|radio mix|extended mix|club mix|dub mix|tv edit|music video|music clip|lp version|standard version|tv size|vocal mix|sing along|explicit|clean|piano|sped up|slowed|mandarin|cantonese|japanese|english|korean)\b|カラオケ|インストゥルメンタル|TVサイズ|独唱版|合唱版|朗诵版|吉他版|伴奏|纯音乐|现场|翻唱|混音|重制|母带|不插电|钢琴|国语|粤语|日语|英语|韩语/iu
 const BRACKETS = /[（([【]([^）)\]】]+)[）)\]】]/gu
 
 export interface TitleParts { core: string; variants: string[]; versions: Record<string, string>; contextRemoved: boolean; supplemental: string[]; contributors: string[] }
@@ -22,7 +23,8 @@ export function titleParts(title: string, config: InitializationMatchingConfig):
       ['speed', /\bsped up\b|\bslowed\b/iu],
       ['language', /\b(?:mandarin|cantonese|japanese|english|korean)\b|国语|粤语|日语|英语|韩语/iu],
       ['remaster', /\bremaster(?:ed)?\b|重制|母带/iu],
-      ['edition', /\b(?:radio edit|album version|single version|original mix|album mix|radio mix|lp version|standard version|tv size)\b|TVサイズ/iu],
+      ['video', /\b(?:music video|music clip)\b/iu],
+      ['edition', /\b(?:radio edit|album version|single version|original mix|album mix|radio mix|extended mix|club mix|dub mix|tv edit|lp version|standard version|tv size)\b|TVサイズ/iu],
       ['arrangement', /\b(?:sing along|vocal mix)\b|独唱版|合唱版|朗诵版|吉他版/iu],
       ['explicit', /\b(?:explicit|clean)\b/iu],
     ]
@@ -32,11 +34,21 @@ export function titleParts(title: string, config: InitializationMatchingConfig):
     }
     return true
   }
-  let core = title.replace(BRACKETS, (_all, content: string) => {
+  const parseTitle = config.normalizeTypography ? title.normalize('NFKC') : title
+  let core = parseTitle.replace(BRACKETS, (_all, content: string) => {
+    const credit = parseTitleCredits(content)
+    if (credit) {
+      contributors.push(...credit.contributors)
+      if (!credit.production || config.ignoreContextNotes) {
+        contextRemoved ||= credit.production
+        return ' '
+      }
+      return ` ${content} `
+    }
     if (version(content)) return ' '
-    const credit = content.trim().match(/^(?:(?:feat(?:uring)?|ft|with)\.?\s+|vocals?\s*[:：]\s*)(.+)$/iu)
-    if (credit) { contributors.push(credit[1]!.trim()); return ' ' }
-    if (config.ignoreContextNotes && /^(?:from\s|prod(?:uced)?[.\s]|original (?:motion picture|television) soundtrack|bonus track|附赠曲|电影.*(?:主题|插)曲)/iu.test(content.trim())) {
+    // Do not drop an unparsed mixed production note: it may contain a guest credit.
+    const mixedProduction = /^prod/iu.test(content.trim()) && /[,，;；]/u.test(content)
+    if (config.ignoreContextNotes && !mixedProduction && /^(?:from\s|prod(?:uced)?[.\s]|original (?:motion picture|television) soundtrack|bonus track|附赠曲|电影.*(?:主题|插)曲)/iu.test(content.trim())) {
       contextRemoved = true
       return ' '
     }
@@ -46,6 +58,12 @@ export function titleParts(title: string, config: InitializationMatchingConfig):
   // Only treat a paired trailing annotation as a version, never title words alone.
   core = core.replace(/\s*([-~〜～–—])\s*([^~〜～–—]+?)\s*\1\s*$/u, (all, _delimiter: string, content: string) => version(content) ? ' ' : all)
   core = core.replace(/\s+[-–—]\s+(.+)$/u, (all, content: string) => version(content) ? ' ' : all)
+  // Only explicit trailing feat./ft. credits, not title words such as "With You".
+  // A CJK title may join directly to "feat."; Latin titles require a separator.
+  core = core.replace(/(?:\s+|(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]))(?:feat(?:uring)?|ft)(?:\.\s*|\s+)([^\n]+)$/iu, (_all, artist: string) => {
+    contributors.push(artist.trim())
+    return ' '
+  })
   const normalized = matchingKey(core, config)
   const literal = !normalized && /^[\p{P}\p{S}\s]+$/u.test(title) ? `literal:${title.normalize('NFKC').trim()}` : ''
   const variants = [normalized || literal]
@@ -74,7 +92,7 @@ export function versionEvidence(left: TitleParts, right: TitleParts, config: Ini
   for (const key of new Set([...Object.keys(left.versions), ...Object.keys(right.versions)])) {
     const a = left.versions[key], b = right.versions[key]
     if (a === b) continue
-    const label = ({ instrumental: '伴奏', live: '现场', cover: '翻唱', remix: '混音', demo: 'Demo', acoustic: '不插电', piano: '钢琴', speed: '变速', language: '语言', arrangement: '演唱或编曲', remaster: '重制', edition: '发行版本', explicit: 'Explicit / Clean' } as Record<string, string>)[key] || key
+    const label = ({ video: '音乐视频', instrumental: '伴奏', live: '现场', cover: '翻唱', remix: '混音', demo: 'Demo', acoustic: '不插电', piano: '钢琴', speed: '变速', language: '语言', arrangement: '演唱或编曲', remaster: '重制', edition: '发行版本', explicit: 'Explicit / Clean' } as Record<string, string>)[key] || key
     const policy = key === 'remaster' ? config.remasterPolicy : key === 'edition' ? config.editionPolicy : key === 'explicit' ? config.explicitPolicy : null
     if ((!a || !b) && config.unknownVersion === 'exclude') excluded = true
     if (policy === 'allow') continue
