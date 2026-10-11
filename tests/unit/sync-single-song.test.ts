@@ -74,6 +74,8 @@ const mockConfig: SingleSongConfig = {
   downloadRomajiLyric: false,
 }
 
+const albumPublishTime = new Date('2023-11-15T12:00:00').getTime()
+
 const mockSong = {
   id: 123456,
   name: 'Test Song',
@@ -85,7 +87,7 @@ const mockSong = {
     id: 999,
     name: 'Test Album',
     picUrl: 'https://example.com/cover.jpg',
-    publishTime: 1700000000000,
+    publishTime: albumPublishTime,
   },
 }
 
@@ -104,7 +106,7 @@ describe('downloadSingleSong', () => {
     vi.mocked(fetchAlbumDetail).mockResolvedValue({
       name: 'Test Album',
       picUrl: 'https://example.com/cover.jpg',
-      publishTime: 1700000000000,
+      publishTime: albumPublishTime,
       company: 'Test Label',
       description: 'Test desc',
       genre: 'Pop',
