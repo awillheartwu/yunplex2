@@ -1,10 +1,12 @@
 import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
 import { useIntervalFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
+import { buildMemoryDetails, exactMemoryBytes, formatMemoryMiB, memoryBytes, type SystemMemoryInput } from '~~/lib/system-memory'
+import { MEBIBYTE } from '~~/shared/system-memory'
 
 type Tone = 'ok' | 'warning' | 'error' | 'idle'
 
-export interface SystemStats {
+export interface SystemStats extends SystemMemoryInput {
   cpu: number
   mem: { rss: number; heapUsed: number; heapTotal: number; external: number }
   uptime: number
@@ -36,8 +38,9 @@ export interface SystemInfo {
   docker?: boolean | string
 }
 
-export interface SystemKpiCard { label: string; value: string; detail: string; tone: Tone }
+export interface SystemKpiCard { key: string; label: string; value: string; detail: string; tone: Tone; exactValue?: string }
 export interface SystemHealthItem { key: string; label: string; value: string; detail: string; tone: Tone }
+/** memory is process RSS in MiB. */
 export interface SystemResourceTrendPoint { timestamp: number; cpu: number; memory: number }
 
 function toneForCpu(value?: number): Tone {
@@ -48,9 +51,10 @@ function toneForCpu(value?: number): Tone {
 }
 
 function toneForMemory(stats: SystemStats | null): Tone {
-  if (!stats) return 'idle'
-  if (stats.mem.rss >= 1536) return 'error'
-  if (stats.mem.rss >= 1024) return 'warning'
+  const rss = memoryBytes(stats, 'rss')
+  if (rss === null) return 'idle'
+  if (rss >= 1536 * MEBIBYTE) return 'error'
+  if (rss >= 1024 * MEBIBYTE) return 'warning'
   return 'ok'
 }
 
@@ -99,6 +103,11 @@ export function useSystemMonitor() {
   const healthRefreshing = ref(false)
   const resourceTrend = ref<SystemResourceTrendPoint[]>([])
   const dependencyCheckedLabel = computed(() => formatDateTime(stats.value?.dependencyCheckedAt))
+  const memoryDetails = computed(() => buildMemoryDetails(stats.value))
+  const rssMiB = computed(() => {
+    const bytes = memoryBytes(stats.value, 'rss')
+    return bytes === null ? null : bytes / MEBIBYTE
+  })
   const schedulerSchedule = computed<{ label: string; tone: Tone }>(() => {
     const scheduler = stats.value?.scheduler
     if (!scheduler?.enabled) return { label: '', tone: 'idle' }
@@ -112,10 +121,15 @@ export function useSystemMonitor() {
   const schedulerScheduleTone = computed(() => schedulerSchedule.value.tone)
 
   const kpiCards = computed<SystemKpiCard[]>(() => [
-    { label: 'CPU', value: stats.value ? `${stats.value.cpu}%` : '--', detail: '当前进程采样', tone: toneForCpu(stats.value?.cpu) },
-    { label: '应用内存', value: stats.value ? `${stats.value.mem.rss} MB` : '--', detail: stats.value ? `Heap ${stats.value.mem.heapUsed}/${stats.value.mem.heapTotal} MB` : '等待采样', tone: toneForMemory(stats.value) },
-    { label: '运行时间', value: stats.value ? formatUptime(stats.value.uptime) : '--', detail: stats.value ? `PID ${stats.value.pid}` : '等待进程信息', tone: stats.value ? 'ok' : 'idle' },
-    { label: '数据库', value: stats.value ? `${stats.value.dbSize} MB` : '--', detail: '自动执行有界保留', tone: toneForDb(stats.value?.dbSize) },
+    { key: 'cpu', label: 'CPU', value: stats.value ? `${stats.value.cpu}%` : '--', detail: '当前进程采样', tone: toneForCpu(stats.value?.cpu) },
+    {
+      key: 'memory', label: '进程内存',
+      value: formatMemoryMiB(rssMiB.value),
+      detail: stats.value ? '全部线程 · 当前 PID' : '等待采样', tone: toneForMemory(stats.value),
+      exactValue: exactMemoryBytes(stats.value, 'rss'),
+    },
+    { key: 'uptime', label: '运行时间', value: stats.value ? formatUptime(stats.value.uptime) : '--', detail: stats.value ? `PID ${stats.value.pid}` : '等待进程信息', tone: stats.value ? 'ok' : 'idle' },
+    { key: 'database', label: '数据库', value: formatMemoryMiB(stats.value?.dbSize), detail: '数据库文件 · 自动保留', tone: toneForDb(stats.value?.dbSize) },
   ])
 
   const healthItems = computed<SystemHealthItem[]>(() => [
@@ -137,10 +151,11 @@ export function useSystemMonitor() {
       const next = await api.get<SystemStats>('/system/stats')
       stats.value = next
       const previous = resourceTrend.value.at(-1)
-      if (previous?.timestamp !== next.timestamp) {
+      const rss = memoryBytes(next, 'rss')
+      if (rss !== null && previous?.timestamp !== next.timestamp) {
         resourceTrend.value = [
           ...resourceTrend.value,
-          { timestamp: next.timestamp, cpu: next.cpu, memory: next.mem.rss },
+          { timestamp: next.timestamp, cpu: next.cpu, memory: rss / MEBIBYTE },
         ].slice(-30)
       }
     } catch {
@@ -179,5 +194,5 @@ export function useSystemMonitor() {
   })
   onUnmounted(() => statsPolling.stop())
 
-  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, overallTone, refreshDependencyHealth, resourceTrend, schedulerScheduleLabel, schedulerScheduleTone }
+  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, memoryDetails, overallTone, refreshDependencyHealth, resourceTrend, schedulerScheduleLabel, schedulerScheduleTone }
 }

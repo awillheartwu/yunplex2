@@ -7,6 +7,7 @@ import { getEventClientCount } from '../../lib/sync/events'
 import { getSyncWorker } from '../../lib/sync/instance'
 import { getReadiness } from '../../lib/runtime/readiness'
 import { success } from '../../lib/response'
+import { getProcessMemorySample } from '../../lib/system-memory'
 
 /** Authenticated, local-only diagnostics: no external probes, paths or credentials. */
 export default defineEventHandler(() => {
@@ -18,7 +19,7 @@ export default defineEventHandler(() => {
   })
   return success({
     pid: process.pid, uptime: process.uptime(), timestamp: Date.now(),
-    memory: process.memoryUsage(), resourceCounts, sseClients: getEventClientCount(),
+    ...getProcessMemorySample(), resourceCounts, sseClients: getEventClientCount(),
     readiness: getReadiness(), queue: getQueueStatus(), scheduler: getSyncWorker()?.getStatus() ?? null,
     databaseBytes: sizes.reduce((sum, size) => sum + size, 0),
     logs: db.prepare('SELECT COUNT(*) AS count FROM logs').get(),

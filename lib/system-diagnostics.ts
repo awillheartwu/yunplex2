@@ -1,3 +1,6 @@
+import { memoryBytes, type SystemMemoryInput } from './system-memory'
+import { MEBIBYTE, type MemorySamplingContext, type ProcessMemoryBytes } from '../shared/system-memory'
+
 export interface SystemDiagnosticInfo {
   version?: string
   platform?: string
@@ -5,14 +8,8 @@ export interface SystemDiagnosticInfo {
   docker?: boolean | string
 }
 
-export interface SystemDiagnosticStats {
+export interface SystemDiagnosticStats extends SystemMemoryInput {
   cpu?: number
-  mem?: {
-    rss?: number
-    heapUsed?: number
-    heapTotal?: number
-    external?: number
-  }
   uptime?: number
   pid?: number
   dbSize?: number
@@ -39,12 +36,11 @@ export interface SystemDiagnosticReport {
   }
   resources: {
     cpuPercent: number | null
-    memoryMb: {
-      rss: number | null
-      heapUsed: number | null
-      heapTotal: number | null
-      external: number | null
-    }
+    /** Legacy field name retained; memoryUnit specifies the actual binary unit. */
+    memoryMb: Record<keyof ProcessMemoryBytes, number | null>
+    memoryUnit: 'MiB'
+    memoryBytes: Record<keyof ProcessMemoryBytes, number | null>
+    memoryContext: MemorySamplingContext | null
     dbSizeMb: number | null
   }
   health: {
@@ -72,6 +68,22 @@ function isoTime(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+function memoryMiB(stats: SystemDiagnosticStats, key: keyof ProcessMemoryBytes): number | null {
+  const bytes = memoryBytes(stats, key)
+  return bytes === null ? null : bytes / MEBIBYTE
+}
+
+function memoryContext(context?: MemorySamplingContext): MemorySamplingContext | null {
+  if (!context) return null
+  return {
+    mode: context.mode,
+    rssScope: context.rssScope,
+    detailsScope: context.detailsScope,
+    isMainThread: context.isMainThread,
+    threadId: context.threadId,
+  }
+}
+
 export function buildSystemDiagnosticReport(input: {
   info?: SystemDiagnosticInfo | null
   stats?: SystemDiagnosticStats | null
@@ -94,11 +106,21 @@ export function buildSystemDiagnosticReport(input: {
     resources: {
       cpuPercent: finiteNumber(stats.cpu),
       memoryMb: {
-        rss: finiteNumber(stats.mem?.rss),
-        heapUsed: finiteNumber(stats.mem?.heapUsed),
-        heapTotal: finiteNumber(stats.mem?.heapTotal),
-        external: finiteNumber(stats.mem?.external),
+        rss: memoryMiB(stats, 'rss'),
+        heapUsed: memoryMiB(stats, 'heapUsed'),
+        heapTotal: memoryMiB(stats, 'heapTotal'),
+        external: memoryMiB(stats, 'external'),
+        arrayBuffers: memoryMiB(stats, 'arrayBuffers'),
       },
+      memoryUnit: 'MiB',
+      memoryBytes: {
+        rss: finiteNumber(stats.memory?.rss),
+        heapUsed: finiteNumber(stats.memory?.heapUsed),
+        heapTotal: finiteNumber(stats.memory?.heapTotal),
+        external: finiteNumber(stats.memory?.external),
+        arrayBuffers: finiteNumber(stats.memory?.arrayBuffers),
+      },
+      memoryContext: memoryContext(stats.memoryContext),
       dbSizeMb: finiteNumber(stats.dbSize),
     },
     health: {

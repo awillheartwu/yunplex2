@@ -95,6 +95,8 @@
   background: var(--bg-surface);
 }
 .source-adoption__evidence-summary p {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: var(--body-leading);
@@ -109,7 +111,8 @@
 }
 @media (max-width: 640px) {
   .source-adoption__drawer {
-    width: 100vw;
+    left: 0;
+    width: auto;
     border-left: 0;
   }
 }

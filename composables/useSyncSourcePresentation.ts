@@ -4,10 +4,6 @@ export function getSourceDisplayName(source: Pick<PlaylistSource, 'name'>): stri
   return source.name || '(待获取)'
 }
 
-export function getSourceOriginName(source: Pick<PlaylistSource, 'neteasePlaylistName'>): string {
-  return source.neteasePlaylistName || '未命名来源'
-}
-
 export function getPlexTargetName(source: Pick<PlaylistSource, 'plexPlaylistName' | 'neteasePlaylistName'>): string {
   return source.plexPlaylistName || source.neteasePlaylistName || '自动匹配'
 }

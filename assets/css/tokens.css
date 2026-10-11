@@ -77,8 +77,6 @@
   --app-topbar-block-size: 4rem;
   --app-content-max-width: 96rem;
   --dashboard-content-max-width: 96rem;
-  --panel-fluid-min-block-size: clamp(12rem, 32dvh, 20rem);
-  --panel-scroll-max-block-size: min(62dvh, 100%);
   --chart-card-min-block-size: clamp(12rem, 26dvh, 18rem);
   --chart-plot-min-block-size: clamp(8.75rem, 20dvh, 14rem);
   --radius-xs: 0.25rem;

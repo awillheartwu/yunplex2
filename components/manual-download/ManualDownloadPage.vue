@@ -10,7 +10,14 @@
         <header class="manual-card-header">
           <div><h2 id="manual-input-title">{{ parseState === 'preview' ? '音乐来源' : '输入音乐来源' }}</h2><p>{{ parseState === 'preview' ? title : '支持网易云歌曲、歌单或专辑链接，也支持资源 ID。' }}</p></div>
           <button v-if="parseState === 'preview' && !downloadResult" class="btn btn-secondary" :disabled="downloading" @click="inputExpanded = !inputExpanded">{{ inputExpanded ? '收起输入' : '修改链接' }}</button>
-          <details v-if="parseState !== 'preview' || inputExpanded" class="manual-help"><summary class="btn btn-ghost">输入帮助<AppIcon name="info" :size="14" /></summary><p>在网易云资源页面选择“分享 → 复制链接”。粘贴链接会自动解析；多个歌曲 ID 可用换行、逗号或分号分隔。</p></details>
+          <ActionHint
+            v-if="parseState !== 'preview' || inputExpanded"
+            class="manual-help"
+            click-toggle
+            text="在网易云资源页面选择“分享 → 复制链接”。粘贴链接会自动解析；多个歌曲 ID 可用换行、逗号或分号分隔。"
+          >
+            <button class="icon-button" type="button" aria-label="输入帮助"><AppIcon name="info" :size="17" /></button>
+          </ActionHint>
         </header>
         <form v-if="parseState !== 'preview' || inputExpanded" class="manual-input-form" @submit.prevent="handleParse">
           <label for="manual-download-input">网易云链接或资源 ID</label>
@@ -23,7 +30,7 @@
         <p v-if="inputChanged" class="manual-input-changed" role="status">输入已修改，请重新解析后再下载。</p>
       </section>
 
-      <details v-if="!downloadResult" class="manual-config-card" aria-label="下载配置"><summary class="manual-options-summary"><AppIcon name="settings" :size="16" /><span>下载选项</span><small>{{ qualityLabel }} · {{ downloadLyrics ? '含歌词' : '无歌词' }} · {{ embedMetadata ? '写入标签' : '不写标签' }}</small><AppIcon name="chevronDown" :size="14" /></summary>
+      <details v-if="!downloadResult" class="manual-config-card" aria-label="下载配置"><summary class="manual-options-summary"><AppIcon name="settings" :size="16" /><span>下载选项</span><small>{{ qualityLabel }} · {{ downloadLyrics ? '含歌词' : '无歌词' }} · {{ embedMetadata ? '写入标签' : '不写标签' }}</small><button class="btn btn-ghost btn-xs manual-options-reset" type="button" :disabled="downloading" @click.stop.prevent="resetOptions"><AppIcon name="refresh" :size="14" /><span>恢复默认</span></button><AppIcon name="chevronDown" :size="14" /></summary>
         <div class="manual-config-list">
           <label class="manual-config-row" for="manual-quality">
             <span class="manual-config-icon manual-config-icon--accent">
@@ -72,11 +79,6 @@
             <input v-model="embedMetadata" :disabled="downloading" type="checkbox" aria-label="写入元数据" />
           </label>
         </div>
-
-        <button class="btn btn-secondary manual-reset-button" type="button" :disabled="downloading" @click="resetOptions">
-          <AppIcon name="rotate-ccw" :size="14" />
-          <span>恢复默认设置</span>
-        </button>
       </details>
 
         <div v-if="error || saveError || resourceFailures.length || downloadResult" class="manual-alert-stack" aria-live="polite">
@@ -120,11 +122,9 @@
 
     <section v-if="parseHistory.length > 0 && parseState === 'idle'" class="section-card manual-parse-history-card">
       <div class="manual-parse-history-header">
-        <div>
-          <div class="manual-parse-history-title">
-            <h2>最近解析</h2>
-            <span>{{ parseHistory.length }}</span>
-          </div>
+        <div class="manual-parse-history-title">
+          <h2>最近解析</h2>
+          <span>{{ parseHistory.length }}</span>
         </div>
         <button class="btn btn-ghost btn-xs" type="button" @click="clearParseHistory">清空</button>
       </div>
@@ -202,7 +202,11 @@
           </div>
         </div>
 
-        <div class="manual-table-shell manual-track-table-shell" tabindex="0" aria-label="歌曲列表，可上下滚动">
+        <div v-if="tracks.length === 0" class="manual-state-panel manual-state-panel--compact">
+          <strong>暂无可下载歌曲</strong>
+          <span>资源已解析，但没有返回可下载曲目。</span>
+        </div>
+        <div v-else ref="tableShell" class="manual-track-table-shell" tabindex="0" aria-label="歌曲列表，可上下滚动">
           <table class="manual-track-table">
             <thead>
               <tr>
@@ -217,11 +221,11 @@
                     @change="toggleAll"
                   />
                 </th>
-                <th>#</th>
+                <th class="manual-col-number">#</th>
                 <th>歌曲名称</th>
                 <th>歌手</th>
                 <th>专辑</th>
-                <th>时长</th>
+                <th class="manual-col-number">时长</th>
                 <th>音质</th>
               </tr>
             </thead>
@@ -237,7 +241,7 @@
                     @change="toggleTrack(track.id)"
                   />
                 </td>
-                <td class="manual-table-index">{{ trackOffset + index + 1 }}</td>
+                <td class="manual-table-index manual-col-number">{{ trackOffset + index + 1 }}</td>
                 <td>
                   <div class="manual-song-cell">
                     <strong :title="track.name">{{ track.name }}</strong>
@@ -246,16 +250,11 @@
                 </td>
                 <td>{{ artistsLine(track) }}</td>
                 <td>{{ track.album?.name || '-' }}</td>
-                <td>{{ formatManualDuration(track.dt) }}</td>
+                <td class="manual-col-number">{{ formatManualDuration(track.dt) }}</td>
                 <td>{{ qualityLabel }}</td>
               </tr>
             </tbody>
           </table>
-
-          <div v-if="tracks.length === 0" class="manual-state-panel manual-state-panel--compact">
-            <strong>暂无可下载歌曲</strong>
-            <span>资源已解析，但没有返回可下载曲目。</span>
-          </div>
         </div>
         <PageNavigator :page="trackPage" :page-size="trackPageSize" :total="tracks.length" label="歌曲" @change="changeTrackPage" />
         <div v-if="!downloadResult" class="manual-submit-bar">
@@ -285,6 +284,7 @@ const {
 } = useManualDownloadPage()
 const inputExpanded = ref(false)
 watch(parseState, state => { if (state === 'preview') inputExpanded.value = false })
+const tableShell = ref<HTMLElement | null>(null)
 const trackPageSize = 100
 const trackPage = ref(1)
 const trackOffset = computed(() => (trackPage.value - 1) * trackPageSize)
@@ -292,9 +292,8 @@ const pageTracks = computed(() => tracks.value.slice(trackOffset.value, trackOff
 watch(tracks, () => { trackPage.value = 1 })
 function changeTrackPage(page: number) {
   trackPage.value = page
-  const table = document.querySelector('.manual-track-table-shell')
-  table?.scrollTo({ top: 0 })
-  table?.scrollIntoView({ block: 'start' })
+  tableShell.value?.scrollTo({ top: 0 })
+
 }
 </script>
 

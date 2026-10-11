@@ -110,11 +110,6 @@ async function handleLogout() {
 .topbar-breadcrumb { display: flex; align-items: center; gap: var(--space-2_5); min-width: 0; font-size: var(--text-xs); color: var(--text-tertiary); }
 .topbar-breadcrumb a { color: var(--text-secondary); white-space: nowrap; }
 
-.topbar-version-link {
-  min-block-size: 2.5rem;
-  align-items: center;
-}
-
 @media (max-width: 767px) {
   .app-topbar__title {
     font-size: var(--text-sm);

@@ -2,7 +2,7 @@ export const tabs = [
   { key: 'general', label: '服务连接' },
   { key: 'media', label: '下载与文件' },
   { key: 'sync', label: '同步策略' },
-  { key: 'matching', label: '初始化匹配' },
+  { key: 'matching', label: '初始化匹配', badge: 'Beta' },
   { key: 'artists', label: '艺人名称' },
   { key: 'display', label: '外观' },
   { key: 'advanced', label: '安全与维护' },

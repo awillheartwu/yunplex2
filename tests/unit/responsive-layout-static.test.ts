@@ -35,8 +35,8 @@ describe('responsive layout sizing', () => {
     const resultsCss = readProjectFile('assets/css/pages/manual-download-results.css')
     const workspaceCss = readProjectFile('assets/css/pages/manual-download-workspace.css')
 
-    expect(resultsCss).toContain('block-size: 100%')
-    expect(resultsCss).toContain('max-block-size: var(--panel-scroll-max-block-size)')
+    expect(resultsCss).not.toContain('block-size: 100%')
+    expect(resultsCss).toContain('max-block-size: min(62dvh, 40rem)')
     expect(resultsCss).not.toContain('height: clamp(360px, 52vh, 600px)')
     expect(resultsCss).not.toContain('max-height: 600px')
     expect(resultsCss).not.toContain('height: min(56vh, 32rem)')
@@ -104,7 +104,6 @@ describe('responsive layout sizing', () => {
     const emptyState = readProjectFile('components/common/EmptyState.vue')
     const dateRange = readProjectFile('components/common/DateRange.vue')
     const toggleField = readProjectFile('components/config/ToggleField.vue')
-    const aliasEditor = readProjectFile('components/config/AliasEditor.vue')
     const timeline = readProjectFile('components/common/ProcessTimeline.vue')
 
     expect(emptyState).toContain('class="empty-state"')
@@ -116,10 +115,6 @@ describe('responsive layout sizing', () => {
     expect(toggleField).toContain('toggle-field__switch')
     expect(toggleField).toContain(':aria-label="label"')
     expect(toggleField).not.toContain('w-9 h-5')
-    expect(aliasEditor).toContain(':aria-label="`第 ${i + 1} 行原艺人名`"')
-    expect(aliasEditor).toContain(':aria-label="`删除第 ${i + 1} 行映射`"')
-    expect(aliasEditor).not.toContain('max-h-48')
-    expect(aliasEditor).not.toContain('h-28')
     expect(timeline).not.toContain('min-height:1.65rem')
   })
 

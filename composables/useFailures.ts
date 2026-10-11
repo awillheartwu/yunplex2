@@ -3,6 +3,7 @@ import type {
   FailureRecordStatus,
 } from '~~/server/lib/tasks/failure-records'
 import type { TaskRunType } from '~~/server/lib/job/types'
+import { computed, ref } from 'vue'
 import { createLatestAsyncGuard } from '~~/composables/useTiming'
 
 export interface FailureFilter {
@@ -20,11 +21,13 @@ export function useFailures() {
   const items = ref<FailureRecord[]>([])
   const total = ref(0)
   const loading = ref(false)
-  const loadingMore = ref(false)
+  const error = ref('')
+  const page = ref(1)
+  let loadedFilter = ''
   const limit = 50
   const filter = ref<FailureFilter>({ status: 'open' })
   const fetchGuard = createLatestAsyncGuard()
-  const hasMore = computed(() => items.value.length < total.value)
+  const pageCount = computed(() => Math.max(1, Math.ceil(total.value / limit)))
 
   function toParams(offset = 0): Record<string, string> {
     const params: Record<string, string> = {
@@ -42,37 +45,32 @@ export function useFailures() {
     return params
   }
 
-  async function fetch() {
+  async function goToPage(target: number) {
     const token = fetchGuard.next()
+    const signature = JSON.stringify(filter.value)
+    let requested = signature !== loadedFilter ? 1 : Math.min(pageCount.value, Math.max(1, Math.trunc(target)))
     loading.value = true
-    loadingMore.value = false
+    error.value = ''
     try {
-      const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams())
-      if (!fetchGuard.isLatest(token)) return
-      items.value = response.items
-      total.value = response.total
-    } catch {
-      if (!fetchGuard.isLatest(token)) return
-      items.value = []
-      total.value = 0
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams((requested - 1) * limit))
+        if (!fetchGuard.isLatest(token)) return
+        const last = Math.max(1, Math.ceil(response.total / limit))
+        if (requested > last) { requested = last; continue }
+        items.value = response.items
+        total.value = response.total
+        page.value = requested
+        loadedFilter = signature
+        return
+      }
+      error.value = '数据正在变化，请刷新后重试'
+    } catch (err) {
+      if (fetchGuard.isLatest(token)) error.value = err instanceof Error ? err.message : '读取问题失败'
     } finally {
       if (fetchGuard.isLatest(token)) loading.value = false
     }
   }
-
-  async function loadMore() {
-    if (!hasMore.value || loadingMore.value) return
-    const token = fetchGuard.next()
-    loadingMore.value = true
-    try {
-      const response = await api.get<{ items: FailureRecord[]; total: number }>('/tasks/failures', toParams(items.value.length))
-      if (!fetchGuard.isLatest(token)) return
-      items.value = [...items.value, ...response.items]
-      total.value = response.total
-    } finally {
-      if (fetchGuard.isLatest(token)) loadingMore.value = false
-    }
-  }
+  async function fetch() { await goToPage(page.value) }
 
   async function mutate(endpoint: string, ids: string[]): Promise<{ count: number; msg: string }> {
     if (ids.length === 0) return { count: 0, msg: '没有选择问题' }
@@ -89,11 +87,12 @@ export function useFailures() {
     items,
     total,
     loading,
-    loadingMore,
-    hasMore,
+    error,
+    page,
+    pageSize: limit,
     filter,
     fetch,
-    loadMore,
+    goToPage,
     batchRetry: (ids: string[]) => mutate('/tasks/failures/batch-retry', ids),
     batchIgnore: (ids: string[]) => mutate('/tasks/failures/batch-ignore', ids),
     batchReopen: (ids: string[]) => mutate('/tasks/failures/batch-reopen', ids),

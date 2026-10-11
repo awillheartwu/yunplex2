@@ -10,7 +10,7 @@
       <label class="settings-search"><AppIcon name="search" :size="16" /><input v-model="categorySearch" type="search" class="form-input" placeholder="查找设置分类…" aria-label="查找设置分类"></label>
       <PageTabs v-if="visibleSettingsTabs.length" class="config-navigation" :model-value="activeTab" :tabs="visibleSettingsTabs" aria-label="设置分类" @update:model-value="activeTab = $event" />
       <p v-if="!visibleSettingsTabs.length" class="settings-no-results" role="status">没有匹配分类，请调整搜索词。</p>
-      <label class="settings-mobile-category" for="settings-category-select"><span>设置分类</span><select id="settings-category-select" v-model="activeTab" class="form-input"><option v-for="tab in tabs" :key="tab.key" :value="tab.key">{{ tab.label }}</option></select></label>
+      <label class="settings-mobile-category" for="settings-category-select"><span>设置分类</span><select id="settings-category-select" v-model="activeTab" class="form-input"><option v-for="tab in tabs" :key="tab.key" :value="tab.key">{{ tab.label }}{{ tab.badge ? ' · ' + tab.badge : '' }}</option></select></label>
     </section>
     <div class="config-content">
     <div class="settings-category-intro"><h2>{{ tabs.find(tab => tab.key === activeTab)?.label }}</h2><p>{{ categoryDescriptions[activeTab] }}</p></div>
@@ -26,6 +26,9 @@
         <!-- Netease -->
         <ConfigSection title="网易云音乐" description="用于获取歌单和歌曲下载链接的认证信息" :collapsed="!!collapsed.netease" @toggle="toggle('netease')">
           <template #icon><SidebarIcon name="music" :active="true" /></template>
+          <template #actions><button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
+              {{ testing === 'netease' ? '测试中...' : '测试网易云连接' }}
+            </button></template>
           <FormField label="Cookie" hint="从浏览器开发者工具中复制网易云音乐的 Cookie" required>
             <input v-model="form.netease.cookie" type="password" placeholder="MUSIC_U=xxx; __csrf=xxx; ..." class="form-input font-mono" @focus="($event.target as HTMLInputElement).type='text'" @blur="($event.target as HTMLInputElement).type='password'" />
           </FormField>
@@ -43,10 +46,7 @@
               <option value="jymaster">超清母带</option>
             </select>
           </FormField>
-          <div class="pt-1 flex items-center gap-4">
-            <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'netease'" @click="testConnection('netease')">
-              {{ testing === 'netease' ? '测试中...' : '测试网易云连接' }}
-            </button>
+          <div v-if="testResult['netease']" class="pt-1 flex items-center gap-4">
             <span v-if="testResult['netease']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['netease'])" role="status" aria-live="polite">
               <AppIcon :name="testResultIcon(testResult['netease'])" :size="14" />
               {{ testResult['netease'].msg }}
@@ -56,6 +56,7 @@
         <!-- Plex -->
         <ConfigSection title="Plex Media Server" description="连接 Plex 媒体服务器以同步歌单" :collapsed="!!collapsed.plex" @toggle="toggle('plex')">
           <template #icon><SidebarIcon name="sync" :active="true" /></template>
+          <template #actions><button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button></template>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField label="服务器地址" required><input v-model="form.plex.server" type="text" placeholder="192.168.1.100" class="form-input" /></FormField>
             <FormField label="端口" required><input v-model.number="form.plex.port" type="number" placeholder="32400" class="form-input" /></FormField>
@@ -66,14 +67,13 @@
           <FormField label="音乐库名称" hint="Plex 中存放音乐的库名称，用于刷新和同步">
             <input v-model="form.plex.section" type="text" placeholder="音乐" class="form-input" />
           </FormField>
-          <div class="pt-1 flex items-center gap-4">
-            <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'plex'" @click="testConnection('plex')">{{ testing === 'plex' ? '测试中...' : '测试 Plex 连接' }}</button>
+          <div v-if="testResult['plex']" class="pt-1 flex items-center gap-4">
             <span v-if="testResult['plex']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['plex'])" role="status" aria-live="polite">
               <AppIcon :name="testResultIcon(testResult['plex'])" :size="14" />
               {{ testResult['plex'].msg }}
             </span>
           </div>
-          <StorageVisibilityDiagnostic v-if="storageDiagnostic" :diagnostic="storageDiagnostic" />
+          <StorageDiagnosticEntry v-if="storageDiagnostic" v-model:expanded="diagnosticHintExpanded" :diagnostic="storageDiagnostic" />
         </ConfigSection>
       </template>
 
@@ -82,6 +82,9 @@
       <!-- Download -->
       <ConfigSection title="下载与文件" description="歌曲文件的存储路径和元数据处理选项" :collapsed="!!collapsed.download" @toggle="toggle('download')">
         <template #icon><SidebarIcon name="download" :active="true" /></template>
+          <template #actions><button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'download'" @click="testConnection('download')">
+            {{ testing === 'download' ? '测试中...' : '测试下载路径' }}
+          </button></template>
         <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
           <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
         </FormField>
@@ -92,16 +95,13 @@
           <AppIcon name="info" :size="15" />
           <p><strong>路径映射不会传输文件。</strong>它只把本地路径换算成 Plex 路径；若 Plex 在另一台主机，下载目录必须是同一共享挂载，或另有明确的复制/发布流程。</p>
         </div>
-        <div class="pt-1 flex items-center gap-4">
-          <button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'download'" @click="testConnection('download')">
-            {{ testing === 'download' ? '测试中...' : '测试下载路径' }}
-          </button>
+        <div v-if="testResult['download']" class="pt-1 flex items-center gap-4">
           <span v-if="testResult['download']" class="inline-flex items-center gap-1 text-sm" :class="testResultClass(testResult['download'])" role="status" aria-live="polite">
             <AppIcon :name="testResultIcon(testResult['download'])" :size="14" />
             {{ testResult['download'].msg }}
           </span>
         </div>
-        <StorageVisibilityDiagnostic v-if="storageDiagnostic" :diagnostic="storageDiagnostic" />
+        <StorageDiagnosticEntry v-if="storageDiagnostic" v-model:expanded="diagnosticHintExpanded" :diagnostic="storageDiagnostic" />
         <div class="space-y-3">
           <ToggleField v-model="form.download.downloadLyrics" label="下载歌词" hint="下载 .lrc 歌词文件与歌曲放在一起" />
           <ToggleField v-model="form.download.embedMetadata" label="写入元数据标签" hint="将歌曲名、艺术家、专辑等信息写入 ID3/FLAC 标签" />
@@ -587,6 +587,7 @@ interface ConnectionTestPayload {
   storageVisibility?: StorageVisibilityDiagnosticType
 }
 const testResult = ref<Record<string, TestResultState | undefined>>({})
+const diagnosticHintExpanded = ref(true)
 const storageDiagnostic = ref<StorageVisibilityDiagnosticType | null>(null)
 const changingPassword = ref(false)
 const reinitializing = ref(false)

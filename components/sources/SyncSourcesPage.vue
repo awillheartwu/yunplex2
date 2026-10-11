@@ -44,38 +44,23 @@
       <template #advanced>
         <div class="filter-sheet-group">
           <p class="filter-sheet-group__label">状态</p>
-          <div class="filter-sheet-group__controls">
-            <FilterChip :active="draftEnabledFilter === ''" @click="draftEnabledFilter = ''">全部</FilterChip>
-            <FilterChip :active="draftEnabledFilter === 'enabled'" @click="draftEnabledFilter = 'enabled'">已启用</FilterChip>
-            <FilterChip :active="draftEnabledFilter === 'disabled'" @click="draftEnabledFilter = 'disabled'">已禁用</FilterChip>
-          </div>
+          <FilterSegmentGroup v-model="draftEnabledFilter" aria-label="同步状态" :options="enabledFilterOptions" />
         </div>
         <div class="filter-sheet-group">
           <p class="filter-sheet-group__label">最近结果</p>
-          <div class="filter-sheet-group__controls">
-            <FilterChip
-              v-for="option in statusFilterOptions"
-              :key="option.value || 'all-status'"
-              :active="draftStatusFilter === option.value"
-              @click="draftStatusFilter = option.value"
-            >{{ option.label }}</FilterChip>
-          </div>
+          <FilterSegmentGroup v-model="draftStatusFilter" aria-label="最近同步结果" :options="statusFilterOptions" />
         </div>
         <div class="filter-sheet-group">
           <p class="filter-sheet-group__label">特殊条件</p>
           <div class="filter-sheet-group__controls">
-            <FilterChip :active="draftSubscribedFilter === 'subscribed'" @click="draftSubscribedFilter = draftSubscribedFilter === 'subscribed' ? '' : 'subscribed'">网易云收藏歌单</FilterChip>
-            <FilterChip :active="draftIssueFilter === 'failures'" @click="draftIssueFilter = draftIssueFilter === 'failures' ? '' : 'failures'">有待处理异常</FilterChip>
-            <FilterChip :active="draftIssueFilter === 'copyright'" @click="draftIssueFilter = draftIssueFilter === 'copyright' ? '' : 'copyright'">版权受限</FilterChip>
+            <FilterChip check :active="draftSubscribedFilter === 'subscribed'" @click="draftSubscribedFilter = draftSubscribedFilter === 'subscribed' ? '' : 'subscribed'">网易云收藏歌单</FilterChip>
+            <FilterChip check :active="draftIssueFilter === 'failures'" @click="draftIssueFilter = draftIssueFilter === 'failures' ? '' : 'failures'">有待处理异常</FilterChip>
+            <FilterChip check :active="draftIssueFilter === 'copyright'" @click="draftIssueFilter = draftIssueFilter === 'copyright' ? '' : 'copyright'">版权受限</FilterChip>
           </div>
         </div>
         <div class="filter-sheet-group">
           <p class="filter-sheet-group__label">Plex 目标</p>
-          <div class="filter-sheet-group__controls">
-            <FilterChip :active="draftPlexTargetFilter === ''" @click="draftPlexTargetFilter = ''">全部</FilterChip>
-            <FilterChip :active="draftPlexTargetFilter === 'bound'" @click="draftPlexTargetFilter = 'bound'">已绑定 Plex 目标</FilterChip>
-            <FilterChip :active="draftPlexTargetFilter === 'unbound'" @click="draftPlexTargetFilter = 'unbound'">未绑定 Plex 目标</FilterChip>
-          </div>
+          <FilterSegmentGroup v-model="draftPlexTargetFilter" aria-label="Plex 目标" :options="plexTargetFilterOptions" />
           <p class="text-xs text-muted">按已记录的目标 ID 筛选，不代表目标当前在线或已完成同步。</p>
         </div>
       </template>
@@ -125,7 +110,7 @@
 
     </FilterBar>
 
-    <div class="library-viewbar"><label class="library-select-all"><input type="checkbox" :checked="allVisibleSelected" :indeterminate="someVisibleSelected" aria-label="选择全部收藏" @change="toggleSelectAllVisible">全选筛选结果</label><span>{{ orderedSources.length }} 个{{ filterType === 'album' ? '专辑' : '歌单' }}</span><div class="library-viewbar__right"><select v-model="sort" class="form-input" aria-label="收藏排序"><option value="manual">自定义顺序</option><option value="name">名称 A–Z</option><option value="recent">最近更新</option></select><div class="library-view-toggle" aria-label="收藏展示方式"><button class="icon-button" aria-label="网格视图" :aria-pressed="view === 'grid'" @click="view = 'grid'"><AppIcon name="dashboard" :size="17" /></button><button class="icon-button" aria-label="列表视图" :aria-pressed="view === 'list'" @click="view = 'list'"><AppIcon name="list" :size="17" /></button></div></div></div>
+    <div class="library-viewbar"><label class="library-select-all"><input type="checkbox" :checked="allVisibleSelected" :indeterminate="someVisibleSelected" aria-label="选择全部收藏" @change="toggleSelectAllVisible">全选筛选结果</label><span>{{ orderedSources.length }} 个{{ filterType === 'album' ? '专辑' : '歌单' }}</span><div class="library-viewbar__right"><ListSelect v-model="sort" aria-label="收藏排序" :options="sortOptions" /><div class="library-view-toggle" aria-label="收藏展示方式"><button class="icon-button" aria-label="网格视图" :aria-pressed="view === 'grid'" @click="view = 'grid'"><AppIcon name="dashboard" :size="17" /></button><button class="icon-button" aria-label="列表视图" :aria-pressed="view === 'list'" @click="view = 'list'"><AppIcon name="list" :size="17" /></button></div></div></div>
     </div>
     <div v-if="loading" class="flex items-center justify-center py-16">
       <span class="text-muted text-sm">加载中...</span>
@@ -167,6 +152,21 @@ const {
 } = useSyncSourcesPage()
 const view = ref<'grid' | 'list'>('grid')
 const sort = ref('manual')
+const sortOptions = [
+  { value: 'manual', label: '自定义顺序' },
+  { value: 'name', label: '名称 A–Z' },
+  { value: 'recent', label: '最近更新' },
+]
+const enabledFilterOptions: Array<{ value: typeof draftEnabledFilter.value; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'enabled', label: '已启用' },
+  { value: 'disabled', label: '已禁用' },
+]
+const plexTargetFilterOptions: Array<{ value: typeof draftPlexTargetFilter.value; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'bound', label: '已绑定 Plex 目标' },
+  { value: 'unbound', label: '未绑定 Plex 目标' },
+]
 const orderedSources = computed(() => {
   if (sort.value === 'manual') return filteredSources.value
   return [...filteredSources.value].sort((a, b) => sort.value === 'name' ? (a.name || a.neteasePlaylistName).localeCompare(b.name || b.neteasePlaylistName, 'zh-CN') : (b.lastSyncedAt || b.updatedAt).localeCompare(a.lastSyncedAt || a.updatedAt))
@@ -191,7 +191,7 @@ watch(view, value => { try { localStorage.setItem('reyunplex-library-view', valu
 <style>
 
 .library-load-error{display:grid;justify-items:start;gap:var(--space-3);padding:var(--space-8);border:1px solid var(--danger-border);border-radius:var(--radius-lg);color:var(--danger);background:var(--danger-soft)}
-.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar select{width:9rem;font-size:var(--text-base);min-height:var(--control-height)}.library-view-toggle{display:flex;gap:var(--space-1)}.library-view-toggle button{min-height:var(--control-height);min-width:var(--control-height)}.library-view-toggle button[aria-pressed="true"]{background:var(--bg-surface);color:var(--accent);border-color:var(--accent)}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
+.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar .list-select{width:9rem}.library-view-toggle{display:flex;gap:var(--space-1)}.library-view-toggle button{min-height:var(--control-height);min-width:var(--control-height)}.library-view-toggle button[aria-pressed="true"]{background:var(--bg-surface);color:var(--accent);border-color:var(--accent)}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar .list-select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
 .library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .library-controls { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 @media(max-width:720px) { .library-heading { align-items: flex-start; flex-direction: column; } }

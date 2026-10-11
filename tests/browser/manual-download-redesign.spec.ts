@@ -43,12 +43,16 @@ for (const width of [1440, 390]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: testInfo.outputPath('input-light.png'), fullPage: true, animations: 'disabled' })
-    await page.getByText('输入帮助', { exact: true }).click()
-    await expect(page.locator('.manual-help p')).toBeVisible()
-    await page.getByText('输入帮助', { exact: true }).click()
+    await page.getByRole('button', { name: '输入帮助', exact: true }).click()
+    await expect(page.getByRole('tooltip')).toBeVisible()
+    await page.getByRole('button', { name: '输入帮助', exact: true }).click()
     await page.locator('.manual-options-summary').click()
     await expect(page.getByRole('combobox', { name: '选择下载音质' })).toHaveCSS('font-size', '14px')
     expect((await page.getByRole('combobox', { name: '选择下载音质' }).boundingBox())!.height).toBeGreaterThanOrEqual(width < 720 ? 44 : 40)
+    if (process.env.UI_SCREENSHOTS === '1') {
+      await page.locator('.manual-config-card').evaluate(element => element.scrollIntoView({ block: 'center' }))
+      await page.locator('.manual-config-card').screenshot({ path: testInfo.outputPath('download-options-expanded.png') })
+    }
     await page.locator('.manual-options-summary').click()
 
     parseFail = true

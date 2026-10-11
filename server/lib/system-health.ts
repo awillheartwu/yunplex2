@@ -5,6 +5,8 @@ import { readConfig, getDataDir } from './config/store'
 import os from 'node:os'
 import { getSyncWorker } from './sync/instance'
 import type { SourceSchedulerStatus } from './sync/worker'
+import { getProcessMemorySample } from './system-memory'
+import { MEBIBYTE, type ProcessMemoryBytes, type ProcessMemorySample, type RoundedMemoryMiB } from '../../shared/system-memory'
 
 export const DEPENDENCY_HEALTH_TTL_MS = 60_000
 
@@ -42,14 +44,10 @@ export interface DependencyHealthOptions {
   now?: number
 }
 
-export interface SystemHealthSnapshot {
+export interface SystemHealthSnapshot extends ProcessMemorySample {
   cpu: number
-  mem: {
-    rss: number
-    heapUsed: number
-    heapTotal: number
-    external: number
-  }
+  /** Legacy rounded MiB values. New consumers should use memory (bytes). */
+  mem: RoundedMemoryMiB
   uptime: number
   pid: number
   dbSize: number
@@ -78,13 +76,13 @@ export function getCpuPercent(): number {
   return Math.round((totalUsageUs / elapsedUs / coreCount) * 10000) / 100
 }
 
-export function getMemUsage() {
-  const m = process.memoryUsage()
+export function getMemUsage(m: ProcessMemoryBytes = process.memoryUsage()): RoundedMemoryMiB {
   return {
-    rss: Math.round(m.rss / 1024 / 1024),
-    heapUsed: Math.round(m.heapUsed / 1024 / 1024),
-    heapTotal: Math.round(m.heapTotal / 1024 / 1024),
-    external: Math.round(m.external / 1024 / 1024),
+    rss: Math.round(m.rss / MEBIBYTE),
+    heapUsed: Math.round(m.heapUsed / MEBIBYTE),
+    heapTotal: Math.round(m.heapTotal / MEBIBYTE),
+    external: Math.round(m.external / MEBIBYTE),
+    arrayBuffers: Math.round(m.arrayBuffers / MEBIBYTE),
   }
 }
 
@@ -170,8 +168,9 @@ export function setSystemHealthCheckersForTest(checkers: Partial<HealthCheckers>
 }
 
 export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
+  const memorySample = getProcessMemorySample()
   const [mem, dbSize, dependencyHealth] = await Promise.all([
-    Promise.resolve(getMemUsage()),
+    Promise.resolve(getMemUsage(memorySample.memory)),
     Promise.resolve(getDbFileSize()),
     getDependencyHealthSnapshot(),
   ])
@@ -179,6 +178,7 @@ export async function getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
   return {
     cpu: getCpuPercent(),
     mem,
+    ...memorySample,
     uptime: Math.round(process.uptime()),
     pid: process.pid,
     dbSize,

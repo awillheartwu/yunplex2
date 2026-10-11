@@ -166,36 +166,6 @@ export function useLatestAsyncGuard() {
   return guard
 }
 
-export function createTimeoutFunction<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let pendingArgs: Args | null = null
-
-  const cancel = () => {
-    if (timer) clearTimeout(timer)
-    timer = null
-    pendingArgs = null
-  }
-
-  const schedule = (...args: Args) => {
-    cancel()
-    pendingArgs = args
-    timer = setTimeout(() => {
-      timer = null
-      const nextArgs = pendingArgs
-      pendingArgs = null
-      if (nextArgs) fn(...nextArgs)
-    }, waitMs)
-  }
-
-  return { schedule, cancel }
-}
-
-export function useTimeoutFn<Args extends unknown[]>(fn: VoidCallback<Args>, waitMs = 300) {
-  const timeout = createTimeoutFunction(fn, waitMs)
-  onUnmounted(timeout.cancel)
-  return timeout
-}
-
 export function createIntervalFunction(fn: () => void, waitMs = 3000) {
   let timer: ReturnType<typeof setInterval> | null = null
 
