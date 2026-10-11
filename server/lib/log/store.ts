@@ -25,11 +25,13 @@ export function appendLog(
 }
 
 function enrichLogEntry(entry: LogEntry): LogEntry {
+  const message = sanitizeDiagnosticMessage(entry.message) ?? ''
   const detail = sanitizeDiagnosticMessage(entry.detail) ?? undefined
-  if (entry.level === 'info') return { ...entry, detail }
-  const definition = resolveDomainErrorDefinition(entry.errorCode, `${entry.message} ${detail || ''}`)
+  if (entry.level === 'info') return { ...entry, message, detail }
+  const definition = resolveDomainErrorDefinition(entry.errorCode, `${message} ${detail || ''}`)
   return {
     ...entry,
+    message,
     detail,
     errorCode: definition.code,
     errorCategory: definition.category,

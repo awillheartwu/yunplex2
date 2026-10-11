@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_CONFIG } from './defaults'
+import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import {
   diagnoseStorageVisibility,
   extractPlexMusicSection,
   testDownloadPathConfig,
-} from './connection-test'
+} from '~~/server/lib/config/connection-test'
 
 const tempDirs: string[] = []
 
@@ -29,20 +29,20 @@ describe('Plex storage visibility diagnostics', () => {
       download: {
         ...DEFAULT_CONFIG.download,
         dir: downloadDir,
-        plexLibraryPathPrefix: '/volume1/06_Music',
+        plexLibraryPathPrefix: '/volume1/music',
       },
-      plex: { ...DEFAULT_CONFIG.plex, server: '192.168.2.198', section: '音乐' },
+      plex: { ...DEFAULT_CONFIG.plex, server: '192.0.2.50', section: '音乐' },
     }
 
     const diagnostic = diagnoseStorageVisibility(config, {
-      section: { key: '12', title: '音乐', locations: ['/volume1/06_Music'] },
+      section: { key: '12', title: '音乐', locations: ['/volume1/music'] },
       localAddresses: ['127.0.0.1', '192.168.2.10'],
     })
 
     expect(diagnostic.sample).toEqual({
       relativePath: '路径诊断/示例专辑/01 - 示例歌曲.flac',
       localPath: join(downloadDir, '路径诊断/示例专辑/01 - 示例歌曲.flac'),
-      plexPath: '/volume1/06_Music/路径诊断/示例专辑/01 - 示例歌曲.flac',
+      plexPath: '/volume1/music/路径诊断/示例专辑/01 - 示例歌曲.flac',
       roundTripLocalPath: join(downloadDir, '路径诊断/示例专辑/01 - 示例歌曲.flac'),
       roundTripMatches: true,
     })
@@ -132,6 +132,23 @@ describe('Plex storage visibility diagnostics', () => {
     })
   })
 
+  it('redacts transport credentials from every storage inspection warning', () => {
+    const diagnostic = diagnoseStorageVisibility({
+      ...DEFAULT_CONFIG,
+      download: { ...DEFAULT_CONFIG.download, dir: tempDir() },
+      plex: { ...DEFAULT_CONFIG.plex, server: 'plex.example' },
+    }, {
+      plexInspectionError: 'Plex timeout /library/sections?X-Plex-Token=fixture-plex; Authorization: Bearer fixture-bearer; Cookie: MUSIC_U=fixture-music; session=fixture-session',
+      localAddresses: ['127.0.0.1'],
+    })
+
+    expect(diagnostic.code).toBe('plex_inspection_unavailable')
+    expect(diagnostic.inspectionError).toContain('Plex timeout')
+    expect(diagnostic.checks.find(check => check.key === 'section')?.detail).toBe(diagnostic.inspectionError)
+    const result = JSON.stringify(diagnostic)
+    for (const secret of ['fixture-plex', 'fixture-bearer', 'fixture-music', 'fixture-session']) expect(result).not.toContain(secret)
+  })
+
   it('extracts all locations from the configured music section', () => {
     const section = extractPlexMusicSection({
       MediaContainer: {
@@ -141,7 +158,7 @@ describe('Plex storage visibility diagnostics', () => {
             key: '12',
             type: 'artist',
             title: '音乐',
-            Location: [{ path: '/volume1/06_Music' }, { path: '/volume2/archive' }],
+            Location: [{ path: '/volume1/music' }, { path: '/volume2/archive' }],
           },
         ],
       },
@@ -150,7 +167,7 @@ describe('Plex storage visibility diagnostics', () => {
     expect(section).toEqual({
       key: '12',
       title: '音乐',
-      locations: ['/volume1/06_Music', '/volume2/archive'],
+      locations: ['/volume1/music', '/volume2/archive'],
     })
   })
 })

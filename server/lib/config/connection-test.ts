@@ -17,6 +17,7 @@ import {
   normalizePathPrefix,
 } from '../sync/path-map'
 import { ConnectionTestError } from './connection-test-error'
+import { sanitizeDiagnosticMessage } from '../domain-error'
 
 export const PATH_MAPPING_DISCLOSURE = '路径映射只负责换算文件名，不会上传、复制或同步任何文件到 Plex 服务器。'
 export const DOWNLOAD_WRITE_PROBE_PREFIX = '.yunplex-write-probe-'
@@ -115,6 +116,7 @@ export function diagnoseStorageVisibility(
 ): StorageVisibilityDiagnostic {
   const downloadDir = normalizePathPrefix(config.download.dir)
   const plexPathPrefix = normalizePathPrefix(config.download.plexLibraryPathPrefix) || null
+  const plexInspectionError = sanitizeDiagnosticMessage(options.plexInspectionError)
   const section = options.section ?? null
   const sectionLocations = section?.locations.map(normalizePathPrefix).filter(Boolean) ?? []
   const serverScope = getServerScope(config.plex.server, options.localAddresses)
@@ -137,7 +139,7 @@ export function diagnoseStorageVisibility(
   let action: string
   let publicationVerified = false
 
-  if (options.plexInspectionError) {
+  if (plexInspectionError) {
     code = 'plex_inspection_unavailable'
     summary = `无法读取 Plex 音乐库位置，因此尚未验证文件发布链路。${PATH_MAPPING_DISCLOSURE}`
     action = '先确认 Plex 连接与音乐库名称，再重新测试；同时确认下载目录是 Plex 实际扫描目录的共享挂载。'
@@ -196,7 +198,7 @@ export function diagnoseStorageVisibility(
       status: section && sectionLocations.length > 0 && prefixMatchesSection !== false ? 'pass' : 'warning',
       detail: sectionLocations.length > 0
         ? `Plex「${section?.title ?? config.plex.section}」Location：${sectionLocations.join('、')}`
-        : options.plexInspectionError || '未读取到 Plex 音乐库 Location。',
+        : plexInspectionError || '未读取到 Plex 音乐库 Location。',
     },
     {
       key: 'publication',
@@ -222,7 +224,7 @@ export function diagnoseStorageVisibility(
     sectionKey: section?.key ?? null,
     sectionLocations,
     prefixMatchesSection,
-    ...(options.plexInspectionError ? { inspectionError: options.plexInspectionError } : {}),
+    ...(plexInspectionError ? { inspectionError: plexInspectionError } : {}),
     sample: {
       relativePath: DIAGNOSTIC_RELATIVE_PATH,
       localPath,

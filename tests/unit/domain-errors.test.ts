@@ -5,7 +5,7 @@ import {
   resolveDomainErrorDefinition,
 } from '../../shared/domain-errors'
 import { describeDomainError, sanitizeDiagnosticMessage } from '../../server/lib/domain-error'
-import { fail } from '../../server/lib/response'
+import { fail, failDomain } from '../../server/lib/response'
 
 describe('domain errors', () => {
   it.each([
@@ -27,6 +27,30 @@ describe('domain errors', () => {
   it('redacts credentials from diagnostics', () => {
     expect(sanitizeDiagnosticMessage('token=secret Cookie: abc Authorization=Bearer123'))
       .toBe('token=[REDACTED] Cookie: [REDACTED] Authorization=[REDACTED]')
+  })
+
+  it.each([
+    ['Plex timeout Authorization: Bearer fixture-bearer', ['fixture-bearer']],
+    ['Plex timeout Authorization: Basic fixture-basic', ['fixture-basic']],
+    ['Plex timeout Cookie: MUSIC_U=fixture-music; __csrf=fixture-csrf; session=fixture-session', ['fixture-music', 'fixture-csrf', 'fixture-session']],
+    ['Plex timeout {"token":"fixture token with spaces","password":"fixture-password","cookie":"MUSIC_U=fixture-music; __csrf=fixture-csrf"}', ['fixture token with spaces', 'fixture-password', 'fixture-music', 'fixture-csrf']],
+    ['Plex timeout http://fixture-user:fixture-password@plex.example/identity?X-Plex-Token=fixture-plex&api_key=fixture-api', ['fixture-user', 'fixture-password', 'fixture-plex', 'fixture-api']],
+    ['Plex timeout MUSIC_U=fixture-music; __csrf=fixture-csrf; access_token=fixture-access', ['fixture-music', 'fixture-csrf', 'fixture-access']],
+  ])('redacts complete credentials in %s', (message, secrets) => {
+    const diagnostic = sanitizeDiagnosticMessage(message)!
+    expect(diagnostic).toContain('Plex timeout')
+    for (const secret of secrets) expect(diagnostic).not.toContain(secret)
+    expect(sanitizeDiagnosticMessage(diagnostic)).toBe(diagnostic)
+  })
+
+  it('redacts validation and explicit domain responses while retaining useful context', () => {
+    const message = '配置不合法: password=fixture-password token=fixture-token'
+    for (const response of [fail(message, 1, 'validation_failed'), failDomain('validation_failed', message)]) {
+      expect(response.msg).toContain('配置不合法')
+      expect(response.msg).not.toContain('fixture-password')
+      expect(response.msg).not.toContain('fixture-token')
+      expect(response.error?.code).toBe('validation_failed')
+    }
   })
 
   it('returns structured API policy without exposing an operational diagnostic', () => {

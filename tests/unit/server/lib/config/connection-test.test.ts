@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { initDb } from '../db'
-import { DEFAULT_CONFIG } from './defaults'
-import { DOWNLOAD_WRITE_PROBE_PREFIX, testDownloadPathConfig } from './connection-test'
-import { ConnectionTestError } from './connection-test-error'
-import { CONNECTION_TEST_TIMEOUT_MS, runConnectionTest } from './connection-test-runner'
+import { initDb } from '~~/server/lib/db'
+import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
+import { DOWNLOAD_WRITE_PROBE_PREFIX, testDownloadPathConfig } from '~~/server/lib/config/connection-test'
+import { ConnectionTestError } from '~~/server/lib/config/connection-test-error'
+import { CONNECTION_TEST_TIMEOUT_MS, runConnectionTest } from '~~/server/lib/config/connection-test-runner'
 
 const mocks = vi.hoisted(() => ({
   checkCookie: vi.fn(),
@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => ({
   statfsSync: vi.fn(),
 }))
 
-vi.mock('../netease', () => ({ checkCookie: mocks.checkCookie }))
-vi.mock('../plex-client', () => ({ createPlexClient: vi.fn(), initPlexClient: mocks.initPlexClient }))
+vi.mock('~~/server/lib/netease', () => ({ checkCookie: mocks.checkCookie }))
+vi.mock('~~/server/lib/plex-client', () => ({ createPlexClient: vi.fn(), initPlexClient: mocks.initPlexClient }))
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -145,10 +145,11 @@ describe('download directory validation', () => {
     expect(result).toMatchObject({ success: true, writable: true, downloadDir: dir })
     const writePaths = (mocks.writeFileSync.mock.calls as Array<[string]>).map(([path]) => String(path))
     expect(writePaths).toHaveLength(1)
-    expect(writePaths[0].startsWith(join(dir, DOWNLOAD_WRITE_PROBE_PREFIX))).toBe(true)
-    expect(writePaths[0].endsWith('.tmp')).toBe(true)
+    const writtenPath = writePaths[0]!
+    expect(writtenPath.startsWith(join(dir, DOWNLOAD_WRITE_PROBE_PREFIX))).toBe(true)
+    expect(writtenPath.endsWith('.tmp')).toBe(true)
     const removedPaths = (mocks.rmSync.mock.calls as Array<[string]>).map(([path]) => String(path))
-    expect(removedPaths).toContain(writePaths[0])
+    expect(removedPaths).toContain(writtenPath)
     expect(readdirSync(dir)).toEqual([])
   })
 

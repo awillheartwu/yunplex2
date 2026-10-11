@@ -1,6 +1,6 @@
 import type { DomainErrorCode, DomainErrorCategory, DomainErrorSeverity } from '../../shared/domain-errors'
 import { getDomainErrorDefinition } from '../../shared/domain-errors'
-import { describeDomainError } from './domain-error'
+import { describeDomainError, sanitizeDiagnosticMessage } from './domain-error'
 
 export interface ApiResponse<T = unknown> {
   code: number
@@ -23,10 +23,9 @@ export function success<T>(data: T, msg = 'ok'): ApiResponse<T> {
 export function fail(error: unknown, code = 1, fallback?: DomainErrorCode): ApiResponse<null> {
   const selectedFallback = fallback ?? 'unknown_error'
   const detail = describeDomainError(error, selectedFallback)
-  const rawMessage = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
   return {
     code,
-    msg: detail.code === 'validation_failed' ? rawMessage || detail.userMessage : detail.userMessage,
+    msg: detail.code === 'validation_failed' ? detail.diagnostic || detail.userMessage : detail.userMessage,
     data: null,
     error: {
       code: detail.code,
@@ -44,7 +43,7 @@ export function fail(error: unknown, code = 1, fallback?: DomainErrorCode): ApiR
  */
 export function failDomain(code: DomainErrorCode, message?: string, apiCode = 1): ApiResponse<null> {
   const definition = getDomainErrorDefinition(code)
-  const trimmed = message?.trim()
+  const trimmed = sanitizeDiagnosticMessage(message)?.trim()
   return {
     code: apiCode,
     msg: trimmed || definition.userMessage,

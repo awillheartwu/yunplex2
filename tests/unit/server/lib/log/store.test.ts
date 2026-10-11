@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { closeDb, initDb } from '../db'
-import { appendLog, readLogs } from './store'
+import { closeDb, getDb, initDb } from '~~/server/lib/db'
+import { appendLog, readLogs } from '~~/server/lib/log/store'
 
 const directories: string[] = []
 
@@ -38,5 +38,26 @@ describe('diagnostic log store', () => {
     })
     expect(readLogs().total).toBe(2)
 
+  })
+
+  it('redacts both log fields before storage and sanitizes existing rows on read', () => {
+    setup()
+    const entry = appendLog({
+      level: 'info',
+      message: 'Plex 请求 token=fixture-token',
+      detail: 'Authorization: Bearer fixture-bearer',
+    })
+    const stored = getDb().prepare('SELECT message, detail FROM logs WHERE id = ?').get(entry.id)
+    for (const value of [entry, stored]) {
+      expect(JSON.stringify(value)).not.toContain('fixture-token')
+      expect(JSON.stringify(value)).not.toContain('fixture-bearer')
+    }
+
+    getDb().prepare('UPDATE logs SET message = ?, detail = ? WHERE id = ?').run(
+      'Plex 请求 token=legacy-token', 'Cookie: MUSIC_U=legacy-music; session=legacy-session', entry.id,
+    )
+    const result = JSON.stringify(readLogs())
+    for (const secret of ['legacy-token', 'legacy-music', 'legacy-session']) expect(result).not.toContain(secret)
+    expect(readLogs().items[0]?.message).toContain('Plex 请求')
   })
 })
