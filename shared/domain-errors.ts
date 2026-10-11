@@ -69,6 +69,7 @@ export function classifyDomainErrorCode(message: string | null | undefined, fall
   if (/plex/.test(text) && /连接|不可用|超时|timeout|refused|unreachable|\b50[234]\b/.test(text)) return 'plex_unavailable'
   if (/eacces|eperm|enospc|enoent|只读|权限|磁盘|空间|挂载|文件系统/.test(text)) return 'filesystem_failed'
   if (/身份冲突|关联失效|歧义|ambiguous|identity conflict/.test(text)) return 'media_identity_conflict'
+  if (/音频文件超过大小上限/.test(text)) return 'validation_failed'
   if (/标签|metadata|tag/.test(text)) return 'failed_tags'
   return fallback
 }

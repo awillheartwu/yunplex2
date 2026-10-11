@@ -31,6 +31,7 @@ export interface FileTaskSubmission {
 
 export interface FileTaskWaitOptions {
   timeoutMs?: number
+  inactivityTimeoutMs?: number
   throwIfCancelled?: () => void
   pollIntervalMs?: number
   onProgress?: (progress: { settled: number; total: number }) => void

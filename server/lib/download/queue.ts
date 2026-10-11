@@ -9,9 +9,8 @@ import { recordFailure, resolveFailures } from '../tasks/failure-records'
 import { getRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
 import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
-import { isTagWriteError } from '../tag-writer'
-import { commitCompletedMediaWrite } from './media-write'
 import { classifyDomainErrorCode } from '../../../shared/domain-errors'
+import { ELIGIBLE_DOWNLOAD_CALLERS_SQL, getDownloadQueueControl } from './queue-control'
 
 export interface DownloadTask {
   id: string
@@ -28,6 +27,8 @@ export interface DownloadTask {
   quality?: string
   error?: string
   retryCount: number
+  autoRetryCount?: number
+  nextAttemptAt?: string
   jobId?: string
   idempotencyKey?: string
   operation?: DownloadTaskOperation
@@ -70,6 +71,7 @@ export const DOWNLOAD_TASK_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
 export const DOWNLOAD_TASK_LEASE_MS = 10 * 60 * 1000
 
 export interface ProcessDownloadQueueOptions {
+  automaticRetries?: boolean
   inactivityTimeoutMs?: number
   leaseDurationMs?: number
   shouldStop?: () => boolean
@@ -99,6 +101,7 @@ interface TaskRow {
   artist: string; album: string; status: string; progress: number
   file_path: string | null; file_type: string | null; quality: string | null
   error: string | null; retry_count: number; job_id: string | null; run_id: string | null
+  auto_retry_count: number; next_attempt_at: string | null
   idempotency_key: string | null; lease_owner: string | null; lease_expires_at: string | null; attempt_started_at: string | null
   operation: string; target_path: string | null; execution_intent_json: string | null
   awaiting_source_sync?: number | null
@@ -114,6 +117,7 @@ function rowToTask(r: TaskRow): DownloadTask {
     filePath: r.file_path ?? undefined, fileType: r.file_type ?? undefined,
     quality: r.quality ?? undefined, error: r.error ?? undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
+    autoRetryCount: r.auto_retry_count ?? 0, nextAttemptAt: r.next_attempt_at ?? undefined,
     idempotencyKey: r.idempotency_key ?? undefined,
     operation: DOWNLOAD_TASK_OPERATIONS.has(r.operation as DownloadTaskOperation)
       ? r.operation as DownloadTaskOperation
@@ -242,13 +246,26 @@ export function listDownloadTasks(opts: {
 
 
 export function listPendingDownloadTaskIds(limit = 1000): string[] {
+  const control = getDownloadQueueControl()
+  if (control.paused || control.cooldownUntil) return []
   return (getDb().prepare(`
     SELECT id
     FROM download_tasks
-    WHERE status = 'pending'
-    ORDER BY created_at ASC
+    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+      AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL}
+    ORDER BY created_at ASC, rowid ASC
     LIMIT ?
-  `).all(Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
+  `).all(new Date().toISOString(), Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
+}
+
+export function getNextDownloadWakeDelay(): number | null {
+  const control = getDownloadQueueControl()
+  if (control.paused) return null
+  const row = getDb().prepare(`SELECT MIN(COALESCE(next_attempt_at,'')) AS next FROM download_tasks
+    WHERE status='pending' AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL}`).get() as { next: string | null }
+  if (row.next === null) return null
+  return Math.max(0, row.next ? Date.parse(row.next) - Date.now() : 0,
+    control.cooldownUntil ? Date.parse(control.cooldownUntil) - Date.now() : 0)
 }
 
 export function updateTaskState(id: string, updates: Partial<{
@@ -450,6 +467,8 @@ export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
       SET status = 'pending',
         progress = 0,
         error = NULL,
+        auto_retry_count = 0,
+        next_attempt_at = NULL,
         retry_count = retry_count + 1,
         lease_owner = NULL,
         lease_expires_at = NULL,
@@ -506,13 +525,14 @@ export function buildDownloadTaskIdempotencyKey(input: {
   ].join(':')
 }
 
-function claimTask(id: string, leaseOwner: string, leaseDurationMs: number): DownloadTask | null {
+export function claimDownloadTask(id: string, leaseOwner: string, leaseDurationMs: number): DownloadTask | null {
   const now = new Date().toISOString()
   const leaseExpiresAt = new Date(Date.now() + leaseDurationMs).toISOString()
   const result = getDb().prepare(`
     UPDATE download_tasks
     SET status = 'downloading',
       progress = 0,
+      next_attempt_at = NULL,
       lease_owner = ?,
       lease_expires_at = ?,
       attempt_started_at = ?,
@@ -535,248 +555,5 @@ function claimTask(id: string, leaseOwner: string, leaseDurationMs: number): Dow
   return getDownloadTask(id)
 }
 
-export async function processAll(
-  processor: DownloadProcessor,
-  jobId?: string,
-  concurrency = 3,
-  taskIds?: string[],
-  options: ProcessDownloadQueueOptions = {},
-): Promise<number> {
-  const db = getDb()
-  recoverExpiredDownloadTasks()
-  const conditions = taskIds?.length
-    ? ["status IN ('pending','failed','downloading','tagging')"]
-    : ["status IN ('pending','failed')"]
-  const queryParams: unknown[] = []
-  if (jobId) {
-    conditions.push('COALESCE(run_id, job_id) = ?')
-    queryParams.push(jobId)
-  }
-  if (taskIds?.length) {
-    conditions.push(`id IN (${taskIds.map(() => '?').join(',')})`)
-    queryParams.push(...taskIds)
-  }
-  const where = `WHERE ${conditions.join(' AND ')}`
-  const rows = db.prepare(`SELECT * FROM download_tasks ${where} ORDER BY created_at ASC`).all(...queryParams) as TaskRow[]
-
-  const tasks = rows.map(rowToTask)
-  if (tasks.length === 0) return 0
-
-  const leaseOwner = randomUUID()
-  const inactivityTimeoutMs = options.inactivityTimeoutMs ?? DOWNLOAD_TASK_INACTIVITY_TIMEOUT_MS
-  const leaseDurationMs = options.leaseDurationMs ?? DOWNLOAD_TASK_LEASE_MS
-  let completed = 0
-  let idx = 0
-
-  async function worker() {
-    while (idx < tasks.length) {
-      if (options.shouldStop?.()) return
-      const selected = tasks[idx++]
-      if (!selected) continue
-      const task = claimTask(selected.id, leaseOwner, leaseDurationMs)
-      if (!task) continue
-      try {
-        emitEvent({
-          type: 'queue-update',
-          data: { taskId: task.id, songName: task.songName, status: 'downloading', progress: 0, sourceId: task.sourceId },
-          timestamp: new Date().toISOString(),
-        })
-
-        const abortController = new AbortController()
-        let watchdog: ReturnType<typeof setTimeout> | undefined
-        let watchdogActive = true
-        const resetWatchdog = (reject: (reason: Error) => void) => {
-          if (!watchdogActive) return
-          if (watchdog) clearTimeout(watchdog)
-          watchdog = setTimeout(() => {
-            if (!watchdogActive) return
-            watchdogActive = false
-            abortController.abort()
-            reject(new Error(`任务无进展超时（>${Math.ceil(inactivityTimeoutMs / 1000)} 秒），已释放下载队列槽位`))
-          }, inactivityTimeoutMs)
-          watchdog.unref?.()
-        }
-        const result = await new Promise<DownloadProcessorResult>((resolve, reject) => {
-          resetWatchdog(reject)
-          void processor(task, (pct, phase) => {
-            resetWatchdog(reject)
-            const status = phase || 'downloading'
-            const updated = updateTaskState(task.id, {
-              progress: pct,
-              status,
-              leaseExpiresAt: new Date(Date.now() + leaseDurationMs).toISOString(),
-            }, { leaseOwner })
-            if (!updated) return
-            emitEvent({
-              type: 'queue-update',
-              data: { taskId: task.id, songName: task.songName, status, progress: pct, sourceId: task.sourceId },
-              timestamp: new Date().toISOString(),
-            })
-          }, abortController.signal).then(
-            value => {
-              if (!watchdogActive) return
-              watchdogActive = false
-              resolve(value)
-            },
-            error => {
-              if (!watchdogActive) return
-              watchdogActive = false
-              reject(error)
-            },
-          )
-        }).finally(() => {
-          watchdogActive = false
-          if (watchdog) clearTimeout(watchdog)
-        })
-
-        // Tag-writing failures must not silently pass as "done"
-        if (result.ops?.tags === 'failed') {
-          const detail = result.ops.error || '未知标签错误'
-          const msg = `标签写入失败: ${task.songName} — ${detail}`
-          const updated = updateTaskState(task.id, {
-            status: 'failed',
-            error: msg,
-            progress: 0,
-            filePath: result.filePath,
-            fileType: result.fileType,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          }, { leaseOwner })
-          if (!updated) continue
-
-          emitEvent({
-            type: 'song-progress',
-            data: {
-              taskId: task.id,
-              songName: task.songName,
-              status: 'failed',
-              error: msg,
-              completed: ++completed,
-              total: tasks.length,
-              sourceId: task.sourceId ?? undefined,
-              filePath: result.filePath,
-              fileType: result.fileType,
-            },
-            timestamp: new Date().toISOString(),
-          })
-          options.onTaskSettled?.(task, 'failed', { completed, total: tasks.length })
-          continue
-        }
-
-        const updated = getDb().transaction(() => {
-          const accepted = updateTaskState(task.id, {
-            status: 'done', progress: 100,
-            filePath: result.filePath, fileType: result.fileType,
-            error: null,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          }, { leaseOwner })
-          if (!accepted) return false
-          commitCompletedMediaWrite({
-            neteaseSongId: task.songId,
-            filePath: result.filePath,
-            provenance: task.operation === 'repair_existing' ? 'manual' : 'download_task',
-            taskId: task.id,
-            audioDownloaded: result.ops?.download === 'ok',
-            audioOperation: result.audioOperation,
-            runId: task.jobId ?? null,
-            sourceId: task.sourceId,
-          })
-          return true
-        })()
-        if (!updated) continue
-
-        emitEvent({
-          type: 'song-progress',
-          data: { taskId: task.id, songName: task.songName, status: 'done', completed: ++completed, total: tasks.length, sourceId: task.sourceId },
-          timestamp: new Date().toISOString(),
-        })
-        options.onTaskSettled?.(task, 'done', { completed, total: tasks.length })
-      } catch (err) {
-        const tagError = isTagWriteError(err) ? err : null
-        const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
-        const updated = updateTaskState(task.id, {
-          status: 'failed',
-          error: msg,
-          progress: 0,
-          ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
-          ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),
-          leaseOwner: null,
-          leaseExpiresAt: null,
-        }, { leaseOwner })
-        if (!updated) continue
-
-        emitEvent({
-          type: 'song-progress',
-          data: {
-            taskId: task.id,
-            songName: task.songName,
-            status: 'failed',
-            error: msg,
-            completed: ++completed,
-            total: tasks.length,
-            sourceId: task.sourceId,
-            ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
-            ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),
-          },
-          timestamp: new Date().toISOString(),
-        })
-        options.onTaskSettled?.(task, 'failed', { completed, total: tasks.length })
-      }
-    }
-  }
-
-  const workers = Array.from({ length: concurrency }, () => worker())
-  await Promise.all(workers)
-  // Count only tasks matching the same filter as the workers (batch-specific if jobId provided)
-  const countConditions = ["status = 'failed'"]
-  const countParams: unknown[] = []
-  if (jobId) {
-    countConditions.push('COALESCE(run_id, job_id) = ?')
-    countParams.push(jobId)
-  }
-  if (taskIds?.length) {
-    countConditions.push(`id IN (${taskIds.map(() => '?').join(',')})`)
-    countParams.push(...taskIds)
-  }
-  const failed = (db.prepare(
-    `SELECT COUNT(*) as cnt FROM download_tasks WHERE ${countConditions.join(' AND ')}`,
-  ).get(...countParams) as { cnt: number }).cnt
-  emitEvent({
-    type: 'queue-update',
-    data: { status: 'complete', ...getQueueStatus() },
-    timestamp: new Date().toISOString(),
-  })
-
-  return failed
-}
-
-export async function waitForDownloadTasks(input: {
-  taskIds: string[]
-  timeoutMs?: number
-  throwIfCancelled?: () => void
-  pollIntervalMs?: number
-  onProgress?: (progress: { settled: number; total: number }) => void
-}): Promise<void> {
-  const { taskIds } = input
-  if (taskIds.length === 0) return
-  const deadline = Date.now() + (input.timeoutMs ?? 30 * 60 * 1000)
-  let previousSettled = -1
-  while (Date.now() < deadline) {
-    input.throwIfCancelled?.()
-    const row = getDb().prepare(`
-      SELECT COUNT(*) AS count
-      FROM download_tasks
-      WHERE id IN (${taskIds.map(() => '?').join(',')})
-        AND status IN ('pending','downloading','tagging')
-    `).get(...taskIds) as { count: number }
-    const settled = taskIds.length - row.count
-    if (settled !== previousSettled) {
-      previousSettled = settled
-      input.onProgress?.({ settled, total: taskIds.length })
-    }
-    if (row.count === 0) return
-    await new Promise(resolve => setTimeout(resolve, input.pollIntervalMs ?? 250))
-  }
-  throw new Error('等待下载任务完成超时')
-}
+export { executeDownloadTasks as processAll } from './queue-execution'
+export { waitForDownloadTasks } from './queue-wait'

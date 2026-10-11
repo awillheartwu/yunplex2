@@ -122,6 +122,8 @@ export function createSchema(db: Database.Database): void {
       quality         TEXT,
       error           TEXT,
       retry_count     INTEGER NOT NULL DEFAULT 0,
+      auto_retry_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
       job_id          TEXT,
       run_id          TEXT,
       idempotency_key TEXT,

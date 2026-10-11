@@ -1,5 +1,6 @@
 import {
   listPendingDownloadTaskIds,
+  getNextDownloadWakeDelay,
   processAll,
   type DownloadProcessor,
   type DownloadTask,
@@ -25,9 +26,11 @@ export function createDownloadWorker(input: {
   const activeTasks = new Set<string>()
   let stopping = false
   let failure: unknown
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
   function settleIdle() {
     if (activeTasks.size > 0) return
+    if (retryTimer && !stopping) return
     const resolve = resolveDrain, reject = rejectDrain
     activeDrain = null
     resolveDrain = null
@@ -37,10 +40,11 @@ export function createDownloadWorker(input: {
   }
 
   function pump() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
     try {
       if (!stopping) {
         const configured = input.getConcurrency()
-        const concurrency = Number.isFinite(configured) ? Math.max(1, Math.trunc(configured)) : 1
+        const concurrency = Number.isFinite(configured) ? Math.min(10, Math.max(1, Math.trunc(configured))) : 1
         const freeSlots = Math.max(0, concurrency - activeTasks.size)
         const ids = freeSlots ? listPendingDownloadTaskIds(freeSlots) : []
         for (const id of ids) {
@@ -51,6 +55,7 @@ export function createDownloadWorker(input: {
           // One task per slot lets wakeups fill spare capacity during a long task.
           void processAll(input.execute, undefined, 1, [id], {
             shouldStop: () => stopping,
+            automaticRetries: true,
           }).then(() => {
             activeTasks.delete(id)
             pump()
@@ -60,6 +65,13 @@ export function createDownloadWorker(input: {
             activeTasks.delete(id)
             settleIdle()
           })
+        }
+        if (activeTasks.size === 0) {
+          const delay = getNextDownloadWakeDelay()
+          if (delay !== null) {
+            retryTimer = setTimeout(pump, Math.max(10, Math.min(delay, 30_000)))
+            retryTimer.unref?.()
+          }
         }
       }
     } catch (error) {
@@ -88,6 +100,8 @@ export function createDownloadWorker(input: {
 
   const stop = async () => {
     stopping = true
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+    settleIdle()
     await waitForIdle()
   }
 

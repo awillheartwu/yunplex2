@@ -1,5 +1,7 @@
 import pkg from 'NeteaseCloudMusicApi'
 import type { LyricOrder } from './config/types'
+import { controlledNeteaseRequest } from './download/netease-request'
+import { createHash } from 'node:crypto'
 
 const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist, playlist_detail } = pkg
 
@@ -345,20 +347,43 @@ export function mapRawSong(raw: RawSong, options: { preserveArtistNames?: boolea
 
 /** Fetch a single song's detail by ID */
 export async function fetchSongDetail(songId: number, cookie: string): Promise<NeteaseSong> {
-  const res = await song_detail({ ids: String(songId), cookie })
+  const res = await controlledNeteaseRequest(() => song_detail({ ids: String(songId), cookie }))
   const data = (res as NeteaseResponse<SongDetailBody>).body
   if (!data?.songs?.[0]) throw new Error(`无法获取歌曲 ${songId} 的详情`)
   return mapRawSong(data.songs[0])
 }
 
 /** Cache album detail calls — they repeat across songs in the same album */
-const albumCache = new Map<number, AlbumDetail>()
+const albumCache = new Map<string, { detail: AlbumDetail; expiresAt: number }>()
+const albumRequests = new Map<string, Promise<AlbumDetail | null>>()
+let albumCacheEpoch = 0
 
 export async function fetchAlbumDetail(albumId: number, cookie: string): Promise<AlbumDetail | null> {
-  if (albumCache.has(albumId)) return albumCache.get(albumId)!
+  if (!Number.isInteger(albumId) || albumId <= 0) return null
+  const key = `${albumId}:${createHash('sha256').update(cookie).digest('hex')}`
+  const cached = albumCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) {
+    albumCache.delete(key); albumCache.set(key, cached)
+    return cached.detail
+  }
+  albumCache.delete(key)
+  const active = albumRequests.get(key)
+  if (active) return active
+  const epoch = albumCacheEpoch
+  const request = loadAlbumDetail(albumId, cookie).then(detail => {
+    if (detail && epoch === albumCacheEpoch) {
+      albumCache.set(key, { detail, expiresAt: Date.now() + 10 * 60 * 1000 })
+      while (albumCache.size > 128) albumCache.delete(albumCache.keys().next().value!)
+    }
+    return detail
+  }).finally(() => { if (albumRequests.get(key) === request) albumRequests.delete(key) })
+  albumRequests.set(key, request)
+  return request
+}
 
+async function loadAlbumDetail(albumId: number, cookie: string): Promise<AlbumDetail | null> {
   try {
-    const res = await album({ id: albumId, cookie })
+    const res = await controlledNeteaseRequest(() => album({ id: albumId, cookie }))
     const data = (res as { body?: { album?: RawAlbum; songs?: unknown[] } }).body
     if (!data?.album) return null
 
@@ -396,9 +421,16 @@ export async function fetchAlbumDetail(albumId: number, cookie: string): Promise
       info: a.info,
     }
 
-    albumCache.set(albumId, detail)
     return detail
-  } catch {
+  } catch (error) {
+    // Some downloadable singles have no album endpoint. Use song metadata;
+    // an optional 404 must not turn a valid audio download into a failure.
+    const status = Number((error as { httpStatus?: number; status?: number; body?: { code?: number } } | null)?.httpStatus
+      ?? (error as { status?: number } | null)?.status
+      ?? (error as { body?: { code?: number } } | null)?.body?.code)
+    if (status === 404) return null
+    // Authentication, throttling and cancellation must reach the queue policy.
+    if (error instanceof Error && ('httpStatus' in error || 'code' in error || error.name === 'AbortError')) throw error
     return null
   }
 }
@@ -418,7 +450,9 @@ interface RawAlbum {
 }
 
 export function clearAlbumCache() {
+  albumCacheEpoch++
   albumCache.clear()
+  albumRequests.clear()
 }
 
 export async function getSongUrl(
@@ -428,11 +462,11 @@ export async function getSongUrl(
 ): Promise<{ url: string; type: string }> {
   const level = QUALITY_LEVELS[quality] || 'jymaster'
 
-  let res = await song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie })
+  let res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }))
   let data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
 
   if (!data || (data.type !== 'flac' && data.type !== 'mp3')) {
-    res = await song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie })
+    res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie }))
     data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
   }
 
@@ -457,7 +491,7 @@ export async function fetchLyric(
   order: LyricOrder = 'original_first',
   includeTranslation = true,
 ): Promise<LyricData> {
-  const res = await lyric_new({ id: songId, cookie })
+  const res = await controlledNeteaseRequest(() => lyric_new({ id: songId, cookie }))
   const body = (res as { body?: { lrc?: { lyric?: string }; tlyric?: { lyric?: string }; romalrc?: { lyric?: string } } }).body
 
   const original = body?.lrc?.lyric ?? ''
