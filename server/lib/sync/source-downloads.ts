@@ -1,3 +1,4 @@
+import { getMediaCorrection } from './media-corrections'
 import type { AppConfig } from '../config/types'
 import type { JobStepContext } from '../job/types'
 import type { SyncState } from '../log/types'
@@ -78,8 +79,8 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
       ...(resolution.mediaPolicy?.audioPath
         ? { target: { kind: 'existing' as const, path: resolution.mediaPolicy.audioPath } }
         : resolution.mediaPolicy?.protectedAudioPath
-          ? { target: { kind: 'computed' as const, protectedPath: resolution.mediaPolicy.protectedAudioPath } }
-          : {}),
+          ? { target: { kind: 'computed' as const, protectedPath: resolution.mediaPolicy.protectedAudioPath, requireManagedCopy: Boolean(!dryRun && getMediaCorrection(resolution.song.id)) } }
+          : !dryRun && getMediaCorrection(resolution.song.id) ? {target:{kind:'computed' as const,requireManagedCopy:true}} : {}),
     })
   }
 
@@ -104,7 +105,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
   }
 
   const songsToDownload = [...downloadPlans.values()].map(plan => plan.resolution)
-  const needsPlexRefresh = songsToDownload.length > 0
+  const needsPlexRefresh = songsToDownload.length > 0 || (!dryRun && resolutions.some(resolution=>Boolean(getMediaCorrection(resolution.song.id)?.staged_asset_json)))
     || resolutions.some(resolution => resolution.resolution === 'found_on_disk')
   const queuedDownloadTasks = new Map<number, DownloadTask>()
 
@@ -148,7 +149,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
           quality: config.netease.quality,
           downloadDir: config.download.dir,
           pathFormat: config.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-        }),
+        }) + (getMediaCorrection(resolution.song.id) ? `:correction:${getMediaCorrection(resolution.song.id)!.id}` : ''),
       }
     }))
     for (const { task } of fileTaskHandle.tasks) {

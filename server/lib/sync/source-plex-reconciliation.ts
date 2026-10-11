@@ -1,3 +1,4 @@
+import { getMediaCorrection } from './media-corrections'
 import type { AppConfig } from '../config/types'
 import type { JobStepContext } from '../job/types'
 import type { SyncState } from '../log/types'
@@ -46,13 +47,14 @@ import {
 } from './reorder'
 import {
   applyFullReorder,
-  findTrackWithRetryDetailed,
   triggerRescan,
 } from './plex-reconciler'
 import {
   describePlexMatchFailure,
   inferPlexMatchFailureCause,
+  type PlexMatchResult,
 } from './plex-match'
+import { matchTracksInPlexWithRetry } from './plex-batch-match'
 import { buildPlexPlaylistFingerprint } from './playlist-fingerprint'
 import type { TrackResolution } from './types'
 
@@ -131,11 +133,22 @@ export async function reconcilePlexPlaylist(
     throwIfCancelled()
   }
 
-  const plexMatchResults = new Map<number, Awaited<ReturnType<typeof findTrackWithRetryDetailed>>>()
+  const plexMatchResults = new Map<number, PlexMatchResult>()
   const failedPlexRetrySongIds: number[] = []
   const pendingVerifiedBindings: BindingInput[] = []
 
-  for (const resolution of resolutions) {
+  const retryRequests = resolutions.flatMap((resolution, index) => {
+    const currentSong = getResolutionTask(job, source.id, resolution)
+    const filePath = currentSong?.filePath ?? resolution.filePath
+    return shouldAttemptPlexRetryForResolution(resolution.resolution, currentSong?.status, filePath)
+      ? [{ key: String(index), song: resolution.song, filePath }]
+      : []
+  })
+  const batchMatches = await matchTracksInPlexWithRetry(sectionKey, retryRequests, config,
+    retryUnresolvedSnapshot ? 0 : config.sync.plexScanRetries,
+    config.sync.plexScanRetryDelaySec * 1000, { throwIfCancelled })
+
+  for (const [index, resolution] of resolutions.entries()) {
     throwIfCancelled()
     const songId = findResolutionTaskId(job, source.id, resolution)
     const currentSong = getResolutionTask(job, source.id, resolution)
@@ -145,15 +158,8 @@ export async function reconcilePlexPlaylist(
 
     if (!shouldAttemptPlexRetryForResolution(resolution.resolution, effectiveStatus, effectiveFilePath)) continue
 
-    const result = await findTrackWithRetryDetailed(
-      sectionKey,
-      resolution.song,
-      config,
-      effectiveFilePath,
-      retryUnresolvedSnapshot ? 0 : config.sync.plexScanRetries,
-      config.sync.plexScanRetryDelaySec * 1000,
-      { pathOnly: true },
-    )
+    const result = batchMatches.get(String(index))
+    if (!result) continue
     if (!result.ratingKey) {
       plexMatchResults.set(resolution.song.id, result)
       failedPlexRetrySongIds.push(resolution.song.id)
@@ -191,6 +197,7 @@ export async function reconcilePlexPlaylist(
         bindingMethod: 'path',
         status: 'active',
         evidence: {
+          correctionId: getMediaCorrection(resolution.song.id)?.id ?? null,
           source: 'plex_retry_exact_path',
           sourceId: source.id,
           runId: job.getId(),

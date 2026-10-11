@@ -1,3 +1,5 @@
+import { finalizeCorrectionBinding } from './media-corrections'
+import { getDb } from '../db'
 import {
   getActiveSongIdentityBindings,
   upsertVerifiedSongIdentityBinding,
@@ -48,8 +50,10 @@ export function applyVerifiedBindingsIfSnapshotCurrent(
   pendingBindings: readonly BindingInput[],
 ): Map<number, SongIdentityBinding> {
   assertBindingVersionsUnchanged(snapshot)
-  for (const binding of pendingBindings) {
-    upsertVerifiedSongIdentityBinding(binding)
-  }
+  getDb().transaction(()=>{
+    for (const binding of pendingBindings) {
+      if (!finalizeCorrectionBinding(binding)) upsertVerifiedSongIdentityBinding(binding)
+    }
+  })()
   return getActiveSongIdentityBindings([...snapshot.keys()])
 }

@@ -8,8 +8,7 @@ export function normalizePlexPath(path: string): string {
 }
 
 /**
- * Case-folded lookup key for Plex search recovery. Never persist this value as
- * identity: exact normalized paths remain the durable identity in ADR 0003.
+ * Case-folded search key. Persisted identity uses exact normalized paths.
  */
 export function foldPlexPath(path: string): string {
   return normalizePlexPath(path).toLocaleLowerCase('en-US')
@@ -29,10 +28,7 @@ export function normalizePlexRelativePath(path: string, sectionRoot?: string | n
     return normalizedPath.slice(normalizedRoot.length + 1)
   }
 
-  // Older verification callers omitted the section root while persisting an
-  // absolute Plex path. That produced a slash-less value such as
-  // `volume1/music/Artist/Song.flac`, which was later prefixed with the root a
-  // second time. Accept and repair that shape at every read boundary.
+  // Strip the section root even when the stored path has no leading slash.
   const rootWithoutLeadingSlash = normalizedRoot.replace(/^\/+/, '')
   const pathWithoutLeadingSlash = normalizedPath.replace(/^\/+/, '')
   if (rootWithoutLeadingSlash && pathWithoutLeadingSlash === rootWithoutLeadingSlash) return ''

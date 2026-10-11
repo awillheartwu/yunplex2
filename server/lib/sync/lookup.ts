@@ -1,3 +1,4 @@
+import { getMediaCorrection } from './media-corrections'
 import type { AppConfig } from '../config/types'
 import { findTracksByFilePath, getPlaylistTracks, getTrackByRatingKey, type PlexTrack } from '../plex-client'
 import type { NeteaseSong } from '../netease'
@@ -6,6 +7,7 @@ import type { MatchTrace, TrackResolution } from './types'
 import { findExistingLocalSongPath } from './local-file-discovery'
 import {
   inspectLocalMediaAssets,
+  getLocalMediaAsset,
   persistLocalMediaInspection,
   resolveLocalMediaAsset,
   upsertLocalMediaAsset,
@@ -160,7 +162,8 @@ async function resolveOne(input: {
 }): Promise<TrackResolution> {
   const { song, index, playlistTracks, sectionKey, cfg, dryRun, identityContext, mediaPlan } = input
   const base = { neteaseIndex: index, song }
-  const localAsset = mediaPlan
+  const correction = getMediaCorrection(song.id)
+  const localAsset = correction ? getLocalMediaAsset(song.id) : mediaPlan
     ? dryRun
       ? inspectionAsset(mediaPlan.inspection)
       : persistLocalMediaInspection(mediaPlan.inspection)
@@ -171,6 +174,15 @@ async function resolveOne(input: {
   const expectedPlexPath = mapLocalPathToPlex(expectedLocalPath, cfg)
   const managed = localAsset?.ownership === 'managed' && localAsset.status === 'active'
   const bound = getSongIdentityBinding(song.id)
+
+  if (correction) {
+    if ((bound?.updatedAt ?? null) !== correction.expected_version) return awaitingManualResolution(base, expectedLocalPath, localAsset, '纠错期间关联已变化，请重新选择处理方式')
+    if (correction.staged_asset_json) {
+      const staged = JSON.parse(correction.staged_asset_json) as LocalMediaAsset
+      return {...base,resolution:'found_on_disk',filePath:staged.filePath,matchTrace:trace('disk',{message:'独立托管副本已完成，等待 Plex 精确路径验证',evidence:{correctionId:correction.id}})}
+    }
+    return {...base,resolution:'needs_download',mediaPolicy:{disposition:'download_missing',protectedAudioPath:expectedLocalPath??resolveAccessibleLocalPath(bound?.plexFilePath,cfg)??undefined},matchTrace:trace('download_required',{message:'下载独立托管副本，完成前保留原关联',evidence:{correctionId:correction.id}})}
+  }
 
   // Explicit adoption is the only external-media identity. Verify by ratingKey
   // plus exact path, then recover by exact path if Plex changes the ratingKey.

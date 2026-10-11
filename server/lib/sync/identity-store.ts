@@ -174,7 +174,8 @@ export function upsertSongIdentityBinding(input: BindingInput): SongIdentityBind
 
 export function upsertVerifiedSongIdentityBinding(input: BindingInput): SongIdentityBinding {
   const previous = getSongIdentityBinding(input.neteaseSongId)
-  const next = upsertSongIdentityBinding(input)
+  const samePath = previous && normalizePlexPath(previous.plexFilePath) === normalizePlexPath(input.plexFilePath)
+  const next = upsertSongIdentityBinding({...input,evidence:samePath?{...previous.evidence,...input.evidence}:input.evidence})
   const sameIdentity = previous
     && previous.status === next.status
     && previous.bindingMethod === next.bindingMethod
@@ -224,21 +225,15 @@ function assertVersion(neteaseSongId: number, expected: string | null): SongIden
 }
 
 function assertPlexIdentityAvailable(input: {
-  neteaseSongId: number
-  plexFilePath: string
-  plexRatingKey: string | null
+  neteaseSongId: number; plexFilePath: string; plexRatingKey: string | null; plexSectionKey: string; sharedWithSongIds?: number[]
 }): void {
   const normalizedPath = normalizePlexPath(input.plexFilePath)
-  const conflict = getDb().prepare(`
-    SELECT 1
-    FROM song_identity_bindings
-    WHERE netease_song_id != ?
-      AND status = 'active'
-      AND binding_method IN ('path', 'manual')
-      AND (plex_file_path = ? OR (? IS NOT NULL AND plex_rating_key = ?))
-    LIMIT 1
-  `).get(input.neteaseSongId, normalizedPath, input.plexRatingKey, input.plexRatingKey)
-  if (conflict) throw new BindingIdentityConflictError()
+  const conflicts = getDb().prepare(`SELECT netease_song_id,plex_file_path,plex_rating_key,plex_section_key FROM song_identity_bindings
+    WHERE netease_song_id != ? AND status='active' AND binding_method IN ('path','manual')
+    AND (plex_file_path = ? OR (? IS NOT NULL AND plex_rating_key = ?))`)
+    .all(input.neteaseSongId, normalizedPath, input.plexRatingKey, input.plexRatingKey) as Array<{netease_song_id: number; plex_file_path: string; plex_rating_key: string; plex_section_key: string}>
+  if (conflicts.some(row => !input.sharedWithSongIds?.includes(row.netease_song_id)
+    || row.plex_file_path !== normalizedPath || row.plex_rating_key !== input.plexRatingKey || row.plex_section_key !== input.plexSectionKey)) throw new BindingIdentityConflictError()
 }
 
 function affectedSources(neteaseSongId: number): Array<{ id: string; name: string }> {
@@ -264,6 +259,8 @@ export function rebindSongIdentity(input: {
   neteaseSongId: number
   expectedBindingUpdatedAt: string | null
   sourceId?: string
+  /** Only supplied after explicit group confirmation and version validation under the mutation lock. */
+  sharedWithSongIds?: number[]
   binding: Omit<BindingInput, 'neteaseSongId' | 'bindingMethod' | 'status'>
 }): { binding: SongIdentityBinding; affectedSources: Array<{ id: string; name: string }> } {
   const db = getDb()
@@ -273,6 +270,8 @@ export function rebindSongIdentity(input: {
       neteaseSongId: input.neteaseSongId,
       plexFilePath: input.binding.plexFilePath,
       plexRatingKey: input.binding.plexRatingKey,
+      plexSectionKey: input.binding.plexSectionKey,
+      sharedWithSongIds: input.sharedWithSongIds,
     })
     const binding = upsertSongIdentityBinding({
       ...input.binding,

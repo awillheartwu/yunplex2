@@ -1,3 +1,6 @@
+import { queueIdentityRealignment } from '../../../../lib/sync/media-corrections'
+import { getDb } from '../../../../lib/db'
+import { getSyncWorker } from '../../../../lib/sync/instance'
 import { readConfigFromDb } from '../../../../lib/db'
 import { fail, success } from '../../../../lib/response'
 import {
@@ -10,6 +13,7 @@ import {
   BindingVersionConflictError,
   normalizePlexPath,
   rebindSongIdentity,
+  getSongIdentityBinding,
 } from '../../../../lib/sync/identity-store'
 import { acquireIdentityMutationLock } from '../../../../lib/sync/identity-coordinator'
 
@@ -41,7 +45,9 @@ export default defineEventHandler(async (event) => {
     if (!plexFilePath) return fail('Plex 曲目没有可绑定的媒体路径')
     const release = await acquireIdentityMutationLock()
     try {
-      const result = rebindSongIdentity({
+      const result = getDb().transaction(()=> {
+      const previous = getSongIdentityBinding(songId)
+      const updated = rebindSongIdentity({
         neteaseSongId: songId,
         expectedBindingUpdatedAt: body.expectedBindingUpdatedAt ?? null,
         sourceId: body.sourceId,
@@ -51,13 +57,18 @@ export default defineEventHandler(async (event) => {
           plexFilePath: normalizePlexPath(plexFilePath),
           plexRatingKey: track.ratingKey,
           evidence: {
+            previousBinding: previous ? {ratingKey:previous.plexRatingKey,filePath:previous.plexFilePath,version:previous.updatedAt}:null,
             selectedBy: 'user',
             selectedRatingKey: track.ratingKey,
             identityRule: 'explicit_adoption',
           },
         },
       })
-      return success(result, '全局绑定已更新；受影响歌单将在下次同步时对齐')
+      getDb().prepare("UPDATE media_corrections SET status='cancelled',updated_at=? WHERE song_id=? AND status IN ('pending','ready')").run(new Date().toISOString(),songId)
+      return {...updated,...queueIdentityRealignment(songId,updated.binding.updatedAt)}
+      })()
+      void getSyncWorker()?.runOnce()
+      return success(result, '全局绑定已更新；已启用来源已排队对齐，禁用来源等待手动同步')
     } finally {
       release()
     }
