@@ -2,16 +2,17 @@ node_modules/
 .output/
 .nuxt/
 dist/
-data/data.db
-data/data.db-wal
-data/data.db-shm
-data/backups/
-data/seed.json
+/data/*
+!/data/.gitkeep
+/backups/
 *.log
 test-results/
 playwright-report/
+/artifacts/
 .env
-.env.local
+.env.*
+!.env.example
+!.env.sample
 test/
 .DS_Store
 .claude/
@@ -19,9 +20,9 @@ test/
 CLAUDE.md
 
 # Local tooling
+.pnpm-store/
 .husky/
 skills-lock.json
-data/app.db
 
 # Local issue screenshots
 /问题/

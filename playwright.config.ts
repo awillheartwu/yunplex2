@@ -17,7 +17,7 @@ export default defineConfig({
     use: { ...devices['Desktop Chrome'] },
   }],
   webServer: {
-    command: 'pnpm exec jiti scripts/browser-test-server.ts',
+    command: 'pnpm exec jiti tests/helpers/browser-test-server.ts',
     url: `${baseURL}/api/system/health`,
     timeout: 120_000,
     reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === '1',

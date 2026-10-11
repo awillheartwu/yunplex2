@@ -71,7 +71,7 @@ export default ts.config(
   {
     // Test doubles sometimes need to stand in for large third-party objects.
     // Production code remains protected by the error-level rule above.
-    files: ['**/*.test.ts', 'tests/**/*.ts'],
+    files: ['tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
     },
