@@ -2,6 +2,7 @@ import plexApi from 'plex-api'
 import type { PlexConfig } from './config/types'
 import { s2t, t2s, normalizeForSearch } from './sync/matchers'
 import { foldPlexPath, normalizePlexPath } from './sync/identity-normalization'
+import { queryPlexRead } from './plex-read-retry'
 
 export interface PlexTrack {
   ratingKey: string
@@ -59,7 +60,7 @@ async function buildSectionPathIndex(sectionKey: string): Promise<PlexPathIndex>
   let start = 0
 
   while (true) {
-    const res = (await indexClient.query(
+    const res = (await queryPlexRead(indexClient,
       `/library/sections/${sectionKey}/all?type=10&includeGuids=1&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PATH_INDEX_PAGE_SIZE}`,
     )) as {
       MediaContainer?: {
@@ -161,7 +162,7 @@ export function createPlexClient(config: PlexConfig) {
 export async function initPlexClient(config: PlexConfig): Promise<string> {
   const initializedClient = createPlexClient(config)
 
-  const res = await initializedClient.query('/')
+  const res = await queryPlexRead(initializedClient, '/')
   const nextMachineId = (res as { MediaContainer?: { machineIdentifier?: string } }).MediaContainer
     ?.machineIdentifier ?? ''
   if (machineId && nextMachineId && machineId !== nextMachineId) invalidateAllSectionPathIndexes()
@@ -171,7 +172,7 @@ export async function initPlexClient(config: PlexConfig): Promise<string> {
 
 export async function findPlaylist(playlistName: string) {
   if (!client) throw new Error('Plex client not initialized')
-  const res = (await client.query('/playlists')) as {
+  const res = (await queryPlexRead(client, '/playlists')) as {
     MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] }
   }
   const metadata = res.MediaContainer?.Metadata ?? []
@@ -201,7 +202,7 @@ export function isPlexNotFoundError(error: unknown): boolean {
 export async function getPlaylistByRatingKey(ratingKey: string): Promise<{ title: string; ratingKey: string } | null> {
   if (!client) throw new Error('Plex client not initialized')
   try {
-    const res = (await client.query(`/playlists/${ratingKey}`)) as {
+    const res = (await queryPlexRead(client, `/playlists/${ratingKey}`)) as {
       MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] | { title: string; ratingKey: string } }
     }
     const raw = res.MediaContainer?.Metadata
@@ -248,7 +249,7 @@ export async function getPlaylistSnapshotByRatingKey(
 export async function getPlaylistUpdatedAt(ratingKey: string): Promise<number | null> {
   if (!client) throw new Error('Plex client not initialized')
   try {
-    const res = (await client.query(`/playlists/${ratingKey}`)) as {
+    const res = (await queryPlexRead(client, `/playlists/${ratingKey}`)) as {
       MediaContainer?: { Metadata?: Array<{ updatedAt?: number | string }> | { updatedAt?: number | string } }
     }
     const raw = res.MediaContainer?.Metadata
@@ -264,7 +265,7 @@ export async function getPlaylistUpdatedAt(ratingKey: string): Promise<number | 
 
 export async function listPlaylists(): Promise<Array<{ title: string; ratingKey: string }>> {
   if (!client) throw new Error('Plex client not initialized')
-  const res = (await client.query('/playlists')) as {
+  const res = (await queryPlexRead(client, '/playlists')) as {
     MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] }
   }
   const items = res.MediaContainer?.Metadata ?? []
@@ -297,7 +298,7 @@ export async function getPlaylistTracks(
   while (tracks.length < boundedLimit) {
     const remaining = boundedLimit - tracks.length
     const size = Math.min(pageSize, remaining)
-    const res = (await client.query(
+    const res = (await queryPlexRead(client,
       `/playlists/${playlistKey}/items?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${size}`,
     )) as {
       MediaContainer?: {
@@ -318,7 +319,7 @@ export async function getPlaylistTracks(
 
 export async function getSectionKey(section: string): Promise<string | null> {
   if (!client) throw new Error('Plex client not initialized')
-  const sections = (await client.query('/library/sections')) as {
+  const sections = (await queryPlexRead(client, '/library/sections')) as {
     MediaContainer?: { Directory?: { key: string; type: string; title: string }[] }
   }
   const dirs = sections.MediaContainer?.Directory ?? []
@@ -343,7 +344,7 @@ export async function refreshPath(sectionKey: string, dirPath: string): Promise<
 
 export async function getSectionTrackCount(sectionKey: string): Promise<number> {
   if (!client) throw new Error('Plex client not initialized')
-  const res = await client.query(
+  const res = await queryPlexRead(client,
     `/library/sections/${sectionKey}/all?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=1`,
   )
   return (res as { MediaContainer?: { totalSize?: number } }).MediaContainer?.totalSize ?? 0
@@ -355,7 +356,7 @@ export async function getSectionTracks(sectionKey: string): Promise<PlexTrack[]>
   const tracks: PlexTrack[] = []
   let start = 0
   while (true) {
-    const res = await client.query(
+    const res = await queryPlexRead(client,
       `/library/sections/${sectionKey}/all?type=10&includeGuids=1&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PATH_INDEX_PAGE_SIZE}`,
     ) as { MediaContainer?: { totalSize?: number | string; Metadata?: PlexTrack[] | PlexTrack } }
     const page = extractMetadata(res)
@@ -371,7 +372,7 @@ export async function getSectionTracks(sectionKey: string): Promise<PlexTrack[]>
 export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Promise<PlexTrack[]> {
   if (!client) throw new Error('Plex client not initialized')
   const size = Math.min(Math.max(limit, 1), 100)
-  const res = (await client.query(
+  const res = (await queryPlexRead(client,
     `/library/sections/${sectionKey}/recentlyAdded?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=${size}`,
   )) as {
     MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
@@ -396,7 +397,7 @@ export async function searchTracksByTitle(sectionKey: string, songName: string):
   const matches: PlexTrack[] = []
 
   for (const title of titles) {
-    const res = await client.query(
+    const res = await queryPlexRead(client,
       `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(title)}`,
     )
     for (const track of extractMetadata(res)) {
@@ -460,7 +461,7 @@ export async function getPlaylistItemIds(
   trackRatingKey: string,
 ): Promise<number[]> {
   if (!client) throw new Error('Plex client not initialized')
-  const res = (await client.query(`/playlists/${playlistKey}/items`)) as {
+  const res = (await queryPlexRead(client, `/playlists/${playlistKey}/items`)) as {
     MediaContainer?: { Metadata?: { ratingKey: string; playlistItemID?: number }[] }
   }
 
@@ -492,7 +493,7 @@ export async function movePlaylistItemAfter(
 export async function getTrackByRatingKey(ratingKey: string): Promise<PlexTrack | null> {
   if (!client) throw new Error('Plex client not initialized')
   try {
-    const res = (await client.query(`/library/metadata/${ratingKey}`)) as {
+    const res = (await queryPlexRead(client, `/library/metadata/${ratingKey}`)) as {
       MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
     }
     const raw = res.MediaContainer?.Metadata
@@ -512,7 +513,7 @@ export async function getTracksByRatingKeys(ratingKeys: string[]): Promise<Map<s
   for (let offset = 0; offset < keys.length; offset += batchSize) {
     const batch = keys.slice(offset, offset + batchSize)
     try {
-      const response = (await client.query(`/library/metadata/${batch.join(',')}`)) as {
+      const response = (await queryPlexRead(client, `/library/metadata/${batch.join(',')}`)) as {
         MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
       }
       const raw = response.MediaContainer?.Metadata

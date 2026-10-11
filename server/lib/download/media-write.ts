@@ -1,3 +1,4 @@
+import { stageCorrectionMedia } from '../sync/media-corrections'
 import { normalize } from 'node:path'
 import { getDb } from '../db'
 import {
@@ -24,6 +25,8 @@ export interface CompletedMediaWrite {
  * single seam exactly once after tags have succeeded.
  */
 export function commitCompletedMediaWrite(input: CompletedMediaWrite): LocalMediaAsset {
+  const staged = stageCorrectionMedia(input)
+  if (staged) return staged
   const previous = getLocalMediaAsset(input.neteaseSongId)
   const normalizedPath = normalize(input.filePath)
   const reusesManagedAsset = !input.audioDownloaded

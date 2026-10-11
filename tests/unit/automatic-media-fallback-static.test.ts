@@ -24,6 +24,8 @@ describe('automatic media fallback wiring', () => {
 
   it('always uses exact-path retry and automatic fallback during normal sync', () => {
     expect(source('server/lib/sync/service.ts')).toContain("const missingMediaPolicyEnabled = mode !== 'redownload_managed'")
-    expect(source('server/lib/sync/source-plex-reconciliation.ts')).toContain('{ pathOnly: true }')
+    expect(source('server/lib/sync/source-plex-reconciliation.ts')).toContain('matchTracksInPlexWithRetry')
+    expect(source('server/lib/sync/plex-batch-match.ts')).toContain('findTracksByFilePath')
+    expect(source('server/lib/sync/plex-batch-match.ts')).not.toMatch(/\bsearchTrack(?:sBy\w+)?\s*\(/)
   })
 })
