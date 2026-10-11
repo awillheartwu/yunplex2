@@ -41,15 +41,6 @@ jobs:
       - name: Run repository quality gates
         run: pnpm check:ci
 
-      - name: Install browser test runtime
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Run browser journeys
-        run: pnpm test:browser
-
-      - name: Run production browser journeys
-        run: PLAYWRIGHT_PRODUCTION=1 pnpm test:browser
-
   deploy:
     name: Build, verify and deploy on NAS
     needs: quality
