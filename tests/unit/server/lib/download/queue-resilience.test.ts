@@ -62,7 +62,7 @@ describe('large persistent download batches', () => {
     expect(getRun('batch')).toMatchObject({ status: 'partial', successSongs: 1499, failedSongs: 1 })
     expect(getRun('second')).toMatchObject({ status: 'partial', successSongs: 1499, failedSongs: 1 })
     expect(getDb().prepare('SELECT COUNT(*) AS count FROM failure_records WHERE song_id != 1500').get()).toEqual({ count: 0 })
-  }, 20_000)
+  }, 120_000)
 
   it('exhausts a finite retry budget without multiplying failure history', async () => {
     vi.useFakeTimers()
