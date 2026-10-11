@@ -43,7 +43,9 @@ PLAYWRIGHT_PRODUCTION=1 pnpm test:browser
 
 默认测试服务运行在 3011，生产包测试运行在 3013。`helpers/browser-test-server.ts` 创建的临时数据库会在服务退出后清理。指定测试文件时使用 `pnpm exec playwright test tests/browser/settings-persistence.spec.ts`。
 
-不要把 `PLAYWRIGHT_REUSE_SERVER=1` 指向日常使用的实例，它会让测试操作那个实例。截图、trace 和报告放在 `test-results/` 或仓库外，不提交。CI 中的浏览器运行环境安装使用 `pnpm exec playwright install --with-deps chromium`。
+不要把 `PLAYWRIGHT_REUSE_SERVER=1` 指向日常使用的实例，它会让测试操作那个实例。截图、trace 和报告放在 `test-results/` 或仓库外，不提交。
+
+CI 运行 `pnpm check:ci`，页面测试在本地手动运行。
 
 ## Docker
 
