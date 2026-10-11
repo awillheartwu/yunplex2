@@ -23,11 +23,14 @@ const EXPECTED_TABLES = [
   'auth_admin',
   'auth_sessions',
   'config',
+  'download_queue_control',
   'download_tasks',
   'failure_occurrences',
   'failure_records',
+  'initialization_quick_operations',
   'local_media_assets',
   'logs',
+  'media_corrections',
   'playlist_extra_observations',
   'playlist_source_track_occurrences',
   'playlist_sources',
@@ -77,10 +80,13 @@ describe('current database schema baseline', () => {
       'operation',
       'target_path',
       'execution_intent_json',
+      'auto_retry_count',
+      'next_attempt_at',
     ]))
     expect(downloadIndexes.map(index => index.name)).toEqual(expect.arrayContaining([
       'idx_download_tasks_active_idempotency',
       'idx_download_tasks_time',
+      'idx_download_tasks_ready',
     ]))
   })
 

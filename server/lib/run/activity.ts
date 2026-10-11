@@ -4,6 +4,7 @@ import type { TaskRunSummary } from '../job/types'
 import { getDb } from '../db'
 import { getQueueStatus, listDownloadTasks } from '../download/queue'
 import { listRuns } from './store'
+import { getDownloadQueueControl, isRunDownloadPaused } from '../download/queue-control'
 
 // One read snapshot keeps each task's file counts and visible rows in the same scope.
 export function getActivitySnapshot(live: SyncState): ActivitySnapshot {
@@ -22,10 +23,11 @@ export function getActivitySnapshot(live: SyncState): ActivitySnapshot {
         sourceIds: sources.map(source => source.id),
         sourceNames: sources.map(source => source.name),
         live: live.isRunning && live.currentRunId === run.id ? live : null,
-        files: tasks ? { counts: getQueueStatus(run.id), items: tasks.items, total: tasks.total } : null,
+        files: tasks ? { counts: getQueueStatus(run.id), items: tasks.items, total: tasks.total, paused: isRunDownloadPaused(run.id) } : null,
       }
     }
     return {
+      downloadControl: getDownloadQueueControl(),
       running: running.items.map(project), waiting: waiting.items.map(project),
       runningTotal: running.total, waitingTotal: waiting.total,
       unlistedLive: live.isRunning && !running.items.some(run => run.id === live.currentRunId) ? live : null,

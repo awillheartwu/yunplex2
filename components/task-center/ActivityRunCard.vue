@@ -29,8 +29,8 @@
             <li v-for="task in files.items.value" :key="task.id" class="activity-song">
               <AppIcon :name="task.status === 'pending' ? 'clock' : task.status === 'tagging' ? 'edit' : 'download'" :size="16" />
               <div class="activity-song__identity"><strong>{{ task.songName }}</strong><span>{{ task.artist || '未知艺人' }}</span></div>
-              <span class="activity-song__state">{{ task.status === 'pending' ? '等待下载' : task.status === 'tagging' ? '写入标签' : '下载中' }}</span>
-              <div v-if="task.status !== 'pending'" class="activity-song__progress"><progress :value="percent(task.progress)" max="100" :aria-label="`${task.songName} 文件处理进度`" /><span>{{ percent(task.progress) }}%</span></div>
+              <span class="activity-song__state">{{ task.status === 'pending' ? task.nextAttemptAt ? '等待重试' : run.files?.paused ? '已暂停' : '等待下载' : task.status === 'tagging' ? '写入标签' : '下载中' }}</span>
+              <div v-if="task.status !== 'pending'" class="activity-song__progress"><progress :value="task.progress < 0 ? undefined : percent(task.progress)" max="100" :aria-label="`${task.songName} 文件处理进度`" /><span>{{ task.progress < 0 ? '传输中' : `${percent(task.progress)}%` }}</span></div>
             </li>
           </ul>
           <div v-if="files.total.value > files.items.value.length || files.limit.value > 6" class="activity-run__list-actions">
@@ -40,6 +40,7 @@
           </div>
           <p v-if="files.error.value" class="activity-run__file-note" role="alert">歌曲列表更新失败：{{ files.error.value }}<button class="btn btn-secondary btn-sm" :disabled="files.loading.value" @click="files.retry">重试</button></p>
           <p v-if="run.files.counts.failed" class="activity-run__file-note">有文件处理失败，可在运行详情查看原因。</p>
+          <p v-if="run.files.paused" class="activity-run__file-note" role="status">本次下载已暂停领取新任务；其他运行共用的文件仍可继续处理。</p>
         </template>
       </template>
     </div>
@@ -51,6 +52,7 @@
       <div class="activity-run__actions">
         <NuxtLink v-if="state === 'waiting' && run.type === 'source_initialization'" :to="activityPlanLink(run)" class="btn btn-primary btn-sm">查看接管方案<AppIcon name="chevronRight" :size="14" /></NuxtLink>
         <NuxtLink :to="detailLink" class="btn btn-secondary btn-sm">运行详情</NuxtLink>
+        <button v-if="run.files && run.files.counts.pending + run.files.counts.downloading + run.files.counts.tagging > 0" class="btn btn-secondary btn-sm" :disabled="controlling || stale" @click="toggleDownloads">{{ controlling ? '处理中…' : run.files.paused ? '继续下载' : '暂停下载' }}</button>
         <button v-if="run.live && run.type === 'sync'" class="btn btn-ghost btn-sm" :disabled="cancelling || stale" title="取消当前同步批次，包含同批次尚未执行的来源" @click="$emit('cancel', run.id)">取消本批同步</button>
       </div>
     </footer>
@@ -60,10 +62,25 @@
 <script setup lang="ts">
 import type { ActivityRun } from '~~/shared/activity'
 import { useActivityFiles } from '~~/composables/useActivityFiles'
+import { useFeedback } from '~~/composables/useFeedback'
 import { activityPhases, activityPlanLink, activityStage, activityState } from '~~/lib/activity-presentation'
 import { formatRunDuration, runSummaryLabel, runTriggerLabel, runTypeIcon, runTypeLabel } from '~~/lib/run-presentation'
 const props = defineProps<{ run: ActivityRun; now: number; cancelling: boolean; stale: boolean }>()
-defineEmits<{ cancel: [id: string] }>()
+const emit = defineEmits<{ cancel: [id: string]; refresh: [] }>()
+const api = useApi()
+const feedback = useFeedback()
+const controlling = ref(false)
+async function toggleDownloads() {
+  if (controlling.value) return
+  controlling.value = true
+  try {
+    const action = props.run.files?.paused ? 'resume' : 'pause'
+    await api.post(`/runs/${props.run.id}/downloads-control`, { action })
+    feedback.success(action === 'pause' ? '已暂停领取新任务，当前文件处理完成后停止' : '已继续下载')
+    emit('refresh')
+  } catch (error) { feedback.error('操作失败', error instanceof Error ? error.message : '请稍后重试') }
+  finally { controlling.value = false }
+}
 const files = useActivityFiles(() => props.run)
 const state = computed(() => activityState(props.run))
 const title = computed(() => props.run.sourceNames.join('、') || props.run.source || runTypeLabel(props.run.type))

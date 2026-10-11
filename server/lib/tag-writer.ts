@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs'
-import { writeFile, mkdir, rename, rm } from 'node:fs/promises'
+import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { randomUUID } from 'node:crypto'
 import dayjs from 'dayjs'
 import type { SongTask } from './job/types'
 import type { Tags as NodeId3Tags } from 'node-id3'
-import { validateAudioBuffer } from './media-validation'
+import { downloadAudioToFile } from './download/audio-stream'
+import { validateLocalAudioFile } from './media-validation'
 
 export interface SongMeta {
   title: string
@@ -56,6 +57,7 @@ export function isTagWriteError(error: unknown): error is TagWriteError {
 
 const FLAC_TAG_TIMEOUT_MS = 120000
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 30000
+const IMAGE_MAX_BYTES = 8 * 1024 * 1024
 const FILE_WRITE_RETRY_CODES = new Set(['EAGAIN', 'EBUSY', 'EMFILE'])
 const FILE_WRITE_RETRY_DELAYS_MS = [80, 200, 500]
 const MANAGED_FLAC_TAG_FIELDS = [
@@ -90,6 +92,80 @@ async function writeFileWithRetry(
   }
 
   throw lastError instanceof Error ? lastError : new Error('文件写入失败')
+}
+
+interface TagWriteWaiter {
+  resolve: (release: () => void) => void
+  reject: (error: unknown) => void
+  signal?: AbortSignal
+  onAbort?: () => void
+}
+
+/**
+ * Tag writing runs at most one operation at a time process-wide: the FLAC and
+ * MP3 workers both read/write whole files and are memory hungry, so a burst of
+ * parallel downloads must not fan out into parallel tag writers. Waiting for
+ * the slot is abortable; aborting a queued operation never starts its worker.
+ */
+class TagWriteGate {
+  private active = false
+  private waiters: TagWriteWaiter[] = []
+
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) return Promise.reject(tagWriteAbortReason(signal))
+    if (!this.active) {
+      this.active = true
+      return Promise.resolve(this.createRelease())
+    }
+    return new Promise<() => void>((resolve, reject) => {
+      const waiter: TagWriteWaiter = { resolve, reject, signal }
+      waiter.onAbort = () => {
+        const index = this.waiters.indexOf(waiter)
+        if (index >= 0) this.waiters.splice(index, 1)
+        reject(tagWriteAbortReason(signal!))
+      }
+      signal?.addEventListener('abort', waiter.onAbort, { once: true })
+      this.waiters.push(waiter)
+    })
+  }
+
+  private createRelease(): () => void {
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const next = this.waiters.shift()
+      if (!next) {
+        this.active = false
+        return
+      }
+      if (next.onAbort) next.signal?.removeEventListener('abort', next.onAbort)
+      next.resolve(this.createRelease())
+    }
+  }
+}
+
+const tagWriteGate = new TagWriteGate()
+
+export async function withTagWriteSlot<T>(
+  signal: AbortSignal | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const release = await tagWriteGate.acquire(signal)
+  try {
+    signal?.throwIfAborted()
+    return await operation()
+  } finally {
+    release()
+  }
+}
+
+function tagWriteAbortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
+  if (reason instanceof Error) return reason
+  const error = new Error(reason === undefined ? '标签写入已取消' : String(reason))
+  error.name = 'AbortError'
+  return error
 }
 
 export function buildDownloadPath(
@@ -201,147 +277,146 @@ export async function downloadSong(
 
   const filePath = join(downloadDir, relativePath)
   let stagedAudioPath: string | null = null
+  let stagedCommitted = false
 
-  // Download audio file with streaming progress (skipped if url is undefined)
-  if (url) {
-    try {
-      const songRes = await fetch(url, { signal })
-      if (!songRes.ok) throw new Error(`下载音频失败（HTTP ${songRes.status}）`)
-      const contentLength = parseInt(songRes.headers.get('content-length') || '0', 10)
-      const reader = songRes.body?.getReader()
-      if (!reader) throw new Error('No response body')
-
-      const chunks: Uint8Array[] = []
-      let received = 0
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+  try {
+    // Stream the audio to a unique .part file (skipped if url is undefined).
+    // The staged file stays private until tags are written and the atomic
+    // rename below publishes it.
+    if (url) {
+      try {
+        const staged = await downloadAudioToFile({
+          url,
+          targetPath: filePath,
+          fileType,
+          signal,
+          onProgress: (progress) => onProgress?.(progress.pct, 'downloading'),
+        })
+        stagedAudioPath = staged.partPath
         signal?.throwIfAborted()
-        chunks.push(value)
-        received += value.length
-        if (contentLength > 0 && onProgress) {
-          onProgress(Math.round(received / contentLength * 100), 'downloading')
-        }
-        if (contentLength > 0 && received >= contentLength) break
+        ops.download = 'ok'
+      } catch (error) {
+        ops.download = 'failed'
+        throw error
       }
-      const buffer = Buffer.concat(chunks)
-      if (contentLength > 0 && received !== contentLength) {
-        throw new Error(`下载文件长度不完整（期望 ${contentLength}，实际 ${received}）`)
-      }
-      const validation = validateAudioBuffer(buffer, fileType)
-      if (!validation.valid) throw new Error(validation.reason || '下载的音频文件无效')
-      stagedAudioPath = `${filePath}.part-${randomUUID()}`
-      await writeFileWithRetry(stagedAudioPath, buffer)
-      signal?.throwIfAborted()
-      ops.download = 'ok'
-    } catch (error) {
-      ops.download = 'failed'
-      throw error
     }
-  }
 
-  // Download lyrics — derive path from audio file path
-  if (options.writeLyrics) {
-    try {
-      if (options.lyrics) {
-        const lyricBase = filePath.replace(/\.\w+$/, '')
-        if (options.separateLyricFiles && options.translatedLyric) {
-          await writeFileWithRetry(lyricBase + ' (orgi).lrc', options.lyrics, 'utf-8')
-          await writeFileWithRetry(lyricBase + ' (trans).lrc', options.translatedLyric, 'utf-8')
+    // Download lyrics — derive path from audio file path
+    if (options.writeLyrics) {
+      try {
+        if (options.lyrics) {
+          const lyricBase = filePath.replace(/\.\w+$/, '')
+          if (options.separateLyricFiles && options.translatedLyric) {
+            await writeFileWithRetry(lyricBase + ' (orgi).lrc', options.lyrics, 'utf-8')
+            await writeFileWithRetry(lyricBase + ' (trans).lrc', options.translatedLyric, 'utf-8')
+          } else {
+            await writeFileWithRetry(lyricBase + '.lrc', options.lyrics, 'utf-8')
+          }
+          if (options.romajiLyric) {
+            await writeFileWithRetry(lyricBase + ' (romaji).lrc', options.romajiLyric, 'utf-8')
+          }
+          ops.lyric = 'ok'
+          signal?.throwIfAborted()
         } else {
-          await writeFileWithRetry(lyricBase + '.lrc', options.lyrics, 'utf-8')
+          ops.lyric = 'failed'
         }
-        if (options.romajiLyric) {
-          await writeFileWithRetry(lyricBase + ' (romaji).lrc', options.romajiLyric, 'utf-8')
-        }
-        ops.lyric = 'ok'
+      } catch {
         signal?.throwIfAborted()
-      } else {
         ops.lyric = 'failed'
       }
-    } catch {
-      signal?.throwIfAborted()
-      ops.lyric = 'failed'
     }
-  }
 
-  // Download cover once for embed + save
-  let imageBuffer: Buffer | null = null
-  if (options.embedCover || options.saveAlbumCover) {
-    imageBuffer = await downloadImage(meta.picUrl, signal)
-  }
-  signal?.throwIfAborted()
+    // Download cover once for embed + save
+    let imageBuffer: Buffer | null = null
+    if (options.embedCover || options.saveAlbumCover) {
+      imageBuffer = await downloadImage(meta.picUrl, signal)
+    }
+    signal?.throwIfAborted()
 
-  if (options.embedMetadata) {
-    try {
-      // Report tagging phase start so UI shows "写标签" immediately
-      onProgress?.(0, 'tagging')
-      const tagFilePath = stagedAudioPath ?? filePath
+    if (options.embedMetadata) {
+      const tagHeartbeat = setInterval(() => onProgress?.(0, 'tagging'), 2000)
+      try {
+        // Report tagging phase start so UI shows "写标签" immediately
+        onProgress?.(0, 'tagging')
+        let tagFilePath = stagedAudioPath ?? filePath
 
-      if (fileType === 'flac') {
-        await writeFlacTags(tagFilePath, meta, imageBuffer, signal)
-      } else {
-        await writeMp3Tags(tagFilePath, meta, imageBuffer, signal)
-      }
-      signal?.throwIfAborted()
-      ops.tags = 'ok'
+        if (!stagedAudioPath && existsSync(filePath)) {
+          // Re-tagging existing audio: copy to a private stage first so a tag
+          // failure cannot damage the current media file.
+          const retagStagePath = `${filePath}.part-${randomUUID()}`
+          stagedAudioPath = retagStagePath
+          await copyFile(filePath, retagStagePath)
+          tagFilePath = retagStagePath
+        }
+        signal?.throwIfAborted()
 
-      if (options.embedCover && imageBuffer) {
-        ops.cover = 'ok'
-      } else if (options.embedCover && !imageBuffer) {
+        if (fileType === 'flac') {
+          await writeFlacTags(tagFilePath, meta, imageBuffer, signal)
+        } else {
+          await writeMp3Tags(tagFilePath, meta, imageBuffer, signal)
+        }
+        signal?.throwIfAborted()
+        const validation = validateLocalAudioFile(tagFilePath, fileType)
+        if (!validation.valid) throw new Error(validation.reason || '标签写入后的音频文件无效')
+        ops.tags = 'ok'
+
+        if (options.embedCover && imageBuffer) {
+          ops.cover = 'ok'
+        } else if (options.embedCover && !imageBuffer) {
+          ops.cover = 'failed'
+        }
+
+        onProgress?.(100, 'tagging')
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        console.error(`[YunPlex2] 标签写入失败: ${filePath}`, err)
+        ops.tags = 'failed'
         ops.cover = 'failed'
-      }
-
-      onProgress?.(100, 'tagging')
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err)
-      console.error(`[YunPlex2] 标签写入失败: ${filePath}`, err)
-      ops.tags = 'failed'
-      ops.cover = 'failed'
-      onProgress?.(100, 'tagging')
-      if (stagedAudioPath) await rm(stagedAudioPath, { force: true }).catch(() => undefined)
-      throw new TagWriteError({ filePath, fileType, ops, detail, cause: err })
+        onProgress?.(100, 'tagging')
+        throw new TagWriteError({ filePath, fileType, ops, detail, cause: err })
+      } finally { clearInterval(tagHeartbeat) }
     }
-  }
 
-  if (stagedAudioPath) {
-    try {
+    if (stagedAudioPath) {
       signal?.throwIfAborted()
       await rename(stagedAudioPath, filePath)
+      stagedCommitted = true
       signal?.throwIfAborted()
-    } catch (err) {
-      await rm(stagedAudioPath, { force: true }).catch(() => undefined)
-      throw err
     }
-  }
 
-  // Save standalone cover images
-  const artistPath = dirname(albumPath)
-  if (options.saveAlbumCover) {
-    try {
-      const coverBuf = imageBuffer ?? await downloadImage(meta.picUrl, signal)
-      if (coverBuf) await writeFileWithRetry(join(albumPath, 'cover.jpg'), coverBuf)
-      signal?.throwIfAborted()
-    } catch {
-      signal?.throwIfAborted()
-      /* non-critical */
-    }
-  }
-  if (options.saveArtistImage && meta.artistImgUrl) {
-    const artistImgPath = join(artistPath, 'artist.jpg')
-    if (!existsSync(artistImgPath)) {
+    // Save standalone cover images
+    const artistPath = dirname(albumPath)
+    if (options.saveAlbumCover) {
       try {
-        const artistImg = await downloadImage(meta.artistImgUrl, signal)
-        if (artistImg) await writeFileWithRetry(artistImgPath, artistImg)
+        const coverBuf = imageBuffer ?? await downloadImage(meta.picUrl, signal)
+        if (coverBuf) await writeFileWithRetry(join(albumPath, 'cover.jpg'), coverBuf)
         signal?.throwIfAborted()
       } catch {
         signal?.throwIfAborted()
         /* non-critical */
       }
     }
-  }
+    if (options.saveArtistImage && meta.artistImgUrl) {
+      const artistImgPath = join(artistPath, 'artist.jpg')
+      if (!existsSync(artistImgPath)) {
+        try {
+          const artistImg = await downloadImage(meta.artistImgUrl, signal)
+          if (artistImg) await writeFileWithRetry(artistImgPath, artistImg)
+          signal?.throwIfAborted()
+        } catch {
+          signal?.throwIfAborted()
+          /* non-critical */
+        }
+      }
+    }
 
-  return { filePath, ops }
+    return { filePath, ops }
+  } finally {
+    // Never leave an owned .part file behind on failure or cancellation.
+    if (stagedAudioPath && !stagedCommitted) {
+      await rm(stagedAudioPath, { force: true }).catch(() => undefined)
+    }
+  }
 }
 
 async function downloadImage(picUrl: string, parentSignal?: AbortSignal): Promise<Buffer | null> {
@@ -351,7 +426,23 @@ async function downloadImage(picUrl: string, parentSignal?: AbortSignal): Promis
       ? AbortSignal.any([parentSignal, timeoutSignal])
       : timeoutSignal
     const res = await fetch(picUrl, { signal })
-    return Buffer.from(await res.arrayBuffer())
+    if (!res.ok || Number(res.headers.get('content-length')) > IMAGE_MAX_BYTES) {
+      await res.body?.cancel().catch(() => undefined)
+      return null
+    }
+    const reader = res.body?.getReader()
+    if (!reader) return null
+    const chunks: Uint8Array[] = []
+    let received = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) return Buffer.concat(chunks, received)
+        received += value.byteLength
+        if (received > IMAGE_MAX_BYTES) { await reader.cancel(); return null }
+        chunks.push(value)
+      }
+    } finally { reader.releaseLock() }
   } catch (error) {
     parentSignal?.throwIfAborted()
     if (error instanceof Error && error.name === 'TimeoutError') return null
@@ -401,7 +492,7 @@ export async function writeFlacTags(
   signal?: AbortSignal,
 ): Promise<void> {
   const tagMap = buildFlacTagMap(meta)
-  await runFlacTagWorkerInline({ filePath, tagMap, imageBuffer }, signal)
+  await withTagWriteSlot(signal, () => runFlacTagWorkerInline({ filePath, tagMap, imageBuffer }, signal))
 }
 
 export async function writeMp3Tags(
@@ -460,11 +551,11 @@ export async function writeMp3Tags(
 
   // Offload MP3 tag writing to a worker thread — node-id3 uses
   // readFileSync / writeFileSync internally which blocks the event loop.
-  await runMp3TagWorkerInline({
+  await withTagWriteSlot(signal, () => runMp3TagWorkerInline({
     filePath,
     tags: tags as unknown as Record<string, unknown>,
     imageBuffer,
-  }, signal)
+  }, signal))
 }
 
 function runWorkerWithTimeout(

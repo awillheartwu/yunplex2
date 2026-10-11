@@ -10,6 +10,7 @@ import type { DownloadMode } from './types'
 import type { LyricOrder, MultiArtistFormat } from '../config/types'
 import { getLocalMediaAsset } from '../sync/local-media-store'
 import { plexPathsExactlyEqual } from '../sync/identity-normalization'
+import { withDownloadRequestContext } from './netease-request'
 
 export interface SingleSongConfig {
   quality: string
@@ -52,6 +53,15 @@ export async function downloadSingleSong(
   ops: SongOps
   audioOperation: 'downloaded' | 'redownloaded' | 'reused'
 }> {
+  return withDownloadRequestContext(signal, () => executeSingleSong(songId, config, onProgress, signal), () => onProgress?.(0, 'downloading'))
+}
+
+async function executeSingleSong(
+  songId: number,
+  config: SingleSongConfig,
+  onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
+  signal?: AbortSignal,
+): Promise<{ filePath: string; fileType: string; ops: SongOps; audioOperation: 'downloaded' | 'redownloaded' | 'reused' }> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
   const previousAsset = getLocalMediaAsset(songId)
 

@@ -1,14 +1,16 @@
 import type { TaskRunSummary } from '../server/lib/job/types'
 import type { DownloadTask, QueueStatus } from '../server/lib/download/queue'
 import type { SyncState } from '../server/lib/log/types'
+import type { DownloadQueueControl } from '../server/lib/download/queue-control'
 
 export interface ActivityRun extends TaskRunSummary {
   sourceIds: string[]
   sourceNames: string[]
-  files: { counts: QueueStatus; items: DownloadTask[]; total: number } | null
+  files: { counts: QueueStatus; items: DownloadTask[]; total: number; paused?: boolean } | null
   live: SyncState | null
 }
 export interface ActivitySnapshot {
+  downloadControl?: DownloadQueueControl
   running: ActivityRun[]
   waiting: ActivityRun[]
   runningTotal: number

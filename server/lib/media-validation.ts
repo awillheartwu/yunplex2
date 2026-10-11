@@ -58,7 +58,13 @@ export function validateAudioBuffer(buffer: Uint8Array, fileType: string): Audio
   return { valid: true }
 }
 
-export function validateLocalAudioFile(filePath: string): AudioValidationResult {
+/**
+ * Validate an on-disk audio file using a bounded header read.
+ *
+ * Pass `explicitFileType` when the file name hides its container (for example a
+ * staged `song.flac.part-<uuid>` file); otherwise the extension is used.
+ */
+export function validateLocalAudioFile(filePath: string, explicitFileType?: string): AudioValidationResult {
   try {
     const fileSize = statSync(filePath).size
     if (fileSize === 0) {
@@ -70,9 +76,11 @@ export function validateLocalAudioFile(filePath: string): AudioValidationResult 
       const header = Buffer.alloc(16)
       const bytesRead = readSync(fd, header, 0, header.length, 0)
       const initial = header.subarray(0, bytesRead)
-      const fileType = extname(filePath)
+      const fileType = explicitFileType && explicitFileType.trim()
+        ? explicitFileType
+        : extname(filePath)
       const directResult = validateAudioBuffer(initial, fileType)
-      if (directResult.valid || normalizeFileType(fileType) !== 'flac' || !hasPrefix(initial, 'ID3')) {
+      if (directResult.valid || normalizeAudioFileType(fileType) !== 'flac' || !hasPrefix(initial, 'ID3')) {
         return directResult
       }
 
@@ -89,7 +97,7 @@ export function validateLocalAudioFile(filePath: string): AudioValidationResult 
   }
 }
 
-function normalizeFileType(fileType: string): string {
+export function normalizeAudioFileType(fileType: string): string {
   return fileType.toLowerCase().replace(/^\./, '')
 }
 
