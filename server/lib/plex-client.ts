@@ -372,8 +372,10 @@ export async function getSectionTracks(sectionKey: string): Promise<PlexTrack[]>
 export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Promise<PlexTrack[]> {
   if (!client) throw new Error('Plex client not initialized')
   const size = Math.min(Math.max(limit, 1), 100)
+  // recentlyAdded can return albums without file paths. Read tracks ordered by
+  // addedAt so new files can be matched before the full path cache expires.
   const res = (await queryPlexRead(client,
-    `/library/sections/${sectionKey}/recentlyAdded?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=${size}`,
+    `/library/sections/${sectionKey}/all?type=10&sort=addedAt:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=${size}`,
   )) as {
     MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
   }
