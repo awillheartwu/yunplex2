@@ -446,12 +446,10 @@ export function getSyncService(getConfig: () => AppConfig) {
             // needs_download / found_on_disk stay pending
           }
 
-          // Register concrete Plex extra occurrences as preserved by default.
-          // Their status changes to "removed" only after Plex confirms the
-          // occurrence-level deletion. This prevents run history from claiming
-          // a removal that was merely planned or later safety-blocked.
+          // Preview uses the initial comparison. Real runs classify extras
+          // after the final Plex lookup, which can recognize more target songs.
           const extraTaskIds = new Map<number, string>()
-          if (!skipRemoveExtra) {
+          if (dryRun && !skipRemoveExtra) {
             for (const xt of extraTracks) {
               const extraTaskId = job.addExtraSong(source.id, {
                 songName: xt.title,
