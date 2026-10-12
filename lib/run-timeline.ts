@@ -161,6 +161,7 @@ function songDetail(song: SongTask, sourceNameById: Map<string, string>, shouldS
     description: [
       shouldShowSource && sourceName ? `来源：${sourceName}` : '',
       songDescription,
+      isFailedSongStatus(song.status) ? song.error?.message : '',
     ].filter(Boolean).join(' · '),
     subjectLabel: shouldShowSource ? sourceName : undefined,
     tone: presentation.tone,
@@ -289,7 +290,7 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
 
   const outcomeTime = lastKnownTime(run)
   const existingSongs = run.songs.filter(song => song.status === 'skipped_existing')
-  const attentionSongs = run.songs.filter(song => isAttentionSongStatus(song.status))
+  const attentionSongs = run.songs.filter(song => isAttentionSongStatus(song.status) || song.status === 'extra_skipped')
   const failedSongs = run.songs.filter(song => isFailedSongStatus(song.status))
   const successSongs = run.songs.filter(song => song.status === 'success')
   const removedSongs = run.songs.filter(song => song.status === 'removed')
@@ -310,8 +311,8 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
   if (run.warnings > 0) {
     items.push(resultItem(
       `${run.id}:ignored`,
-      `跳过 ${run.warnings} 首需要关注的歌曲`,
-      '包含版权受限，或达到连续失败阈值后已暂停自动重试的歌曲',
+      `${run.warnings} 项需要关注`,
+      '包含待处理歌曲，以及按当前策略保留、未从 Plex 歌单移除的条目',
       'ignored',
       'ignored',
       outcomeTime,
@@ -336,8 +337,10 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
   if (run.successSongs > 0) {
     items.push(resultItem(
       `${run.id}:success`,
-      `${run.successSongs} 首歌曲处理成功`,
-      run.type === 'manual_download' ? '歌曲已下载并写入本地音乐库' : '歌曲已下载、写入标签并加入 Plex',
+      run.type === 'source_initialization' ? `已确认 ${run.successSongs} 首歌曲的接管决定` : `${run.successSongs} 首歌曲处理成功`,
+      run.type === 'source_initialization'
+        ? '接管决定已保存；计划下载和 Plex 歌单更新由后续同步执行'
+        : run.type === 'manual_download' ? '歌曲已下载并写入本地音乐库' : '歌曲已下载、写入标签并加入 Plex',
       'success',
       'checkCircle',
       outcomeTime,

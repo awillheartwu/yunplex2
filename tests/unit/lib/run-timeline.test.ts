@@ -91,8 +91,8 @@ describe('run timeline', () => {
       tone: 'existing',
     })
     expect(timeline.find(item => item.id === 'run-1:ignored')).toMatchObject({
-      title: '跳过 1 首需要关注的歌曲',
-      description: '包含版权受限，或达到连续失败阈值后已暂停自动重试的歌曲',
+      title: '1 项需要关注',
+      description: '包含待处理歌曲，以及按当前策略保留、未从 Plex 歌单移除的条目',
       tone: 'ignored',
     })
     expect(timeline.find(item => item.id === 'run-1:success')?.details[0]?.title).toBe('成功歌曲')

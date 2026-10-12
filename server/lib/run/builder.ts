@@ -241,7 +241,17 @@ export class RunBuilder {
     this.job.durationMs = Date.now() - new Date(this.job.startedAt).getTime()
     this.job.summary = summary
 
-    // Compute stats
+    this.updateStats()
+
+    return this.job
+  }
+
+  getRun(): SyncJob {
+    this.updateStats()
+    return this.job
+  }
+
+  private updateStats(): void {
     this.job.successSongs = this.job.songs.filter((s) => s.status === 'success').length
     this.job.failedSongs = this.job.songs.filter((s) =>
       ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status),
@@ -249,12 +259,6 @@ export class RunBuilder {
     this.job.skippedSongs = this.job.songs.filter((s) => s.status === 'skipped_existing').length
     this.job.removedSongs = this.job.songs.filter((s) => s.status === 'removed').length
     this.job.warnings = countDistinctWarningIssues(this.job.songs)
-
-    return this.job
-  }
-
-  getRun(): SyncJob {
-    return this.job
   }
 
   private isDescendantOf(step: JobStep, ancestorId: string): boolean {

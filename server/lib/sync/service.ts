@@ -49,6 +49,16 @@ export function getSyncService(getConfig: () => AppConfig) {
 
   function getState(): SyncState { return { ...state, currentRunId: currentRun?.getId() ?? null } }
 
+  function getCurrentRun() {
+    if (!currentRun || state.dryRun) return null
+    const run = currentRun.getRun()
+    return {
+      ...run,
+      durationMs: Date.now() - new Date(run.startedAt).getTime(),
+      songs: run.songs.filter(song => song.status !== 'pending' && song.status !== 'skipped_existing'),
+    }
+  }
+
   function throwIfCancelled(): void {
     if (!cancelRequested) return
     state.currentStage = 'cancelled'
@@ -659,5 +669,5 @@ export function getSyncService(getConfig: () => AppConfig) {
     })
   }
 
-  return { getState, runSync, runSyncForSource, prepareSyncForSource, startSync, startSyncForSource, cancelSync }
+  return { getState, getCurrentRun, runSync, runSyncForSource, prepareSyncForSource, startSync, startSyncForSource, cancelSync }
 }
