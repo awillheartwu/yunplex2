@@ -16,7 +16,7 @@
         <div class="run-detail__hero-labels">
           <RunTypeBadge :type="job.type" />
           <StatusBadge :status="badgeStatus" :label="displayStatusLabel" />
-          <span v-if="job.dryRun" class="run-detail__preview">预览运行</span>
+          <span v-if="job.dryRun && job.type !== 'source_initialization'" class="run-detail__preview">预览运行</span>
         </div>
         <h2>{{ displaySummary }}</h2>
         <p>{{ typeIdentity.description }}</p>
@@ -26,6 +26,18 @@
           <span><AppIcon name="play" :size="13" />{{ runTriggerLabel(job.trigger) }}</span>
         </div>
       </div>
+    </section>
+
+    <section v-if="failedSongs.length > 0" class="section-card run-detail__errors" role="alert">
+      <strong>已有 {{ failedSongs.length }} 首歌曲处理失败</strong>
+      <ul>
+        <li v-for="song in failedSongs.slice(0, 3)" :key="song.id">
+          <strong>{{ song.songName }}</strong>
+          <p>{{ song.error?.message || songStatusPresentation(song.status).label }}</p>
+        </li>
+      </ul>
+      <p v-if="job.status === 'running'">同步仍在执行后续步骤，当前进度见下方时间线。</p>
+      <p v-if="failedSongs.length > 3">全部失败歌曲见下方“变化与异常”。</p>
     </section>
 
     <section class="run-detail__stats" aria-label="运行结果统计">
@@ -233,6 +245,7 @@ import {
   semanticToneClass,
   SONG_STATUS_BUCKETS,
   songMatchesStatusBucket,
+  songStatusPresentation,
   songStatusBucketCount,
   type SongStatusBucket,
   type TaskSemanticTone,
@@ -293,6 +306,7 @@ const displaySummary = computed(() => props.job.awaitingSourceSync
 const typeIdentity = computed(() => runTypeIdentity(props.job.type))
 const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))
+const failedSongs = computed(() => props.job.songs.filter(song => isFailedSongStatus(song.status)))
 const mediaPolicyItems = computed(() => {
   const labels: Record<string, string> = {
     manual_exempt: '人工豁免',
@@ -490,6 +504,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.run-detail__errors{display:grid;gap:var(--space-2);padding:var(--space-4);color:var(--danger)}
+.run-detail__errors ul{display:grid;gap:var(--space-2);padding-left:var(--space-4)}
+.run-detail__errors p{margin:0;overflow-wrap:anywhere}
 .run-detail{display:flex;flex-direction:column;gap:var(--space-5)}
 .run-detail__nav{display:flex;min-height:2.75rem;align-items:center;justify-content:space-between;gap:var(--space-4)}
 .run-detail__back:hover{color:var(--text-primary)}

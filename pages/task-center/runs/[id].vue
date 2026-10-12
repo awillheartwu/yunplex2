@@ -23,11 +23,11 @@
           取消分析
         </button>
         <NuxtLink
-          v-else-if="run.type === 'source_initialization' && run.status === 'awaiting_action' && run.sourceIds?.[0]"
+          v-else-if="run.type === 'source_initialization' && ['awaiting_action', 'success', 'partial'].includes(run.status) && run.sourceIds?.[0]"
           class="btn btn-primary btn-sm"
           :to="`/sync-sources/${run.sourceIds[0]}?tab=initialization`"
         >
-          打开接管工作台
+          {{ run.status === 'awaiting_action' ? '确认接管方案' : '查看接管结果与同步' }}
         </NuxtLink>
         <button
           v-else-if="run.type === 'source_initialization' && run.status === 'failed' && run.sourceIds?.[0]"
