@@ -449,6 +449,49 @@ describe('Plex section path index', () => {
     await expect(findTrackByFilePath('12', filePath)).resolves.toEqual(freshTrack)
     expect(libraryQueries).toBe(2)
   })
+
+  it('serves a freshly scanned song from the addedAt track listing while the path cache is stale', async () => {
+    const oldFilePath = '/volume1/music/Artist/Album/01.flac'
+    const newFilePath = '/volume1/music/Artist/Album/02 - New.flac'
+    const oldTrack = track('71', oldFilePath)
+    const newTrack = track('72', newFilePath)
+    // On NAS, recentlyAdded returns albums without Media.Part.file, so the
+    // recent-track fallback must not depend on that shape.
+    const albumOnly = { ratingKey: 'album-71', title: 'Album', type: 'album' }
+    const recentQuery = '/library/sections/12/all?type=10&sort=addedAt:desc&X-Plex-Container-Start=0&X-Plex-Container-Size=100'
+    let librarySnapshot = [oldTrack]
+    let libraryQueries = 0
+
+    plexApiMock.query.mockImplementation(async (path: string) => {
+      if (path === '/') return { MediaContainer: { machineIdentifier: 'machine-1' } }
+      if (path === recentQuery) return { MediaContainer: { totalSize: 1, Metadata: [newTrack] } }
+      if (path.startsWith('/library/sections/12/recentlyAdded')) {
+        return { MediaContainer: { totalSize: 1, Metadata: [albumOnly] } }
+      }
+      if (path.includes('includeGuids=1')) {
+        libraryQueries += 1
+        return { MediaContainer: { totalSize: librarySnapshot.length, Metadata: librarySnapshot } }
+      }
+      throw new Error(`Unexpected Plex query: ${path}`)
+    })
+
+    const { findTrackByFilePath, getRecentlyAddedTracks, initPlexClient } = await import('~~/server/lib/plex-client')
+    await initPlexClient(config)
+
+    await expect(findTrackByFilePath('12', oldFilePath)).resolves.toEqual(oldTrack)
+
+    // The new song is scanned after the path snapshot was warmed.
+    librarySnapshot = [oldTrack, newTrack]
+
+    await expect(findTrackByFilePath('12', newFilePath)).resolves.toBeNull()
+    expect(libraryQueries).toBe(1)
+
+    const recent = await getRecentlyAddedTracks('12', 100)
+    expect(recent).toEqual([newTrack])
+    expect(recent[0]?.Media?.[0]?.Part?.[0]?.file).toBe(newFilePath)
+    expect(plexApiMock.query).toHaveBeenCalledWith(recentQuery)
+    expect(plexApiMock.query).not.toHaveBeenCalledWith(expect.stringContaining('/recentlyAdded'))
+  })
 })
 
 describe('Plex playlist pagination', () => {
