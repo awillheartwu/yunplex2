@@ -39,6 +39,11 @@ it('accepts a trailing slash in the music directory without changing the Compose
   expect(composeEnvironment(settings).NAS_MUSIC_DIR).toBe(variables.NAS_MUSIC_DIR)
 })
 
+it('trims surrounding whitespace from the music directory before validation and mounting', () => {
+  const settings = deploymentConfig({ ...variables, NAS_MUSIC_DIR: ` \t${variables.NAS_MUSIC_DIR}/ \n` })
+  expect(composeEnvironment(settings).NAS_MUSIC_DIR).toBe(variables.NAS_MUSIC_DIR)
+})
+
 it('initializes empty managed data once and leaves data and saved ownership intact on retry', async () => {
   const root = await directory()
   expect(await hostOperation({ action: 'prepare', ...owner() }, root)).toEqual({ previous: null, hasDatabase: false })

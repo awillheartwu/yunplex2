@@ -77,7 +77,8 @@ jobs:
 
       - name: Validate deployment settings and Compose
         run: |
-          node --input-type=module -e "import {deploymentConfig} from './scripts/deploy/nas-deploy.mjs'; deploymentConfig(process.env)"
+          NAS_MUSIC_DIR=$(node --input-type=module -e "import {deploymentConfig} from './scripts/deploy/nas-deploy.mjs'; process.stdout.write(deploymentConfig(process.env).music)")
+          export NAS_MUSIC_DIR
           docker compose -p reyunplex -f deploy/nas.compose.yml config --quiet
 
       - name: Build immutable image on the target Docker daemon
