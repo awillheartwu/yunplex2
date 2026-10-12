@@ -364,13 +364,11 @@
       <!-- Import / Export -->
       <ConfigSection title="导入 / 导出配置" description="JSON 格式，兼容旧 yunplex 配置" :collapsed="!!collapsed.import" @toggle="toggle('import')">
         <template #icon><SidebarIcon name="import-export" :active="true" /></template>
-        <div class="flex gap-4">
-          <label class="flex-1">
-            <input ref="fileInput" type="file" accept=".json" class="hidden" @change="handleFileImport" />
-            <button class="btn btn-secondary w-full" @click="($refs.fileInput as HTMLInputElement)?.click()">从文件导入...</button>
-          </label>
-          <button class="btn btn-secondary w-full" @click="showImportTextarea = !showImportTextarea">粘贴 JSON 导入</button>
-          <button class="btn btn-secondary" @click="handleExport(form)">导出</button>
+        <input ref="fileInput" type="file" accept=".json" class="hidden" @change="handleFileImport" />
+        <div class="flex flex-wrap gap-3">
+          <button type="button" class="btn btn-secondary" @click="($refs.fileInput as HTMLInputElement)?.click()">从文件导入...</button>
+          <button type="button" class="btn btn-secondary" @click="showImportTextarea = !showImportTextarea">粘贴 JSON 导入</button>
+          <button type="button" class="btn btn-secondary" @click="handleExport(form)">导出</button>
         </div>
         <div v-if="showImportTextarea" class="space-y-3">
           <textarea v-model="importJson" class="form-input font-mono" placeholder="粘贴完整配置 JSON 或旧 yunplex 格式..." />
