@@ -34,8 +34,8 @@ onBeforeUnmount(() => { comparisonRequest++ })
       <div><h3>按当前设置重新分析</h3><p>先比较参数变化，再决定是否创建新草案。</p></div>
     </header>
     <div class="matching-reanalysis__notice">
-      <strong>当前选择需要重新确认</strong>
-      <p>旧草案保留为历史记录。当前的 {{ initialization.adoptItems }} 首接管选择和 {{ initialization.downloadItems }} 首下载选择不会自动转入新草案。</p>
+      <strong>重新生成接管草案</strong>
+      <p>已确认的媒体关联会保留；旧草案中未提交的选择需要重新确认。</p>
     </div>
     <p v-if="initialization.matchingConfig && !initialization.rulesCompatible" class="matching-reanalysis__context">旧草案的算法版本已变化。下方使用当前算法比较两组参数，不能精确重放旧算法结果。</p>
     <p v-if="!initialization.matchingConfig" class="matching-reanalysis__context">旧草案未记录参数快照；下方使用当前保存参数作基线，不能复现旧规则差异。</p>
