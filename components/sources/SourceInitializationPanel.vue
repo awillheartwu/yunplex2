@@ -25,7 +25,7 @@
       </div>
       <aside v-if="initialization?.status === 'awaiting_review'" class="source-adoption__tools">
         <div class="source-adoption__tools-row"><AppIcon name="info" :size="17" /><strong>按需打开方案工具，审核列表保持在当前页面</strong><button class="btn btn-primary" :disabled="acting" @click="quickOpen = true">快速方案</button><button class="icon-button" :aria-expanded="toolsHintExpanded" :aria-label="toolsHintExpanded ? '收起方案工具提示' : '展开方案工具提示'" @click="toolsHintExpanded = !toolsHintExpanded"><Chevron :open="toolsHintExpanded" /></button></div>
-        <p v-if="toolsHintExpanded">快速方案与重新分析在右侧面板中查看。关闭面板会保留当前草稿，只有明确确认才会应用决定。</p>
+        <p v-if="toolsHintExpanded">下一步：用“快速方案”批量确认，或点页面底部的“提交接管方案”。关闭面板会保留当前草稿，只有明确确认才会应用决定。</p>
         <p v-if="initialization.quickStatus === 'queued'" role="status">快速方案已排队，可打开面板查看或取消本次处理。</p>
       </aside>
       <SourceInitializationQuickPlan
@@ -36,6 +36,7 @@
         :busy="acting"
         :disabled="!isEditable"
         @close="quickOpen = false"
+        @request-commit="quickOpen = false; confirmCommit = true"
         @changed="onQuickChanged"
       />
       <SourceInitializationReanalysis v-if="reanalysisOpened && initialization" :key="initialization.id" :visible="confirmReanalysis" :submit-error="error" :source-id="sourceId" :initialization="initialization" :busy="acting" @confirm="restartFromDrawer" @cancel="confirmReanalysis = false" />
@@ -47,6 +48,11 @@
       <div v-if="isAnalyzing || isWaitingAnalysis" class="section-card source-adoption__progress"><AppIcon name="loader" :size="18" class="animate-spin" /><div><strong>{{ isWaitingAnalysis ? '分析已排队，等待后台处理' : '正在构建 Plex 全库候选索引' }}</strong><p>{{ isWaitingAnalysis ? '请求已接受，页面会自动刷新分析进度。' : '可离开此页面，任务会在后台继续。' }}</p></div></div>
 
       <div v-if="needsRestart" class="section-card source-adoption__incompatible"><strong>接管规则已更新</strong><p>当前方案使用旧版匹配规则，仍可查看审核快照，但必须重新分析后才能编辑或提交。现有方案不会被应用。</p><button class="btn btn-primary btn-sm" :disabled="acting" @click="confirmReanalysis = true"><AppIcon name="refresh" :size="16" />重新分析当前歌单</button></div>
+
+      <div v-if="initialization?.status === 'completed' && isCompatibleReview" class="section-card source-adoption__next">
+        <div><strong>接管已完成</strong><p>接管决定已保存。下载和 Plex 歌单更新的结果请查看同步记录；需要再次同步时，点页面上方“同步”。</p></div>
+        <div class="source-adoption__next-actions"><NuxtLink v-if="initialization.followUpRunId" :to="`/task-center/runs/${initialization.followUpRunId}`" class="btn btn-primary btn-sm">查看同步运行</NuxtLink><NuxtLink :to="{ path: `/sync-sources/${sourceId}`, query: { tab: 'runs' } }" class="btn btn-secondary btn-sm"><AppIcon name="activity" :size="14" />查看运行记录</NuxtLink></div>
+      </div>
 
       <SourceInitializationReview
         v-if="canReview"
@@ -164,4 +170,12 @@ function handleReviewDecision(songId: number, value: InitializationDecision): vo
 .matching-snapshot summary { width: fit-content; cursor: pointer; color: var(--text-secondary); font-size: var(--text-xs); }
 .matching-snapshot pre { overflow: auto; max-height: 20rem; font-size: var(--text-xs); }
 .matching-snapshot small { overflow-wrap: anywhere; }
+.source-adoption__next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-4); }
+.source-adoption__next > div:first-child { flex: 1; min-width: 12rem; }
+.source-adoption__next p { margin: var(--space-1) 0 0; color: var(--text-secondary); font-size: var(--text-xs); }
+.source-adoption__next-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@media (max-width: 640px) {
+  .source-adoption__next { align-items: stretch; flex-direction: column; }
+  .source-adoption__next-actions .btn { justify-content: center; }
+}
 </style>

@@ -11,7 +11,7 @@ const props = defineProps<{
   busy?: boolean
   disabled?: boolean
 }>()
-const emit = defineEmits<{ changed: []; close: [] }>()
+const emit = defineEmits<{ changed: []; close: []; requestCommit: [] }>()
 
 const api = useApi()
 const defaultThreshold = props.initialization.quickThreshold ?? props.initialization.matchingConfig?.config.quickMatchThreshold ?? DEFAULT_INITIALIZATION_MATCHING.quickMatchThreshold
@@ -219,6 +219,7 @@ async function cancelQueued(): Promise<void> {
     <p v-else-if="queued" class="source-adoption__quick-hint" role="status">快速方案已提交，正在等待后台处理；完成前不能编辑或重新预览。</p>
     <p v-else-if="!thresholdValid" class="source-adoption__quick-hint" role="alert">分数线必须是 0–100 的整数。</p>
     <p v-else-if="blocked" class="source-adoption__quick-hint" role="status">当前草案不可编辑；重新分析后再使用快速方案。</p>
+    <p v-else-if="!preview && !saved" class="source-adoption__quick-hint" role="status">先点上方“生成快速预览”查看当前分数线的处理结果；确认按钮会出现在面板底部。</p>
 
 
 
@@ -273,7 +274,8 @@ async function cancelQueued(): Promise<void> {
     </template>
 
     <div v-if="saved" class="source-adoption__quick-actions">
-      <p>已保存的草案尚未执行；未再次编辑时可整批恢复。</p>
+      <p>草案还没有执行。提交后开始接管和后续同步；未再次编辑时，也可以恢复保存前的决定。</p>
+      <button class="btn btn-primary" :disabled="blocked" @click="emit('requestCommit')">提交并启动处理</button>
       <button class="btn btn-secondary btn-sm" :disabled="restoring || busy || queued" @click="restorePlan">恢复此前草案</button>
     </div>
   </template>
