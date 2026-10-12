@@ -118,7 +118,7 @@ echo "==> Starting container $container_name"
 set -- docker run --detach --name "$container_name" \
   --label "$label_key.run=$stamp" \
   --network none \
-  --memory 1g --memory-swap 1g --cpus 2 --pids-limit 256 \
+  --memory 1g --memory-swap 1g --pids-limit 256 \
   --init --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --tmpfs /tmp:rw,nosuid,nodev,size=128m,mode=1777 \
   --env YUNPLEX2_SYNC_ENABLED=false \

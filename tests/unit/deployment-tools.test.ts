@@ -18,11 +18,12 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-function workerHarness(options: { cancelWait?: boolean; copyFails?: boolean; previousRunning?: boolean; failedWorker?: boolean } = {}) {
+function workerHarness(options: { cancelWait?: boolean; copyFails?: boolean; previousRunning?: boolean; failedWorker?: boolean; unsupportedCpuQuota?: boolean } = {}) {
   const calls: string[][] = []
   let inspected = 0
   const docker = async (args: string[]) => {
     calls.push(args)
+    if (options.unsupportedCpuQuota && args.some(arg => ['--cpus', '--cpu-period', '--cpu-quota'].includes(arg))) throw new Error('NanoCPUs can not be set, as your kernel does not support CPU CFS scheduler or the cgroup is not mounted')
     if (args[0] === 'container') {
       if (!options.previousRunning) return null
       return JSON.stringify({ Id: 'previous-worker', Config: { Labels: { 'reyunplex.role': 'deploy-worker' } }, State: { Running: inspected++ === 0 } })
@@ -53,7 +54,7 @@ it('copies only deployment tools and SHA ancestry, then waits for a separate wor
   expect(create).toContain('256m')
   const forwarded = create.filter((_, index) => create[index - 1] === '--env').map(value => value.split('=')[0])
   expect(forwarded.sort()).toEqual([
-    'DOCKER_API_VERSION', 'NAS_APP_ROOT', 'NAS_BIND_ADDRESS', 'NAS_CPUS', 'NAS_GID', 'NAS_MEMORY',
+    'DOCKER_API_VERSION', 'NAS_APP_ROOT', 'NAS_BIND_ADDRESS', 'NAS_GID', 'NAS_MEMORY',
     'NAS_MUSIC_DIR', 'NAS_PORT', 'NAS_UID', 'REYUNPLEX_ANCESTORS_FILE', 'REYUNPLEX_IMAGE', 'REYUNPLEX_REVISION',
   ].sort())
   expect(h.calls.findIndex(args => args[0] === 'start')).toBeGreaterThan(h.calls.findLastIndex(args => args[0] === 'cp'))
@@ -65,6 +66,12 @@ it('leaves the running deployment intact when the Actions waiter is canceled', a
   await expect(startDeployment(config(), h.dependencies)).rejects.toThrow('canceled')
   expect(h.calls).toContainEqual(['start', 'new-worker'])
   expect(h.calls.some(args => ['rm', 'stop', 'kill'].includes(args[0]!))).toBe(false)
+})
+
+it('starts the deployment worker on a NAS without CPU quotas', async () => {
+  const h = workerHarness({ unsupportedCpuQuota: true })
+  await startDeployment(config(), h.dependencies)
+  expect(h.calls).toContainEqual(['start', 'new-worker'])
 })
 
 it('cleans a worker that was never started when copying fails', async () => {
