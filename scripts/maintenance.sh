@@ -28,6 +28,6 @@ mode=ro
 [ "$command" = backup ] && mode=rw
 # Mount the parent so restore can rename directories atomically. Restrict this
 # mount to a dedicated application directory; music is never mounted here.
-docker run --rm --network none --memory 256m --memory-swap 256m --user 0:0 --entrypoint node \
+docker run --rm --network none --user 0:0 --entrypoint node \
   -v "$parent:/maintenance-data" -v "$location:/backups:$mode" \
   "$image" /app/maintenance/cli.mjs "$command" "/maintenance-data/$name" /backups

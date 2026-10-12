@@ -42,7 +42,7 @@ export async function startDeployment(config, dependencies = {}) {
     }
     id = await run([
       'create', '--name', WORKER, '--label', 'reyunplex.role=deploy-worker',
-      '--network', 'none', '--memory', '256m', '--memory-swap', '256m', '--pids-limit', '128',
+      '--network', 'none', '--pids-limit', '128',
       '--user', '0:0', '--tmpfs', '/app/data',
       '--mount', 'type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock',
       ...Object.entries(environment).flatMap(([key, value]) => ['--env', `${key}=${value}`]),

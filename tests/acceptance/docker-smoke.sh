@@ -118,9 +118,9 @@ echo "==> Starting container $container_name"
 set -- docker run --detach --name "$container_name" \
   --label "$label_key.run=$stamp" \
   --network none \
-  --memory 1g --memory-swap 1g --pids-limit 256 \
+  --pids-limit 256 \
   --init --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-  --tmpfs /tmp:rw,nosuid,nodev,size=128m,mode=1777 \
+  --tmpfs /tmp:rw,nosuid,nodev,mode=1777 \
   --env YUNPLEX2_SYNC_ENABLED=false \
   --volume "$data_volume:/app/data:nocopy" \
   --volume "$music_volume:/mnt/nas:nocopy"

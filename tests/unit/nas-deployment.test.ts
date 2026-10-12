@@ -23,14 +23,14 @@ async function directory() {
 async function state(root: string) { return JSON.parse(await readFile(join(root, 'deployment.json'), 'utf8')) }
 
 it('requires a full SHA, a dedicated NAS directory, separate media and a non-root user', () => {
-  expect(config()).toMatchObject({ port: 3000, uid: 1000, gid: 1000, memory: '1g' })
+  expect(config()).toMatchObject({ port: 3210, uid: 1000, gid: 1000 })
   const valid = variables
   for (const patch of [
     { REYUNPLEX_IMAGE: 'reyunplex:latest' }, { REYUNPLEX_REVISION: 'short' },
     { NAS_APP_ROOT: '/volume1/docker' }, { NAS_APP_ROOT: './data' },
     { NAS_MUSIC_DIR: '/volume1/docker/reyunplex/data' }, { NAS_MUSIC_DIR: '/volume1/music/../docker' },
     { NAS_APP_ROOT: '' }, { NAS_MUSIC_DIR: '' }, { NAS_UID: '' }, { NAS_GID: '' },
-    { NAS_MEMORY: '-1g' }, { NAS_UID: '0' }, { NAS_GID: '-1' }, { NAS_PORT: '65536' }, { NAS_BIND_ADDRESS: '1.2.3.4' },
+    { NAS_UID: '0' }, { NAS_GID: '-1' }, { NAS_PORT: '65536' }, { NAS_BIND_ADDRESS: '1.2.3.4' },
   ]) expect(() => deploymentConfig({ ...valid, ...patch })).toThrow()
 })
 
@@ -150,7 +150,7 @@ async function harness(options: { existing?: boolean; ready?: boolean; backupFai
 
 it('deploys a fresh database and persists host Compose settings without any data backup', async () => {
   const h = await harness()
-  expect(await deploy(h.settings, h.dependencies)).toMatchObject({ image: h.settings.image, backup: null, port: 3000 })
+  expect(await deploy(h.settings, h.dependencies)).toMatchObject({ image: h.settings.image, backup: null, port: 3210 })
   expect(await state(h.root)).toMatchObject({ status: 'ready', revision, previousImage: null })
   expect(await readFile(join(h.root, '.env'), 'utf8')).toContain('NAS_APP_ROOT=/volume1/docker/reyunplex')
   expect(h.calls.some(args => args[0] === 'rm' && args[1] === 'reyunplex-deploy-lock')).toBe(true)
