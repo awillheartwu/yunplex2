@@ -1,5 +1,8 @@
+import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SongMeta } from '../../server/lib/tag-writer'
+
+const testRequire = createRequire(import.meta.url)
 
 const workerMock = vi.hoisted(() => {
   let mode: 'success' | 'messageError' | 'error' | 'exit' | 'timeout' = 'success'
@@ -87,9 +90,9 @@ describe('writeFlacTags', () => {
 
     expect(workerMock.instances).toHaveLength(1)
     const worker = workerMock.instances[0]
-    expect(worker.code).toContain("require('metaflac-js')")
     expect(worker.options.eval).toBe(true)
     expect(worker.options.workerData).toMatchObject({
+      modulePath: testRequire.resolve('metaflac-js'),
       filePath: '/tmp/song.flac',
       tagMap: expect.objectContaining({
         TITLE: 'Test Song',
@@ -129,9 +132,9 @@ describe('writeMp3Tags', () => {
 
     expect(workerMock.instances).toHaveLength(1)
     const worker = workerMock.instances[0]
-    expect(worker.code).toContain("require('node-id3')")
     expect(worker.options.eval).toBe(true)
     expect(worker.options.workerData).toMatchObject({
+      modulePath: testRequire.resolve('node-id3'),
       filePath: '/tmp/song.mp3',
     })
     // The tags object should contain the metadata and an image struct
