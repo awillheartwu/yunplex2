@@ -10,7 +10,8 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm build && rm -rf .output/server/node_modules/NeteaseCloudMusicApi/public
+ARG REYUNPLEX_REVISION
+RUN REYUNPLEX_REVISION=$REYUNPLEX_REVISION pnpm build && rm -rf .output/server/node_modules/NeteaseCloudMusicApi/public
 
 FROM node:24-alpine AS runtime
 

@@ -1,6 +1,19 @@
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 
 const buildRequire = createRequire(import.meta.url)
+const packageVersion = (buildRequire('./package.json') as { version: string }).version
+
+// CI 传入部署提交号，本地开发读取当前提交。
+function resolveRevision(): string {
+  const fromEnv = process.env.REYUNPLEX_REVISION?.trim()
+  if (fromEnv) return fromEnv
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString('utf8').trim()
+  } catch {
+    return 'dev'
+  }
+}
 
 export default defineNuxtConfig({
   ssr: false,
@@ -42,6 +55,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     dataDir: './data',
+  },
+
+  appConfig: {
+    version: packageVersion,
+    revision: resolveRevision(),
   },
 
   app: {

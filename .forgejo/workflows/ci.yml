@@ -81,6 +81,7 @@ jobs:
         run: |
           if ! docker image inspect "$REYUNPLEX_IMAGE" >/dev/null 2>&1; then
             docker build \
+              --build-arg "REYUNPLEX_REVISION=$REYUNPLEX_REVISION" \
               --label "org.opencontainers.image.revision=$REYUNPLEX_REVISION" \
               -t "$REYUNPLEX_IMAGE" .
           fi

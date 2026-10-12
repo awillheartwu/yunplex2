@@ -23,6 +23,7 @@ export default ts.config(
         useFetch: 'readonly',
         useState: 'readonly',
         useRuntimeConfig: 'readonly',
+        useAppConfig: 'readonly',
         useRoute: 'readonly',
         useRouter: 'readonly',
         definePageMeta: 'readonly',
