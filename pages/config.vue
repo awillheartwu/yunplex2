@@ -85,7 +85,7 @@
           <template #actions><button type="button" class="btn btn-ghost btn-sm" :disabled="testing === 'download'" @click="testConnection('download')">
             {{ testing === 'download' ? '测试中...' : '测试下载路径' }}
           </button></template>
-        <FormField label="下载目录" hint="下载的歌曲将按 艺术家/专辑 的结构存放在此目录" required>
+        <FormField label="下载目录" hint="歌曲按 艺术家/专辑 存放。填写应用能访问的目录；Docker 部署默认用 /mnt/nas。NAS 上的目录须先挂进容器，修改这里不会改变挂载。" required>
           <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
         </FormField>
         <FormField label="Plex 音乐库路径前缀" hint="填写 Plex 在自己的运行环境中看到的音乐根目录。它用于同一文件的双向路径换算。">

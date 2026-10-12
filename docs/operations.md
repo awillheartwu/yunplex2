@@ -37,7 +37,7 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 2. 等部署完成，打开 `http://NAS地址:3210`（设置了 `NAS_PORT` 则用该端口），在向导设置管理员、网易云、Plex 和下载路径。
 3. 用少量歌曲确认真实下载和 Plex 歌单更新，再开启自动同步。
 
-网易云 Cookie、Plex Token 和管理员设置保存在 SQLite 中，由向导和设置页管理。下载目录与 Plex 路径前缀对应同一批文件，配置方法见[项目首页](../README.md)。
+网易云 Cookie、Plex Token 和管理员设置保存在 SQLite 中，由向导和设置页管理。下载目录与 Plex 路径前缀对应同一批文件，配置方法见[项目首页](../README.md)。下载目录填应用容器内的路径，默认 `/mnt/nas`；`NAS_MUSIC_DIR` 是挂载到这里的宿主目录。Plex 路径前缀填 Plex 自己看到的音乐根目录，只做路径换算，不传输文件。
 
 应用目录包含：
 
