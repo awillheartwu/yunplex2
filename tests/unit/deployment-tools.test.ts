@@ -31,7 +31,7 @@ function workerHarness(options: { cancelWait?: boolean; copyFails?: boolean; pre
     if (args[0] === 'create') return 'new-worker'
     if (args[0] === 'cp' && args[2] === 'new-worker:/workspace') {
       expect(await readFile(join(args[1]!, 'ancestors.txt'), 'utf8')).toContain(revision)
-      expect(await readFile(join(args[1]!, 'deploy', 'nas.compose.yml'), 'utf8')).toContain('NAS_MEMORY')
+      expect(await readFile(join(args[1]!, 'deploy', 'nas.compose.yml'), 'utf8')).toContain('NAS_APP_ROOT')
       expect(await readFile(join(args[1]!, 'scripts', 'deploy', 'retention.mjs'), 'utf8')).toContain('pruneImages')
       if (options.copyFails) throw new Error('copy failed')
     }
@@ -51,10 +51,9 @@ it('copies only deployment tools and SHA ancestry, then waits for a separate wor
   const create = h.calls.find(args => args[0] === 'create')!
   expect(create).toContain('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock')
   expect(create).toContain('--network'); expect(create).toContain('none')
-  expect(create).toContain('256m')
   const forwarded = create.filter((_, index) => create[index - 1] === '--env').map(value => value.split('=')[0])
   expect(forwarded.sort()).toEqual([
-    'DOCKER_API_VERSION', 'NAS_APP_ROOT', 'NAS_BIND_ADDRESS', 'NAS_GID', 'NAS_MEMORY',
+    'DOCKER_API_VERSION', 'NAS_APP_ROOT', 'NAS_BIND_ADDRESS', 'NAS_GID',
     'NAS_MUSIC_DIR', 'NAS_PORT', 'NAS_UID', 'REYUNPLEX_ANCESTORS_FILE', 'REYUNPLEX_IMAGE', 'REYUNPLEX_REVISION',
   ].sort())
   expect(h.calls.findIndex(args => args[0] === 'start')).toBeGreaterThan(h.calls.findLastIndex(args => args[0] === 'cp'))

@@ -26,7 +26,7 @@ pnpm start
 docker compose up -d --build
 ```
 
-先修改音乐挂载路径，并让运行用户能读写数据和音乐目录。默认 UID/GID 为 `1000:1000`，端口为 3000；变量和资源限制见 [docker-compose.yml](docker-compose.yml)，NAS 自动部署见[运维手册](docs/operations.md)。
+先修改音乐挂载路径，并让运行用户能读写数据和音乐目录。默认 UID/GID 为 `1000:1000`，端口为 `3210`；变量见 [docker-compose.yml](docker-compose.yml)，NAS 自动部署见[运维手册](docs/operations.md)。
 
 ## 怎么用
 

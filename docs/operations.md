@@ -11,7 +11,7 @@
 
 runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net`。当前 runner 的 `docker_host` 会自动把宿主 Docker socket 挂到每个 job，工作流不重复挂载。`privileged: false` 不能收回 socket 的宿主管理权限；因此这台 runner 只能执行受信任代码，工作流排除了 fork PR。代码没有上传应用数据或备份的步骤。
 
-工作流使用 Node 24 镜像，通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。job 内存限制需要 runner 11.2 或更新版本，部署前用 `forgejo-runner --version` 核对。
+工作流使用 Node 24 镜像，通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。
 
 构建优先复用 NAS 上的 `node:24-alpine` 镜像，缺失时才拉取。需要更新基础镜像时，在 NAS 执行 `docker pull node:24-alpine`；拉取失败时先检查 NAS Docker 的网络、代理或镜像加速配置。
 
@@ -25,14 +25,14 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 | ------------------------------ | ------------------------------------------------ |
 | `NAS_APP_ROOT`                 | 应用专用目录，格式为 `/volumeN/docker/reyunplex` |
 | `NAS_MUSIC_DIR`                | 已存在的音乐目录，容器中映射为 `/mnt/nas`        |
-| `NAS_PORT`、`NAS_BIND_ADDRESS` | 网页端口与监听地址                               |
+| `NAS_PORT`                     | 网页端口，默认 `3210`，映射到容器的 `3000`       |
+| `NAS_BIND_ADDRESS`             | 监听地址，默认 `0.0.0.0`                          |
 | `NAS_UID`、`NAS_GID`           | 非 root 应用运行用户，需要音乐目录读写权限       |
-| `NAS_MEMORY`                 | 应用内存上限，默认 `1g`                          |
 
 路径、UID 和 GID 必须配置，没有个人机器默认值。容器配置见 [deploy/nas.compose.yml](../deploy/nas.compose.yml)。应用目录的父目录需要先存在；部署不会替音乐目录修改权限。
 
 1. 配好 runner、变量和目录权限，将检查通过的代码合入 `main`。
-2. 等部署完成，打开 `http://NAS地址:端口`，在向导设置管理员、网易云、Plex 和下载路径。
+2. 等部署完成，打开 `http://NAS地址:3210`（设置了 `NAS_PORT` 则用该端口），在向导设置管理员、网易云、Plex 和下载路径。
 3. 用少量歌曲确认真实下载和 Plex 歌单更新，再开启自动同步。
 
 网易云 Cookie、Plex Token 和管理员设置保存在 SQLite 中，由向导和设置页管理。下载目录与 Plex 路径前缀对应同一批文件，配置方法见[项目首页](../README.md)。
@@ -61,16 +61,16 @@ deployment.json       # 部署状态、镜像版本和备份位置
 Forgejo 12 不支持 `concurrency`。检查与构建可以被新推送取消；开始升级后，独立的 `reyunplex-deploy-worker` 容器会完成备份、启动和就绪检查，取消 Actions 等待任务不会停止它。下次部署会等待前一次完成。部署锁防止同时操作数据目录；不同提交之间只允许向前更新，同一提交可以重新执行。
 
 - 新程序尚未启动就失败：脚本尝试恢复已停止的原实例。
-- 新程序启动后未就绪：保留备份和原镜像，记录失败并停机；查看 Actions 输出与 `deployment.json`，修复后重新部署。
+- 新程序启动失败或未就绪：保留备份和原镜像，记录失败并停机；Actions 输出会显示 Docker 错误和容器启动原因，再结合 `deployment.json` 排查。
 - Actions 任务中断：用 `docker logs reyunplex-deploy-worker` 和 `deployment.json` 确认实际结果。若 NAS 或 Docker 本身中断，先确认容器状态，再处理留下的部署锁。
 
 数据库不会自动回滚。需要恢复时，停机并使用备份对应的镜像与数据库；数据库恢复不能撤销已发生的 Plex 或音乐文件修改。
 
 ## 资源与保留
 
-质量 job 限制 3 GiB，Vitest 最多两个 worker。Docker 构建限制 3 GiB；部署 job 512 MiB，部署工具容器 256 MiB。这台 NAS 不支持 CPU 配额，构建、测试、应用和维护容器均不设置 CPU 硬上限。runner 全局的 `capacity: 2` 仍允许两个仓库任务一起运行；可在 NAS 的 runner 配置中设 `capacity: 1`、`container.options: "--memory=3g"`，减少同时占用。
+工作流、构建、测试、应用和维护容器均不设置内存或 CPU 上限。Vitest 最多两个 worker；runner 的 `capacity: 2` 允许两个仓库任务一起运行，可改为 `capacity: 1` 减少同时占用。
 
-应用默认限制 1 GiB 内存，不使用 swap。这个值是上限，实际占用由歌单规模、下载和标签写入决定。Docker 测试输出就绪后的内存；它不能代表真实下载时的峰值。镜像超过 256 MiB 会使 CI 失败；镜像只包含生产包和维护工具，并移除网易云依赖附带的网页、截图和示例。
+实际内存占用由歌单规模、下载和标签写入决定。Docker 测试输出就绪后的内存；它不能代表真实下载时的峰值。镜像超过 256 MiB 会使 CI 失败；镜像只包含生产包和维护工具，并移除网易云依赖附带的网页、截图和示例。
 
 部署成功后保留最新三个完整 SHA 镜像，以及所有容器仍在使用的镜像和上一版镜像；只清理本项目标记且超过七天的闲置构建缓存。升级备份保留最新三份，并保护本次升级备份。日志最多三个 10 MiB 文件。清理不使用全局 `docker prune`，不处理其他项目、数据卷或音乐文件。
 
@@ -80,7 +80,7 @@ NAS 自动部署每次升级前会把应用数据备份到 `backups/`。备份�
 
 本机 [docker-compose.yml](../docker-compose.yml) 的容器名是 `yunplex2`，可用 [scripts/maintenance.sh](../scripts/maintenance.sh) 手动维护。应用应先停止，`/app/data` 使用 bind mount，备份目录放在数据目录之外：
 
-手动 Compose 默认以 UID/GID `1000:1000` 运行，也可设置 `YUNPLEX2_UID`、`YUNPLEX2_GID`。启动前让该用户可以读写数据目录和音乐挂载；内存上限由 `YUNPLEX2_MEMORY` 调整。
+手动 Compose 默认以 UID/GID `1000:1000` 运行，也可设置 `YUNPLEX2_UID`、`YUNPLEX2_GID`。启动前让该用户可以读写数据目录和音乐挂载。
 
 ```sh
 docker compose stop yunplex2

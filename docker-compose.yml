@@ -5,7 +5,7 @@ services:
     user: '${YUNPLEX2_UID:-1000}:${YUNPLEX2_GID:-1000}'
     init: true
     ports:
-      - '${YUNPLEX2_BIND_ADDRESS:-0.0.0.0}:3000:3000'
+      - '${YUNPLEX2_BIND_ADDRESS:-0.0.0.0}:3210:3000'
     volumes:
       - ./data:/app/data
       # 下载目录也需要挂载
@@ -19,11 +19,9 @@ services:
       - YUNPLEX2_SYNC_ENABLED=false
     read_only: true
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+      - /tmp:rw,nosuid,nodev,mode=1777
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: ${YUNPLEX2_MEMORY:-1g}
-    memswap_limit: ${YUNPLEX2_MEMORY:-1g}
     pids_limit: 256
     logging:
       driver: json-file

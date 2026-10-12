@@ -21,7 +21,6 @@ jobs:
     runs-on: [self-hosted, linux, docker]
     container:
       image: node:24-bookworm
-      options: --memory=3g
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -48,7 +47,6 @@ jobs:
     runs-on: [self-hosted, linux, docker]
     container:
       image: node:24-bookworm
-      options: --memory=512m
     timeout-minutes: 40
     env:
       DOCKER_API_VERSION: '1.43'
@@ -58,11 +56,10 @@ jobs:
       REYUNPLEX_IMAGE: reyunplex:${{ github.sha }}
       NAS_APP_ROOT: ${{ vars.NAS_APP_ROOT }}
       NAS_MUSIC_DIR: ${{ vars.NAS_MUSIC_DIR }}
-      NAS_PORT: ${{ vars.NAS_PORT || '3000' }}
+      NAS_PORT: ${{ vars.NAS_PORT || '3210' }}
       NAS_BIND_ADDRESS: ${{ vars.NAS_BIND_ADDRESS || '0.0.0.0' }}
       NAS_UID: ${{ vars.NAS_UID }}
       NAS_GID: ${{ vars.NAS_GID }}
-      NAS_MEMORY: ${{ vars.NAS_MEMORY || '1g' }}
     steps:
       - name: Check out the verified commit
         uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -84,7 +81,6 @@ jobs:
         run: |
           if ! docker image inspect "$REYUNPLEX_IMAGE" >/dev/null 2>&1; then
             docker build \
-              --memory 3g --memory-swap 3g \
               --label "org.opencontainers.image.revision=$REYUNPLEX_REVISION" \
               -t "$REYUNPLEX_IMAGE" .
           fi
