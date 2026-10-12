@@ -1,3 +1,7 @@
+import { createRequire } from 'node:module'
+
+const buildRequire = createRequire(import.meta.url)
+
 export default defineNuxtConfig({
   ssr: false,
 
@@ -151,6 +155,9 @@ export default defineNuxtConfig({
 
   nitro: {
     plugins: ['~/server/plugins/sync-daemon'],
+    externals: {
+      traceInclude: [buildRequire.resolve('metaflac-js'), buildRequire.resolve('node-id3')],
+    },
   },
 
   compatibilityDate: '2025-01-01',

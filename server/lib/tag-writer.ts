@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import dayjs from 'dayjs'
 import type { SongTask } from './job/types'
@@ -631,7 +632,7 @@ function runFlacTagWorkerInline(payload: {
   const r = 'requir' + 'e' // evade bundler static analysis
   const workerCode = `
     const { parentPort, workerData } = ${r}('node:worker_threads');
-    const Metaflac = ${r}('metaflac-js');
+    const Metaflac = ${r}(workerData.modulePath);
     const MAX_PICTURE_SIZE = 16777215;
 
     try {
@@ -659,7 +660,10 @@ function runFlacTagWorkerInline(payload: {
     }
   `
 
-  return runWorkerWithTimeout(workerCode, payload as Record<string, unknown>, 'FLAC 标签写入', signal)
+  return runWorkerWithTimeout(workerCode, {
+    ...payload,
+    modulePath: createRequire(import.meta.url).resolve('metaflac-js'),
+  }, 'FLAC 标签写入', signal)
 }
 
 function runMp3TagWorkerInline(payload: {
@@ -670,7 +674,7 @@ function runMp3TagWorkerInline(payload: {
   const r = 'requir' + 'e' // evade bundler static analysis
   const workerCode = `
     const { parentPort, workerData } = ${r}('node:worker_threads');
-    const NodeID3 = ${r}('node-id3');
+    const NodeID3 = ${r}(workerData.modulePath);
 
     (async () => {
       try {
@@ -689,7 +693,10 @@ function runMp3TagWorkerInline(payload: {
     })();
   `
 
-  return runWorkerWithTimeout(workerCode, payload as Record<string, unknown>, 'MP3 标签写入', signal)
+  return runWorkerWithTimeout(workerCode, {
+    ...payload,
+    modulePath: createRequire(import.meta.url).resolve('node-id3'),
+  }, 'MP3 标签写入', signal)
 }
 
 const FILENAME_REPLACE: [RegExp, string][] = [
