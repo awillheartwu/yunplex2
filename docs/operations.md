@@ -11,7 +11,9 @@
 
 runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net`。当前 runner 的 `docker_host` 会自动把宿主 Docker socket 挂到每个 job，工作流不重复挂载。`privileged: false` 不能收回 socket 的宿主管理权限；因此这台 runner 只能执行受信任代码，工作流排除了 fork PR。代码没有上传应用数据或备份的步骤。
 
-工作流使用 Node 24 镜像，通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。
+工作流使用 Node 24 镜像，runner 复用 NAS 已保存的镜像，缺失时才拉取。通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。
+
+部署工具使用固定摘要的官方 `docker:27.5.1-cli` 镜像，内含 Docker 27.5.1 和 Compose 2.33.0。首次缺失时由 NAS 拉取，之后直接从本地镜像复制两个命令到 job；临时容器只用于取文件，用完删除。无需配置 Actions 缓存或新增变量、密钥，工具也不进入应用镜像。
 
 构建优先复用 NAS 上的 `node:24-alpine` 镜像，缺失时才拉取。需要更新基础镜像时，在 NAS 执行 `docker pull node:24-alpine`；拉取失败时先检查 NAS Docker 的网络、代理或镜像加速配置。
 
