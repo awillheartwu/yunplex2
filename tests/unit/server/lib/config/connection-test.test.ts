@@ -158,7 +158,7 @@ describe('download directory validation', () => {
     try { testDownloadPathConfig(downloadConfig(missing)) } catch (error) {
       expect(error).toBeInstanceOf(ConnectionTestError)
       expect((error as ConnectionTestError).code).toBe('validation_failed')
-      expect((error as ConnectionTestError).message).toContain('不存在或不可访问')
+      expect((error as ConnectionTestError).message).toContain('下载目录不存在')
     }
 
     const fileDir = scratchDir('reyunplex-download-file-')

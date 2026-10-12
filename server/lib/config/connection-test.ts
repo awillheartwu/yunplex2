@@ -53,15 +53,22 @@ export function testDownloadPathConfig(
   let stat: ReturnType<typeof statSync>
   try {
     stat = statSync(downloadDir)
-  } catch {
-    throw new ConnectionTestError('validation_failed', `下载目录不存在或不可访问: ${downloadDir}`)
+  } catch (error) {
+    const reason = (error as NodeJS.ErrnoException).code ?? ''
+    if (reason === 'ENOENT') {
+      throw new ConnectionTestError('validation_failed', `下载目录不存在: ${downloadDir}。请填写应用能访问的路径；Docker 部署时，NAS 目录需要先挂进容器。`)
+    }
+    if (reason === 'EACCES' || reason === 'EPERM') {
+      throw new ConnectionTestError('validation_failed', `下载目录无法访问: ${downloadDir}（应用运行身份权限不足）`)
+    }
+    throw new ConnectionTestError('validation_failed', `下载目录不可访问: ${downloadDir}`)
   }
   if (!stat.isDirectory()) throw new ConnectionTestError('validation_failed', `下载目录不是有效文件夹: ${downloadDir}`)
 
   try {
     accessSync(downloadDir, constants.W_OK)
   } catch {
-    throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}`)
+    throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}。请检查目录的写权限，以及 Docker 挂载是否为只读。`)
   }
 
   assertDownloadDirWritable(downloadDir)
@@ -92,7 +99,7 @@ function assertDownloadDirWritable(downloadDir: string): void {
   } catch (error) {
     const reason = (error as NodeJS.ErrnoException).code ?? ''
     if (reason === 'ENOSPC') throw new ConnectionTestError('filesystem_failed', `下载目录所在存储已无可用空间: ${downloadDir}`)
-    if (reason === 'EACCES' || reason === 'EPERM' || reason === 'EROFS') throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}`)
+    if (reason === 'EACCES' || reason === 'EPERM' || reason === 'EROFS') throw new ConnectionTestError('filesystem_failed', `下载目录不可写: ${downloadDir}。应用缺少写权限，或该位置为只读。`)
     throw new ConnectionTestError('filesystem_failed', `下载目录写入测试失败: ${downloadDir}`)
   } finally {
     try {
