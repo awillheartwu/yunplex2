@@ -20,7 +20,7 @@
         v-show="!desktopCollapsed"
         class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold tracking-tight"
         :style="{ color: 'var(--text-primary)' }"
-      >reYunPlex<small class="sidebar-brand__caption">MUSIC WORKSPACE</small></span>
+      >reYunPlex<small class="sidebar-brand__caption" :title="appConfig.revision">v{{ appConfig.version }} · {{ shortRevision }}</small></span>
     </div>
 
     <nav class="sidebar-nav flex-1 overflow-y-auto px-3 py-4" aria-label="主导航">
@@ -67,6 +67,8 @@ const props = withDefaults(defineProps<{ mobile?: boolean }>(), { mobile: false 
 const emit = defineEmits<{ navigate: [] }>()
 
 const { sidebarCollapsed, loadSidebarState, toggleSidebarCollapsed } = useSidebarState()
+const appConfig = useAppConfig()
+const shortRevision = computed(() => appConfig.revision.slice(0, 7))
 const desktopCollapsed = computed(() => sidebarCollapsed.value && !props.mobile)
 const sidebarWidth = computed(() => {
   if (props.mobile) return 'min(18rem, 82vw)'

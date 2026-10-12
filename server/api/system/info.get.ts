@@ -19,10 +19,12 @@ function isDocker(): boolean {
 }
 
 export default defineEventHandler(() => {
+  const appConfig = useAppConfig()
   const dataDir = getDataDir()
 
   return success({
-    version: '0.1.0',
+    version: appConfig.version,
+    revision: appConfig.revision,
     nodeVersion: process.version,
     dataDir: resolve(dataDir),
     dbFile: resolve(dataDir, 'data.db'),
