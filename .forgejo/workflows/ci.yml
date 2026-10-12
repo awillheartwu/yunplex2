@@ -84,7 +84,7 @@ jobs:
       - name: Build immutable image on the target Docker daemon
         run: |
           if ! docker image inspect "$REYUNPLEX_IMAGE" >/dev/null 2>&1; then
-            docker build --pull \
+            docker build \
               --memory 3g --memory-swap 3g --cpu-period 100000 --cpu-quota 200000 \
               --label "org.opencontainers.image.revision=$REYUNPLEX_REVISION" \
               -t "$REYUNPLEX_IMAGE" .

@@ -13,6 +13,8 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 
 工作流使用 Node 24 镜像，通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。job 内存限制需要 runner 11.2 或更新版本，部署前用 `forgejo-runner --version` 核对。
 
+构建优先复用 NAS 上的 `node:24-alpine` 镜像，缺失时才拉取。需要更新基础镜像时，在 NAS 执行 `docker pull node:24-alpine`；拉取失败时先检查 NAS Docker 的网络、代理或镜像加速配置。
+
 本地复现和测试方法见[测试说明](../tests/README.md)。
 
 ## NAS 配置与首次安装
