@@ -24,7 +24,6 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: ${YUNPLEX2_MEMORY:-1g}
     memswap_limit: ${YUNPLEX2_MEMORY:-1g}
-    cpus: ${YUNPLEX2_CPUS:-2}
     pids_limit: 256
     logging:
       driver: json-file

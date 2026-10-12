@@ -27,7 +27,7 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 | `NAS_MUSIC_DIR`                | 已存在的音乐目录，容器中映射为 `/mnt/nas`        |
 | `NAS_PORT`、`NAS_BIND_ADDRESS` | 网页端口与监听地址                               |
 | `NAS_UID`、`NAS_GID`           | 非 root 应用运行用户，需要音乐目录读写权限       |
-| `NAS_MEMORY`、`NAS_CPUS`       | 应用内存和 CPU 上限，默认 `1g` 和 `2`            |
+| `NAS_MEMORY`                 | 应用内存上限，默认 `1g`                          |
 
 路径、UID 和 GID 必须配置，没有个人机器默认值。容器配置见 [deploy/nas.compose.yml](../deploy/nas.compose.yml)。应用目录的父目录需要先存在；部署不会替音乐目录修改权限。
 
@@ -68,9 +68,9 @@ Forgejo 12 不支持 `concurrency`。检查与构建可以被新推送取消；�
 
 ## 资源与保留
 
-质量 job 限制 3 GiB，Vitest 最多两个 worker，浏览器测试串行。Docker 构建限制 3 GiB、两个 CPU；部署 job 512 MiB，部署工具容器 256 MiB。runner 全局的 `capacity: 2` 仍允许两个仓库任务一起运行；可在 NAS 的 runner 配置中设 `capacity: 1`、`container.options: "--memory=3g --cpus=2"`，减少同时占用。
+质量 job 限制 3 GiB，Vitest 最多两个 worker。Docker 构建限制 3 GiB；部署 job 512 MiB，部署工具容器 256 MiB。这台 NAS 不支持 CPU 配额，构建、测试、应用和维护容器均不设置 CPU 硬上限。runner 全局的 `capacity: 2` 仍允许两个仓库任务一起运行；可在 NAS 的 runner 配置中设 `capacity: 1`、`container.options: "--memory=3g"`，减少同时占用。
 
-应用默认限制 1 GiB、两个 CPU，不使用 swap。这个值是上限，实际占用由歌单规模、下载和标签写入决定。Docker 测试输出就绪后的内存；它不能代表真实下载时的峰值。镜像超过 256 MiB 会使 CI 失败；镜像只包含生产包和维护工具，并移除网易云依赖附带的网页、截图和示例。
+应用默认限制 1 GiB 内存，不使用 swap。这个值是上限，实际占用由歌单规模、下载和标签写入决定。Docker 测试输出就绪后的内存；它不能代表真实下载时的峰值。镜像超过 256 MiB 会使 CI 失败；镜像只包含生产包和维护工具，并移除网易云依赖附带的网页、截图和示例。
 
 部署成功后保留最新三个完整 SHA 镜像，以及所有容器仍在使用的镜像和上一版镜像；只清理本项目标记且超过七天的闲置构建缓存。升级备份保留最新三份，并保护本次升级备份。日志最多三个 10 MiB 文件。清理不使用全局 `docker prune`，不处理其他项目、数据卷或音乐文件。
 
@@ -80,7 +80,7 @@ NAS 自动部署每次升级前会把应用数据备份到 `backups/`。备份�
 
 本机 [docker-compose.yml](../docker-compose.yml) 的容器名是 `yunplex2`，可用 [scripts/maintenance.sh](../scripts/maintenance.sh) 手动维护。应用应先停止，`/app/data` 使用 bind mount，备份目录放在数据目录之外：
 
-手动 Compose 默认以 UID/GID `1000:1000` 运行，也可设置 `YUNPLEX2_UID`、`YUNPLEX2_GID`。启动前让该用户可以读写数据目录和音乐挂载；内存、CPU 上限分别由 `YUNPLEX2_MEMORY`、`YUNPLEX2_CPUS` 调整。
+手动 Compose 默认以 UID/GID `1000:1000` 运行，也可设置 `YUNPLEX2_UID`、`YUNPLEX2_GID`。启动前让该用户可以读写数据目录和音乐挂载；内存上限由 `YUNPLEX2_MEMORY` 调整。
 
 ```sh
 docker compose stop yunplex2

@@ -37,7 +37,6 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: ${NAS_MEMORY:-1g}
     memswap_limit: ${NAS_MEMORY:-1g}
-    cpus: ${NAS_CPUS:-2}
     pids_limit: 256
     logging:
       driver: json-file

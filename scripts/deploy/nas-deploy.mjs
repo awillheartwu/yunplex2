@@ -21,7 +21,7 @@ export function deploymentConfig(env) {
     address: env.NAS_BIND_ADDRESS || '0.0.0.0',
     port: Number(env.NAS_PORT || 3000),
     uid: Number(env.NAS_UID), gid: Number(env.NAS_GID),
-    memory: env.NAS_MEMORY || '1g', cpus: env.NAS_CPUS || '2',
+    memory: env.NAS_MEMORY || '1g',
   }
   for (const key of ['NAS_APP_ROOT', 'NAS_MUSIC_DIR', 'NAS_UID', 'NAS_GID']) if (!env[key]) throw new Error(`Set the repository variable ${key}`)
   if (!/^[a-f0-9]{40}$/.test(config.revision ?? '') || config.image !== `reyunplex:${config.revision}`) throw new Error('A full commit SHA and matching reyunplex image tag are required')
@@ -29,7 +29,7 @@ export function deploymentConfig(env) {
   if (!/^\/volume\d+\/[\w./-]+$/.test(config.music) || resolve(config.music) !== config.music || config.music.startsWith(`${dirname(config.root)}/`) || config.music === dirname(config.root)) throw new Error('Music must be a separate absolute NAS directory')
   if (!Number.isInteger(config.port) || config.port < 1024 || config.port > 65535) throw new Error('Invalid LAN port')
   for (const id of [config.uid, config.gid]) if (!Number.isInteger(id) || id < 1 || id > 2147483647) throw new Error('A non-root runtime UID and GID are required')
-  if (!/^[1-9]\d*[mg]$/.test(config.memory) || !Number.isFinite(Number(config.cpus)) || Number(config.cpus) <= 0) throw new Error('Invalid NAS_MEMORY or NAS_CPUS resource limit')
+  if (!/^[1-9]\d*[mg]$/.test(config.memory)) throw new Error('Invalid NAS_MEMORY resource limit')
   const octets = config.address.split('.').map(Number)
   if (octets.length !== 4 || octets.some(n => !Number.isInteger(n) || n < 0 || n > 255) || (config.address !== '0.0.0.0' && octets[0] !== 10 && !(octets[0] === 192 && octets[1] === 168) && !(octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31))) throw new Error('Bind to a LAN IPv4 address or 0.0.0.0')
   return config
@@ -40,7 +40,7 @@ export function composeEnvironment(config) {
     REYUNPLEX_IMAGE: config.image, NAS_APP_ROOT: config.root,
     NAS_MUSIC_DIR: config.music, NAS_BIND_ADDRESS: config.address,
     NAS_PORT: String(config.port), NAS_UID: String(config.uid), NAS_GID: String(config.gid),
-    NAS_MEMORY: config.memory, NAS_CPUS: config.cpus,
+    NAS_MEMORY: config.memory,
   }
 }
 
@@ -78,7 +78,7 @@ export async function deploy(config, dependencies = {}) {
   const helperSource = await readFile(helperFile, 'utf8')
   const helperName = `reyunplex-deploy-helper-${randomUUID()}`
   const helper = async input => JSON.parse(await run([
-    'run', '--rm', '-i', '--name', helperName, '--network', 'none', '--memory', '256m', '--memory-swap', '256m', '--cpus', '1', '--tmpfs', '/app/data', '--user', input.action === 'prepare' ? '0:0' : `${config.uid}:${config.gid}`,
+    'run', '--rm', '-i', '--name', helperName, '--network', 'none', '--memory', '256m', '--memory-swap', '256m', '--tmpfs', '/app/data', '--user', input.action === 'prepare' ? '0:0' : `${config.uid}:${config.gid}`,
     '--mount', input.action === 'prepare'
       ? `type=bind,source=${dirname(config.root)},target=/nas-parent`
       : `type=bind,source=${config.root},target=/application`,

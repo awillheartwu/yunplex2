@@ -23,14 +23,14 @@ async function directory() {
 async function state(root: string) { return JSON.parse(await readFile(join(root, 'deployment.json'), 'utf8')) }
 
 it('requires a full SHA, a dedicated NAS directory, separate media and a non-root user', () => {
-  expect(config()).toMatchObject({ port: 3000, uid: 1000, gid: 1000, memory: '1g', cpus: '2' })
+  expect(config()).toMatchObject({ port: 3000, uid: 1000, gid: 1000, memory: '1g' })
   const valid = variables
   for (const patch of [
     { REYUNPLEX_IMAGE: 'reyunplex:latest' }, { REYUNPLEX_REVISION: 'short' },
     { NAS_APP_ROOT: '/volume1/docker' }, { NAS_APP_ROOT: './data' },
     { NAS_MUSIC_DIR: '/volume1/docker/reyunplex/data' }, { NAS_MUSIC_DIR: '/volume1/music/../docker' },
     { NAS_APP_ROOT: '' }, { NAS_MUSIC_DIR: '' }, { NAS_UID: '' }, { NAS_GID: '' },
-    { NAS_MEMORY: '-1g' }, { NAS_CPUS: 'unlimited' }, { NAS_UID: '0' }, { NAS_GID: '-1' }, { NAS_PORT: '65536' }, { NAS_BIND_ADDRESS: '1.2.3.4' },
+    { NAS_MEMORY: '-1g' }, { NAS_UID: '0' }, { NAS_GID: '-1' }, { NAS_PORT: '65536' }, { NAS_BIND_ADDRESS: '1.2.3.4' },
   ]) expect(() => deploymentConfig({ ...valid, ...patch })).toThrow()
 })
 
@@ -73,7 +73,7 @@ type FakeContainer = {
   Mounts: { Type: string; Source: string; Destination: string; RW: boolean }[]
 }
 type Options = { input?: string; allowFailure?: boolean }
-async function harness(options: { existing?: boolean; ready?: boolean; backupFails?: boolean; helperStopFails?: boolean; lockExists?: boolean; stopFails?: boolean; oldData?: string; imageRevision?: string; competitor?: boolean } = {}) {
+async function harness(options: { existing?: boolean; ready?: boolean; backupFails?: boolean; helperStopFails?: boolean; lockExists?: boolean; stopFails?: boolean; oldData?: string; imageRevision?: string; competitor?: boolean; unsupportedCpuQuota?: boolean } = {}) {
   const root = await directory(), settings = config(), calls: string[][] = []
   const data = join(root, 'data')
   let current: FakeContainer | null = null
@@ -97,6 +97,7 @@ async function harness(options: { existing?: boolean; ready?: boolean; backupFai
   }
   const run = async (args: string[], io: Options = {}) => {
     calls.push(args)
+    if (options.unsupportedCpuQuota && args.some(arg => ['--cpus', '--cpu-period', '--cpu-quota'].includes(arg))) throw new Error('NanoCPUs can not be set, as your kernel does not support CPU CFS scheduler or the cgroup is not mounted')
     if (args[0] === 'info') return JSON.stringify({ OSType: 'linux', Architecture: 'x86_64' })
     if (args[0] === 'image' && args[1] === 'ls') return ''
     if (args[0] === 'image') return JSON.stringify([{ Os: 'linux', Architecture: 'amd64', Config: { Labels: { 'org.opencontainers.image.revision': options.imageRevision ?? revision } } }])
@@ -156,6 +157,12 @@ it('deploys a fresh database and persists host Compose settings without any data
   expect(h.calls.filter(args => args[0] === 'run' && args.includes('-i')).every(args => args.includes('--network') && args.includes('none'))).toBe(true)
   const helpers = h.calls.filter(args => args[0] === 'run' && args.includes('-i'))
   expect(helpers.filter(args => !args.at(-1)?.includes('"action":"prepare"')).every(args => args.includes(`type=bind,source=${h.settings.root},target=/application`))).toBe(true)
+})
+
+it('completes deployment on a NAS without CPU quotas', async () => {
+  const h = await harness({ unsupportedCpuQuota: true })
+  await deploy(h.settings, h.dependencies)
+  expect(await state(h.root)).toMatchObject({ status: 'ready', revision })
 })
 
 it('backs up stopped data before candidate startup and preserves the old settings', async () => {
