@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile, mkdir, readdir, rm, lstat, symlink } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
-import { deploy, deploymentConfig } from '../../scripts/deploy/nas-deploy.mjs'
+import { composeEnvironment, deploy, deploymentConfig } from '../../scripts/deploy/nas-deploy.mjs'
 import { hostOperation } from '../../scripts/deploy/host-state.mjs'
 import { backup, verify } from '../../scripts/maintenance/bundle.mjs'
 
@@ -32,6 +32,11 @@ it('requires a full SHA, a dedicated NAS directory, separate media and a non-roo
     { NAS_APP_ROOT: '' }, { NAS_MUSIC_DIR: '' }, { NAS_UID: '' }, { NAS_GID: '' },
     { NAS_MEMORY: '-1g' }, { NAS_CPUS: 'unlimited' }, { NAS_UID: '0' }, { NAS_GID: '-1' }, { NAS_PORT: '65536' }, { NAS_BIND_ADDRESS: '1.2.3.4' },
   ]) expect(() => deploymentConfig({ ...valid, ...patch })).toThrow()
+})
+
+it('accepts a trailing slash in the music directory without changing the Compose mount', () => {
+  const settings = deploymentConfig({ ...variables, NAS_MUSIC_DIR: `${variables.NAS_MUSIC_DIR}/` })
+  expect(composeEnvironment(settings).NAS_MUSIC_DIR).toBe(variables.NAS_MUSIC_DIR)
 })
 
 it('initializes empty managed data once and leaves data and saved ownership intact on retry', async () => {

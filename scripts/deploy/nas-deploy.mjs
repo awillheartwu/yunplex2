@@ -17,7 +17,7 @@ export function deploymentConfig(env) {
     image: env.REYUNPLEX_IMAGE,
     revision: env.REYUNPLEX_REVISION,
     root: env.NAS_APP_ROOT,
-    music: env.NAS_MUSIC_DIR,
+    music: env.NAS_MUSIC_DIR?.replace(/\/+$/, ''),
     address: env.NAS_BIND_ADDRESS || '0.0.0.0',
     port: Number(env.NAS_PORT || 3000),
     uid: Number(env.NAS_UID), gid: Number(env.NAS_GID),
