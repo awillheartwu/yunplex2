@@ -6,14 +6,14 @@
           v-for="toast in toasts"
           :key="toast.id"
           class="toast-card"
-          :class="`toast-${toast.type}`"
+          :class="[`toast-${toast.type}`, { 'toast-card--detailed': !!toast.message }]"
         >
-          <AppIcon :name="toastIcon(toast.type)" :size="17" />
+          <span class="toast-icon"><AppIcon :name="toastIcon(toast.type)" :size="16" /></span>
           <div class="min-w-0 flex-1">
             <p class="toast-title">{{ toast.title }}</p>
             <p v-if="toast.message" class="toast-message">{{ toast.message }}</p>
           </div>
-          <button class="icon-button" type="button" aria-label="关闭提示" @click="dismiss(toast.id)">
+          <button class="icon-button toast-close" type="button" aria-label="关闭提示" @click="dismiss(toast.id)">
             <AppIcon name="close" :size="15" />
           </button>
         </div>

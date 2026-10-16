@@ -101,14 +101,12 @@ for (const width of [375, 1440]) {
 
     const scoreChip = page.locator('.source-adoption__table .source-adoption__score')
     await expect(scoreChip).toHaveText('评分 95.5')
-    await page.locator('.source-adoption__table tbody tr').first().screenshot({ path: `/tmp/quick-score-row-${width}.png` })
     await page.getByRole('button', { name: '查看证据', exact: true }).click()
     const drawer = page.getByRole('dialog', { name: '审核样本歌曲 证据详情' })
     await expect(drawer.getByRole('heading', { name: '候选评分' })).toBeVisible()
     await drawer.getByText('查看 1 个候选的评分明细').click()
     await expect(drawer.getByText('95.5 分')).toBeVisible()
     await expect(drawer.getByText('风险：时长接近上限')).toBeVisible()
-    await drawer.screenshot({ path: `/tmp/quick-score-drawer-${width}.png` })
     expect(await drawer.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     await page.keyboard.press('Escape')
 
@@ -144,7 +142,6 @@ for (const width of [375, 1440]) {
     await expect(quick.getByRole('button', { name: '确认并启动处理' })).toBeDisabled()
     await expect(page.getByRole('button', { name: '提交接管方案' })).toBeDisabled()
     await expect(page.locator('.source-adoption__table select').first()).toBeDisabled()
-    await quick.screenshot({ path: `/tmp/quick-initialization-${width}.png` })
     expect(await quick.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })

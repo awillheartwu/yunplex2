@@ -1,12 +1,12 @@
 <template>
-  <div class="mt-2 border rounded-lg p-3" style="background: var(--danger-soft); border-color: var(--danger-border)">
+  <div class="job-error mt-2 border rounded-lg p-3" style="background: var(--danger-soft); border-color: var(--danger-border)">
     <div class="flex items-start gap-2">
       <AppIcon name="warn" :size="14" class="shrink-0 mt-0.5 text-danger" />
       <div class="flex-1 min-w-0">
         <p class="text-sm text-danger font-medium">{{ error.title }}</p>
         <p class="text-sm text-[var(--text-primary)] mt-1">{{ error.message }}</p>
 
-        <div v-if="error.songName || error.artist || error.stage" class="flex items-center gap-4 mt-2 text-2xs text-muted-deep">
+        <div v-if="error.songName || error.artist || error.stage" class="flex flex-wrap items-center gap-4 mt-2 text-2xs text-muted-deep">
           <span v-if="error.songName">歌曲: {{ error.songName }}</span>
           <span v-if="error.artist">艺人: {{ error.artist }}</span>
           <span v-if="error.stage">阶段: {{ stageLabel(error.stage) }}</span>
@@ -37,6 +37,7 @@ function stageLabel(stage: string): string {
     compare: '对比歌单',
     download: '下载歌曲',
     write_tags: '写入标签',
+    tags: '写入标签',
     refresh_plex: '刷新 Plex',
     plex_match: 'Plex 匹配',
     plex_insert: 'Plex 插入',
@@ -45,3 +46,7 @@ function stageLabel(stage: string): string {
   return labels[stage] || stage
 }
 </script>
+
+<style scoped>
+.job-error{text-align:left;overflow-wrap:anywhere}
+</style>

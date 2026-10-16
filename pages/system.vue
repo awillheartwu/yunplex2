@@ -4,7 +4,7 @@
     <PageTabs v-model="activeTab" class="system-view-tabs" :tabs="[{ key: 'health', label: '服务与资源' }, { key: 'logs', label: '运行日志' }]" aria-label="系统视图" />
     <template v-if="activeTab === 'health'">
       <SystemMonitorPanel :dependency-checked-label="dependencyCheckedLabel" :health-items="healthItems" :health-refreshing="healthRefreshing" :kpi-cards="kpiCards" :memory-details="memoryDetails" :overall-tone="overallTone" @refresh-health="refreshDependencyHealth" @copy-diagnostics="copyDiagnostics" />
-      <section class="system-trends" aria-labelledby="system-trends-title"><h2 id="system-trends-title">近期趋势</h2><DashboardCharts :download-trend="downloadTrend" :resource-trend="resourceTrend" /></section>
+      <section class="system-trends" aria-labelledby="system-trends-title"><h2 id="system-trends-title"><AppIcon name="activity" :size="18" />近期趋势</h2><DashboardCharts :download-trend="downloadTrend" :resource-trend="resourceTrend" /></section>
     </template>
     <SystemLogsPanel v-else />
   </div>
@@ -25,6 +25,7 @@ onMounted(async () => { try { downloadTrend.value = (await useApi().get<Dashboar
 <style scoped>
 .system-view-tabs { align-self: flex-start; max-width: 100%; }
 .system-trends { display: flex; flex-direction: column; gap: var(--space-3); }
-.system-trends > h2 { margin: 0; }
+.system-trends > h2 { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.system-trends > h2 svg { color: var(--accent); }
 @media(max-width:720px) { .system-view-tabs { align-self: stretch; } }
 </style>

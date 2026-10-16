@@ -13,7 +13,7 @@ const emit = defineEmits<{ commit: [] }>()
 </script>
 
 <template>
-  <footer class="source-adoption__commit"><div><strong>当前方案</strong><span>接管 {{ initialization.adoptItems }} · 下载 {{ initialization.downloadItems }} · 暂缓 {{ initialization.deferredItems }} · 冲突 {{ initialization.conflictItems }}。提交后应用媒体决定，下载与 Plex 入库由普通同步完成。</span></div><button class="btn btn-primary" :disabled="acting || !canCommit" @click="emit('commit')">提交接管方案</button></footer>
+  <footer class="source-adoption__commit"><div><strong>当前选择</strong><span>使用 Plex {{ initialization.adoptItems }} 首 · 下载 {{ initialization.downloadItems }} 首 · 暂缓 {{ initialization.deferredItems }} 首 · 冲突 {{ initialization.conflictItems }} 首。提交后，启用中的收藏会继续下载并更新 Plex 歌单；暂停的收藏需手动同步。</span></div><button class="btn btn-primary" :disabled="acting || !canCommit" @click="emit('commit')">提交接管方案</button></footer>
 </template>
 
 <style scoped>

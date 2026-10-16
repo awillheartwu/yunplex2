@@ -2,11 +2,17 @@
   <section class="activity-overview" aria-label="当前活动">
     <header class="activity-overview__toolbar">
       <div><h2>当前活动</h2><p>{{ error ? '暂时无法更新活动状态' : connected ? '实时更新' : '定时更新，每 5 秒刷新' }}</p></div>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="refresh"><AppIcon name="refresh" :size="14" :class="{ 'animate-spin': loading }" />刷新</button>
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="loading" @click="refresh"><AppIcon name="refresh" :size="14" :class="{ 'animate-spin': loading }" />刷新</button>
     </header>
     <div v-if="error" class="activity-overview__error" role="alert"><strong>活动读取失败</strong><span>{{ error }}</span><span v-if="snapshot">以下保留上次读取的内容，可能已变化。</span><button class="btn btn-secondary btn-sm" @click="refresh">重试</button></div>
     <p v-if="!snapshot && loading" role="status" class="activity-overview__notice">正在读取活动…</p>
     <template v-if="snapshot">
+      <article v-if="snapshot.plex?.scan" class="activity-overview__plex" aria-label="Plex 音乐库扫描" role="status">
+        <AppIcon name="search" :size="20" />
+        <div><strong>Plex 正在扫描 · {{ snapshot.plex.section }}</strong><p>{{ snapshot.plex.scan.subtitle || snapshot.plex.scan.title || '等待 Plex 索引音乐文件' }}</p><small>{{ snapshot.plex.error || (snapshot.plex.connected ? '扫描状态实时更新，歌曲是否入库仍以文件核对为准。' : '事件连接正在恢复，通过轮询继续核对扫描与文件索引。') }}</small></div>
+        <span v-if="snapshot.plex.scan.progress !== null" class="activity-overview__plex-percent">{{ Math.round(snapshot.plex.scan.progress) }}%</span>
+        <progress :value="snapshot.plex.scan.progress ?? undefined" max="100" aria-label="Plex 当前扫描活动进度" />
+      </article>
       <div v-if="snapshot.downloadControl?.paused || snapshot.downloadControl?.cooldownUntil" class="activity-overview__error" role="status">
         <strong>{{ snapshot.downloadControl.paused ? '下载队列已暂停' : '下载请求冷却中' }}</strong>
         <span>{{ snapshot.downloadControl.message || '请求受到限制，冷却结束后自动继续。' }}</span>
@@ -16,7 +22,7 @@
         <h3>{{ snapshot.unlistedLive.dryRun ? '同步预演' : '同步正在执行' }}</h3>
         <p>{{ snapshot.unlistedLive.currentSourceName }} · {{ liveStageLabel(snapshot.unlistedLive.currentStage) }}</p>
         <p v-if="!snapshot.unlistedLive.dryRun">正在等待对应的运行记录，稍后将自动更新。</p>
-        <button v-if="snapshot.unlistedLive.currentRunId" class="btn btn-secondary btn-sm" :disabled="cancelling || Boolean(error)" @click="cancel(snapshot.unlistedLive.currentRunId)">取消本批同步</button>
+        <button v-if="snapshot.unlistedLive.currentRunId" class="btn btn-ghost btn-sm" :disabled="cancelling || Boolean(error)" @click="cancel(snapshot.unlistedLive.currentRunId)">取消本批同步</button>
       </article>
       <section v-if="snapshot.running.length" class="activity-overview__group" aria-label="执行任务">
         <div class="activity-overview__group-title"><h3>执行任务</h3><span>{{ snapshot.runningTotal }}</span></div>
@@ -29,9 +35,9 @@
         <ActivityRunCard v-for="run in snapshot.waiting" :key="run.id" :run="run" :now="now" :cancelling="false" :stale="Boolean(error)" />
         <NuxtLink v-if="snapshot.waitingTotal > snapshot.waiting.length" to="/task-center?tab=runs&runStatus=awaiting_action" class="activity-overview__more">已显示最近 {{ snapshot.waiting.length }} 项，查看全部 {{ snapshot.waitingTotal }} 项</NuxtLink>
       </section>
-      <div v-if="!snapshot.running.length && !snapshot.waiting.length && !snapshot.unlistedLive && !error" class="activity-overview__idle">
+      <div v-if="!snapshot.running.length && !snapshot.waiting.length && !snapshot.unlistedLive && !snapshot.plex?.scan && !error" class="activity-overview__idle">
         <AppIcon name="checkCircle" :size="28" /><h3>当前没有待办任务</h3><p>同步收藏或添加音乐后，可以在这里跟进进度。</p>
-        <div><NuxtLink to="/sync-sources" class="btn btn-secondary btn-sm">打开音乐库</NuxtLink><NuxtLink to="/manual-download" class="btn btn-secondary btn-sm">添加音乐</NuxtLink></div>
+        <div><NuxtLink to="/sync-sources" class="btn btn-ghost btn-sm">打开音乐库</NuxtLink><NuxtLink to="/manual-download" class="btn btn-secondary btn-sm">添加音乐</NuxtLink></div>
       </div>
     </template>
   </section>
@@ -76,4 +82,11 @@ async function cancel(runId: string) {
 .activity-overview__idle p{font-size:var(--text-sm);color:var(--text-secondary)}
 .activity-overview__idle>div{display:flex;flex-wrap:wrap;gap:var(--space-2)}
 .activity-overview__more{color:var(--accent);font-size:var(--text-sm);text-decoration:underline;text-underline-offset:3px}
+.activity-overview__plex{display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--space-3);padding:var(--space-4);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-surface)}
+.activity-overview__plex>svg{color:var(--running);flex-shrink:0}
+.activity-overview__plex>div{flex:1;min-width:0;overflow-wrap:anywhere}
+.activity-overview__plex p{margin:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}
+.activity-overview__plex small{color:var(--text-tertiary);font-size:var(--text-xs)}
+.activity-overview__plex-percent{font-variant-numeric:tabular-nums;color:var(--running)}
+.activity-overview__plex progress{flex-basis:100%;width:100%;height:var(--space-1_5);accent-color:var(--running)}
 </style>

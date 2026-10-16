@@ -50,9 +50,9 @@ function scoreParts(entry: ScoredCandidate): Array<{ label: string; value: strin
 function scoreMeta(entry: ScoredCandidate): string {
   const score = entry.score
   const detail = [score.eligible ? '参与分数线' : '不参与分数线']
-  if (typeof score.titleStrength === 'number') detail.push(`标题强度 ${score.titleStrength.toFixed(2)}`)
+  if (typeof score.titleStrength === 'number') detail.push(`标题相似度 ${score.titleStrength.toFixed(2)}`)
   if (typeof score.completeArtists === 'boolean') detail.push(`完整艺人 ${score.completeArtists ? '是' : '否'}`)
-  detail.push(typeof score.coverage === 'number' ? `覆盖 ${Math.round(score.coverage * 100)}%` : '覆盖未知')
+  detail.push(typeof score.coverage === 'number' ? `字段覆盖 ${Math.round(score.coverage * 100)}%` : '字段覆盖未知')
   detail.push(typeof score.durationDeltaMs === 'number' ? `时长差 ${(score.durationDeltaMs / 1000).toFixed(1)} 秒` : '时长差未知')
   return detail.join(' · ')
 }
@@ -65,23 +65,23 @@ function scoreMeta(entry: ScoredCandidate): string {
       <button class="icon-button source-adoption__drawer-close" aria-label="关闭详情" @click="emit('close')"><AppIcon name="close" :size="16" /></button>
       <span class="source-adoption__eyebrow">网易云 #{{ item.neteaseSongId }}</span><h3>{{ item.title }}</h3>
       <section><h4>网易云目标</h4><dl><div><dt>艺人</dt><dd>{{ item.artists.join('、') || '未知' }}</dd></div><div><dt>专辑</dt><dd>{{ item.album || '未知' }}</dd></div></dl></section>
-      <section><h4>{{ item.kind === 'preserved' ? '当前 Plex 绑定' : 'Plex 候选' }}</h4><dl v-if="item.candidate"><div><dt>标题</dt><dd>{{ item.candidate.title }}</dd></div><div><dt>艺人</dt><dd>{{ item.candidate.artist || '未知' }}</dd></div><div><dt>专辑</dt><dd>{{ item.candidate.album || '未知' }}</dd></div><div class="source-adoption__drawer-path"><dt>路径</dt><dd>{{ item.candidate.filePath || '无可读路径' }}</dd></div></dl><p v-else class="source-adoption__drawer-empty">{{ item.kind === 'preserved' ? '这是一份旧审核快照；重新分析后会显示当前绑定详情。' : `尚未选择 Plex 候选；当前共发现 ${item.candidates.length} 个可能项。` }}</p></section>
+      <section><h4>{{ item.kind === 'preserved' ? '当前 Plex 绑定' : 'Plex 候选' }}</h4><dl v-if="item.candidate"><div><dt>标题</dt><dd>{{ item.candidate.title }}</dd></div><div><dt>艺人</dt><dd>{{ item.candidate.artist || '未知' }}</dd></div><div><dt>专辑</dt><dd>{{ item.candidate.album || '未知' }}</dd></div><div class="source-adoption__drawer-path"><dt>路径</dt><dd>{{ item.candidate.filePath || '无可读路径' }}</dd></div></dl><p v-else class="source-adoption__drawer-empty">{{ item.kind === 'preserved' ? '这份记录来自较早的分析；重新分析后会显示当前关联详情。' : `尚未选择 Plex 候选；当前共发现 ${item.candidates.length} 个可能项。` }}</p></section>
       <section><h4>匹配证据</h4><div class="source-adoption__evidence-summary"><span class="source-adoption__tier" :class="`source-adoption__tier--${item.tier}`">{{ shared ? (item.evidence.sharedMediaConfirmed ? '共享媒体已确认' : '共享媒体待确认') : tierLabel(item.tier) }}</span><p>{{ evidenceRuleLabel(item) }}</p></div><details><summary>查看原始证据</summary><pre>{{ JSON.stringify(item.evidence, null, 2) }}</pre></details></section>
-      <section v-if="scores.length" class="source-adoption__scored"><h4>候选评分</h4><p class="source-adoption__drawer-empty">评分只用于排序和分数线参考（满分 100），不构成媒体身份绑定依据。</p><details><summary>查看 {{ scores.length }} 个候选的评分明细</summary><ol><li v-for="(entry, index) in scores" :key="`${entry.candidate.ratingKey}-${index}`"><div class="source-adoption__scored-head"><strong>{{ candidateName(entry) }}</strong><span class="source-adoption__score">{{ entry.score.total.toFixed(1) }} 分</span></div><p class="source-adoption__scored-meta">{{ entry.candidate.artist || '未知艺人' }} · {{ entry.candidate.album || '未知专辑' }} · {{ scoreMeta(entry) }}</p><dl class="source-adoption__scored-parts"><div v-for="part in scoreParts(entry)" :key="part.label"><dt>{{ part.label }}</dt><dd>{{ part.value }}</dd></div></dl><p v-if="entry.score.risks?.length" class="source-adoption__scored-risks">风险：{{ entry.score.risks.map(scoreReason).join('；') }}</p><p v-if="entry.score.blocked?.length" class="source-adoption__scored-risks">阻止原因：{{ entry.score.blocked.map(scoreReason).join('；') }}</p></li></ol></details></section>
+      <section v-if="scores.length" class="source-adoption__scored"><h4>候选评分</h4><p class="source-adoption__drawer-empty">评分只用于排序和分数线参考（满分 100），不会直接建立关联。</p><details><summary>查看 {{ scores.length }} 个候选的评分明细</summary><ol><li v-for="(entry, index) in scores" :key="`${entry.candidate.ratingKey}-${index}`"><div class="source-adoption__scored-head"><strong>{{ candidateName(entry) }}</strong><span class="source-adoption__score">{{ entry.score.total.toFixed(1) }} 分</span></div><p class="source-adoption__scored-meta">{{ entry.candidate.artist || '未知艺人' }} · {{ entry.candidate.album || '未知专辑' }} · {{ scoreMeta(entry) }}</p><dl class="source-adoption__scored-parts"><div v-for="part in scoreParts(entry)" :key="part.label"><dt>{{ part.label }}</dt><dd>{{ part.value }}</dd></div></dl><p v-if="entry.score.risks?.length" class="source-adoption__scored-risks">风险：{{ entry.score.risks.map(scoreReason).join('；') }}</p><p v-if="entry.score.blocked?.length" class="source-adoption__scored-risks">不参与分数线：{{ entry.score.blocked.map(scoreReason).join('；') }}</p></li></ol></details></section>
       <p v-if="error" role="alert" class="shared-media-review__error">{{ error }}</p>
       <section v-if="shared" class="shared-media-review">
-        <h4>以下歌曲将共用同一媒体</h4><p class="source-adoption__drawer-empty">只共享文件与 Plex 媒体，保留各自歌曲 ID 和歌单条目。请核对是否为同一录音；不同演唱者、现场版或剪辑版不要共用。</p>
+        <h4>以下歌曲将共用同一媒体</h4><p class="source-adoption__drawer-empty">共用后只共享同一个文件，各自的网易云歌曲与歌单条目不变。请确认它们是同一录音；不同演唱者、现场版或剪辑版不要共用。</p>
         <p class="shared-media-review__path">{{ shared.filePath }}</p>
         <ul><li v-for="song in shared.songs" :key="song.songId"><strong>{{ song.title }} · #{{ song.songId }}</strong><span>{{ song.artists.join('、') }} · {{ song.album }}</span><small v-if="song.albumId">专辑 #{{ song.albumId }}<template v-if="song.publishTime"> · {{ new Date(song.publishTime).toLocaleDateString() }}</template></small><small>{{ song.durationMs == null ? '时长未知' : `${(song.durationMs / 1000).toFixed(3)} 秒` }}</small></li></ul>
-        <button v-if="item.kind === 'actionable' && item.canSearch" class="btn btn-secondary" :disabled="acting" @click="confirmSharing = true">确认这 {{ shared.songs.length }} 首共用媒体</button>
+        <button v-if="item.kind === 'actionable' && item.canSearch" class="btn btn-soft" :disabled="acting" @click="confirmSharing = true">确认这 {{ shared.songs.length }} 首共用媒体</button>
         <p v-if="item.evidence.sharedMediaConfirmed" role="status">已记录共享确认，提交接管方案后生效。</p>
       </section>
-      <ConfirmDialog :visible="confirmSharing" title="确认共享同一录音" :message="`将所列 ${shared?.songs.length || 0} 首歌曲共同设为使用此 Plex 媒体。不会合并网易云 ID 或歌单条目；仅更新草案，提交后生效。`" confirm-label="确认共用并更新草案" :busy="acting" @confirm="confirmSharing = false; emit('confirmShared', item)" @cancel="confirmSharing = false" />
+      <ConfirmDialog :visible="confirmSharing" title="确认共享同一录音" :message="`把所列 ${shared?.songs.length || 0} 首歌曲共同设为使用这一份 Plex 媒体，不会合并网易云歌曲或歌单条目。只修改当前方案，提交接管方案后生效。`" confirm-label="确认共用" :busy="acting" @confirm="confirmSharing = false; emit('confirmShared', item)" @cancel="confirmSharing = false" />
       <div v-if="!shared && item.kind === 'actionable' && item.candidate && item.allowedDecisions.includes('adopt')" class="source-adoption__direct-confirm">
         <button class="btn btn-primary w-full" :disabled="acting || item.decision === 'adopt'" @click="emit('adopt', item)">{{ item.decision === 'adopt' ? '已选择使用当前候选' : '使用当前候选' }}</button>
-        <p class="source-adoption__drawer-empty">仅更新草案，提交接管方案后生效。</p>
+        <p class="source-adoption__drawer-empty">只修改当前方案，提交接管方案后生效。</p>
       </div>
-      <button v-if="item.kind === 'actionable' && item.canSearch" class="btn btn-secondary w-full" :disabled="acting" @click="emit('search', item)">搜索其他 Plex 媒体</button>
+      <button v-if="item.kind === 'actionable' && item.canSearch" class="btn btn-info w-full" :disabled="acting" @click="emit('search', item)">搜索其他 Plex 媒体</button>
       <p v-else-if="item.kind === 'actionable' && item.unavailableReason" class="source-adoption__drawer-empty">{{ item.unavailableReason }}</p>
       <div v-if="searchResults.length" class="source-adoption__search-results"><button v-for="candidate in searchResults" :key="candidate.ratingKey" :disabled="acting" @click="emit('choose', item, candidate)"><strong>{{ candidate.title }}</strong><span>{{ candidate.artist }} · {{ candidate.album }}</span></button></div>
     </aside>

@@ -362,7 +362,8 @@ async function resolveOne(input: {
     return awaitingManualResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确暂缓，等待手动选择')
   }
 
-  if (input.initializationDecision === 'download') {
+  const completedManagedDownload = managed && expectedLocalPath && validateLocalAudioFile(expectedLocalPath).valid
+  if (input.initializationDecision === 'download' && !completedManagedDownload) {
     return downloadResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确选择下载并托管')
   }
 
@@ -370,7 +371,7 @@ async function resolveOne(input: {
     return awaitingManualResolution(base, mediaPlan.filePath ?? expectedLocalPath, localAsset, mediaPlan.message)
   }
 
-  const policyRequiresDownload = mediaPlan?.disposition === 'download_missing'
+  const policyRequiresDownload = (mediaPlan?.disposition === 'download_missing' && !completedManagedDownload)
     || mediaPlan?.disposition === 'redownload_replaced'
   if (policyRequiresDownload) {
     return downloadResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, mediaPlan?.message)

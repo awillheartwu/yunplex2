@@ -1,4 +1,5 @@
 import { getMediaCorrection } from './media-corrections'
+import { openPlexScanEvents } from '../plex-scan-events'
 import type { AppConfig } from '../config/types'
 import type { JobStepContext } from '../job/types'
 import type { SyncState } from '../log/types'
@@ -79,6 +80,8 @@ interface ReconcilePlexPlaylistInput {
   skipRemoveExtra: boolean
   retryUnresolvedSnapshot: boolean
   needsPlexRefresh: boolean
+  expectedPlexFingerprint?: string
+  assertRecoveryContextUnchanged?: () => void
   splitArtists: (artists: { name: string }[]) => [string, string]
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
@@ -118,7 +121,7 @@ export async function reconcilePlexPlaylist(
     log,
   } = input
 
-  const reorderStep = job.startStep('reorder', '重排 Plex 歌单', {
+  const reorderStep = job.startStep('reorder', '核对 Plex 媒体并更新歌单', {
     context: {
       ...stepContext,
       plexPlaylistName: plexPlaylist.title || stepContext.plexPlaylistName,
@@ -126,12 +129,7 @@ export async function reconcilePlexPlaylist(
       sectionKey,
     },
   })
-  setStage('updating_plex_playlist')
-
-  if (needsPlexRefresh && sectionKey) {
-    await triggerRescan(sectionKey)
-    throwIfCancelled()
-  }
+  setStage('refreshing_plex')
 
   const plexMatchResults = new Map<number, PlexMatchResult>()
   const failedPlexRetrySongIds: number[] = []
@@ -144,9 +142,18 @@ export async function reconcilePlexPlaylist(
       ? [{ key: String(index), song: resolution.song, filePath }]
       : []
   })
-  const batchMatches = await matchTracksInPlexWithRetry(sectionKey, retryRequests, config,
-    retryUnresolvedSnapshot ? 0 : config.sync.plexScanRetries,
-    config.sync.plexScanRetryDelaySec * 1000, { throwIfCancelled })
+  const needsScan = Boolean(needsPlexRefresh && sectionKey && retryRequests.length)
+  const scanEvents = needsScan ? await openPlexScanEvents(config.plex, sectionKey) : undefined
+  let batchMatches: Map<string, PlexMatchResult>
+  try {
+    if (scanEvents && !scanEvents.getState().connected) log('warn', 'Plex 扫描事件未连接，继续轮询扫描状态与文件路径')
+    const scanRequest = needsScan ? await triggerRescan(sectionKey) : undefined
+    if (scanRequest) scanEvents?.setActivityId(scanRequest.activityId, scanRequest.requestedAt)
+    throwIfCancelled()
+    batchMatches = await matchTracksInPlexWithRetry(sectionKey, retryRequests, config,
+      retryUnresolvedSnapshot && !scanRequest ? 0 : config.sync.plexScanRetries,
+      config.sync.plexScanRetryDelaySec * 1000, { throwIfCancelled, scanRequest, scanEvents })
+  } finally { await scanEvents?.close() }
 
   for (const [index, resolution] of resolutions.entries()) {
     throwIfCancelled()
@@ -246,7 +253,7 @@ export async function reconcilePlexPlaylist(
 
     job.updateSong(songId, {
       error: {
-        title: cause === 'library_visibility' ? 'Plex 看不到刚下载的文件' : 'Plex 未匹配到歌曲',
+        title: cause === 'scan_timeout' ? '等待 Plex 索引超时' : cause === 'library_visibility' ? 'Plex 尚未索引托管文件' : 'Plex 未匹配到歌曲',
         message: describePlexMatchFailure(cause, config),
         stage: 'plex_match',
         songName: resolution.song.name,
@@ -257,6 +264,7 @@ export async function reconcilePlexPlaylist(
           matchedBy: result.matchedBy,
           expectedLocalPath: result.localFilePath,
           traces: result.traces,
+          scan: result.scan,
         },
       },
     })
@@ -264,6 +272,9 @@ export async function reconcilePlexPlaylist(
 
   const currentPlaylistTracks = (await getPlaylistTracks(plexPlaylist.ratingKey, 99999))
     .filter(track => track.playlistItemID)
+  if (input.expectedPlexFingerprint && buildPlexPlaylistFingerprint(currentPlaylistTracks) !== input.expectedPlexFingerprint) {
+    throw new Error('Plex 歌单在索引恢复期间被修改，本轮未执行歌单写入，请正常同步')
+  }
   const currentItems = currentPlaylistTracks.map(track => ({
     ratingKey: track.ratingKey,
     playlistItemId: track.playlistItemID!,
@@ -404,9 +415,18 @@ export async function reconcilePlexPlaylist(
     }
   }
 
+  setStage('updating_plex_playlist')
   let releaseIdentityLock: (() => void) | null = null
   try {
     releaseIdentityLock = await acquireIdentityMutationLock()
+    input.assertRecoveryContextUnchanged?.()
+    if (input.expectedPlexFingerprint) {
+      const writeSnapshot = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
+      if (buildPlexPlaylistFingerprint(writeSnapshot) !== input.expectedPlexFingerprint) {
+        throw new Error('Plex 歌单在索引恢复期间被修改，本轮未执行歌单写入，请正常同步')
+      }
+      input.assertRecoveryContextUnchanged?.()
+    }
     const currentBindings = applyVerifiedBindingsIfSnapshotCurrent(
       bindingVersionSnapshot,
       pendingVerifiedBindings,

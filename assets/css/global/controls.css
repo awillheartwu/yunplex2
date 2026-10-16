@@ -45,14 +45,14 @@ select.form-input {
   background-repeat: no-repeat;
   padding-right: var(--space-9);
 }
-/* One action-control scale: 40px desktop, 44px mobile. sm/xs remain compatibility aliases. */
+/* Action weight and size are independent; mobile controls retain a 44px target. */
 .btn {
   display: inline-flex;
   flex-shrink: 0;
   min-height: var(--control-height);
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1_5);
   padding: 0 var(--space-3_5);
   font-size: var(--text-base);
   font-weight: var(--font-weight-medium);
@@ -78,7 +78,7 @@ select.form-input {
 .btn-primary {
   background: var(--accent);
   color: var(--on-accent);
-  border-color: var(--accent-strong);
+  font-weight: var(--font-weight-semibold);
   box-shadow: none;
 }
 .btn-primary:hover:not(:disabled) {
@@ -86,39 +86,60 @@ select.form-input {
   box-shadow: none;
 }
 .btn-secondary {
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  border-color: var(--border-primary);
+  background: var(--bg-control);
+  color: var(--text-primary);
   box-shadow: none;
 }
 .btn-secondary:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: var(--border-secondary);
+  background: var(--bg-control-hover);
   box-shadow: none;
 }
 .btn-danger {
   background: var(--danger-soft);
   color: var(--danger);
-  border-color: var(--danger-border);
 }
 .btn-danger:hover:not(:disabled) {
-  box-shadow: var(--focus-ring);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 .btn-ghost {
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--text-secondary);
-  border-color: var(--border-primary);
 }
 .btn-ghost:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.btn.text-danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
-.btn-sm, .btn-xs {
-  min-height: var(--control-height);
+.btn-soft {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.btn-soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.btn-info {
+  background: var(--running-soft);
+  color: var(--running);
+}
+.btn-info:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--running) 18%, transparent);
+}
+.btn-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.btn-warning:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+.btn.text-danger { color: var(--danger); background: var(--danger-soft); }
+.btn-sm {
+  min-height: var(--control-height-sm);
   padding: 0 var(--space-3);
-  font-size: var(--text-base);
-  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+.btn-xs {
+  min-height: var(--control-height-xs);
+  padding: 0 var(--space-2_5);
+  font-size: var(--text-sm);
 }
 .btn > .app-icon { width: 1rem; height: 1rem; }
 input[type='checkbox'] {
@@ -171,12 +192,12 @@ input[type='checkbox']:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: var(--control-height);
-  min-height: var(--control-height);
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-primary);
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
   transition:
     background var(--duration-fast) ease,
@@ -186,7 +207,6 @@ input[type='checkbox']:disabled {
 .icon-button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: var(--border-primary);
 }
 .icon-button:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
 .icon-button:focus-visible,
@@ -202,4 +222,21 @@ input[type='checkbox']:disabled {
 input[type='radio'],
 input[type='range'] {
   accent-color: var(--accent);
+}
+
+[data-setting-target] {
+  scroll-margin-block: calc(var(--app-topbar-block-size) + var(--space-6));
+}
+.setting-search-target {
+  outline: var(--focus-width) solid transparent;
+  outline-offset: var(--focus-offset);
+  animation: setting-search-highlight calc(var(--duration-slow) * 8) ease-out;
+}
+.setting-search-target:focus-visible { outline-color: var(--accent); }
+@keyframes setting-search-highlight {
+  from { outline-color: var(--accent); }
+  to { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setting-search-target { animation: none; outline-color: var(--accent); }
 }

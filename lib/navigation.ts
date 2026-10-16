@@ -16,5 +16,5 @@ export function pageContext(path: string) {
   if (path === '/logs') return { title: '运行日志', section: '系统', parent: '/system', parentLabel: '系统状态' }
   if (path === '/match-reviews') return { title: '高级媒体关联', section: '系统管理', parent: '/config', parentLabel: '偏好设置' }
   const item = [...workspaceNavigation, ...managementNavigation].find(item => item.path === path)
-  return { title: item?.label ?? 'reYunPlex', section: managementNavigation.some(item => item.path === path) ? '系统管理' : '音乐工作区', parent: '', parentLabel: '' }
+  return { title: item?.label ?? 'YunPlex', section: managementNavigation.some(item => item.path === path) ? '系统管理' : '音乐工作区', parent: '', parentLabel: '' }
 }

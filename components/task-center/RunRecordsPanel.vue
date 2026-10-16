@@ -29,7 +29,7 @@
       </template>
 
       <template #advanced-footer="{ close }">
-        <button class="btn btn-secondary" type="button" @click="resetDraftFilters">重置</button>
+        <button class="btn btn-ghost" type="button" @click="resetDraftFilters">重置</button>
         <button class="btn btn-primary" type="button" @click="applyDraftFilters(close)">应用</button>
       </template>
 
@@ -41,7 +41,7 @@
       </template>
 
       <template #actions>
-        <button class="btn btn-secondary btn-xs" type="button" :disabled="runs.loading.value" @click="runs.fetch()">
+        <button class="btn btn-ghost btn-xs" type="button" :disabled="runs.loading.value" @click="runs.fetch()">
           <AppIcon :name="runs.loading.value ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': runs.loading.value }" />
           刷新
         </button>

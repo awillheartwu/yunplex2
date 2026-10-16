@@ -42,8 +42,7 @@ describe('run presentation', () => {
     expect(runBadgeStatus('cancelled')).toBe('idle')
   })
 
-  it('presents immutable legacy summaries with current failure-cache semantics', () => {
-    expect(runSummaryLabel('10 个源，失败 3 首，266 首已忽略')).toBe('10 个源，失败 3 首，266 首需关注')
+  it('uses the fallback when the run summary is empty', () => {
     expect(runSummaryLabel('', '同步任务')).toBe('同步任务')
   })
 })

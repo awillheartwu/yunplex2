@@ -27,8 +27,15 @@
 .source-adoption__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-4);
   flex-wrap: wrap;
+}
+.source-adoption__status {
+  min-height: var(--control-height-sm);
+  padding-inline: var(--space-3);
+}
+@media (max-width: 767px) {
+  .source-adoption__status { min-height: var(--control-height-touch); }
 }
 .source-adoption__overview { overflow: hidden; }
 .source-adoption__steps { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); font-size: var(--text-xs); }
@@ -81,7 +88,7 @@
   .source-adoption__hero, .source-adoption__incompatible { align-items: flex-start; flex-direction: column; }
 }
 
-.source-adoption__tools { border: 1px solid var(--accent); border-radius: var(--radius-md); background: var(--accent-muted); padding: var(--space-3) var(--space-4); }
+.source-adoption__tools { border: 1px solid var(--accent); border-radius: var(--radius-md); background: var(--bg-surface); padding: var(--space-3) var(--space-4); }
 .source-adoption__tools-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .source-adoption__tools-row strong { flex: 1; font-size: var(--text-sm); }
 .source-adoption__tools p { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
@@ -89,3 +96,6 @@
 .source-adoption__group[data-tone="recommended"] span, .source-adoption__group[data-tone="preserved"] span { color: var(--success); background: var(--success-soft); }
 .source-adoption__group[data-tone="needs_review"] span { color: var(--warning); background: var(--warning-soft); }
 .source-adoption__group[data-tone="conflict"] span { color: var(--danger); background: var(--danger-soft); }
+.source-adoption__library-change{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);padding:var(--space-4);border-inline-start:3px solid var(--warning)}
+.source-adoption__library-change>div{flex:1;min-width:0}
+.source-adoption__library-change p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-sm)}

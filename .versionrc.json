@@ -12,6 +12,6 @@
   "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
   "skip": {
     "commit": false,
-    "tag": false
+    "tag": true
   }
 }

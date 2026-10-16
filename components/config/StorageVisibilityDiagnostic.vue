@@ -4,59 +4,47 @@
     :class="`storage-diagnostic--${diagnostic.status}`"
     role="status"
     aria-live="polite"
-    aria-label="Plex 文件发布链路检查结果"
+    aria-label="音乐目录检查结果"
   >
     <header class="storage-diagnostic__header">
       <span class="storage-diagnostic__icon" aria-hidden="true">
-        <AppIcon :name="diagnostic.status === 'verified' ? 'checkCircle' : 'warn'" :size="17" />
+        <AppIcon :name="diagnostic.status === 'warning' ? 'warn' : 'checkCircle'" :size="17" />
       </span>
       <div>
-        <strong>{{ diagnostic.status === 'verified' ? '文件发布链路已验证' : '文件发布链路待确认' }}</strong>
-        <p>{{ diagnostic.summary }}</p>
+        <strong>{{ diagnostic.summary }}</strong>
       </div>
     </header>
 
     <dl class="storage-diagnostic__paths">
       <div>
-        <dt>应用下载目录</dt>
+        <dt>YunPlex 下载目录</dt>
         <dd><code>{{ diagnostic.downloadDir }}</code></dd>
       </div>
       <div>
-        <dt>Plex 路径前缀</dt>
-        <dd><code>{{ diagnostic.plexPathPrefix || '未配置' }}</code></dd>
-      </div>
-      <div>
-        <dt>Plex「{{ diagnostic.sectionName }}」Location</dt>
-        <dd v-if="diagnostic.sectionLocations.length">
-          <code v-for="location in diagnostic.sectionLocations" :key="location">{{ location }}</code>
-        </dd>
-        <dd v-else><span>未读取到</span></dd>
+        <dt>Plex 对应目录</dt>
+        <dd><code>{{ diagnostic.plexPathPrefix || diagnostic.downloadDir }}</code></dd>
       </div>
     </dl>
 
-    <ul class="storage-diagnostic__checks" aria-label="检查项目">
-      <li v-for="check in diagnostic.checks" :key="check.key" :class="`storage-diagnostic__check--${check.status}`">
-        <AppIcon :name="check.status === 'pass' ? 'checkCircle' : 'warn'" :size="14" />
-        <span>
-          <strong>{{ check.label }}</strong>
-          <small>{{ check.detail }}</small>
-        </span>
-      </li>
-    </ul>
+    <div class="storage-diagnostic__library">
+      <strong>Plex「{{ diagnostic.sectionName }}」的扫描目录</strong>
+      <p>由 Plex 音乐库提供，用来核对上面的对应目录。</p>
+      <code v-for="location in diagnostic.sectionLocations" :key="location">{{ location }}</code>
+      <span v-if="!diagnostic.sectionLocations.length">未读取到</span>
+    </div>
 
-    <div class="storage-diagnostic__action">
-      <strong>建议操作</strong>
+    <div class="storage-diagnostic__action" :class="{ 'storage-diagnostic__action--note': diagnostic.status !== 'warning' }">
+      <strong v-if="diagnostic.status === 'warning'">如何调整</strong>
       <p>{{ diagnostic.action }}</p>
     </div>
 
-    <details class="storage-diagnostic__sample">
-      <summary>查看路径换算样例</summary>
+    <div class="storage-diagnostic__sample">
+      <strong>同一首歌在两端的位置（示例）</strong>
       <dl>
-        <div><dt>本地</dt><dd><code>{{ diagnostic.sample.localPath }}</code></dd></div>
+        <div><dt>YunPlex</dt><dd><code>{{ diagnostic.sample.localPath }}</code></dd></div>
         <div><dt>Plex</dt><dd><code>{{ diagnostic.sample.plexPath || '无法映射' }}</code></dd></div>
-        <div><dt>反向映射</dt><dd><code>{{ diagnostic.sample.roundTripLocalPath || '无法映射' }}</code></dd></div>
       </dl>
-    </details>
+    </div>
   </section>
 </template>
 
@@ -78,7 +66,8 @@ defineProps<{
   background: color-mix(in srgb, var(--warning-soft) 48%, var(--bg-surface));
 }
 
-.storage-diagnostic--verified {
+.storage-diagnostic--verified,
+.storage-diagnostic--configured {
   border-color: var(--success-border);
   background: color-mix(in srgb, var(--success-soft) 48%, var(--bg-surface));
 }
@@ -96,18 +85,20 @@ defineProps<{
   color: var(--warning);
 }
 
-.storage-diagnostic--verified .storage-diagnostic__icon {
+.storage-diagnostic--verified .storage-diagnostic__icon,
+.storage-diagnostic--configured .storage-diagnostic__icon {
   color: var(--success);
 }
 
 .storage-diagnostic__header strong,
-.storage-diagnostic__action strong {
+.storage-diagnostic__action strong,
+.storage-diagnostic__library strong {
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
 
-.storage-diagnostic__header p,
-.storage-diagnostic__action p {
+.storage-diagnostic__action p,
+.storage-diagnostic__library p {
   margin: var(--space-1) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -116,7 +107,7 @@ defineProps<{
 
 .storage-diagnostic__paths {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2_5);
 }
 
@@ -150,48 +141,7 @@ defineProps<{
   color: var(--text-primary);
 }
 
-.storage-diagnostic__checks {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.storage-diagnostic__checks li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  color: var(--text-secondary);
-}
-
-.storage-diagnostic__checks li > .app-icon {
-  flex: 0 0 auto;
-  margin-top: 0.08rem;
-  color: var(--warning);
-}
-
-.storage-diagnostic__checks .storage-diagnostic__check--pass > .app-icon {
-  color: var(--success);
-}
-
-.storage-diagnostic__checks span {
-  display: grid;
-  gap: 0.12rem;
-  min-width: 0;
-}
-
-.storage-diagnostic__checks strong {
-  color: var(--text-primary);
-  font-size: var(--text-xs);
-}
-
-.storage-diagnostic__checks small {
-  overflow-wrap: anywhere;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  line-height: var(--body-leading);
-}
+.storage-diagnostic__library { display: grid; gap: var(--space-1); min-width: 0; font-size: var(--text-xs); color: var(--text-secondary); }
 
 .storage-diagnostic__action {
   padding: var(--space-2_5) var(--space-3);
@@ -199,8 +149,8 @@ defineProps<{
   background: var(--bg-surface);
 }
 
-.storage-diagnostic--verified .storage-diagnostic__action {
-  border-left-color: var(--success);
+.storage-diagnostic__action--note {
+  border-left-color: var(--border-secondary);
 }
 
 .storage-diagnostic__sample {
@@ -208,9 +158,7 @@ defineProps<{
   font-size: var(--text-xs);
 }
 
-.storage-diagnostic__sample summary {
-  width: max-content;
-  cursor: pointer;
+.storage-diagnostic__sample > strong {
   color: var(--text-secondary);
 }
 

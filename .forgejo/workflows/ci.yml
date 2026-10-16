@@ -80,8 +80,12 @@ jobs:
       - name: Build immutable image on the target Docker daemon
         run: |
           if ! docker image inspect "$REYUNPLEX_IMAGE" >/dev/null 2>&1; then
+            version=$(node -p "require('./package.json').version")
+            source=$(node -p "require('./package.json').repository.url")
             docker build \
               --build-arg "REYUNPLEX_REVISION=$REYUNPLEX_REVISION" \
+              --build-arg "REYUNPLEX_VERSION=$version" \
+              --build-arg "REYUNPLEX_SOURCE=$source" \
               --label "org.opencontainers.image.revision=$REYUNPLEX_REVISION" \
               -t "$REYUNPLEX_IMAGE" .
           fi

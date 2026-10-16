@@ -1,12 +1,12 @@
 <template>
   <section class="section-card system-resources" aria-labelledby="system-resources-title">
     <header class="system-resources__header">
-      <h2 id="system-resources-title">进程资源</h2>
+      <h2 id="system-resources-title"><AppIcon name="activity" :size="18" />进程资源</h2>
       <span>每 10 秒采样</span>
     </header>
     <div class="system-resources__grid">
-      <article v-for="card in cards" :key="card.key" class="system-kpi" :class="`system-kpi--${card.key === 'memory' && selectedMemory !== 'rss' ? 'idle' : card.tone}`">
-        <p>{{ card.label }}</p>
+      <article v-for="card in cards" :key="card.key" class="system-kpi" :data-metric="card.key" :class="`system-kpi--${card.key === 'memory' && selectedMemory !== 'rss' ? 'idle' : card.tone}`">
+        <p><span class="system-kpi__icon"><AppIcon :name="resourceIcon(card.key)" :size="16" /></span>{{ card.label }}</p>
         <template v-if="card.key === 'memory' && activeMemory">
           <ActionHint class="system-memory__hint" :text="memoryHint">
             <button
@@ -36,6 +36,7 @@ import type { SystemKpiCard } from '~~/composables/useSystemMonitor'
 import type { SystemMemoryDetails, SystemMemoryMetric } from '~~/lib/system-memory'
 
 const props = defineProps<{ cards: SystemKpiCard[]; memoryDetails: SystemMemoryDetails | null }>()
+function resourceIcon(key: string) { return ({ cpu: 'cpu', memory: 'memory', uptime: 'clock', database: 'database' } as Record<string, string>)[key] || 'activity' }
 const selectedMemory = ref<SystemMemoryMetric['key']>('rss')
 const activeMemory = computed(() => props.memoryDetails?.metrics.find(metric => metric.key === selectedMemory.value) ?? null)
 const memoryReading = computed(() => {
@@ -60,18 +61,25 @@ function cycleMemory() {
 
 <style scoped>
 .system-resources { padding: var(--space-5); }
-.system-resources__header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
-.system-resources__header h2 { margin: 0; }
+.system-resources__header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
+.system-resources__header h2 { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.system-resources__header h2 svg { color: var(--accent); }
 .system-resources__header span { color: var(--text-tertiary); font-size: var(--text-xs); }
 .system-resources__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .system-kpi { min-width: 0; padding-inline: var(--space-5); border-left: 1px solid var(--border-primary); }
 .system-kpi:first-child { padding-left: 0; border-left: 0; }
-.system-kpi p { margin: 0 0 var(--space-1); color: var(--text-secondary); font-size: var(--text-xs); }
+.system-kpi p { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); }
+.system-kpi__icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1.75rem; height: 1.75rem; border-radius: var(--radius-sm); color: var(--accent); background: var(--accent-muted); }
+.system-kpi[data-metric="memory"] .system-kpi__icon { color: var(--success); background: var(--success-soft); }
+.system-kpi[data-metric="uptime"] .system-kpi__icon { color: var(--run-sync); background: var(--run-sync-soft); }
+.system-kpi[data-metric="database"] .system-kpi__icon { color: var(--run-repair); background: var(--run-repair-soft); }
 .system-kpi strong { display: block; color: var(--text-primary); font-size: var(--text-2xl); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .system-kpi > strong { display: flex; align-items: center; min-height: var(--control-height); }
 .system-kpi__detail { display: block; margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .system-kpi--warning strong { color: var(--warning); }
 .system-kpi--error strong { color: var(--danger); }
+.system-kpi.system-kpi--warning .system-kpi__icon { color: var(--warning); background: var(--warning-soft); }
+.system-kpi.system-kpi--error .system-kpi__icon { color: var(--danger); background: var(--danger-soft); }
 .system-memory__hint { width: 100%; }
 .system-memory__reading { display: flex; align-items: baseline; gap: var(--space-1); max-width: 100%; min-height: var(--control-height); padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
 .system-memory__reading strong { min-width: 0; color: inherit; }

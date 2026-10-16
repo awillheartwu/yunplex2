@@ -1,0 +1,40 @@
+name: yunplex
+
+services:
+  yunplex:
+    image: ${YUNPLEX_IMAGE:?Set the full GHCR image and fixed version tag}
+    platform: linux/amd64
+    user: '${YUNPLEX_UID:-1000}:${YUNPLEX_GID:-1000}'
+    init: true
+    ports:
+      - '${YUNPLEX_BIND_ADDRESS:-0.0.0.0}:${YUNPLEX_PORT:-3210}:3000'
+    volumes:
+      - type: bind
+        source: ${YUNPLEX_DATA_DIR:?Create an empty writable data directory}
+        target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${YUNPLEX_MUSIC_DIR:?Set your music directory}
+        target: /mnt/nas
+        bind:
+          create_host_path: false
+    environment:
+      NODE_ENV: production
+      NUXT_DATA_DIR: /app/data
+      YUNPLEX2_DOWNLOAD_DIR: /mnt/nas
+      YUNPLEX2_SYNC_ENABLED: 'false'
+      YUNPLEX2_TRUSTED_PROXIES: ''
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    stop_grace_period: 2m
+    restart: unless-stopped

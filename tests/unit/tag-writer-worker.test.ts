@@ -92,7 +92,7 @@ describe('writeFlacTags', () => {
     const worker = workerMock.instances[0]
     expect(worker.options.eval).toBe(true)
     expect(worker.options.workerData).toMatchObject({
-      modulePath: testRequire.resolve('metaflac-js'),
+      modulePath: testRequire.resolve('flac-bindings/api'),
       filePath: '/tmp/song.flac',
       tagMap: expect.objectContaining({
         TITLE: 'Test Song',

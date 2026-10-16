@@ -1,12 +1,14 @@
 import type { AppConfig } from './types'
 import { readConfig, writeConfig } from './store'
 import { getSyncWorker } from '../sync/instance'
+import { updatePlexLibraryMonitor } from '../plex-library-monitor'
 
 export function applyConfigUpdate(
   patch: unknown,
 ): { updated: AppConfig; changedKeys: string[] } {
   const previous = readConfig()
   const updated = writeConfig(patch)
+  updatePlexLibraryMonitor()
 
   const worker = getSyncWorker()
   if (worker) {

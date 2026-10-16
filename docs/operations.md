@@ -13,11 +13,41 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 
 工作流使用 Node 24 镜像，runner 复用 NAS 已保存的镜像，缺失时才拉取。通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile。唯一远程 action 是固定提交的官方 checkout。
 
-部署工具使用固定摘要的官方 `docker:27.5.1-cli` 镜像，内含 Docker 27.5.1 和 Compose 2.33.0。首次缺失时由 NAS 拉取，之后直接从本地镜像复制两个命令到 job；临时容器只用于取文件，用完删除。无需配置 Actions 缓存或新增变量、密钥，工具也不进入应用镜像。
+部署工具使用固定摘要的官方 `docker:27.5.1-cli` 镜像，内含 Docker 27.5.1 和 Compose 2.33.0。首次缺失时由 NAS 拉取，之后直接从本地镜像复制两个命令到 job；临时容器只用于取文件，用完删除。工具本身不需要 Actions 缓存或密钥，也不进入应用镜像；GHCR 分发的凭据单独配置。
 
 构建优先复用 NAS 上的 `node:24-alpine` 镜像，缺失时才拉取。需要更新基础镜像时，在 NAS 执行 `docker pull node:24-alpine`；拉取失败时先检查 NAS Docker 的网络、代理或镜像加速配置。
 
 本地复现和测试方法见[测试说明](../tests/README.md)。
+
+## 正式发版与 GHCR 分发
+
+版本以 `package.json` 为准，基线是 `2.0.1`。侧栏和系统信息显示版本与构建 SHA。正式发版是一批通过验收的交付，不是每次开发提交；本地镜像仍使用 `reyunplex:<完整 SHA>`。`commit-and-tag-version` 负责准备版本和 `CHANGELOG.md`，NAS 部署和公开分发分别执行。
+
+1. 在 `dev` 开发，按[版本收尾](../tests/README.md#版本收尾)完成检查，由用户验收功能。
+2. 用户明确授权本次发版、提交、推送和 NAS 部署后，先提交本版改动，确认 `dev` 工作区干净并已取得已有 release tags。首次使用 `pnpm release:first --dry-run` 预览，再执行 `pnpm release:first`；保留 `2.0.1`，生成变更日志和 release commit，不创建 tag。以后使用 `pnpm release:patch`、`release:minor`、`release:major`；`pnpm release` 可根据规范提交推荐提升级别。首次发版不能用普通 patch 命令。
+3. 审阅变更日志、版本号与提交范围；核对更新后的生产构建。不要把首次生成的完整提交列表直接当成最终用户说明，应整理为本版实际交付内容。
+4. 合入 `main`，确认没有未提交改动，运行 `pnpm release:tag`。它只为当前版本创建带注释的 `v<版本>`，指向最终 main 提交；已有 tag 指向其他提交时拒绝覆盖。将 main 的发布合并同步回 dev，保留后续开发的共同历史。
+5. 只推送 main 到负责 NAS 部署的远端，触发现有 CI、镜像验证、备份和部署。本次正式 tag 暂留本地，不能与 main 一起推送。
+6. 分别检查 CI、NAS 就绪、页面版本与 SHA，以及真实业务结果。部署通过不代表用户最终确认 release。
+7. 用户最终确认本次 release 并授权公开分发后，只推送对应的正式 tag，例如 `git push <远端> refs/tags/v2.0.1`，自动触发 **Publish accepted YunPlex image to GHCR**。推 tag 代表分发确认，任务会复用已验收镜像并最后更新 `latest`。失败时可从 `main` 手动重试，输入同一 `tag`；仅重试固定标签时可关闭 `update_latest`，目标仍须是当前已验收的 NAS 部署。不要推送全部 tags。
+8. 确认 GHCR 包为 public，用无凭据客户端按固定版本拉取并运行，核对 digest、架构、初始化、持久化和重启，再宣布分发完成。首次上传的 GHCR 包默认是私有，需要在 GitHub 包设置中调整可见性。
+
+分发由 [.forgejo/workflows/publish.yml](../.forgejo/workflows/publish.yml) 调用 [publish.mjs](../scripts/release/publish.mjs)，只发布 `linux/amd64`，使用与 NAS 部署相同的 Docker daemon。它核对 tag 与代码版本、镜像 OCI labels、正在运行的镜像 ID、`deployment.json` 的 ready 状态和实时就绪接口；不会构建镜像、替换容器或写应用数据。目标镜像缺失、部署未完成或版本不符时停止，重新构建需要重新验收。
+
+GHCR 标签包括固定的 `2.0.1`、`sha-<完整 SHA>` 以及可移动的 `latest`。推送前检查两个固定标签，已有不同内容时拒绝覆盖；相同内容可安全重试。先推 SHA 与版本并核对远端 manifest digest，再更新 latest；已有更高版本时拒绝降低 latest。失败可能已留下固定标签，重试同一 tag 即可，不删除远端镜像或移动 Git tag。
+
+分发使用独立的 `reyunplex-publish-lock` 容器锁，临时 GHCR 本地别名与登录目录在正常退出或失败时清理。任务被强制取消可能留下锁；确认发布任务及 Docker push 已结束后，只清理本次发布锁和临时别名再重试，不处理部署锁或生产容器。GHCR 上的历史正式版本不受 NAS 本地保留策略影响。
+
+在 Forgejo 仓库配置：
+
+| 类型 | 名称 | 用途 |
+| --- | --- | --- |
+| Variable | `GHCR_IMAGE` | 小写镜像地址，例如 `ghcr.io/你的账号/yunplex`，不含 tag |
+| Variable | `NAS_APP_ROOT` | 沿用 NAS 部署的应用目录 |
+| Secret | `GHCR_USERNAME` | 有权发布到上述账号或组织的 GitHub 用户名 |
+| Secret | `GHCR_TOKEN` | GitHub classic PAT，授予 `write:packages`；组织启用 SSO 时需授权 |
+
+令牌只用于分发步骤，不放入源码、构建参数或应用环境。首次接通时验证 NAS 到 GHCR 的网络及发布权限；公共镜像匿名拉取和实际运行另行验收。使用者的部署方式见[项目首页](../README.md#使用-ghcr-镜像)。
 
 ## NAS 配置与首次安装
 
@@ -33,7 +63,7 @@ runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net
 
 路径、UID 和 GID 必须配置，没有个人机器默认值。容器配置见 [deploy/nas.compose.yml](../deploy/nas.compose.yml)。应用目录的父目录需要先存在；部署不会替音乐目录修改权限。
 
-1. 配好 runner、变量和目录权限，将检查通过的代码合入 `main`。
+1. 配好 runner、变量和目录权限，按[项目分支与发布规范](../AGENTS.md#分支与发布)合入并推送 `main`。
 2. 等部署完成，打开 `http://NAS地址:3210`（设置了 `NAS_PORT` 则用该端口），在向导设置管理员、网易云、Plex 和下载路径。
 3. 用少量歌曲确认真实下载和 Plex 歌单更新，再开启自动同步。
 

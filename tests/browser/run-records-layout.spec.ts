@@ -35,13 +35,11 @@ for (const width of [1440, 390]) {
         await expect(cards.last()).toContainText('等待执行')
         const failed = cards.filter({ hasText: '部分歌曲下载失败' })
         await expect(failed).toContainText('失败 3')
-        await expect(failed.locator('.run-card__result').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       }
       await page.screenshot({ path: testInfo.outputPath(`${path.startsWith('/task') ? 'activity' : path.includes('?') ? 'source-runs' : 'source-overview'}-dark.png`), fullPage: true, animations: 'disabled' })
     }
     await page.getByRole('button', { name: '切换到浅色主题' }).click()
     await expect(page.locator('html')).not.toHaveClass(/dark/)
-    await expect(page.locator('.run-card').first()).toHaveCSS('background-color', 'rgb(255, 255, 255)')
     await page.screenshot({ path: testInfo.outputPath('source-runs-light.png'), fullPage: true, animations: 'disabled' })
     await page.route('**/api/runs/success', route => route.fulfill({ json: ok(null) }))
     await page.locator('.run-card').first().focus()

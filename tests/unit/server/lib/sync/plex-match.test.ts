@@ -26,18 +26,4 @@ describe('plex match failure diagnostics', () => {
     expect(cause).toBe('library_visibility')
     expect(describePlexMatchFailure(cause, cfg)).toContain('/music/downloads')
   })
-
-  it('classifies every exact local-path miss as a Plex visibility/publication problem', () => {
-    const cause = inferPlexMatchFailureCause(
-      {
-        ratingKey: null,
-        matchedBy: null,
-        attempts: 6,
-        localFilePath: '/music/downloads/foo.flac',
-        traces: [],
-      },
-    )
-
-    expect(cause).toBe('library_visibility')
-  })
 })

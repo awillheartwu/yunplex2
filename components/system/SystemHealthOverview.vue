@@ -6,7 +6,7 @@
         <p class="system-health__checked">最近检测 · {{ dependencyCheckedLabel }}</p>
       </div>
       <div class="system-health__actions">
-        <NuxtLink to="/system?tab=logs" class="btn btn-secondary btn-xs">
+        <NuxtLink to="/system?tab=logs" class="btn btn-ghost btn-xs">
           <AppIcon name="logs" :size="14" />
           查看日志
         </NuxtLink>
@@ -14,7 +14,7 @@
           <AppIcon :name="refreshing ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': refreshing }" />
           重新检测
         </button>
-        <button class="btn btn-secondary btn-xs" type="button" @click="$emit('copy-diagnostics')">
+        <button class="btn btn-ghost btn-xs" type="button" @click="$emit('copy-diagnostics')">
           <AppIcon name="copy" :size="14" />
           复制诊断信息
         </button>
@@ -22,7 +22,7 @@
     </div>
 
     <div class="system-health__grid">
-      <article v-for="item in items" :key="item.key" class="system-health__item" :class="`system-health__item--${item.tone}`">
+      <article v-for="item in items" :key="item.key" class="system-health__item" :data-service="item.key" :class="`system-health__item--${item.tone}`">
         <div class="system-health__icon"><AppIcon :name="serviceIcon(item.key)" :size="19" /></div>
         <div class="system-health__identity"><h3>{{ item.label }}</h3><p>{{ item.detail }}</p></div>
         <span class="system-health__value"><AppIcon :name="item.tone === 'ok' ? 'checkCircle' : item.tone === 'idle' ? 'clock' : 'warn'" :size="14" />{{ item.value }}</span>
@@ -75,7 +75,10 @@ const headlineClass = computed(() => ({
 .system-health__item:nth-child(odd) { padding-right: var(--space-5); }
 .system-health__item:nth-child(even) { padding-left: var(--space-5); border-left: 1px solid var(--border-primary); }
 .system-health__item:nth-child(n+3) { border-top: 1px solid var(--border-primary); }
-.system-health__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); color: var(--text-secondary); background: var(--bg-input); }
+.system-health__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); color: var(--accent); background: var(--accent-muted); }
+.system-health__item[data-service="netease"] .system-health__icon { color: var(--run-download); background: var(--run-download-soft); }
+.system-health__item[data-service="download-dir"] .system-health__icon { color: var(--run-sync); background: var(--run-sync-soft); }
+.system-health__item[data-service="sync"] .system-health__icon { color: var(--run-repair); background: var(--run-repair-soft); }
 .system-health__identity { min-width: 0; }
 .system-health__identity h3 { margin: 0; }
 .system-health__identity p { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }

@@ -28,7 +28,7 @@ const emit = defineEmits<{ runs: [] }>()
           }}
         </p>
       </div>
-      <button class="btn btn-secondary btn-sm" aria-label="查看运行记录" title="查看此收藏的接管、同步与修复记录" @click="emit('runs')">
+      <button class="btn btn-ghost btn-sm" aria-label="查看运行记录" title="查看此收藏的接管、同步与修复记录" @click="emit('runs')">
         <AppIcon name="activity" :size="14" />运行记录
       </button>
     </div>

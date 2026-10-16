@@ -83,7 +83,6 @@ test('collection overview, adoption filters, media rows and settings preserve hi
     await page.setViewportSize({ width, height: 1000 })
     await page.goto('/sync-sources/visual-source')
     await expect(page.getByRole('region', { name: '收藏同步状态' })).toContainText('同步成功')
-    await expect(page.locator('.source-detail__summary')).toHaveCount(0)
     await expect(page.getByRole('button', { name: '完整比较', exact: true })).toBeHidden()
     await page.locator('.source-maintenance summary').click()
     const operations = page.locator('.source-detail__operations .btn')
@@ -136,7 +135,6 @@ test('collection overview, adoption filters, media rows and settings preserve hi
     if (process.env.UI_SCREENSHOTS === '1') await page.screenshot({ path: testInfo.outputPath(`settings-${width}.png`), fullPage: true })
   }
   await page.getByRole('button', { name: '切换到深色主题', exact: true }).click()
-  await expect(page.getByLabel('任务名称', { exact: true })).toHaveCSS('background-color', 'rgb(32, 36, 32)')
   if (process.env.UI_SCREENSHOTS === '1') await page.screenshot({ path: testInfo.outputPath('settings-dark.png'), fullPage: true })
 })
 

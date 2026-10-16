@@ -4,7 +4,8 @@ import { getSource, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { getLatestInitialization } from '../source-initialization/store'
 import { acceptSourceRequest } from './source-requests'
-import { persistSourceRequest, type SourceRequestInput } from './request-store'
+import { persistSourceRequest, type SourceRequestInput, type SourceRequestKind } from './request-store'
+import { parseJsonOr } from '../json'
 
 export type SourceConvergenceRequestStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -15,7 +16,8 @@ export interface SourceConvergenceRequest {
   attempts: number
   leaseOwner: string
   trigger: SourceRequestInput['trigger']
-  kind: 'analysis' | 'convergence' | 'initialization_apply'
+  kind: SourceRequestKind
+  plexRecoverySnapshot: SourceRequestInput['plexRecoverySnapshot'] | null
   mode: NonNullable<SourceRequestInput['mode']>
   initializationId: string | null
   followUpOf: string | null
@@ -36,7 +38,8 @@ interface QueueRow {
   source_id: string
   schedule_window: string
   attempts: number
-  request_kind: 'analysis' | 'convergence' | 'initialization_apply'
+  request_kind: SourceRequestKind
+  plex_recovery_json: string | null
   mode: NonNullable<SourceRequestInput['mode']>
   trigger: SourceRequestInput['trigger']
   initialization_id: string | null
@@ -133,7 +136,7 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
     for (const source of sources) {
       const initialization = source.type === 'playlist' ? getLatestInitialization(source.id) : null
       if (initialization && ['analyzing', 'awaiting_review', 'applying'].includes(initialization.status)) {
-        db.prepare(`UPDATE source_sync_queue SET status='cancelled', finished_at=?, updated_at=?, last_error='等待首次媒体接管确认' WHERE source_id=? AND status='pending' AND request_kind='convergence' AND follow_up_of IS NULL`)
+        db.prepare(`UPDATE source_sync_queue SET status='cancelled', finished_at=?, updated_at=?, last_error='等待首次媒体接管确认' WHERE source_id=? AND status='pending' AND request_kind IN ('convergence','plex_recovery') AND follow_up_of IS NULL`)
           .run(nowIso, nowIso, source.id)
         if (source.nextSyncAt !== null || source.lastScheduleStatus !== 'idle') {
           updateSource(source.id, { nextSyncAt: null, lastScheduleStatus: 'idle', lastScheduleError: null })
@@ -146,7 +149,7 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
           SET status = 'cancelled', finished_at = ?, updated_at = ?,
               lease_owner = NULL, lease_expires_at = NULL,
               last_error = '来源或自动同步已停用'
-          WHERE source_id = ? AND status = 'pending' AND trigger = 'schedule'
+          WHERE source_id = ? AND status = 'pending' AND (trigger = 'schedule' OR request_kind = 'plex_recovery')
         `).run(nowIso, nowIso, source.id)
         if (
           cancelled.changes > 0
@@ -323,6 +326,7 @@ export function claimNextSourceRequest(
       attempts: row.attempts + 1,
       leaseOwner,
       trigger: row.trigger, kind: row.request_kind, mode: row.mode,
+      plexRecoverySnapshot: parseJsonOr<SourceRequestInput['plexRecoverySnapshot'] | null>(row.plex_recovery_json, null),
       initializationId: row.initialization_id, followUpOf: row.follow_up_of, runId: row.run_id, takeOverExternal: Boolean(row.take_over_external),
     }
   })()

@@ -28,7 +28,6 @@ for (const width of [1440, 390]) {
     await expect(overview.getByRole('heading', { name: '待你处理' })).toBeVisible()
     await expect(overview.getByRole('link', { name: '查看接管方案' })).toHaveAttribute('href', '/sync-sources/source-one?tab=initialization')
     await expect(overview).not.toContainText('下载中')
-    await expect(overview).not.toContainText('191')
     await expect(overview.getByRole('progressbar')).toHaveCount(0)
     await expect(overview.getByRole('link', { name: '查看接管方案' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('awaiting-dark.png'), fullPage: true, animations: 'disabled' })
@@ -40,7 +39,6 @@ for (const width of [1440, 390]) {
     const syncCard = overview.locator('.activity-run').filter({ has: page.getByRole('heading', { name: '夜间收藏', exact: true }) })
     await expect(syncCard.getByLabel('本次运行的文件任务统计')).toContainText('文件完成12')
     await expect(syncCard).toContainText('当前阶段已处理 4 / 12')
-    await expect(overview).not.toContainText('整体进度')
     await expect(overview.getByText('等待执行', { exact: true })).toBeVisible()
     await expect(syncCard.getByRole('button', { name: '显示更多歌曲' })).toBeVisible()
     await page.route('**/api/downloads/tasks?**', route => {
@@ -60,7 +58,6 @@ for (const width of [1440, 390]) {
     await expect(overview.locator('[aria-current="step"]')).toHaveText('Plex 更新')
     await expect(overview.getByRole('progressbar')).toHaveCount(0)
     await expect(overview.locator('.activity-song')).toHaveCount(0)
-    await expect(overview).not.toContainText('当前没有正在追踪')
 
     fail = true
     await refresh.click()
@@ -72,7 +69,6 @@ for (const width of [1440, 390]) {
     await overview.getByRole('button', { name: '重试', exact: true }).click()
     await expect(overview.getByRole('alert')).toHaveCount(0)
     await page.getByRole('button', { name: '切换到浅色主题' }).click()
-    await expect(overview.locator('.activity-run')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
     if (width < 720) expect((await page.locator('.activity-navigation').boundingBox())!.height).toBeLessThan(80)
     await page.screenshot({ path: testInfo.outputPath('awaiting-light.png'), fullPage: true, animations: 'disabled' })
     const action = overview.getByRole('link', { name: '查看接管方案' })

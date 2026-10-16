@@ -57,6 +57,15 @@
   text-align: left;
   background: var(--bg-surface);
 }
+.source-adoption__search-results button:hover:not(:disabled) {
+  border-color: var(--border-secondary);
+  background: var(--bg-hover);
+}
+.source-adoption__search-results button:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+  box-shadow: var(--focus-ring);
+}
 .source-adoption__search-results span {
   display: block;
   color: var(--text-muted);

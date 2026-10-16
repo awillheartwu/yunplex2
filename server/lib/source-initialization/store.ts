@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import type { PlaylistSource } from '../playlist/types'
 import type { AppConfig } from '../config/types'
-import type { InitializationDecision, InitializationItemPlan, InitializationTier, SourceInitializationStatus, SourceInitializationSummary } from './types'
+import type { InitializationDecision, InitializationItemPlan, InitializationSelectionFilter, InitializationTier, SourceInitializationStatus, SourceInitializationSummary } from './types'
 
 import { INITIALIZATION_RULE_VERSION, type InitializationItemsPage, type InitializationReviewItem } from './types'
 
@@ -116,16 +116,24 @@ export function replaceInitializationPlans(initializationId: string, plans: Init
   })()
 }
 
-export function queryInitializationItems(input: { initializationId: string; tier?: string; decision?: string; search?: string; page?: number; pageSize?: number }): InitializationItemsPage {
+function initializationItemFilter(input: { initializationId: string; tier?: string; decision?: string; search?: string }) {
   const conditions = ['initialization_id = ?']; const params: unknown[] = [input.initializationId]
   if (input.tier) { const tiers = filterMembers(evidenceGroups, input.tier); conditions.push(`tier IN (${tiers.map(() => '?').join(',')})`); params.push(...tiers) }
   if (input.decision) { conditions.push('decision = ?'); params.push(input.decision) }
-  if (input.search?.trim()) { conditions.push('(LOWER(title) LIKE ? OR LOWER(candidate_title) LIKE ? OR CAST(netease_song_id AS TEXT) LIKE ?)'); const q = `%${input.search.toLowerCase()}%`; params.push(q, q, q) }
+  if (input.search?.trim()) { conditions.push('(LOWER(title) LIKE ? OR LOWER(candidate_title) LIKE ? OR CAST(netease_song_id AS TEXT) LIKE ?)'); const q = `%${input.search.trim().toLowerCase()}%`; params.push(q, q, q) }
+  return { conditions, params }
+}
+
+export function queryInitializationItems(input: { initializationId: string; tier?: string; decision?: string; search?: string; page?: number; pageSize?: number }): InitializationItemsPage {
+  const { conditions, params } = initializationItemFilter(input)
   const where = conditions.join(' AND '); const pageSize = Math.min(Math.max(Math.trunc(input.pageSize ?? 50), 1), 100); const page = Math.max(Math.trunc(input.page ?? 1), 1)
-  const total = Number((getDb().prepare(`SELECT COUNT(*) count FROM source_initialization_items WHERE ${where}`).get(...params) as { count: number }).count)
+  const counts = getDb().prepare(`SELECT COUNT(*) total,
+    COUNT(CASE WHEN tier != 'preserved' THEN 1 END) selectable,
+    COUNT(CASE WHEN tier != 'preserved' AND candidate_rating_key IS NOT NULL THEN 1 END) adoptable
+    FROM source_initialization_items WHERE ${where}`).get(...params) as { total: number; selectable: number; adoptable: number }
   const rows = getDb().prepare(`SELECT * FROM source_initialization_items WHERE ${where} ORDER BY position LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Array<Record<string, unknown>>
   const initialization = getInitialization(input.initializationId)
-  const editable = initialization?.status === 'awaiting_review' && initialization.rulesCompatible
+  const editable = initialization?.status === 'awaiting_review' && initialization.rulesCompatible && initialization.quickStatus !== 'queued'
   const items = rows.map((row): InitializationReviewItem => {
     const base = {
       initializationId: String(row.initialization_id), neteaseSongId: Number(row.netease_song_id),
@@ -146,7 +154,7 @@ export function queryInitializationItems(input: { initializationId: string; tier
       allowedDecisions: editable ? (base.candidate ? ['adopt', 'download', 'defer'] : ['download', 'defer']) : [],
       canSearch: Boolean(editable), unavailableReason: editable ? null : '方案不可编辑，请刷新或重新分析' }
   })
-  return { items, total, page, pageSize }
+  return { items, total: counts.total, selectableTotal: editable ? counts.selectable : 0, adoptableTotal: editable ? counts.adoptable : 0, page, pageSize }
 }
 
 export function assertAwaitingReview(initializationId: string): void {
@@ -157,11 +165,23 @@ export function assertAwaitingReview(initializationId: string): void {
   if (queued) throw new InitializationConflictError('快速方案已提交，正在等待后台处理')
 }
 
-export function setInitializationDecisions(input: { initializationId: string; songIds?: number[]; tier?: InitializationTier; decision: InitializationDecision }): number {
+export function setInitializationDecisions(input: { initializationId: string; songIds?: number[]; tier?: InitializationTier; filter?: InitializationSelectionFilter; decision: InitializationDecision }): number {
   return getDb().transaction(() => {
     assertAwaitingReview(input.initializationId)
-    const conditions = ["initialization_id = ?", "tier != 'preserved'"]; const params: unknown[] = [input.initializationId]
-    if (input.songIds?.length) { conditions.push(`netease_song_id IN (${input.songIds.map(() => '?').join(',')})`); params.push(...input.songIds) }
+    const { conditions, params } = initializationItemFilter({ ...input.filter, initializationId: input.initializationId })
+    conditions.push("tier != 'preserved'")
+    if (input.filter) {
+      const filter = input.filter
+      if (input.songIds || input.tier) throw new Error('不能同时指定歌曲和跨页选择范围')
+      if (typeof filter.tier !== 'string' || filter.tier === 'preserved' || !evidenceGroups.some(group => group.value === filter.tier || group.members.includes(filter.tier))) throw new Error('请先选择可处理的证据分类，再跨页全选')
+      if (filter.decision && !['adopt', 'download', 'defer'].includes(filter.decision)) throw new Error('无效的决定筛选')
+      if (filter.excludeSongIds?.length) {
+        conditions.push(`netease_song_id NOT IN (${filter.excludeSongIds.map(() => '?').join(',')})`)
+        params.push(...filter.excludeSongIds)
+      }
+      if (input.decision === 'adopt' && getDb().prepare(`SELECT 1 FROM source_initialization_items WHERE ${conditions.join(' AND ')} AND candidate_rating_key IS NULL LIMIT 1`).get(...params)) throw new Error('所选歌曲包含没有明确候选的项，请逐首选择候选后再使用 Plex')
+    }
+    else if (input.songIds?.length) { conditions.push(`netease_song_id IN (${input.songIds.map(() => '?').join(',')})`); params.push(...input.songIds) }
     else if (input.tier) { conditions.push('tier = ?'); params.push(input.tier) }
     else throw new Error('请选择歌曲或证据等级')
     if (input.decision === 'adopt') conditions.push('candidate_rating_key IS NOT NULL')

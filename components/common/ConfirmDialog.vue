@@ -28,7 +28,7 @@
           <p class="mb-6 text-sm text-muted">{{ message }}</p>
         </slot></div>
         <div class="confirm-panel__actions flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-          <button v-if="showCancel" class="btn btn-secondary" :disabled="busy" @click="onCancel">{{ cancelLabel }}</button>
+          <button v-if="showCancel" class="btn btn-ghost" :disabled="busy" @click="onCancel">{{ cancelLabel }}</button>
           <button
             class="btn"
             :class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"

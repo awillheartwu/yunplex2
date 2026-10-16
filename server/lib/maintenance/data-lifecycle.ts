@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3'
 import type { SyncStrategyConfig } from '../config/types'
 import { getDb } from '../db'
+import { dirname, join } from 'node:path'
+import { pruneAudioCache } from '../download/audio-cache'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -191,7 +193,7 @@ export function runDataLifecycleMaintenance(
     OR (status IN ('failed', 'partial') AND started_at < ?)
   `
 
-  return db.transaction(() => {
+  const result = db.transaction(() => {
     const deletedLogsByAge = db.prepare('DELETE FROM logs WHERE timestamp < ?').run(logCutoff).changes
     const logCount = (db.prepare('SELECT COUNT(*) AS count FROM logs').get() as { count: number }).count
     const overflowLogs = Math.max(0, logCount - policy.logMaxRows)
@@ -297,6 +299,15 @@ export function runDataLifecycleMaintenance(
       deletedFailureOccurrences: expiredOccurrences + overflowOccurrences,
     }
   })()
+  if (db.name && db.name !== ':memory:') {
+    pruneAudioCache({
+      directory: join(dirname(db.name), 'download-cache'),
+      tasks: db.prepare('SELECT id, status FROM download_tasks').all() as Array<{ id: string; status: string }>,
+      retainAfter: Date.parse(downloadCutoff),
+      now: now.getTime(),
+    })
+  }
+  return result
 }
 
 export function dataLifecycleChangeCount(result: DataLifecycleResult): number {

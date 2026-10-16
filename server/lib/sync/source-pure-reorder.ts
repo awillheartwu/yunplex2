@@ -1,5 +1,6 @@
 import type { AppConfig } from '../config/types'
 import type { JobStepContext, SongStatus } from '../job/types'
+import type { SyncStage } from '../log/types'
 import type { NeteaseSong } from '../netease'
 import type { PlaylistSource } from '../playlist/types'
 import { recordAppliedPlexPlaylistFingerprint } from '../playlist/store'
@@ -34,6 +35,7 @@ interface PureSourceReorderInput {
   currentIdOrder: number[]
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
+  setStage?: (stage: SyncStage) => void
   log: (level: 'warn' | 'error', message: string) => void
 }
 
@@ -55,6 +57,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     currentIdOrder,
     isCancellationRequested,
     throwIfCancelled,
+    setStage,
     log,
   } = input
 
@@ -97,6 +100,8 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
 
   if (dryRun) return true
 
+  setStage?.('refreshing_plex')
+
   const playlist = source.plexPlaylistRatingKey
     ? await getPlaylistByRatingKey(source.plexPlaylistRatingKey)
     : await findPlaylist(source.plexPlaylistName || source.neteasePlaylistName)
@@ -107,6 +112,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     .filter(track => track.playlistItemID)
     .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
   const reorderStep = job.startStep('reorder', '重排 Plex 歌单', { context: stepContext })
+  setStage?.('updating_plex_playlist')
   let releaseIdentityLock: (() => void) | null = null
 
   try {

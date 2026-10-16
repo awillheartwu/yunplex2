@@ -53,7 +53,7 @@
         <button
           v-if="item.details.length > 0"
           type="button"
-          class="btn btn-secondary process-timeline__toggle"
+          class="btn btn-ghost process-timeline__toggle"
           :aria-expanded="expanded.has(item.id)"
           @click="toggle(item.id)"
         >

@@ -11,6 +11,7 @@ import { useFeedback } from '~~/composables/useFeedback'
 
 export function useManualDownloadPage() {
   const feedback = useFeedback()
+  const api = useApi()
 
   interface ParseHistoryItem {
     id: string
@@ -77,6 +78,28 @@ export function useManualDownloadPage() {
     tracks.value.reduce((total, track) => total + (track.dt || 0), 0),
   ))
   const canSaveAsSource = computed(() => parseState.value === 'preview' && resourceType.value && resourceType.value !== 'songs' && neteaseId.value)
+  const saveAsSource = ref(false)
+  const existingSource = ref<{ id: string; name: string } | null>(null)
+  const sourceLookupLoading = ref(false)
+  const sourceLookupError = ref('')
+  watch([parseState, resourceType, neteaseId], async (_value, _previous, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    saveAsSource.value = false
+    existingSource.value = null
+    sourceLookupError.value = ''
+    sourceLookupLoading.value = false
+    if (!canSaveAsSource.value) return
+    sourceLookupLoading.value = true
+    try {
+      const sources = await api.get<Array<{ id: string; name: string; type: string; neteasePlaylistId: number }>>('/playlist-sources')
+      if (!cancelled) existingSource.value = sources.find(source => source.type === resourceType.value && source.neteasePlaylistId === neteaseId.value) || null
+    } catch {
+      if (!cancelled) sourceLookupError.value = '暂时无法核对已有收藏，本次仍可只下载歌曲。'
+    } finally {
+      if (!cancelled) sourceLookupLoading.value = false
+    }
+  })
 
   const parsedTargetLine = computed(() => {
     if (neteaseId.value) return `当前目标 ID ${neteaseId.value}，已生成可选择下载列表。`
@@ -133,12 +156,19 @@ export function useManualDownloadPage() {
     if (inputChanged.value || downloading.value || downloadResult.value) return
     const result = await downloadAndSave()
     if (result?.savedAsSource) {
-      feedback.success('已创建禁用的同步源', `已加入 ${result.total} 首托管下载，来源不会自动同步`)
+      feedback.success('已保存收藏并提交下载', `已加入 ${result.total} 首歌曲，自动同步保持关闭`)
     } else if (result) {
       feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
     } else if (error.value) {
       feedback.error('创建同步源并下载失败', error.value)
     }
+  }
+
+  async function handleSubmitDownload() {
+    if (saveAsSource.value) {
+      if (sourceLookupLoading.value || sourceLookupError.value || existingSource.value) return
+      await handleDownloadAndSave()
+    } else await handleDownload()
   }
 
   function startNew() {
@@ -158,6 +188,10 @@ export function useManualDownloadPage() {
     for (const track of tracks.value) {
       track.selected = !track.selected
     }
+  }
+
+  function clearSelection() {
+    for (const track of tracks.value) track.selected = false
   }
 
   function artistsLine(track: { artists?: { name: string }[] }) {
@@ -224,14 +258,14 @@ export function useManualDownloadPage() {
   })
 
   return {
-    albumInfo, allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, detectHint,
+    albumInfo, allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, clearSelection, coverUrl, detectHint,
     download, downloadAndSave, downloadImages, downloading, downloadLyrics, downloadResult, embedMetadata, error,
-    formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, inputChanged, startNew,
+    existingSource, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, handleSubmitDownload, inputChanged, startNew,
     hideBrokenImage, inputValue, invertSelection, loadParseHistory, manualResourceTypeLabel, neteaseId, onPaste, parse, PARSE_HISTORY_KEY, PARSE_HISTORY_LIMIT,
     parsedTargetLine, parseHistory, parseState, placeholderText,
     quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
     rememberParsedResource, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine,
-    resourceFailures, saveError,
+    resourceFailures, saveError, saveAsSource, sourceLookupError, sourceLookupLoading,
     saveParseHistory, selectedCount, title, toggleAll, toggleTrack, totalDurationLabel, trackCount,
     tracks,
   }

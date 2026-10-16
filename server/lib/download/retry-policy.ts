@@ -16,8 +16,9 @@ export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
   }
   const message = chain.map(item => String(item.message ?? '')).join(' ').toLowerCase()
   const code = chain.map(item => String(item.code ?? '')).join(' ')
-  const status = Number(chain.find(item => item.httpStatus || item.status)?.httpStatus
-    ?? chain.find(item => item.status)?.status ?? 0)
+  const failedRequest = chain.find(item => item.httpStatus || item.providerCode || item.status)
+  const httpStatus = Number(failedRequest?.httpStatus || 0)
+  const status = httpStatus >= 400 ? httpStatus : Number(failedRequest?.providerCode || failedRequest?.status || httpStatus)
   if (/ENOSPC|EACCES|EPERM|EROFS/.test(code) || /磁盘.*(?:满|空间)|空间不足|只读文件系统/.test(message)) {
     return { retryable: false, pauseReason: 'filesystem' }
   }
@@ -29,13 +30,14 @@ export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
     const retryAfter = Number(chain.find(item => item.retryAfterMs)?.retryAfterMs ?? 0)
     return { retryable: true, cooldownMs: Math.max(30_000, Number.isFinite(retryAfter) ? retryAfter : 0) }
   }
-  if (/DOWNLOAD_TOO_LARGE|INVALID_AUDIO|COPYRIGHT_RESTRICTED/.test(code)
-    || /版权|无法获取歌曲.*(?:详情|下载链接)|文件头无效|音频文件无效|歌曲不可用/.test(message)) {
+  if (/DOWNLOAD_TOO_LARGE|DOWNLOAD_FORMAT_UNSUPPORTED|INVALID_AUDIO|COPYRIGHT_RESTRICTED|SONG_URL_UNAVAILABLE/.test(code)
+    || /版权|未提供.*可用音源|文件头无效|音频文件无效|歌曲不可用/.test(message)) {
     return { retryable: false }
   }
+  if (status === 403 && /NETEASE_REQUEST_FAILED/.test(code)) return { retryable: false }
   // A signed audio URL may expire. A retry obtains a fresh URL, unlike a Cookie
   // authentication error which is annotated by the metadata transport.
-  if ([403, 408, 425].includes(status) || status >= 500) return { retryable: true }
+  if ([403, 408, 425].includes(status) || (status >= 500 && status < 600)) return { retryable: true }
   if (status >= 400) return { retryable: false }
   if (/ECONN|ETIMEDOUT|ENET|EHOST|EAI_AGAIN|UND_ERR|EIO|EAGAIN|EBUSY|EMFILE/.test(code)
     || /network|fetch failed|socket|连接|超时|timeout|长度不完整|任务租约过期|\beio\b/.test(message)) {

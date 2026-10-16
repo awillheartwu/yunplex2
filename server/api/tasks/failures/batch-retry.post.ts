@@ -2,15 +2,17 @@ import { success, fail } from '../../../lib/response'
 import { requeueFailedDownloadTasks } from '../../../lib/download/queue'
 import { requestDownloadProcessing } from '../../../lib/download/worker'
 import { getFailureRecords, incrementFailureRetries, setFailureRecordStatus } from '../../../lib/tasks/failure-records'
+import { resolveFailureMutationIds, type FailureMutationSelection } from '../../../lib/tasks/failure-groups'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ ids: string[] }>(event)
+  const body = await readBody<FailureMutationSelection>(event)
+  const ids = resolveFailureMutationIds(body, 'open')
 
-  if (!body?.ids || body.ids.length === 0) {
-    return fail('请提供要重试的失败项 ID 列表')
+  if (ids.length === 0) {
+    return fail(body?.groupId || body?.allMatching ? '当前选择范围已发生变化，请刷新后再操作' : '请提供要重试的失败项 ID 列表')
   }
 
-  const records = getFailureRecords(body.ids)
+  const records = getFailureRecords(ids)
   const retryableRecords = records.filter(record => record.retryable)
   const taskIds = [...new Set(retryableRecords.flatMap(record => record.downloadTaskIds))]
   if (taskIds.length === 0) {
@@ -32,5 +34,5 @@ export default defineEventHandler(async (event) => {
   setFailureRecordStatus(affectedRecordIds, 'open')
   void requestDownloadProcessing().catch(() => undefined)
 
-  return success({ count: requeued.length }, `${requeued.length} 个失败项已重新排队`)
+  return success({ count: requeued.length }, `${requeued.length} 个文件任务已重新排队`)
 })

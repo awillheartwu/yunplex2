@@ -9,7 +9,7 @@
       <section v-if="parseState !== 'preview' || inputExpanded" class="section-card manual-input-card" aria-labelledby="manual-input-title">
         <header class="manual-card-header">
           <div><h2 id="manual-input-title">{{ parseState === 'preview' ? '音乐来源' : '输入音乐来源' }}</h2><p>{{ parseState === 'preview' ? title : '支持网易云歌曲、歌单或专辑链接，也支持资源 ID。' }}</p></div>
-          <button v-if="parseState === 'preview' && !downloadResult" class="btn btn-secondary" :disabled="downloading" @click="inputExpanded = !inputExpanded">{{ inputExpanded ? '收起输入' : '修改链接' }}</button>
+          <button v-if="parseState === 'preview' && !downloadResult" class="btn btn-soft" :disabled="downloading" @click="inputExpanded = !inputExpanded">{{ inputExpanded ? '收起输入' : '修改链接' }}</button>
           <ActionHint
             v-if="parseState !== 'preview' || inputExpanded"
             class="manual-help"
@@ -84,7 +84,7 @@
         <div v-if="error || saveError || resourceFailures.length || downloadResult" class="manual-alert-stack" aria-live="polite">
           <div v-if="downloadResult" class="manual-alert manual-submitted" :class="downloadResult.total ? 'manual-alert--success' : 'manual-alert--warning'" role="status">
             <AppIcon :name="downloadResult.total ? 'checkCircle' : 'warn'" :size="20" />
-            <div><h2>{{ downloadResult.total ? `已提交 ${downloadResult.total} 首歌曲` : '本次没有加入歌曲' }}</h2><p>提交结果已返回。文件下载与后续状态请在活动中查看。</p></div>
+            <div><h2>{{ downloadResult.total ? `已提交 ${downloadResult.total} 首歌曲` : '本次没有加入歌曲' }}</h2></div>
             <div class="manual-submitted__actions"><NuxtLink v-if="downloadResult.total" class="btn btn-primary" to="/task-center">查看活动<AppIcon name="arrowRight" :size="15" /></NuxtLink><button class="btn btn-secondary" @click="startNew">继续添加</button></div>
           </div>
 
@@ -103,10 +103,10 @@
           <div v-if="saveError" class="manual-alert manual-alert--danger">
             <AppIcon name="warn" :size="16" />
             <div>
-              <strong>保存同步源失败</strong>
+              <strong>收藏保存失败</strong>
               <span>{{ saveError }}</span>
             </div>
-            <button class="icon-button manual-icon-action" type="button" aria-label="关闭保存同步源错误" @click="saveError = ''">
+            <button class="icon-button manual-icon-action" type="button" aria-label="关闭收藏保存错误" @click="saveError = ''">
               <AppIcon name="x" :size="14" />
             </button>
           </div>
@@ -167,7 +167,7 @@
             <p v-if="parseState === 'preview' && resourceDescription" class="manual-resource-description">{{ resourceDescription }}</p>
           </div>
         </div>
-        <button v-if="parseState === 'preview' && !downloadResult && !inputExpanded" class="btn btn-secondary" :disabled="downloading" @click="inputExpanded = true">修改链接</button>
+        <button v-if="parseState === 'preview' && !downloadResult && !inputExpanded" class="btn btn-soft" :disabled="downloading" @click="inputExpanded = true"><AppIcon name="edit" :size="15" />修改链接</button>
       </div>
 
       <div v-if="parseState === 'parsing'" class="manual-table-skeleton" aria-live="polite">
@@ -178,11 +178,11 @@
         <div class="manual-track-list-header">
           <div>
             <h3>{{ downloadResult ? '已确认歌曲' : '确认要下载的歌曲' }}</h3>
-            <p aria-live="polite">已选择 {{ selectedCount }} / {{ tracks.length }} 首</p>
+            <p aria-live="polite">已选择 {{ selectedCount }} / {{ tracks.length }} 首 · 选择操作作用于全部歌曲</p>
           </div>
           <div class="manual-track-list-actions">
             <button
-              class="btn btn-secondary btn-xs"
+              class="btn btn-ghost btn-xs"
               type="button"
               :disabled="tracks.length === 0 || downloading || Boolean(downloadResult)"
               @click="toggleAll"
@@ -191,7 +191,7 @@
               <span>{{ allSelected ? '取消全选' : '全部选择' }}</span>
             </button>
             <button
-              class="btn btn-secondary btn-xs"
+              class="btn btn-ghost btn-xs"
               type="button"
               :disabled="tracks.length === 0 || downloading || Boolean(downloadResult)"
               @click="invertSelection"
@@ -199,6 +199,7 @@
               <AppIcon name="sync" :size="13" />
               <span>反选</span>
             </button>
+            <button class="btn btn-ghost btn-xs" type="button" :disabled="!selectedCount || downloading || Boolean(downloadResult)" @click="clearSelection">清空选择</button>
           </div>
         </div>
 
@@ -221,7 +222,7 @@
                     @change="toggleAll"
                   />
                 </th>
-                <th class="manual-col-number">#</th>
+                <th class="manual-table-index">#</th>
                 <th>歌曲名称</th>
                 <th>歌手</th>
                 <th>专辑</th>
@@ -231,7 +232,7 @@
             </thead>
             <tbody>
               <tr v-for="(track, index) in pageTracks" :key="track.id" :class="{ 'manual-row-muted': !track.selected }">
-                <td>
+                <td class="manual-col-check">
                   <label class="sr-only" :for="`manual-track-${track.id}`">选择 {{ track.name }}</label>
                   <input
                     :id="`manual-track-${track.id}`"
@@ -258,11 +259,16 @@
         </div>
         <PageNavigator :page="trackPage" :page-size="trackPageSize" :total="tracks.length" label="歌曲" @change="changeTrackPage" />
         <div v-if="!downloadResult" class="manual-submit-bar">
-          <p>已选 <strong>{{ selectedCount }}</strong> 首 · {{ qualityLabel }}<span v-if="inputChanged"> · 请先重新解析</span></p>
-          <div class="manual-results-actions">
-            <button v-if="canSaveAsSource" class="btn btn-secondary" type="button" :disabled="downloading || !selectedCount || inputChanged" @click="handleDownloadAndSave"><AppIcon name="save" :size="15" />下载并保存为同步源</button>
-            <button class="btn btn-primary" type="button" :disabled="downloading || !selectedCount || inputChanged" @click="handleDownload"><AppIcon :name="downloading ? 'loader' : 'download'" :size="16" :class="{ 'animate-spin': downloading }" />{{ downloading ? '提交中…' : `下载 ${selectedCount} 首` }}</button>
+          <div class="manual-submit-summary">
+            <p>已选 <strong>{{ selectedCount }}</strong> 首 · {{ qualityLabel }}<span v-if="inputChanged"> · 请先重新解析</span></p>
+            <label v-if="canSaveAsSource && !existingSource" class="manual-save-option">
+              <input v-model="saveAsSource" type="checkbox" :disabled="downloading || sourceLookupLoading || Boolean(sourceLookupError)" aria-describedby="manual-save-hint" />
+              <span>同时将{{ resourceType === 'album' ? '专辑' : '歌单' }}保存为收藏</span>
+            </label>
+            <p v-if="existingSource" class="manual-save-hint">已在音乐库中：<NuxtLink :to="`/sync-sources/${existingSource.id}`">{{ existingSource.name }}</NuxtLink>。本次只提交歌曲下载。</p>
+            <p v-else-if="canSaveAsSource" id="manual-save-hint" class="manual-save-hint">{{ sourceLookupLoading ? '正在核对已有收藏…' : sourceLookupError || '保存整个来源，自动同步默认关闭；本次只下载选中的歌曲。' }}</p>
           </div>
+          <button class="btn btn-primary" type="button" :disabled="downloading || !selectedCount || inputChanged || (saveAsSource && sourceLookupLoading)" @click="handleSubmitDownload"><AppIcon :name="downloading ? 'loader' : 'download'" :size="16" :class="{ 'animate-spin': downloading }" />{{ downloading ? '提交中…' : `下载 ${selectedCount} 首` }}</button>
         </div>
       </div>
 
@@ -276,10 +282,10 @@
 import { useManualDownloadPage } from '~~/composables/useManualDownloadPage'
 
 const {
-  allSelected, artistsLine, canSaveAsSource, clearParseHistory, coverUrl, downloadImages, downloading, downloadLyrics, downloadResult,
-  embedMetadata, error, formatManualDuration, formatManualRelativeTime, handleDownload, handleDownloadAndSave, handleParse, inputChanged, startNew,
+  allSelected, artistsLine, canSaveAsSource, clearParseHistory, clearSelection, coverUrl, downloadImages, downloading, downloadLyrics, downloadResult,
+  embedMetadata, error, existingSource, formatManualDuration, formatManualRelativeTime, handleParse, handleSubmitDownload, inputChanged, startNew,
   hideBrokenImage, inputValue, invertSelection, manualResourceTypeLabel, onPaste, parseHistory, parseState, placeholderText,
-  quality, qualityLabel, qualityOptions, resetOptions, resourceDescription, resourceFailures, restoreParseHistory, resultMetaLine, saveError, selectedCount,
+  quality, qualityLabel, qualityOptions, resetOptions, resourceDescription, resourceFailures, resourceType, restoreParseHistory, resultMetaLine, saveError, saveAsSource, selectedCount, sourceLookupError, sourceLookupLoading,
   title, toggleAll, toggleTrack, totalDurationLabel, tracks,
 } = useManualDownloadPage()
 const inputExpanded = ref(false)

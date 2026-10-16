@@ -44,7 +44,6 @@ for (const width of [375, 1440]) {
     await drawer.getByRole('button',{name:'确认这 2 首共用媒体'}).click()
     await page.getByRole('button',{name:'确认共用并更新草案'}).click()
     await expect(drawer.getByRole('alert')).toContainText('共享方案已变化')
-    await drawer.screenshot({path:`/tmp/shared-review-${width}.png`})
     expect(await drawer.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true)
     await drawer.getByRole('button',{name:'确认这 2 首共用媒体'}).click()
     await page.getByRole('button',{name:'确认共用并更新草案'}).click()

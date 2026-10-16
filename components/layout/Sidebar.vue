@@ -12,15 +12,15 @@
     >
       <div
         data-testid="sidebar-logo"
-        class="sidebar-logo bg-accent"
+        class="sidebar-logo"
       >
-        <AppIcon name="music" :size="17"  />
+        <AppLogo />
       </div>
       <span
         v-show="!desktopCollapsed"
         class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold tracking-tight"
         :style="{ color: 'var(--text-primary)' }"
-      >reYunPlex<small class="sidebar-brand__caption" :title="appConfig.revision">v{{ appConfig.version }} · {{ shortRevision }}</small></span>
+      >YunPlex<small class="sidebar-brand__caption" :title="appConfig.revision">v{{ appConfig.version }} · {{ shortRevision }}</small></span>
     </div>
 
     <nav class="sidebar-nav flex-1 overflow-y-auto px-3 py-4" aria-label="主导航">
@@ -105,11 +105,6 @@ onMounted(loadSidebarState)
   flex: 0 0 40px;
   align-items: center;
   justify-content: center;
-  position: relative;
-  color: var(--on-accent);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
 }
 
 .app-sidebar-shell {

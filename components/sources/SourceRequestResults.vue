@@ -56,7 +56,7 @@ useDialogFocus(
               :label="result.presentation.label"
             />
             <div class="source-request-results__actions">
-              <NuxtLink :to="result.presentation.href" class="btn btn-secondary btn-sm"
+              <NuxtLink :to="result.presentation.href" class="btn btn-ghost btn-sm"
                 ><AppIcon :name="result.status === 'awaiting_review' ? 'checkCircle' : 'arrowRight'" :size="14" />{{
                   result.presentation.action
                 }}</NuxtLink

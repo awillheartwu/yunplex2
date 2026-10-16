@@ -86,7 +86,7 @@ function selectTab(key: string) {
   gap: var(--space-1);
   padding: var(--space-1);
   overflow-x: auto;
-  border: 1px solid var(--border-primary);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   scrollbar-width: none;

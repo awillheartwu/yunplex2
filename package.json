@@ -1,7 +1,11 @@
 {
   "name": "yunplex2",
-  "version": "0.1.0",
+  "version": "2.0.1",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awillheartwu/yunplex2.git"
+  },
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
@@ -17,10 +21,12 @@
     "preview": "nuxt preview",
     "start": "NODE_OPTIONS=--no-deprecation node .output/server/index.mjs",
     "commit": "git-cz",
-    "release": "standard-version",
-    "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major",
-    "release:patch": "standard-version --release-as patch",
+    "release": "node scripts/release/prepare.mjs",
+    "release:first": "node scripts/release/prepare.mjs first",
+    "release:minor": "node scripts/release/prepare.mjs minor",
+    "release:major": "node scripts/release/prepare.mjs major",
+    "release:patch": "node scripts/release/prepare.mjs patch",
+    "release:tag": "node scripts/release/tag.mjs",
     "test": "vitest run",
     "test:browser": "playwright test",
     "test:watch": "vitest",
@@ -39,14 +45,15 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.17.0",
-    "NeteaseCloudMusicApi": "^4.32.0",
+    "@neteasecloudmusicapienhanced/api": "^4.41.1",
     "better-sqlite3": "^12.10.0",
     "chinese-conv": "^4.0.0",
     "dayjs": "^1.11.20",
-    "metaflac-js": "^1.0.5",
+    "flac-bindings": "5.0.0",
+    "image-size": "2.0.2",
+    "music-metadata": "11.16.1",
     "node-id3": "^0.2.9",
     "nuxt": "^4.4.6",
-    "plex-api": "^5.3.2",
     "vue": "^3.5.13"
   },
   "devDependencies": {
@@ -67,7 +74,7 @@
     "postcss": "8.5.15",
     "postcss-value-parser": "4.2.0",
     "prettier": "^3.8.3",
-    "standard-version": "^9.5.0",
+    "commit-and-tag-version": "^13.2.2",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.7"

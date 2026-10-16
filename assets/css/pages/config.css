@@ -18,29 +18,6 @@
   gap: var(--space-4);
   color: var(--danger);
 }
-.path-mapping-disclosure {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-}
-.path-mapping-disclosure > .app-icon {
-  flex: 0 0 auto;
-  margin-top: 0.08rem;
-  color: var(--accent);
-}
-.path-mapping-disclosure p {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: var(--body-leading);
-}
-.path-mapping-disclosure strong {
-  color: var(--text-primary);
-}
 .removal-policy {
   display: grid;
   gap: var(--space-3);
@@ -130,56 +107,8 @@
   font-size: var(--text-xs);
   line-height: var(--body-leading);
 }
-.removal-policy__warning {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border-primary));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--warning) 9%, transparent);
-  color: var(--warning);
-  font-size: var(--text-xs);
-  line-height: var(--body-leading);
-}
-.removal-policy__warning > .app-icon {
-  flex: 0 0 auto;
-  margin-top: 0.12rem;
-}
 .settings-directory {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 15rem;
-  gap: var(--space-3) var(--space-4);
-  align-items: center;
   min-width: 0;
-}
-.config-navigation {
-  grid-column: 1;
-  grid-row: 1;
-}
-.settings-search {
-  position: relative;
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-}
-.settings-search > svg {
-  position: absolute;
-  top: 50%;
-  left: var(--space-3);
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-.settings-search input {
-  padding-left: var(--space-9);
-}
-.settings-no-results {
-  grid-column: 1;
-  grid-row: 1;
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
 }
 .settings-mobile-category {
   display: none;
@@ -223,21 +152,6 @@
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-primary);
 }
-@media (min-width: 768px) and (max-width: 1200px) {
-  .settings-directory {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .settings-search {
-    grid-column: 1;
-    grid-row: 1;
-    width: min(100%, 20rem);
-    justify-self: end;
-  }
-  .config-navigation,
-  .settings-no-results {
-    grid-row: 2;
-  }
-}
 @media (max-width: 767px) {
   .removal-policy__options {
     grid-template-columns: 1fr;
@@ -251,9 +165,7 @@
   .settings-directory {
     display: block;
   }
-  .settings-directory .config-navigation,
-  .settings-search,
-  .settings-no-results {
+  .settings-directory .config-navigation {
     display: none;
   }
   .settings-mobile-category {

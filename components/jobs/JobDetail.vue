@@ -1,7 +1,7 @@
 <template>
   <div class="run-detail">
     <div class="run-detail__nav">
-      <button class="btn btn-secondary run-detail__back" type="button" @click="$emit('back')">
+      <button class="btn btn-ghost run-detail__back" type="button" @click="$emit('back')">
         <AppIcon name="chevronLeft" :size="14" />
         返回运行记录
       </button>
@@ -29,15 +29,22 @@
     </section>
 
     <section v-if="failedSongs.length > 0" class="section-card run-detail__errors" role="alert">
-      <strong>已有 {{ failedSongs.length }} 首歌曲处理失败</strong>
-      <ul>
-        <li v-for="song in failedSongs.slice(0, 3)" :key="song.id">
-          <strong>{{ song.songName }}</strong>
-          <p>{{ song.error?.message || songStatusPresentation(song.status).label }}</p>
-        </li>
-      </ul>
-      <p v-if="job.status === 'running'">同步仍在执行后续步骤，当前进度见下方时间线。</p>
-      <p v-if="failedSongs.length > 3">全部失败歌曲见下方“变化与异常”。</p>
+      <span class="run-detail__error-icon"><AppIcon name="warn" :size="22" /></span>
+      <div class="run-detail__error-copy">
+        <strong>{{ failedSongs.length }} 首歌曲需要处理</strong>
+        <ul>
+          <li v-for="item in failureSummaries.slice(0, 2)" :key="item.message">
+            <p>{{ item.message }}</p>
+            <span>{{ item.names.slice(0, 3).join('、') }}{{ item.names.length > 3 ? ` 等 ${item.names.length} 首` : '' }}</span>
+          </li>
+        </ul>
+        <p v-if="job.status === 'running'" class="run-detail__error-note">任务仍在执行后续步骤，当前进度见下方时间线。</p>
+        <p v-else class="run-detail__error-note">运行结果保留本次失败；异常处理显示这些歌曲目前的处理状态。</p>
+      </div>
+      <div class="run-detail__error-actions">
+        <NuxtLink :to="{ path: '/task-center', query: { tab: 'failures', failureRun: job.id } }" class="btn btn-soft btn-sm">查看异常处理<AppIcon name="arrowRight" :size="14" /></NuxtLink>
+        <button class="btn btn-ghost btn-sm" type="button" @click="showFailedSongs">查看本次失败</button>
+      </div>
     </section>
 
     <section class="run-detail__stats" aria-label="运行结果统计">
@@ -67,9 +74,9 @@
       <AppIcon name="archive" :size="18" />
       <div>
         <strong>变化明细已按保留策略清理</strong>
-        <p>运行摘要和统计仍然保留；需要继续处理的问题请前往任务中心的异常处理。</p>
+        <p>运行摘要和统计仍然保留。</p>
       </div>
-      <NuxtLink to="/task-center?tab=failures" class="btn btn-secondary btn-xs">查看异常</NuxtLink>
+      <NuxtLink to="/task-center?tab=failures" class="btn btn-ghost btn-xs">查看异常</NuxtLink>
     </section>
 
     <section v-if="mediaPolicyItems.length > 0" class="section-card p-4" aria-label="缺失媒体策略统计">
@@ -118,7 +125,7 @@
     </section>
 
     <!-- Changed and exceptional song results grouped by source -->
-    <section v-if="!job.detailsExpired && job.songs.length > 0" class="section-card overflow-hidden">
+    <section v-if="!job.detailsExpired && job.songs.length > 0" ref="songSection" tabindex="-1" class="section-card overflow-hidden">
       <div class="run-detail__song-toolbar">
         <div class="run-detail__song-title">
           <h3>变化与异常</h3>
@@ -138,14 +145,14 @@
             v-for="f in songFilters"
             :key="f.key"
             type="button"
-            class="filter-chip run-detail__song-filter"
-            :class="[semanticToneClass(f.tone), { 'is-active': songFilter === f.key }]"
+            class="btn btn-ghost btn-sm run-detail__song-filter"
+            :class="{ 'is-active': songFilter === f.key }"
             :aria-pressed="songFilter === f.key"
             @click="songFilter = f.key"
           >
             <AppIcon :name="f.icon" :size="12" />
             <span>{{ f.label }}</span>
-            <strong>{{ f.count }}</strong>
+            <strong :class="semanticToneClass(f.tone)">{{ f.count }}</strong>
           </button>
         </div>
       </div>
@@ -209,7 +216,7 @@
       </template>
 
       <div v-if="filteredSongCount > renderLimit" class="p-4 border-t border-[var(--border-primary)] text-center">
-        <button class="btn btn-secondary btn-sm" type="button" @click="renderLimit += 100">
+        <button class="btn btn-ghost btn-sm" type="button" @click="renderLimit += 100">
           显示更多（{{ Math.min(renderLimit, filteredSongCount) }} / {{ filteredSongCount }}）
         </button>
       </div>
@@ -307,13 +314,32 @@ const typeIdentity = computed(() => runTypeIdentity(props.job.type))
 const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))
 const failedSongs = computed(() => props.job.songs.filter(song => isFailedSongStatus(song.status)))
+const failureSummaries = computed(() => {
+  const groups = new Map<string, { message: string; names: string[] }>()
+  for (const song of failedSongs.value) {
+    const message = song.error?.message || songStatusPresentation(song.status).label
+    const group = groups.get(message) || { message, names: [] }
+    group.names.push(song.songName)
+    groups.set(message, group)
+  }
+  return [...groups.values()]
+})
+const songSection = ref<HTMLElement | null>(null)
+async function showFailedSongs() {
+  songFilter.value = 'failure'
+  renderLimit.value = 100
+  collapsedGroups.clear()
+  await nextTick()
+  songSection.value?.scrollIntoView({ block: 'start' })
+  songSection.value?.focus({ preventScroll: true })
+}
 const mediaPolicyItems = computed(() => {
   const labels: Record<string, string> = {
-    manual_exempt: '人工豁免',
-    reuse_managed: '复用托管',
-    reuse_external: '复用外部',
-    register_managed: '恢复托管登记',
-    register_external: '登记外部',
+    manual_exempt: '保留手动选择',
+    reuse_managed: '使用已下载文件',
+    reuse_external: '使用已有文件',
+    register_managed: '找回下载记录',
+    register_external: '记录已有文件',
     download_missing: '缺失下载',
     redownload_replaced: '替换下载',
     wait_manual: '等待手动选择',
@@ -504,8 +530,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.run-detail__errors{display:grid;gap:var(--space-2);padding:var(--space-4);color:var(--danger)}
-.run-detail__errors ul{display:grid;gap:var(--space-2);padding-left:var(--space-4)}
+.run-detail__errors{display:flex;align-items:flex-start;gap:var(--space-4);padding:var(--space-5);border-left:3px solid var(--danger);background:linear-gradient(100deg,var(--danger-soft),transparent 65%),var(--bg-surface)}
+.run-detail__error-icon{display:flex;align-items:center;justify-content:center;flex:none;width:2.5rem;height:2.5rem;border-radius:var(--radius-md);background:var(--danger-soft);color:var(--danger)}
+.run-detail__error-copy{min-width:0;flex:1;color:var(--text-primary)}
+.run-detail__error-copy>strong{font-size:var(--text-md)}
+.run-detail__errors ul{display:grid;gap:var(--space-2_5);list-style:none;padding:0;margin:var(--space-2_5) 0}
+.run-detail__errors li p{color:var(--text-primary);font-size:var(--text-sm)}
+.run-detail__errors li span,.run-detail__error-note{color:var(--text-secondary);font-size:var(--text-xs)}
+.run-detail__error-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
 .run-detail__errors p{margin:0;overflow-wrap:anywhere}
 .run-detail{display:flex;flex-direction:column;gap:var(--space-5)}
 .run-detail__nav{display:flex;min-height:2.75rem;align-items:center;justify-content:space-between;gap:var(--space-4)}
@@ -537,16 +569,15 @@ onUnmounted(() => {
 .run-detail__section-toggle strong{font-size:var(--text-base);font-weight:var(--font-weight-bold)}
 .run-detail__section-toggle small{color:var(--text-tertiary);font-size:var(--text-xs);font-weight:var(--font-weight-medium)}
 .run-detail__timeline{padding:var(--space-4)}
-.run-detail__song-toolbar{display:flex;min-height:4rem;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-5);border-bottom:1px solid var(--border-primary)}
+.run-detail__song-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;min-height:4rem;align-items:center;gap:var(--space-3);padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--border-primary)}
 .run-detail__song-title{display:flex;align-items:center;gap:var(--space-2_5);min-width:0}
 .run-detail__song-title h3{margin:0;color:var(--text-primary);white-space:nowrap}
 .run-detail__collapse-all:hover:not(:disabled){border-color:var(--accent-border);background:var(--accent-muted);color:var(--accent-strong);transform:translateY(-1px)}
 .run-detail__collapse-all:disabled{opacity:.45;cursor:not-allowed}
 .run-detail__collapse-all:focus-visible,.run-detail__song-filter:focus-visible,.run-detail__song-group-toggle:focus-visible,.run-detail__retry-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.run-detail__song-filters{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2);flex-wrap:wrap}
-.run-detail__song-filter:hover{filter:saturate(1.08);transform:translateY(-1px)}
-.run-detail__song-filter.is-active{box-shadow:0 0 0 2px color-mix(in srgb,currentColor 18%,transparent),var(--shadow-xs)}
-.run-detail__song-filter strong{font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;opacity:.88}
+.run-detail__song-filters{display:flex;max-width:100%;align-items:center;gap:var(--space-1);flex-wrap:wrap}
+.run-detail__song-filter.is-active{background:var(--accent-muted);color:var(--accent)}
+.run-detail__song-filter strong{min-width:1.5rem;padding:var(--space-0_5) var(--space-2);border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);font-variant-numeric:tabular-nums}
 .run-detail__song-group{display:flex;min-height:3.25rem;align-items:center;gap:var(--space-3);padding:var(--space-1_5) var(--space-5);border-bottom:1px solid var(--border-primary);background:var(--bg-app)}
 .run-detail__song-group-toggle{display:flex;min-width:0;min-height:2.75rem;flex:1;align-items:center;gap:var(--space-2_5);padding:0;border:0;background:transparent;color:var(--text-primary);text-align:left;cursor:pointer}
 .run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:var(--body-leading);overflow-wrap:anywhere}
@@ -555,6 +586,8 @@ onUnmounted(() => {
 .run-detail__song-group-stat{display:inline-flex;min-height:1.35rem;align-items:center;gap:var(--space-1);padding:.08rem var(--space-2);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:1180px){.run-detail__stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:720px){
+  .run-detail__errors{flex-wrap:wrap;padding:var(--space-4);gap:var(--space-3)}
+  .run-detail__error-actions{width:100%;padding-left:3.25rem}
   .run-detail__hero{grid-template-columns:1fr}
   .run-detail__hero-icon{width:2.75rem;height:2.75rem}
   .run-detail__stats{grid-template-columns:repeat(2,minmax(0,1fr))}

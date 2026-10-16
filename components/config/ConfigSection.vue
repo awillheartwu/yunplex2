@@ -1,5 +1,5 @@
 <template>
-  <section class="section-card config-section" :class="{ 'config-section--open': !collapsed }">
+  <section :id="sectionKey ? settingTargetId('section:' + sectionKey) : undefined" class="section-card config-section" :class="{ 'config-section--open': !collapsed }" :data-setting-target="sectionKey ? 'section:' + sectionKey : undefined">
     <div class="config-section__top">
     <button
       class="config-section__header"
@@ -11,8 +11,9 @@
         <span class="config-section__title-row">
           <span class="config-section__icon"><slot name="icon" /></span>
           <span class="config-section__title type-h3" role="heading" aria-level="3">{{ title }}</span>
+          <slot name="status" />
         </span>
-        <span class="config-section__description">{{ description }}</span>
+        <span v-if="description" class="config-section__description">{{ description }}</span>
       </span>
       <Chevron :open="!collapsed" />
     </button>
@@ -25,8 +26,16 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title: string; description: string; collapsed: boolean }>()
-defineEmits<{ toggle: [] }>()
+import { getSettingsTarget, settingTargetId, type SettingsSectionKey } from '~/lib/settings-catalog'
+import { useSettingsFocusRequest } from '~/composables/useSettingsFocusRequest'
+const props = defineProps<{ title: string; description?: string; sectionKey?: SettingsSectionKey; searchTab?: string; searchKeywords?: string; collapsed: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
+const route = useRoute()
+const focusRequest = useSettingsFocusRequest()
+watch([() => route.query.setting, focusRequest, () => props.sectionKey], ([value]) => {
+  const target = getSettingsTarget(value)
+  if (route.path === '/config' && target && props.sectionKey === target.sectionKey && props.collapsed) emit('toggle')
+}, { immediate: true, flush: 'post' })
 </script>
 
 <style scoped>

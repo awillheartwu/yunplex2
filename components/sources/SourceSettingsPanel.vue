@@ -8,7 +8,7 @@
       </p>
       <div>
         <button v-if="hasChanges" class="btn btn-secondary" type="button" :disabled="saving" @click="discard">
-          <AppIcon name="rotateCcw" :size="16" />放弃修改</button
+          <AppIcon name="rotateCcw" :size="16" />取消修改</button
         ><button class="btn btn-primary" type="submit" :disabled="saving || !hasChanges">
           <AppIcon :name="saving ? 'loader' : 'save'" :size="16" :class="{ 'animate-spin': saving }" />{{
             saving ? '保存中…' : '保存设置'
@@ -27,7 +27,6 @@
         <AppIcon name="music" :size="20" />
         <div>
           <h2>收藏与目标</h2>
-          <p>设置显示名称与 Plex 目标歌单。</p>
         </div>
       </header>
       <div class="source-settings__grid">
@@ -43,25 +42,24 @@
         <AppIcon name="calendar" :size="20" />
         <div>
           <h2>同步安排</h2>
-          <p>为此收藏单独设置数量和频率，留空时继承全局。</p>
         </div>
       </header>
       <div class="source-settings__grid">
-        <FormField label="同步数量上限" hint="留空继承全局"
-          ><input v-model.number="form.syncLimit" type="number" min="0" class="form-input" placeholder="继承全局"
+        <FormField label="同步数量上限" hint="留空使用全局设置"
+          ><input v-model.number="form.syncLimit" type="number" min="0" class="form-input" placeholder="使用全局设置"
         /></FormField>
-        <FormField label="自动同步间隔（分钟）" hint="留空继承全局"
+        <FormField label="自动同步间隔（分钟）" hint="留空使用全局设置"
           ><input
             v-model.number="form.syncIntervalMinutes"
             type="number"
             min="1"
             max="1440"
             class="form-input"
-            placeholder="继承全局"
+            placeholder="使用全局设置"
         /></FormField>
       </div>
       <div class="source-settings__toggles">
-        <ToggleField v-model="form.enabled" label="启用来源" hint="关闭后不会自动排期" />
+        <ToggleField v-model="form.enabled" label="自动同步" />
       </div>
     </section>
     <section v-if="source.type === 'playlist'" class="section-card source-settings__section">
@@ -69,17 +67,16 @@
         <AppIcon name="shield" :size="20" />
         <div>
           <h2>首次媒体接管</h2>
-          <p>单来源覆盖全局策略；完成后切换不会自动重跑。</p>
         </div>
       </header>
       <SourceBooleanOverride
         v-model="form.initializeMediaOnFirstSync"
-        label="首次同步前媒体接管"
+        label="首次同步前确认已有音乐"
         :global-value="globalInitialize"
-        hint="启用时首次同步只分析候选并等待确认"
+        hint="启用时首次同步先推荐已有文件，确认后再开始同步"
       />
       <p v-if="form.initializeMediaOnFirstSync === false" class="source-settings__warning">
-        <AppIcon name="warn" :size="14" />关闭后首次同步可能按未验证媒体策略产生大量下载。
+        <AppIcon name="warn" :size="14" />关闭后，没有确认使用的歌曲可能需要重新下载。
       </p>
     </section>
     <section class="section-card source-settings__section">
@@ -87,19 +84,21 @@
         <AppIcon name="settings" :size="20" />
         <div>
           <h2>同步策略</h2>
-          <p>留在“继承”时跟随全局设置。</p>
         </div>
       </header>
       <div class="source-settings__toggles">
         <SourceBooleanOverride
           v-model="form.forceFullCompare"
-          label="始终全量对比"
+          label="每次检查完整歌单"
           :global-value="globalForceFull"
-        /><SourceBooleanOverride
+        />
+        <PlexExtraTracksPolicy
           v-model="form.skipRemoveExtraTracks"
-          label="不删除多余歌曲"
-          :global-value="globalSkipRemove"
-        /><SourceBooleanOverride
+          :policy="globalRemovalPolicy"
+          :global-skip="globalSkipRemove"
+          inherit
+        />
+        <SourceBooleanOverride
           v-if="source.type === 'album'"
           v-model="form.skipPlexPlaylist"
           label="仅下载不入歌单"
@@ -115,7 +114,7 @@
 
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
-import type { AppConfig } from '~~/server/lib/config/types'
+import type { AppConfig, ExtraTrackRemovalPolicy } from '~~/server/lib/config/types'
 const props = defineProps<{ source: PlaylistSource }>()
 const emit = defineEmits<{ saved: [source: PlaylistSource] }>()
 const api = useApi()
@@ -124,6 +123,7 @@ const error = ref('')
 const globalInitialize = ref<boolean | null>(null)
 const globalForceFull = ref<boolean | null>(null)
 const globalSkipRemove = ref<boolean | null>(null)
+const globalRemovalPolicy = ref<ExtraTrackRemovalPolicy | null>(null)
 const globalSkipPlaylist = ref<boolean | null>(null)
 function settings(source: PlaylistSource) {
   return {
@@ -186,6 +186,7 @@ async function loadDefaults() {
     globalInitialize.value = config.sync.initializeMediaOnFirstSync ?? true
     globalForceFull.value = config.sync.forceFullCompare
     globalSkipRemove.value = config.sync.skipRemoveExtraTracks
+    globalRemovalPolicy.value = config.sync.extraTrackRemovalPolicy
     globalSkipPlaylist.value = config.sync.skipPlexPlaylist
   } catch {
     defaultsError.value = '无法读取全局设置，继承值暂时未知。'

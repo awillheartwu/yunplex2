@@ -37,7 +37,6 @@ for (const width of [375, 1440]) {
       await page.keyboard.press('Escape')
     }
     await page.getByRole('navigation', { name: '候选分组' }).getByRole('button', { name: /^全部/ }).click()
-    await page.screenshot({ path: `/tmp/compact-adoption-${width}.png`, fullPage: true })
     const snapshot = page.locator('.matching-snapshot')
     expect(await snapshot.evaluate(el => parseFloat(getComputedStyle(el).paddingLeft))).toBeGreaterThanOrEqual(16)
     const settingsLink = snapshot.getByRole('link', { name: '初始化匹配设置' })
@@ -56,7 +55,6 @@ for (const width of [375, 1440]) {
     for (const dark of [false, true]) {
       await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
       await comparison.scrollIntoViewIfNeeded()
-      await page.screenshot({ path: `/tmp/reanalysis-${width}-${dark ? 'dark' : 'light'}.png`, fullPage: true })
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     }
     await comparison.getByRole('button', { name: '保留当前草案' }).click()
@@ -137,17 +135,10 @@ for (const width of [375, 1440]) {
       const measure = await badge.evaluate(el => {
         const range = document.createRange()
         range.selectNodeContents(el)
-        const css = getComputedStyle(el)
-        return { lines: range.getClientRects().length, height: el.getBoundingClientRect().height, font: css.fontSize }
+        return { lines: range.getClientRects().length }
       })
       expect(measure.lines).toBe(1)
-      expect(measure.font).toBe('12px')
-      expect(measure.height).toBe(26)
       expect(await drawer.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
-      if (tiers[i] === 'ambiguous') {
-        await page.evaluate(() => document.documentElement.classList.add('dark'))
-        await drawer.screenshot({ path: `/tmp/evidence-badges-${width}.png` })
-      }
       await page.keyboard.press('Escape')
     }
   })

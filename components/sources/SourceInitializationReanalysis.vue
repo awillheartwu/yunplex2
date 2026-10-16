@@ -31,33 +31,33 @@ onBeforeUnmount(() => { comparisonRequest++ })
   <section class="matching-reanalysis" aria-label="重新分析前比较" :aria-busy="loading">
     <header class="matching-reanalysis__heading">
       <AppIcon name="refresh" :size="18" />
-      <div><h3>按当前设置重新分析</h3><p>先比较参数变化，再决定是否创建新草案。</p></div>
+      <div><h3>按当前设置重新分析</h3></div>
     </header>
     <div class="matching-reanalysis__notice">
-      <strong>重新生成接管草案</strong>
-      <p>已确认的媒体关联会保留；旧草案中未提交的选择需要重新确认。</p>
+      <strong>会重新生成一份方案</strong>
+      <p>已经确认的媒体关联会保留；之前没提交的选择需要重新确认。</p>
     </div>
-    <p v-if="initialization.matchingConfig && !initialization.rulesCompatible" class="matching-reanalysis__context">旧草案的算法版本已变化。下方使用当前算法比较两组参数，不能精确重放旧算法结果。</p>
-    <p v-if="!initialization.matchingConfig" class="matching-reanalysis__context">旧草案未记录参数快照；下方使用当前保存参数作基线，不能复现旧规则差异。</p>
-    <div v-if="loading" class="matching-reanalysis__feedback" role="status"><AppIcon name="loader" :size="16" class="animate-spin" />正在用同一份最新数据比较草案参数与当前设置…</div>
-    <div v-if="error" class="matching-reanalysis__feedback matching-reanalysis__error" role="alert"><span>{{ error }}</span><button class="btn btn-secondary btn-sm" @click="compare">重试比较</button></div>
+    <p v-if="initialization.matchingConfig && !initialization.rulesCompatible" class="matching-reanalysis__context">旧方案的匹配规则已经更新，下面的对比按当前规则重新计算，结果不会和旧方案完全一致。</p>
+    <p v-if="!initialization.matchingConfig" class="matching-reanalysis__context">旧方案没有记录当时的匹配设置，下面的对比只能按当前设置计算，看不出旧规则的差异。</p>
+    <div v-if="loading" class="matching-reanalysis__feedback" role="status"><AppIcon name="loader" :size="16" class="animate-spin" />正在计算新旧设置的差异…</div>
+    <div v-if="error" class="matching-reanalysis__feedback matching-reanalysis__error" role="alert"><span>{{ error }}</span><button class="btn btn-ghost btn-sm" @click="compare">重试比较</button></div>
     <template v-if="preview && !loading && !error">
       <p v-for="warning in preview.musicBrainz?.warnings ?? []" :key="warning" role="status" class="matching-reanalysis__context">{{ warning }}</p>
-      <div class="matching-reanalysis__comparison" aria-label="同快照比较结果">
-        <div><span>可推荐</span><p><span>{{ preview.before.recommended }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.recommended }}</strong></p><small>草案参数 → 当前设置</small></div>
-        <div><span>无候选</span><p><span>{{ preview.before.unmatched }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.unmatched }}</strong></p><small>草案参数 → 当前设置</small></div>
-        <div><span>分类或候选变化</span><p><strong>{{ changed.length }}</strong><small>首</small></p><small>基于同一份最新数据</small></div>
+      <div class="matching-reanalysis__comparison" aria-label="新旧设置对比结果">
+        <div><span>可推荐</span><p><span>{{ preview.before.recommended }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.recommended }}</strong></p><small>旧设置 → 当前设置</small></div>
+        <div><span>无候选</span><p><span>{{ preview.before.unmatched }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.unmatched }}</strong></p><small>旧设置 → 当前设置</small></div>
+        <div><span>结果有变化</span><p><strong>{{ changed.length }}</strong><small>首</small></p><small>按最新数据计算</small></div>
       </div>
-      <details v-if="changed.length" class="matching-reanalysis__samples"><summary>查看变化样本（前 20 首）</summary><ul><li v-for="item in changed.slice(0, 20)" :key="item.songId"><strong>{{ item.title }}</strong><p>{{ item.reasons.join('；') }}<span v-if="item.conflicts.length">；{{ item.conflicts.join('；') }}</span></p></li></ul></details>
-      <p v-else class="matching-reanalysis__context">本次比较未发现分类或候选变化。</p>
-      <p class="matching-reanalysis__context">这是比较预览；确认后后台会重新读取数据并生成新草案。</p>
+      <details v-if="changed.length" class="matching-reanalysis__samples"><summary>查看变化的前 20 首</summary><ul><li v-for="item in changed.slice(0, 20)" :key="item.songId"><strong>{{ item.title }}</strong><p>{{ item.reasons.join('；') }}<span v-if="item.conflicts.length">；{{ item.conflicts.join('；') }}</span></p></li></ul></details>
+      <p v-else class="matching-reanalysis__context">这次对比没有发现变化。</p>
+      <p class="matching-reanalysis__context">以上只是预览；确认后会重新读取最新数据并生成新方案。</p>
     </template>
   </section>
   <template #footer>
     <p v-if="submitError" class="matching-reanalysis__error" role="alert">{{ submitError }}</p>
     <div class="matching-reanalysis__actions">
-      <button class="btn btn-primary" :disabled="busy || loading || !preview || !!error" @click="emit('confirm')">确认创建新草案</button>
-      <button class="btn btn-secondary" :disabled="busy" @click="emit('cancel')">保留当前草案</button>
+      <button class="btn btn-primary" :disabled="busy || loading || !preview || !!error" @click="emit('confirm')">确认并重新分析</button>
+      <button class="btn btn-ghost" :disabled="busy" @click="emit('cancel')">保留当前方案</button>
       <NuxtLink class="btn btn-ghost" :to="{ path: '/config', query: { tab: 'matching', source: sourceId } }">调整匹配规则</NuxtLink>
     </div>
   </template>
@@ -69,7 +69,7 @@ onBeforeUnmount(() => { comparisonRequest++ })
 .matching-reanalysis__heading { display: flex; align-items: flex-start; gap: var(--space-3); }
 .matching-reanalysis__heading > svg { margin-top: var(--space-1); color: var(--accent); flex-shrink: 0; }
 .matching-reanalysis__heading h3 { margin: 0 0 var(--space-1); font-size: var(--text-base); font-weight: var(--font-weight-bold); }
-.matching-reanalysis__heading p, .matching-reanalysis__context { color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.6; }
+.matching-reanalysis__context { color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.6; }
 .matching-reanalysis__notice { padding: var(--space-3) var(--space-4); border-left: 3px solid var(--warning); background: var(--warning-soft); border-radius: var(--radius-sm); }
 .matching-reanalysis__notice strong { display: block; margin-bottom: var(--space-1); font-size: var(--text-sm); }
 .matching-reanalysis__notice p { color: var(--text-secondary); font-size: var(--text-xs); }
@@ -87,7 +87,7 @@ onBeforeUnmount(() => { comparisonRequest++ })
 .matching-reanalysis__samples li p { color: var(--text-secondary); font-size: var(--text-xs); margin-top: var(--space-1); }
 .matching-reanalysis__feedback { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) 0; color: var(--text-secondary); }
 .matching-reanalysis__error { color: var(--danger); }
-.matching-reanalysis__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); border-top: 1px solid var(--border-primary); padding-top: var(--space-4); }
+.matching-reanalysis__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 640px) {
   .matching-reanalysis__comparison { grid-template-columns: 1fr; }
   .matching-reanalysis__comparison > div + div { border-left: 0; border-top: 1px solid var(--border-primary); }

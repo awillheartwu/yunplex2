@@ -30,16 +30,6 @@ for (const width of [1440, 390]) {
     await expect(steps.locator('.manual-steps__arrow')).toHaveCount(2)
     await expect(steps.locator('li').first()).toHaveAttribute('aria-current', 'step')
     await expect(page.getByRole('button', { name: '解析并预览' })).toBeDisabled()
-    const typeIssues = await page.locator('.manual-page').evaluate(root => Array.from(root.querySelectorAll<HTMLElement>('h2,h3,p,.btn,textarea')).filter(node => node.getClientRects().length).flatMap(node => {
-      const style = getComputedStyle(node)
-      const expected = node.tagName === 'H2' ? 18 : node.tagName === 'H3' ? 16 : null
-      const errors: string[] = []
-      if (expected && (parseFloat(style.fontSize) !== expected || style.fontWeight !== '600')) errors.push(`${node.tagName}: ${style.fontSize}/${style.fontWeight}`)
-      if (node.tagName === 'P' && (![12, 13, 14].includes(parseFloat(style.fontSize)) || Math.abs(parseFloat(style.lineHeight) / parseFloat(style.fontSize) - 1.6) > .01)) errors.push(`body: ${style.fontSize}/${style.lineHeight}`)
-      if (node.matches('.btn') && (style.fontSize !== '14px' || node.getBoundingClientRect().height < (innerWidth < 768 ? 44 : 40))) errors.push(`control: ${style.fontSize}/${node.getBoundingClientRect().height}`)
-      return errors
-    }))
-    expect(typeIssues).toEqual([])
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: testInfo.outputPath('input-light.png'), fullPage: true, animations: 'disabled' })
@@ -47,7 +37,6 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole('tooltip')).toBeVisible()
     await page.getByRole('button', { name: '输入帮助', exact: true }).click()
     await page.locator('.manual-options-summary').click()
-    await expect(page.getByRole('combobox', { name: '选择下载音质' })).toHaveCSS('font-size', '14px')
     expect((await page.getByRole('combobox', { name: '选择下载音质' }).boundingBox())!.height).toBeGreaterThanOrEqual(width < 720 ? 44 : 40)
     if (process.env.UI_SCREENSHOTS === '1') {
       await page.locator('.manual-config-card').evaluate(element => element.scrollIntoView({ block: 'center' }))

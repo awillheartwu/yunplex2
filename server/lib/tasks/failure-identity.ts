@@ -34,3 +34,7 @@ export function failureFingerprint(input: {
 export function normalizeFailureIdentityPart(value: string | number | null | undefined): string {
   return normalizePart(value)
 }
+
+export function failureReasonGroupKey(kind: string, reason: string): string {
+  return createHash('sha256').update(JSON.stringify([kind, kind === 'copyright_restricted' ? '' : reason])).digest('hex')
+}

@@ -67,11 +67,6 @@
   margin: 0;
   color: var(--text-primary);
 }
-.manual-submitted p {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
 .manual-submitted__actions {
   display: flex;
   flex-wrap: wrap;

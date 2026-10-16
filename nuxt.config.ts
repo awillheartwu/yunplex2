@@ -1,8 +1,12 @@
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const buildRequire = createRequire(import.meta.url)
-const packageVersion = (buildRequire('./package.json') as { version: string }).version
+const flacRequire = createRequire(buildRequire.resolve('flac-bindings/api'))
+const flacLibc = flacRequire('detect-libc').familySync()
+const flacNativePackage = `@melchor629/flac-bindings-lib-${process.platform}${flacLibc ? `-${flacLibc}` : ''}-${process.arch}`
+const packageVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version
 
 // CI 传入部署提交号，本地开发读取当前提交。
 function resolveRevision(): string {
@@ -41,7 +45,7 @@ export default defineNuxtConfig({
     },
   },
 
-  modules: ['@nuxtjs/tailwindcss'],
+  modules: ['./modules/settings-search.ts', '@nuxtjs/tailwindcss'],
 
   components: [
     {
@@ -65,13 +69,13 @@ export default defineNuxtConfig({
   app: {
     head: {
       script: [{ innerHTML: `(${initializeAppearance.toString()})();`, tagPosition: 'head' }],
-      title: 'reYunPlex',
+      title: 'YunPlex',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
       link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { key: 'yunplex-icon', rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
     },
   },
@@ -174,7 +178,12 @@ export default defineNuxtConfig({
   nitro: {
     plugins: ['~/server/plugins/sync-daemon'],
     externals: {
-      traceInclude: [buildRequire.resolve('metaflac-js'), buildRequire.resolve('node-id3')],
+      traceInclude: [
+        buildRequire.resolve('flac-bindings/api'), flacRequire.resolve(flacNativePackage),
+        buildRequire.resolve('image-size'), buildRequire.resolve('music-metadata'),
+        buildRequire.resolve('node-id3'),
+        buildRequire.resolve('@neteasecloudmusicapienhanced/api/util/xeapiKey.js'),
+      ],
     },
   },
 

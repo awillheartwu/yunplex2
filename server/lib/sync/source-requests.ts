@@ -6,7 +6,7 @@ import { getSource } from '../playlist/store'
 import { resolveInitializationGate } from '../source-initialization/gate'
 import { requestSourceInitialization } from '../source-initialization/requests'
 import { getSyncServiceInstance, isRepairRunning } from './instance'
-import { persistSourceRequest, sourceRequestsBusy, type SourceRequestInput } from './request-store'
+import { persistSourceRequest, sourceRequestsBusy, type SourceRequestInput, type SourceRequestKind } from './request-store'
 import { isSyncMode, type SyncRunOptions } from './service-state'
 
 export interface SourceRequestResult {
@@ -71,7 +71,7 @@ export interface SourceRequestSnapshot {
   id: string
   sourceId: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-  kind: 'analysis' | 'convergence'
+  kind: SourceRequestKind
   runId: string | null
   error: string | null
 }

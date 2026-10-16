@@ -30,7 +30,7 @@
               v-for="t in typeTabs"
               :key="t.key"
               class="btn btn-sm"
-              :class="dialogType === t.key ? 'btn-primary' : 'btn-ghost'"
+              :class="dialogType === t.key ? 'btn-soft' : 'btn-ghost'"
               :aria-pressed="dialogType === t.key"
               :disabled="saving"
               @click="switchType(t.key)"
@@ -271,10 +271,17 @@
             class="flex items-center justify-between gap-3 px-5 py-3 shrink-0"
             style="border-top: 1px solid var(--border-primary); background: var(--bg-app)"
           >
-            <span class="text-2xs text-muted">已选 {{ selectedIds.length }} 个</span>
+            <div class="add-collection-selection">
+              <div class="add-collection-selection-controls">
+                <label><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected" :disabled="loading || loadingMore || saving || !pageSelectableIds.length" @change="togglePageSelection" />全选本页</label>
+                <span>已选 {{ selectedIds.length }} 个</span>
+                <button v-if="selectedIds.length" class="btn btn-ghost btn-sm" :disabled="saving" @click="selectedIds = []">清空</button>
+              </div>
+              <p>仅当前已加载、符合筛选且未添加的 {{ pageSelectableIds.length }} 个</p>
+            </div>
             <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
             <div class="flex gap-2">
-              <button class="btn btn-secondary" :disabled="saving" @click="close">取消</button>
+              <button class="btn btn-ghost" :disabled="saving" @click="close">取消</button>
               <button class="btn btn-primary" :disabled="saving || selectedIds.length === 0" @click="handleAddSelected">
                 {{ saving ? '添加中...' : '确认添加' }}
               </button>
@@ -311,7 +318,7 @@
             style="border-top: 1px solid var(--border-primary); background: var(--bg-app)"
           >
             <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
-            <button class="btn btn-secondary" :disabled="saving" @click="close">取消</button>
+            <button class="btn btn-ghost" :disabled="saving" @click="close">取消</button>
             <button class="btn btn-primary" :disabled="saving" @click="handleAddSingle">确认添加</button>
           </div>
         </template>
@@ -501,6 +508,21 @@ const albumDialogActiveCount = computed(() =>
 )
 const albumDialogCanClear = computed(() => albumDialogActiveCount.value > 0)
 
+const pageSelectableIds = computed(() => (dialogType.value === 'playlist' ? filtered.value : filteredAlbums.value)
+  .filter(item => !isAdded(item.id)).map(item => item.id))
+const allPageSelected = computed(() => pageSelectableIds.value.length > 0 && pageSelectableIds.value.every(id => selectedIds.value.includes(id)))
+const somePageSelected = computed(() => !allPageSelected.value && pageSelectableIds.value.some(id => selectedIds.value.includes(id)))
+
+function togglePageSelection() {
+  if (loading.value || loadingMore.value || saving.value) return
+  const next = new Set(selectedIds.value)
+  for (const id of pageSelectableIds.value) {
+    if (allPageSelected.value) next.delete(id)
+    else next.add(id)
+  }
+  selectedIds.value = [...next]
+}
+
 function clearAlbumDialogFilters() {
   albumSearch.value = ''
   albumHideAdded.value = false
@@ -656,6 +678,27 @@ watch(
 .add-collection-filters { display: grid; gap: var(--space-2); }
 .add-collection-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .add-collection-filter-row select { width: 10rem; }
+.add-collection-selection {
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.add-collection-selection p {
+  margin-top: var(--space-1);
+}
+.add-collection-selection-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.add-collection-selection-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  cursor: pointer;
+}
 @media (max-width: 520px) {
   .add-collection-toolbar {
     padding: var(--space-3) var(--space-4);

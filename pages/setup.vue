@@ -114,12 +114,12 @@
           {{ checks.netease.message }}
         </p>
         <div class="setup-actions">
-          <button class="btn btn-primary" type="submit" :disabled="isChecking('netease') || !config.netease.cookie">
+          <button class="btn btn-soft" type="submit" :disabled="isChecking('netease') || !config.netease.cookie">
             <AppIcon v-if="isChecking('netease')" name="loader" class="animate-spin" :size="16" />
             <AppIcon v-else name="check" :size="16" />
             {{ isChecking('netease') ? '测试中...' : '测试连接' }}
           </button>
-          <button class="btn btn-secondary" type="button" :disabled="!isStepComplete('netease')" @click="activeStep = 'plex'">下一步</button>
+          <button class="btn btn-primary" type="button" :disabled="!isStepComplete('netease')" @click="activeStep = 'plex'">下一步</button>
         </div>
       </form>
 
@@ -128,7 +128,7 @@
           <span class="setup-panel__icon"><AppIcon name="source" :size="20" /></span>
           <div>
             <h2 class="setup-panel__title">连接 Plex</h2>
-            <p class="setup-copy">用于确认音乐库、触发扫描和同步歌单。Plex API 不负责上传音频文件，下载目录必须对 Plex 可见。</p>
+            <p class="setup-copy">用于确认音乐库、触发扫描和同步歌单。下载目录必须对 Plex 可见。</p>
           </div>
         </div>
         <div class="setup-grid">
@@ -153,13 +153,13 @@
           {{ checks.plex.message }}
         </p>
         <div class="setup-actions">
-          <button class="btn btn-secondary" type="button" @click="activeStep = 'netease'">上一步</button>
-          <button class="btn btn-primary" type="submit" :disabled="isChecking('plex') || !config.plex.server || !config.plex.token">
+          <button class="btn btn-ghost" type="button" @click="activeStep = 'netease'">上一步</button>
+          <button class="btn btn-soft" type="submit" :disabled="isChecking('plex') || !config.plex.server || !config.plex.token">
             <AppIcon v-if="isChecking('plex')" name="loader" class="animate-spin" :size="16" />
             <AppIcon v-else name="check" :size="16" />
             {{ isChecking('plex') ? '测试中...' : '测试连接' }}
           </button>
-          <button class="btn btn-secondary" type="button" :disabled="!isStepComplete('plex')" @click="activeStep = 'download'">下一步</button>
+          <button class="btn btn-primary" type="button" :disabled="!isStepComplete('plex')" @click="activeStep = 'download'">下一步</button>
         </div>
       </form>
 
@@ -176,24 +176,24 @@
           <input id="download-dir" v-model="config.download.dir" class="form-input font-mono" required :disabled="isChecking('download')">
         </div>
         <div>
-          <label class="setup-label" for="plex-prefix">Plex 音乐库路径前缀</label>
+          <label class="setup-label" for="plex-prefix">Plex 对应目录</label>
           <input id="plex-prefix" v-model="config.download.plexLibraryPathPrefix" class="form-input font-mono" :disabled="isChecking('download')" placeholder="可选，例如 /music">
-          <p class="setup-path-note"><strong>这里只换算路径，不会传输文件。</strong>如果 Plex 在另一台主机，下载目录必须是 Plex 扫描目录的共享挂载，或另有复制流程。</p>
+          <p class="setup-path-note">同一份音乐在 Plex 中的目录；两端路径相同时可留空。请将两端挂载到同一份音乐目录。</p>
         </div>
         <p class="setup-path-note">
-          无法验证托管路径或明确接管时，首次手动或定时同步会自动下载独立副本。
+          没有确认可用的本地文件时，首次同步会下载一份新的音乐文件。
         </p>
         <p v-if="checks.download.message" class="setup-check" :class="'setup-check--' + checks.download.status" role="status">
           {{ checks.download.message }}
         </p>
         <div class="setup-actions">
-          <button class="btn btn-secondary" type="button" @click="activeStep = 'plex'">上一步</button>
-          <button class="btn btn-primary" type="submit" :disabled="isChecking('download') || !config.download.dir">
+          <button class="btn btn-ghost" type="button" @click="activeStep = 'plex'">上一步</button>
+          <button class="btn btn-soft" type="submit" :disabled="isChecking('download') || !config.download.dir">
             <AppIcon v-if="isChecking('download')" name="loader" class="animate-spin" :size="16" />
             <AppIcon v-else name="check" :size="16" />
             {{ isChecking('download') ? '检查中...' : '检查目录' }}
           </button>
-          <button class="btn btn-secondary" type="button" :disabled="!isStepComplete('download')" @click="activeStep = 'complete'">下一步</button>
+          <button class="btn btn-primary" type="button" :disabled="!isStepComplete('download')" @click="activeStep = 'complete'">下一步</button>
         </div>
       </form>
 
@@ -202,7 +202,7 @@
           <span class="setup-panel__icon"><AppIcon name="checkCircle" :size="20" /></span>
           <div>
             <h2 class="setup-panel__title">完成初始化</h2>
-            <p class="setup-copy">最后会由后端再次验证三项必需条件，通过后进入控制台。</p>
+            <p class="setup-copy">最后会再次验证三项必需条件，通过后进入控制台。</p>
           </div>
         </div>
         <div class="setup-summary">
@@ -222,7 +222,7 @@
           <p v-else-if="message" class="setup-message">{{ message }}</p>
         </div>
         <div class="setup-actions">
-          <button class="btn btn-secondary" type="button" @click="activeStep = 'download'">上一步</button>
+          <button class="btn btn-ghost" type="button" @click="activeStep = 'download'">上一步</button>
           <button class="btn btn-primary" type="button" :disabled="submitting" @click="completeSetup">
             <AppIcon v-if="submitting" name="loader" class="animate-spin" :size="16" />
             <AppIcon v-else name="play" :size="16" />
@@ -515,10 +515,6 @@ function canOpenStep(key: StepKey): boolean {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   line-height: var(--body-leading);
-}
-
-.setup-path-note strong {
-  color: var(--text-secondary);
 }
 
 .setup-textarea {

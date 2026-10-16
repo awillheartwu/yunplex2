@@ -1,7 +1,14 @@
-import pkg from 'NeteaseCloudMusicApi'
+import pkg from '@neteasecloudmusicapienhanced/api'
 import type { LyricOrder } from './config/types'
-import { controlledNeteaseRequest } from './download/netease-request'
+import { controlledNeteaseRequest, DOWNLOAD_METADATA_TIMEOUT_MS } from './download/netease-request'
 import { createHash } from 'node:crypto'
+import { getExternalRequestSignal } from './external-request-context'
+
+function legacyRequestSignal(): AbortSignal {
+  const parent = getExternalRequestSignal()
+  const timeout = AbortSignal.timeout(DOWNLOAD_METADATA_TIMEOUT_MS)
+  return parent ? AbortSignal.any([parent, timeout]) : timeout
+}
 
 const { login_status, song_url_v1, lyric_new, song_detail, album, user_playlist, album_sublist, playlist_detail } = pkg
 
@@ -98,24 +105,31 @@ export interface CookieCheckResult {
   networkError?: boolean
 }
 
-// NeteaseCloudMusicApi rejects with its own { status, body } answer for non-200 codes, so only
+// The SDK rejects with its own { status, body } answer for non-200 codes, so only
 // transport-shaped rejections may be reported as network failures instead of an invalid cookie.
+function neteaseFailureStatus(reason: unknown): number {
+  const error = reason as { status?: number; httpStatus?: number; providerCode?: number; body?: { code?: number } } | null
+  const httpStatus = Number(error?.httpStatus || 0)
+  return httpStatus >= 400 ? httpStatus : Number(error?.providerCode || error?.status || error?.body?.code || httpStatus)
+}
+
 function isNeteaseTransportFailure(reason: unknown): boolean {
-  if (reason instanceof Error) return true
-  const status = Number((reason as { status?: unknown } | null | undefined)?.status)
-  if (!Number.isFinite(status)) return true
-  return status >= 500
+  const error = reason as { status?: number; httpStatus?: number; code?: string } | null
+  if (error?.code === 'AUTHENTICATION_FAILED') return false
+  const status = neteaseFailureStatus(reason)
+  return !status || status >= 500 || status === 403 || status === 429
 }
 
 export async function checkCookie(cookie: string): Promise<CookieCheckResult> {
   try {
-    const res = await login_status({ cookie })
+    const res = await controlledNeteaseRequest(() => login_status({ cookie }), 'login_status')
     const data = (res as { body?: { data?: { code?: number; profile?: { userId: number; nickname: string } } } }).body?.data
     if (data?.code === 200 && typeof data.profile?.userId === 'number' && data.profile.userId > 0) {
       return { valid: true, profile: data.profile }
     }
     return { valid: false }
   } catch (reason) {
+    getExternalRequestSignal()?.throwIfAborted()
     return isNeteaseTransportFailure(reason) ? { valid: false, networkError: true } : { valid: false }
   }
 }
@@ -141,7 +155,7 @@ export async function fetchPlaylistSongs(
     updateTime: number | null
   } | null
 }> {
-  const response = await playlist_detail({ id: playlistId, cookie })
+  const response = await controlledNeteaseRequest(() => playlist_detail({ id: playlistId, cookie }), 'playlist_detail')
   const body = (response as {
     status?: number
     body?: {
@@ -206,14 +220,19 @@ export async function fetchPlaylistSongs(
     const ids = batch.map((t) => String(t.id)).join(',')
 
     const [v3Res, oldRes] = await Promise.all([
-      song_detail({ ids, cookie }),
-      fetch(`http://music.163.com/api/song/detail/?id=&ids=[${ids}]`),
+      controlledNeteaseRequest(() => song_detail({ ids, cookie }), 'song_detail'),
+      fetch(`https://music.163.com/api/song/detail/?id=&ids=[${ids}]`, { signal: legacyRequestSignal() }).catch(error => {
+        getExternalRequestSignal()?.throwIfAborted()
+        if (error instanceof Error && error.name === 'AbortError') throw error
+        return null
+      }),
     ])
 
     const data = (v3Res as NeteaseResponse<SongDetailBody>).body
-    const oldData = oldRes.ok
+    const oldData = oldRes?.ok
       ? await oldRes.json().catch(() => undefined) as { songs?: LegacySongDetail[] } | undefined
       : undefined
+    getExternalRequestSignal()?.throwIfAborted()
 
     if (data?.songs) {
       for (const s of data.songs) {
@@ -347,7 +366,7 @@ export function mapRawSong(raw: RawSong, options: { preserveArtistNames?: boolea
 
 /** Fetch a single song's detail by ID */
 export async function fetchSongDetail(songId: number, cookie: string): Promise<NeteaseSong> {
-  const res = await controlledNeteaseRequest(() => song_detail({ ids: String(songId), cookie }))
+  const res = await controlledNeteaseRequest(() => song_detail({ ids: String(songId), cookie }), 'song_detail')
   const data = (res as NeteaseResponse<SongDetailBody>).body
   if (!data?.songs?.[0]) throw new Error(`无法获取歌曲 ${songId} 的详情`)
   return mapRawSong(data.songs[0])
@@ -383,7 +402,7 @@ export async function fetchAlbumDetail(albumId: number, cookie: string): Promise
 
 async function loadAlbumDetail(albumId: number, cookie: string): Promise<AlbumDetail | null> {
   try {
-    const res = await controlledNeteaseRequest(() => album({ id: albumId, cookie }))
+    const res = await controlledNeteaseRequest(() => album({ id: albumId, cookie }), 'album')
     const data = (res as { body?: { album?: RawAlbum; songs?: unknown[] } }).body
     if (!data?.album) return null
 
@@ -425,12 +444,10 @@ async function loadAlbumDetail(albumId: number, cookie: string): Promise<AlbumDe
   } catch (error) {
     // Some downloadable singles have no album endpoint. Use song metadata;
     // an optional 404 must not turn a valid audio download into a failure.
-    const status = Number((error as { httpStatus?: number; status?: number; body?: { code?: number } } | null)?.httpStatus
-      ?? (error as { status?: number } | null)?.status
-      ?? (error as { body?: { code?: number } } | null)?.body?.code)
+    const status = neteaseFailureStatus(error)
     if (status === 404) return null
     // Authentication, throttling and cancellation must reach the queue policy.
-    if (error instanceof Error && ('httpStatus' in error || 'code' in error || error.name === 'AbortError')) throw error
+    if (error instanceof Error && ('httpStatus' in error || 'code' in error || error.name === 'AbortError' || error.name === 'CancellationError')) throw error
     return null
   }
 }
@@ -460,21 +477,31 @@ export async function getSongUrl(
   quality: string,
   cookie: string,
 ): Promise<{ url: string; type: string }> {
+  type AudioResponse = { body?: { data?: Array<{ url?: string; type?: string; freeTrialInfo?: unknown; code?: number }> } }
   const level = QUALITY_LEVELS[quality] || 'jymaster'
 
-  let res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }))
-  let data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
+  let res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }), 'song_url_v1')
+  let data = (res as AudioResponse).body?.data?.[0]
 
-  if (!data || (data.type !== 'flac' && data.type !== 'mp3')) {
-    res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie }))
-    data = (res as { body?: { data?: { url?: string; type?: string }[] } }).body?.data?.[0]
+  let attemptedLevel = level
+  if (!data || !['flac', 'mp3'].includes(data.type?.toLowerCase() ?? '')) {
+    attemptedLevel = 'hires'
+    res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie }), 'song_url_v1')
+    data = (res as AudioResponse).body?.data?.[0]
   }
 
   if (!data?.url) {
-    throw new Error(`无法获取歌曲 ${songId} 的下载链接`)
+    throw Object.assign(new Error(`网易云未提供可用音源（接口 song_url_v1，音质 ${attemptedLevel}，音源状态 ${data?.code ?? '未返回'}）；请核对歌曲可用性和账号权限`), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId, providerCode: data?.code })
+  }
+  if (data.freeTrialInfo && data.freeTrialInfo !== 'null') {
+    throw Object.assign(new Error('网易云仅提供试听音源（接口 song_url_v1）；请核对账号权限'), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId })
+  }
+  const type = data.type?.toLowerCase() ?? 'mp3'
+  if (!['flac', 'mp3'].includes(type)) {
+    throw Object.assign(new Error(`网易云返回的音频格式 ${type} 尚不支持（接口 song_url_v1）`), { code: 'DOWNLOAD_FORMAT_UNSUPPORTED' })
   }
 
-  return { url: data.url, type: data.type ?? 'mp3' }
+  return { url: data.url, type }
 }
 
 export interface LyricData {
@@ -491,7 +518,7 @@ export async function fetchLyric(
   order: LyricOrder = 'original_first',
   includeTranslation = true,
 ): Promise<LyricData> {
-  const res = await controlledNeteaseRequest(() => lyric_new({ id: songId, cookie }))
+  const res = await controlledNeteaseRequest(() => lyric_new({ id: songId, cookie }), 'lyric_new')
   const body = (res as { body?: { lrc?: { lyric?: string }; tlyric?: { lyric?: string }; romalrc?: { lyric?: string } } }).body
 
   const original = body?.lrc?.lyric ?? ''
@@ -567,7 +594,7 @@ export async function fetchUserPlaylists(
   limit = 100,
   offset = 0,
 ): Promise<UserPlaylist[]> {
-  const res = await user_playlist({ uid, limit, offset, cookie })
+  const res = await controlledNeteaseRequest(() => user_playlist({ uid, limit, offset, cookie }), 'user_playlist')
   const body = (res as NeteaseResponse<{ playlist?: UserPlaylistResponseItem[] }>).body
   return (body?.playlist ?? []).map(p => ({
     id: p.id,
@@ -586,7 +613,7 @@ export async function fetchUserAlbums(
   limit = 100,
   offset = 0,
 ): Promise<UserAlbum[]> {
-  const res = await album_sublist({ limit, offset, cookie })
+  const res = await controlledNeteaseRequest(() => album_sublist({ limit, offset, cookie }), 'album_sublist')
   const body = (res as NeteaseResponse<{ data?: UserAlbumResponseItem[] }>).body
   return (body?.data ?? []).map(a => ({
     id: a.id,
@@ -603,15 +630,18 @@ export async function fetchAlbumSongs(
   albumId: number,
   cookie: string,
 ): Promise<NeteaseSong[]> {
-  const res = await album({ id: albumId, cookie })
+  const res = await controlledNeteaseRequest(() => album({ id: albumId, cookie }), 'album')
   const body = (res as NeteaseResponse<SongDetailBody>).body
   return (body?.songs ?? []).map(song => mapRawSong(song))
 }
 
 export async function fetchPlaylistName(playlistId: number): Promise<string | null> {
   try {
-    const res = await fetch(`https://music.163.com/api/v1/playlist/detail?id=${playlistId}`)
+    const res = await fetch(`https://music.163.com/api/v1/playlist/detail?id=${playlistId}`, { signal: legacyRequestSignal() })
     const body = (await res.json()) as { playlist?: { name?: string } }
     return body.playlist?.name ?? null
-  } catch { return null }
+  } catch {
+    getExternalRequestSignal()?.throwIfAborted()
+    return null
+  }
 }

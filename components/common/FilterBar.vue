@@ -93,7 +93,7 @@
         <div class="filter-popover__footer">
           <slot v-if="$slots['advanced-footer']" name="advanced-footer" :close="closePanel" />
           <template v-else>
-            <button v-if="canClear" class="btn btn-secondary" type="button" @click="$emit('clear')">清除筛选</button>
+            <button v-if="canClear" class="btn btn-ghost" type="button" @click="$emit('clear')">清除筛选</button>
             <button class="btn btn-primary" type="button" @click="closePanel">完成</button>
           </template>
         </div>
@@ -135,7 +135,7 @@
             <div class="filter-sheet-footer">
               <slot v-if="$slots['advanced-footer']" name="advanced-footer" :close="closePanel" />
               <template v-else>
-                <button v-if="canClear" class="btn btn-secondary" type="button" @click="$emit('clear')">清除筛选</button>
+                <button v-if="canClear" class="btn btn-ghost" type="button" @click="$emit('clear')">清除筛选</button>
                 <button class="btn btn-primary" type="button" @click="closePanel">完成</button>
               </template>
             </div>

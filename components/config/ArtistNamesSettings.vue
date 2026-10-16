@@ -1,11 +1,22 @@
 <template>
   <section class="artist-names" aria-label="艺人名称规则">
-    <PageTabs v-model="tab" aria-label="艺人名称编辑模式" :tabs="[{ key: 'matching', label: '匹配别名', count: matchingGroups.length }, { key: 'writes', label: '写入替换', count: writeCount }]" />
+    <PageTabs v-model="tab" aria-label="艺人名称编辑模式" :tabs="[{ key: 'matching', label: settingSections['artists.matching'].title, count: matchingGroups.length }, { key: 'writes', label: settingSections['artists.writes'].title, count: writeCount }]" />
     <div v-if="error" class="artist-names__error" role="alert">{{ error }}。请修正后再保存。</div>
-    <div v-if="tab === 'matching'" id="artist-names-panel-matching" aria-label="匹配别名" class="artist-names__panel">
+    <div v-if="jsonOpen" class="artist-names__json">
+      <p>{{ jsonMode === 'matching' ? '批量编辑匹配别名：JSON 数组中的每条规则包含 name（艺人名称）、aliases（别名数组）和 enabled（是否启用）。写入替换保持不变。' : '批量编辑原名称与写入名称的对应关系，匹配别名保持不变。' }}应用到草稿后，请在页底保存。</p>
+      <textarea v-model="jsonText" rows="10" class="form-input font-mono" :aria-label="jsonMode === 'matching' ? '匹配别名 JSON' : '写入映射 JSON'" :disabled="disabled" :spellcheck="false" />
+      <div class="artist-names__actions">
+        <button class="btn btn-soft btn-sm" :disabled="disabled" @click="applyJson">应用到草稿</button>
+        <button class="btn btn-ghost btn-sm" :disabled="disabled" @click="cancelJson">取消批量编辑</button>
+      </div>
+    </div>
+    <div v-if="tab === 'matching'" :id="settingTargetId('section:artists.matching')" data-setting-target="section:artists.matching" data-setting-title="匹配别名" data-setting-description="匹配别名用于识别同一艺人的不同名称。" data-setting-tab="artists" data-setting-keywords="艺人 别名" :aria-label="settingSections['artists.matching'].title" class="artist-names__panel">
       <div class="artist-names__toolbar">
-        <p class="artist-names__lead">匹配别名只作为增强匹配的候选建议，不改写文件名或标签。</p>
-        <button class="btn btn-secondary btn-sm" :disabled="disabled || jsonOpen" @click="addGroup"><AppIcon name="plus" :size="14" />添加艺人</button>
+        <p class="artist-names__lead">{{ settingSections['artists.matching'].description }}</p>
+        <div class="artist-names__actions">
+          <button class="btn btn-secondary btn-sm" :disabled="disabled || jsonOpen" @click="addGroup"><AppIcon name="plus" :size="14" />添加艺人</button>
+          <button class="btn btn-ghost btn-sm" :disabled="disabled || jsonOpen || !!error" :aria-expanded="jsonMode === 'matching'" @click="openJson('matching')">批量编辑匹配别名（JSON）</button>
+        </div>
       </div>
       <div class="artist-names__sheet">
         <div class="artist-names__columns" aria-hidden="true"><span>艺人名称</span><span>别名 <small>每行一个</small></span><span>匹配</span><span /></div>
@@ -18,22 +29,16 @@
         </fieldset>
       </div>
     </div>
-    <div v-else id="artist-names-panel-writes" aria-label="写入替换" class="artist-names__panel">
+    <div v-else :id="settingTargetId('section:artists.writes')" data-setting-target="section:artists.writes" data-setting-title="写入替换" data-setting-description="写入替换用于歌曲标签，已有文件名保留。" data-setting-tab="artists" data-setting-keywords="标签 专辑" :aria-label="settingSections['artists.writes'].title" class="artist-names__panel">
       <div class="artist-names__toolbar">
-        <label class="artist-names__album"><input type="checkbox" :checked="applyToAlbum" :disabled="disabled || jsonOpen" @change="$emit('update:applyToAlbum', ($event.target as HTMLInputElement).checked)" />写入替换应用到专辑艺人</label>
+        <label :id="settingTargetId('other.applyAliasToAlbum')" data-setting-target="other.applyAliasToAlbum" data-setting-label="写入替换应用到专辑艺人" data-setting-keywords="专辑 标签" class="artist-names__album"><input type="checkbox" :checked="applyToAlbum" :disabled="disabled || jsonOpen" @change="$emit('update:applyToAlbum', ($event.target as HTMLInputElement).checked)" />{{ settingLabel('other.applyAliasToAlbum') }}</label>
         <div class="artist-names__actions">
-          <button class="btn btn-secondary" :disabled="disabled || jsonOpen" @click="addWrite">添加替换</button>
-          <button class="btn btn-ghost btn-sm" :disabled="disabled || !!error" :aria-expanded="jsonOpen" @click="openJson">批量编辑写入映射（JSON）</button>
+          <button class="btn btn-secondary btn-sm" :disabled="disabled || jsonOpen" @click="addWrite">添加替换</button>
+          <button class="btn btn-ghost btn-sm" :disabled="disabled || jsonOpen || !!error" :aria-expanded="jsonMode === 'writes'" @click="openJson('writes')">批量编辑写入映射（JSON）</button>
         </div>
       </div>
-      <div v-if="jsonOpen" class="artist-names__json">
-        <p>粘贴或复制写入映射；应用不会改变匹配别名。</p>
-        <textarea v-model="jsonText" rows="6" class="form-input" aria-label="写入映射 JSON" :disabled="disabled" />
-        <button class="btn btn-secondary" :disabled="disabled" @click="applyJson">应用到草稿</button>
-        <button class="btn btn-ghost" :disabled="disabled" @click="cancelJson">取消批量编辑</button>
-      </div>
       <div class="artist-names__sheet">
-        <EmptyState v-if="!writeRows.length" title="暂无写入替换" description="添加一条原名称到写入名称的规则，不需要先建立匹配别名。" />
+        <EmptyState v-if="!writeRows.length" title="暂无写入替换" description="添加原名称到写入名称的替换规则。" />
         <fieldset v-for="(entry, index) in writeRows" :key="entry.rule.order" :disabled="disabled || jsonOpen" class="artist-write" :aria-label="`第 ${index + 1} 条写入替换`">
           <div class="artist-row__mapping">
             <input :value="entry.rule.source" class="form-input" :aria-label="`第 ${index + 1} 条原名称`" placeholder="原名称" @input="updateWrite(entry.groupIndex, entry.row, { source: ($event.target as HTMLInputElement).value })" />
@@ -44,18 +49,29 @@
         </fieldset>
       </div>
     </div>
-    <div class="artist-names__notes"><p v-if="!matchingActive">增强匹配尚未启用，勾选的名称规则会保留。</p><p>匹配别名不会自动用于文件改写；写入替换不重命名已有文件。</p></div>
+    <div class="artist-names__notes"><p v-if="!matchingActive">增强匹配尚未启用。</p><p>{{ settingSections['artists.writes'].description }}</p></div>
   </section>
 </template>
 <script setup lang="ts">
 import type { MatchingAlias } from '~~/shared/initialization-matching'
 import { collectArtistNames, nextArtistWriteOrder, projectArtistNames, type ArtistNameGroup, type ArtistNameSettings, type ArtistWriteRule } from '~~/shared/artist-names'
+import { getSettingsTarget, settingLabel, settingSections, settingTargetId } from '~~/lib/settings-catalog'
+import { useSettingsFocusRequest } from '~~/composables/useSettingsFocusRequest'
 const props = defineProps<{ matching: MatchingAlias[]; replacements: Record<string, string>; applyToAlbum: boolean; matchingActive: boolean; resetKey: object; disabled?: boolean }>()
 const emit = defineEmits<{ update: [value: ArtistNameSettings]; 'update:applyToAlbum': [value: boolean]; invalid: [message: string] }>()
 const groups = ref<ArtistNameGroup[]>([])
 const tab = ref('matching')
+const route = useRoute()
+const settingsFocusRequest = useSettingsFocusRequest()
+function syncTabFromSetting() {
+  const target = getSettingsTarget(route.query.setting)
+  if (target?.sectionKey === 'artists.matching') tab.value = 'matching'
+  else if (target?.sectionKey === 'artists.writes') tab.value = 'writes'
+}
+watch([() => route.query.setting, settingsFocusRequest], syncTabFromSetting, { immediate: true })
 const error = ref('')
-const jsonOpen = ref(false)
+const jsonMode = ref<'matching' | 'writes' | null>(null)
+const jsonOpen = computed(() => jsonMode.value !== null)
 const jsonText = ref('')
 let lastEmitted = ''
 let counter = 0
@@ -68,7 +84,7 @@ const orderedGroups = computed(() => {
 const matchingGroups = computed(() => orderedGroups.value.filter(entry => entry.group.matchingStored))
 const writeRows = computed(() => groups.value.flatMap((group, groupIndex) => group.writes.map((rule, row) => ({ rule, row, groupIndex }))).sort((a, b) => a.rule.order - b.rule.order))
 const writeCount = computed(() => groups.value.reduce((total, group) => total + group.writes.length, 0))
-function hydrate() { jsonOpen.value = false; groups.value = collectArtistNames(props.matching, props.replacements); lastEmitted = JSON.stringify({ matching: props.matching, replacements: props.replacements }); error.value = ''; emit('invalid', '') }
+function hydrate() { jsonMode.value = null; jsonText.value = ''; groups.value = collectArtistNames(props.matching, props.replacements); lastEmitted = JSON.stringify({ matching: props.matching, replacements: props.replacements }); error.value = ''; emit('invalid', '') }
 watch(() => props.resetKey, hydrate, { immediate: true })
 watch(() => [props.matching, props.replacements], () => {
   if (JSON.stringify({ matching: props.matching, replacements: props.replacements }) !== lastEmitted) hydrate()
@@ -82,21 +98,41 @@ function commit() {
   } catch (err) { error.value = err instanceof Error ? err.message : '请检查名称规则' }
   emit('invalid', error.value)
 }
-function openJson() {
-  jsonText.value = JSON.stringify(projectArtistNames(groups.value).replacements, null, 2)
-  jsonOpen.value = true
-  error.value = '批量编辑尚未应用，请应用到草稿或取消'
-  emit('invalid', error.value)
+function openJson(mode: 'matching' | 'writes') {
+  const current = projectArtistNames(groups.value)
+  jsonText.value = JSON.stringify(mode === 'matching' ? current.matching : current.replacements, null, 2)
+  jsonMode.value = mode
+  error.value = ''
+  emit('invalid', '批量编辑尚未应用，请应用到草稿或取消')
 }
-function cancelJson() { jsonOpen.value = false; error.value = ''; emit('invalid', '') }
+function cancelJson() { jsonMode.value = null; jsonText.value = ''; error.value = ''; emit('invalid', '') }
 function applyJson() {
   try {
     const parsed: unknown = JSON.parse(jsonText.value)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some(value => typeof value !== 'string')) throw new Error('请输入值均为字符串的 JSON 对象')
-    groups.value = collectArtistNames(projectArtistNames(groups.value).matching, parsed as Record<string, string>)
-    jsonOpen.value = false
+    const current = projectArtistNames(groups.value)
+    let next: ArtistNameGroup[]
+    if (jsonMode.value === 'matching') {
+      next = collectArtistNames(readMatchingJson(parsed), current.replacements)
+    } else {
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some(value => typeof value !== 'string')) throw new Error('请输入值均为字符串的 JSON 对象')
+      next = collectArtistNames(current.matching, parsed as Record<string, string>)
+    }
+    projectArtistNames(next)
+    groups.value = next
+    jsonMode.value = null
+    jsonText.value = ''
     commit()
   } catch (err) { error.value = err instanceof Error ? err.message : 'JSON 格式错误'; emit('invalid', error.value) }
+}
+function readMatchingJson(value: unknown): MatchingAlias[] {
+  if (!Array.isArray(value)) throw new Error('匹配别名需要 JSON 数组，每条规则包含 name、aliases 和 enabled')
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)
+      || typeof entry.name !== 'string' || !entry.name.trim()
+      || !Array.isArray(entry.aliases) || entry.aliases.some((alias: unknown) => typeof alias !== 'string' || !alias.trim())
+      || typeof entry.enabled !== 'boolean') throw new Error(`第 ${index + 1} 条规则需要非空的 name、字符串数组 aliases 和布尔值 enabled`)
+    return { name: entry.name.trim(), aliases: entry.aliases.map((alias: string) => alias.trim()), enabled: entry.enabled }
+  })
 }
 function addGroup() { groups.value.push({ id: `new-${++counter}`, name: '', aliases: [], matchingEnabled: true, matchingStored: true, writes: [] }); commit() }
 function removeGroup(index: number) {
@@ -129,6 +165,8 @@ function removeWrite(index: number, row: number) {
 .artist-names__toolbar { justify-content: space-between; }
 .artist-names__album { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
 .artist-names__error { padding: var(--space-3); border: 1px solid var(--danger-border); border-radius: var(--radius-md); color: var(--danger); background: var(--danger-soft); font-size: var(--text-sm); }
+.artist-names__json { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border-primary); border-radius: var(--radius-md); background: var(--bg-input); }
+.artist-names__json textarea { min-height: 12rem; resize: vertical; font-size: var(--text-sm); }
 .artist-names__sheet { border: 1px solid var(--border-primary); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-surface); }
 .artist-names__columns,.artist-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.15fr) 3rem 2rem; gap: var(--space-3); padding: var(--space-3); }
 .artist-names__columns { align-items: center; background: var(--bg-input); font-size: var(--text-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }

@@ -1,10 +1,15 @@
-# reYunPlex
+# YunPlex
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/favicon.svg">
+  <img src="public/favicon-light.svg" alt="YunPlex" width="80" height="80">
+</picture>
 
 把网易云歌单和专辑保存为本地音乐，并更新 Plex 歌单。网页里可以管理收藏、下载歌曲、确认已有媒体、查看任务和调整设置。
 
 ## 启动
 
-需要 Node.js 24 和 pnpm 10.33.0，版本分别由 `.nvmrc` 和 `package.json` 指定。
+需要 Node.js 24、pnpm 10.33.0 和支持官方 API 1.0 的 Plex Media Server 1.41.9 或更新版本。Node.js 与 pnpm 版本分别由 `.nvmrc` 和 `package.json` 指定。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -28,6 +33,30 @@ docker compose up -d --build
 
 先修改音乐挂载路径，并让运行用户能读写数据和音乐目录。默认 UID/GID 为 `1000:1000`，端口为 `3210`；变量见 [docker-compose.yml](docker-compose.yml)，NAS 自动部署见[运维手册](docs/operations.md)。
 
+## 使用 GHCR 镜像
+
+正式镜像在 release 最终确认后发布，仅提供 `linux/amd64`。具体 GHCR 地址与 digest 以对应 release 的分发结果为准；其他架构使用源码自行构建。版本基线为 `2.0.1`，源码中的版本号不代表该镜像已公开发布。
+
+下载 [deploy/ghcr.compose.yml](deploy/ghcr.compose.yml)，将以下内容保存为同目录的 `.env`，替换镜像账号和两个本机绝对目录：
+
+```dotenv
+YUNPLEX_IMAGE=ghcr.io/你的账号/yunplex:2.0.1
+YUNPLEX_DATA_DIR=/path/to/yunplex-data
+YUNPLEX_MUSIC_DIR=/path/to/music
+YUNPLEX_UID=1000
+YUNPLEX_GID=1000
+YUNPLEX_PORT=3210
+```
+
+先创建专用数据目录，确保配置的 UID/GID 能读写数据和音乐目录，再执行：
+
+```bash
+docker compose -f ghcr.compose.yml pull
+docker compose -f ghcr.compose.yml up -d
+```
+
+打开 `http://主机地址:3210` 完成初始化。更新时先备份数据，再将 `YUNPLEX_IMAGE` 改为目标固定版本或 digest，执行同样的 pull/up 命令。每个实例使用独立数据目录；同一 Plex 歌单只由一个实例管理。正式发版操作见[运维手册](docs/operations.md#正式发版与-ghcr-分发)。
+
 ## 怎么用
 
 1. 在「音乐库」添加网易云歌单或专辑。
@@ -43,13 +72,10 @@ docker compose up -d --build
 ## 开发与测试
 
 ```bash
-pnpm test
 pnpm lint
 pnpm typecheck
-pnpm check:ci
 ```
 
-所有测试和测试工具放在 `tests/`。测试方法见[测试说明](tests/README.md)，模块位置见[代码结构](docs/architecture.md)。
 
 ## 文档
 

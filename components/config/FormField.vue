@@ -1,5 +1,5 @@
 <template>
-  <div ref="field" class="form-field">
+  <div :id="setting ? settingTargetId(setting) : undefined" ref="field" class="form-field" :data-setting-target="setting">
     <div class="form-field__label-row">
       <label :for="controlId" class="form-field__label">{{ label }}</label>
       <span v-if="required" class="form-field__required" aria-label="必填">*</span>
@@ -15,9 +15,15 @@
 
 <script setup lang="ts">
 import { onUpdated, useId } from 'vue'
+import { settingTargetId, type SettingKey } from '~/lib/settings-catalog'
 
 const props = defineProps<{
   label: string
+  setting?: SettingKey
+  searchSection?: string
+  searchKeywords?: string
+  searchFallback?: string
+  searchHiddenHint?: string
   hint?: string
   required?: boolean
 }>()

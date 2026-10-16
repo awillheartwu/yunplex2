@@ -1,5 +1,6 @@
 import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
 import type { FailureRecord, FailureRecordStatus } from '~~/server/lib/tasks/failure-records'
+import type { FailureGroup } from '~~/server/lib/tasks/failure-groups'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import {
   countActiveFilters,
@@ -47,7 +48,18 @@ export function useTaskCenterPage() {
     count: tab.key === 'failures' && openFailureTotal.value > 0 ? openFailureTotal.value : undefined,
     badgeTone: tab.key === 'failures' ? 'danger' as const : 'neutral' as const,
   })))
-  const selectedFailures = ref(new Set<string>())
+  watch(() => [route.query.failureView, route.query.failureGroup, route.query.failureGroupKey, route.query.failureRun], () => {
+    const groupId = typeof route.query.failureGroup === 'string' ? route.query.failureGroup : undefined
+    const groupKey = typeof route.query.failureGroupKey === 'string' ? route.query.failureGroupKey : undefined
+    const runId = typeof route.query.failureRun === 'string' ? route.query.failureRun : undefined
+    const view = route.query.failureView === 'songs' || groupId ? 'songs' : 'groups'
+    if (view === failures.view.value && groupId === failures.filter.value.groupId && groupKey === failures.filter.value.groupKey && runId === failures.filter.value.runId) return
+    failures.view.value = view
+    Object.assign(failures.filter.value, { groupId, groupKey, runId })
+    failures.activeGroup.value = null
+    failures.clearSelection()
+    void failures.fetch()
+  })
 
   const failureTypeFilters: Array<{ label: string; value: TaskRunType | '' }> = [
     { label: '全部类型', value: '' },
@@ -71,6 +83,7 @@ export function useTaskCenterPage() {
     { label: '连续失败', value: 'ignored_failure' },
     { label: '认证失效', value: 'authentication_failed' },
     { label: '请求受限', value: 'rate_limited' },
+    { label: '网易云不可用', value: 'netease_unavailable' },
     { label: 'Plex 不可用', value: 'plex_unavailable' },
     { label: '文件写入失败', value: 'filesystem_failed' },
     { label: '媒体身份冲突', value: 'media_identity_conflict' },
@@ -78,7 +91,7 @@ export function useTaskCenterPage() {
     { label: '任务占用中', value: 'concurrent_operation' },
     { label: '未知错误', value: 'unknown_error' },
   ]
-  type FailureFilterChipKey = 'search' | 'type' | 'kind' | 'source' | 'date'
+  type FailureFilterChipKey = 'search' | 'type' | 'kind' | 'source' | 'date' | 'run'
   const draftFailureType = ref<TaskRunType | ''>('')
   const draftFailureKind = ref('')
   const draftFailureSource = ref('')
@@ -89,12 +102,14 @@ export function useTaskCenterPage() {
     type: failures.filter.value.type,
     failureKind: failures.filter.value.failureKind,
     sourceId: failures.filter.value.sourceId,
+    runId: failures.filter.value.runId,
   }) + (failures.filter.value.from || failures.filter.value.to ? 1 : 0))
   const failureActiveFilterCount = computed(() => countActiveFilters({
     search: failures.filter.value.search,
     type: failures.filter.value.type,
     failureKind: failures.filter.value.failureKind,
     sourceId: failures.filter.value.sourceId,
+    runId: failures.filter.value.runId,
     from: failures.filter.value.from,
     to: failures.filter.value.to,
   }))
@@ -106,6 +121,7 @@ export function useTaskCenterPage() {
     if (failures.filter.value.type) chips.push({ key: 'type', label: `类型：${failureTypeFilters.find(item => item.value === failures.filter.value.type)?.label || failures.filter.value.type}` })
     if (failures.filter.value.failureKind) chips.push({ key: 'kind', label: `阶段：${failureKindFilters.find(item => item.value === failures.filter.value.failureKind)?.label || failures.filter.value.failureKind}` })
     if (failures.filter.value.sourceId) chips.push({ key: 'source', label: `来源：${sourceLabel(failures.filter.value.sourceId)}` })
+    if (failures.filter.value.runId) chips.push({ key: 'run', label: '范围：本次运行' })
     if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(failures.filter.value.from, failures.filter.value.to) })
     return chips
   })
@@ -129,14 +145,38 @@ export function useTaskCenterPage() {
       failureType: failures.filter.value.type || undefined,
       failureKind: failures.filter.value.failureKind || undefined,
       failureSource: failures.filter.value.sourceId || undefined,
+      failureRun: failures.filter.value.runId || undefined,
+      failureGroup: failures.filter.value.groupId || undefined,
+      failureGroupKey: failures.filter.value.groupKey || undefined,
+      failureView: failures.view.value === 'songs' ? 'songs' : undefined,
       failureFrom: failures.filter.value.from || undefined,
       failureTo: failures.filter.value.to || undefined,
     } })
   }
-  function applyFailureFilters() { failureSearchDebounce.cancel(); selectedFailures.value = new Set(); syncFailureQuery(); void failures.fetch() }
+  function applyFailureFilters() { failureSearchDebounce.cancel(); failures.clearSelection(); if (!failures.filter.value.groupId) failures.activeGroup.value = null; syncFailureQuery(); void failures.fetch() }
   const failureSearchDebounce = useDebounceFn(applyFailureFilters, 350)
   function onFailureSearch(value: string) { failures.filter.value.search = value || undefined; failureSearchDebounce.run() }
-  function setFailureStatus(value: FailureRecordStatus) { failures.filter.value.status = value; applyFailureFilters() }
+  function setFailureStatus(value: FailureRecordStatus) {
+    failures.filter.value.status = value
+    if (failures.filter.value.groupId) { failures.filter.value.groupId = undefined; failures.filter.value.groupKey = undefined; failures.view.value = 'groups' }
+    applyFailureFilters()
+  }
+  function setFailureView(value: string) {
+    if (value !== 'groups' && value !== 'songs') return
+    failures.clearSelection()
+    void failures.setView(value)
+    syncFailureQuery()
+  }
+  async function openFailureGroup(group: FailureGroup) {
+    failures.clearSelection()
+    const loaded = failures.openGroup(group)
+    syncFailureQuery()
+    await loaded
+  }
+  async function mutateFailureGroup(group: FailureGroup, action: 'retry' | 'ignore' | 'reopen') {
+    showMutationResult(await failures.mutateGroup(group, action))
+    void refreshOverview().catch(() => {})
+  }
   function prepareFailureDraftFilters() {
     draftFailureType.value = failures.filter.value.type || ''
     draftFailureKind.value = failures.filter.value.failureKind || ''
@@ -174,17 +214,12 @@ export function useTaskCenterPage() {
     if (key === 'type') failures.filter.value.type = undefined
     if (key === 'kind') failures.filter.value.failureKind = undefined
     if (key === 'source') failures.filter.value.sourceId = undefined
+    if (key === 'run') failures.filter.value.runId = undefined
     if (key === 'date') {
       failures.filter.value.from = undefined
       failures.filter.value.to = undefined
     }
     applyFailureFilters()
-  }
-  function toggleFailure(id: string) {
-    const next = new Set(selectedFailures.value)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    selectedFailures.value = next
   }
   function isRetryable(record: FailureRecord) { return record.downloadTaskIds.length > 0 && record.retryable }
   function failureRetryUnavailableReason(record: FailureRecord): string {
@@ -192,14 +227,21 @@ export function useTaskCenterPage() {
     if (record.downloadTaskIds.length === 0) return '这条异常没有可直接重试的下载任务，请从运行或同步源重新执行。'
     return '请从运行或同步源重新执行。'
   }
-  async function retryFailure(id: string) { showMutationResult(await failures.batchRetry([id])) }
-  async function ignoreFailure(id: string) { showMutationResult(await failures.batchIgnore([id])) }
-  async function reopenFailure(id: string) { showMutationResult(await failures.batchReopen([id])) }
-  async function batchRetry() { showMutationResult(await failures.batchRetry([...selectedFailures.value])); selectedFailures.value = new Set() }
-  async function batchIgnore() { showMutationResult(await failures.batchIgnore([...selectedFailures.value])); selectedFailures.value = new Set() }
-  async function batchReopen() { showMutationResult(await failures.batchReopen([...selectedFailures.value])); selectedFailures.value = new Set() }
-  function showMutationResult(result: { count: number; msg: string }) {
-    if (result.count > 0) feedback.success(result.msg || '操作已完成')
+  async function retryFailure(id: string) { showMutationResult(await failures.batchRetry([id])); void refreshOverview().catch(() => {}) }
+  async function ignoreFailure(id: string) { showMutationResult(await failures.batchIgnore([id])); void refreshOverview().catch(() => {}) }
+  async function reopenFailure(id: string) { showMutationResult(await failures.batchReopen([id])); void refreshOverview().catch(() => {}) }
+  async function mutateSelectedFailures(action: 'retry' | 'ignore' | 'reopen') {
+    const result = await failures.mutateSelected(action)
+    showMutationResult(result)
+    if (!result.failed && result.count > 0) failures.clearSelection()
+    void refreshOverview().catch(() => {})
+  }
+  const batchRetry = () => mutateSelectedFailures('retry')
+  const batchIgnore = () => mutateSelectedFailures('ignore')
+  const batchReopen = () => mutateSelectedFailures('reopen')
+  function showMutationResult(result: { count: number; msg: string; failed?: boolean }) {
+    if (result.failed) feedback.error('处理失败', result.msg)
+    else if (result.count > 0) feedback.success(result.msg || '操作已完成')
     else feedback.warning(result.msg || '没有可处理项目')
   }
 
@@ -251,12 +293,16 @@ export function useTaskCenterPage() {
     const runTypes = failureTypeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
     const failureKinds = failureKindFilters.map(item => item.value).filter((value): value is string => value !== '')
     const failureStatuses = failureStatusTabs.map(item => item.value)
+    failures.view.value = route.query.failureView === 'songs' || typeof route.query.failureGroup === 'string' ? 'songs' : 'groups'
     failures.filter.value = {
       status: parseAllowedQueryValue(route.query.failureStatus, failureStatuses) || 'open',
       search: typeof route.query.failureSearch === 'string' ? route.query.failureSearch : undefined,
       type: parseAllowedQueryValue(route.query.failureType, runTypes),
       failureKind: parseAllowedQueryValue(route.query.failureKind, failureKinds),
       sourceId: typeof route.query.failureSource === 'string' ? route.query.failureSource : undefined,
+      runId: typeof route.query.failureRun === 'string' ? route.query.failureRun : undefined,
+      groupId: typeof route.query.failureGroup === 'string' ? route.query.failureGroup : undefined,
+      groupKey: typeof route.query.failureGroupKey === 'string' ? route.query.failureGroupKey : undefined,
       from: parseDateQueryValue(route.query.failureFrom),
       to: parseDateQueryValue(route.query.failureTo),
     }
@@ -297,10 +343,10 @@ export function useTaskCenterPage() {
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
     formatTime, ignoreFailure,
-    isRetryable, onFailureSearch,
+    isRetryable, mutateFailureGroup, onFailureSearch, openFailureGroup,
     onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, refreshOverview, removeFailureFilter,
-    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel, selectedFailures,
-    semanticToneClass, setDraftFailureDate, setFailureStatus, showMutationResult, sourceOptionLabel, sourceOptions,
-    switchTab, taskCenterTabs, toggleFailure,
+    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel,
+    semanticToneClass, setDraftFailureDate, setFailureStatus, setFailureView, showMutationResult, sourceOptionLabel, sourceOptions,
+    switchTab, taskCenterTabs,
   }
 }

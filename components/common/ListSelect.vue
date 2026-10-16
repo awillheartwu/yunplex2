@@ -56,6 +56,7 @@
           class="list-select__option"
           :class="{ 'list-select__option--active': index === activeIndex, 'list-select__option--selected': option.value === modelValue }"
           role="option"
+          :title="option.label"
           :aria-selected="option.value === modelValue ? 'true' : 'false'"
           :aria-disabled="option.disabled ? 'true' : undefined"
           @click="commitOption(option)"
@@ -273,22 +274,25 @@ function updatePanelPosition() {
   if (!root || !trigger || !panel || typeof window === 'undefined') return
   const triggerRect = trigger.getBoundingClientRect()
   const rootRect = root.getBoundingClientRect()
-  // An inline panel is clipped by the nearest scrolling ancestor (filter popovers and sheets),
-  // so width and height are bounded by that box and the panel flips when there is more room above.
+  // An inline panel is clipped by scrolling ancestors (filter popovers and sheets),
+  // so width and height fit their visible bounds and the panel flips when there is more room above.
   const bounds = clipBounds(trigger)
   const gap = 6
   const spaceBelow = Math.max(0, bounds.bottom - triggerRect.bottom - gap)
   const spaceAbove = Math.max(0, triggerRect.top - bounds.top - gap)
   const openUpward = panel.scrollHeight > spaceBelow && spaceAbove > spaceBelow
   const available = openUpward ? spaceAbove : spaceBelow
-  const width = panel.offsetWidth || triggerRect.width
-  const rightLimit = Math.min(bounds.right, window.innerWidth) - gap
-  const leftLimit = Math.max(bounds.left, 0) + gap
+  const rightLimit = Math.min(bounds.right, document.documentElement.clientWidth - gap)
+  const leftLimit = Math.max(bounds.left, gap)
+  const availableWidth = Math.max(0, rightLimit - leftLimit)
+  const width = Math.min(Math.max(panel.offsetWidth, triggerRect.width), availableWidth)
   const left = Math.min(Math.max(triggerRect.left, leftLimit), Math.max(leftLimit, rightLimit - width))
   panelStyle.value = {
-    left: `${Math.round(left - rootRect.left)}px`,
+    left: `${left - rootRect.left}px`,
+    width: `${width}px`,
+    minWidth: '0',
+    maxWidth: `${availableWidth}px`,
     maxHeight: `${Math.round(Math.min(320, Math.max(0, available)))}px`,
-    minWidth: `${Math.round(triggerRect.width)}px`,
     ...(openUpward
       ? { top: 'auto', bottom: `${Math.round(rootRect.bottom - triggerRect.top + gap)}px` }
       : { top: `${Math.round(triggerRect.bottom - rootRect.top + gap)}px`, bottom: 'auto' }),
@@ -296,17 +300,23 @@ function updatePanelPosition() {
 }
 
 function clipBounds(node: HTMLElement) {
-  const viewport = { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }
+  const bounds = { top: 0, bottom: document.documentElement.clientHeight, left: 0, right: document.documentElement.clientWidth }
   let current = node.parentElement
   while (current && current !== document.body && current !== document.documentElement) {
     const style = getComputedStyle(current)
     if (/(auto|scroll|hidden|clip)/.test(`${style.overflowX} ${style.overflowY}`)) {
       const rect = current.getBoundingClientRect()
-      return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }
+      // client dimensions exclude borders and scrollbars; nested ancestors all clip the panel.
+      const left = rect.left + current.clientLeft
+      const top = rect.top + current.clientTop
+      bounds.left = Math.max(bounds.left, left)
+      bounds.right = Math.min(bounds.right, left + current.clientWidth)
+      bounds.top = Math.max(bounds.top, top)
+      bounds.bottom = Math.min(bounds.bottom, top + current.clientHeight)
     }
     current = current.parentElement
   }
-  return viewport
+  return bounds
 }
 
 const reposition = useRafThrottleFn(updatePanelPosition)

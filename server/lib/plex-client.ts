@@ -1,4 +1,4 @@
-import plexApi from 'plex-api'
+import { createPlexHttpClient } from './plex-http'
 import type { PlexConfig } from './config/types'
 import { s2t, t2s, normalizeForSearch } from './sync/matchers'
 import { foldPlexPath, normalizePlexPath } from './sync/identity-normalization'
@@ -28,14 +28,7 @@ export interface PlexTrack {
   }>
 }
 
-interface PlexClient {
-  query(path: string): Promise<Record<string, unknown>>
-  postQuery(path: string): Promise<Record<string, unknown>>
-  putQuery(path: string): Promise<Record<string, unknown>>
-  deleteQuery(path: string): Promise<Record<string, unknown>>
-}
-
-let client: PlexClient | null = null
+let client: ReturnType<typeof createPlexHttpClient> | null = null
 let machineId = ''
 let clientFingerprint = ''
 
@@ -122,7 +115,7 @@ async function getSectionPathIndex(sectionKey: string): Promise<PlexPathIndex> {
   return build
 }
 
-function invalidateSectionPathIndex(sectionKey: string): void {
+export function invalidateSectionPathIndex(sectionKey: string): void {
   sectionPathIndexCache.delete(sectionKey)
   sectionPathIndexBuilds.delete(sectionKey)
   sectionPathIndexGenerations.set(sectionKey, (sectionPathIndexGenerations.get(sectionKey) ?? 0) + 1)
@@ -142,20 +135,7 @@ export function createPlexClient(config: PlexConfig) {
     machineId = ''
   }
   clientFingerprint = nextFingerprint
-  client = new plexApi({
-    hostname: config.server,
-    port: config.port,
-    token: config.token,
-    options: {
-      identifier: 'com.plexapp.plugins.library',
-      product: 'Plex Web',
-      version: '3.0.1',
-      deviceName: 'Plex Web (Chrome)',
-      platform: 'Chrome',
-      platformVersion: '37.0',
-      device: 'Windows',
-    },
-  }) as PlexClient
+  client = createPlexHttpClient(config)
   return client
 }
 
@@ -329,17 +309,46 @@ export async function getSectionKey(section: string): Promise<string | null> {
   return musicSection?.key ?? null
 }
 
-export async function refreshLibrary(sectionKey: string): Promise<void> {
+export interface PlexScanRequest {
+  activityId: string | null
+  previousScanAt: number | null
+  /** Monotonic boundary immediately before the refresh request. */
+  requestedAt: number
+}
+
+export async function refreshLibrary(sectionKey: string): Promise<PlexScanRequest> {
   if (!client) throw new Error('Plex client not initialized')
-  await client.query(`/library/sections/${sectionKey}/refresh`)
+  const before = await getLibraryScanState(sectionKey)
+  const requestedAt = performance.now()
+  const response = await client.request(`/library/sections/${sectionKey}/refresh`, 'POST')
   invalidateSectionPathIndex(sectionKey)
+  return { activityId: response.headers.get('x-plex-activity'), previousScanAt: before.scannedAt, requestedAt }
 }
 
 /** Scan only a specific directory — much faster than full library refresh */
-export async function refreshPath(sectionKey: string, dirPath: string): Promise<void> {
+export async function refreshPath(sectionKey: string, dirPath: string): Promise<PlexScanRequest> {
   if (!client) throw new Error('Plex client not initialized')
-  await client.query(`/library/sections/${sectionKey}/refresh?path=${encodeURIComponent(dirPath)}`)
+  const before = await getLibraryScanState(sectionKey)
+  const requestedAt = performance.now()
+  const response = await client.request(`/library/sections/${sectionKey}/refresh?path=${encodeURIComponent(dirPath)}`, 'POST')
   invalidateSectionPathIndex(sectionKey)
+  return { activityId: response.headers.get('x-plex-activity'), previousScanAt: before.scannedAt, requestedAt }
+}
+
+/** The activity is scoped to this refresh; unrelated server work cannot prolong it. */
+export async function getLibraryScanState(sectionKey: string, activityId?: string | null): Promise<{ active: boolean; scannedAt: number | null }> {
+  if (!client) throw new Error('Plex client not initialized')
+  const [sections, activities] = await Promise.all([
+    queryPlexRead(client, '/library/sections'),
+    activityId ? queryPlexRead(client, '/activities') : Promise.resolve(null),
+  ])
+  const raw = (sections as { MediaContainer?: { Directory?: Array<{ key: string; refreshing?: boolean | number | string; scannedAt?: number | string }> } }).MediaContainer?.Directory
+  const section = raw?.find(item => String(item.key) === sectionKey)
+  if (!section) throw new Error('Plex 音乐库分区已不存在，请检查分区设置')
+  const active = [true, 1, '1', 'true'].includes(section.refreshing ?? false)
+  const running = (activities as { MediaContainer?: { Activity?: Array<{ uuid: string }> } } | null)?.MediaContainer?.Activity
+  const scannedAt = Number(section.scannedAt)
+  return { active: active || Boolean(activityId && running?.some(item => item.uuid === activityId)), scannedAt: Number.isFinite(scannedAt) ? scannedAt : null }
 }
 
 export async function getSectionTrackCount(sectionKey: string): Promise<number> {
@@ -415,18 +424,15 @@ export async function searchTracksByTitle(sectionKey: string, songName: string):
 /** Resolve every Plex library candidate sharing the same normalized media path. */
 export async function findTracksByFilePath(sectionKey: string, filePath: string): Promise<PlexTrack[]> {
   if (!client || !filePath) return []
-  try {
-    const index = await getSectionPathIndex(sectionKey)
-    const normalized = normalizePlexPath(filePath)
-    const exact = index.exact.get(normalized)
-    if (exact) return [...exact]
-    const folded = index.folded.get(foldPlexPath(normalized))
-    // Case folding is a fallback only. A case-sensitive Plex library may
-    // legitimately contain both variants, so ambiguity must stop automatic reuse.
-    if (!folded || folded.exactPaths.size !== 1 || folded.tracks.length !== 1) return []
-    return [...folded.tracks]
-  }
-  catch { return [] }
+  const index = await getSectionPathIndex(sectionKey)
+  const normalized = normalizePlexPath(filePath)
+  const exact = index.exact.get(normalized)
+  if (exact) return [...exact]
+  const folded = index.folded.get(foldPlexPath(normalized))
+  // Case folding is a fallback only. A case-sensitive Plex library may
+  // legitimately contain both variants, so ambiguity must stop automatic reuse.
+  if (!folded || folded.exactPaths.size !== 1 || folded.tracks.length !== 1) return []
+  return [...folded.tracks]
 }
 
 /** Resolve the first durable Plex library item by its media file path after a rescan. */
@@ -501,8 +507,9 @@ export async function getTrackByRatingKey(ratingKey: string): Promise<PlexTrack 
     const raw = res.MediaContainer?.Metadata
     if (!raw) return null
     return Array.isArray(raw) ? raw[0] ?? null : raw
-  } catch {
-    return null
+  } catch (error) {
+    if (isPlexNotFoundError(error)) return null
+    throw error
   }
 }
 
@@ -521,7 +528,8 @@ export async function getTracksByRatingKeys(ratingKeys: string[]): Promise<Map<s
       const raw = response.MediaContainer?.Metadata
       const tracks = raw ? (Array.isArray(raw) ? raw : [raw]) : []
       for (const track of tracks) result.set(String(track.ratingKey), track)
-    } catch {
+    } catch (error) {
+      if (!isPlexNotFoundError(error) && (error as { status?: number } | null)?.status !== 400) throw error
       // Some older Plex builds do not support comma-separated metadata keys.
       // Fall back only for this bounded chunk while keeping the public API
       // batched and allowing callers to update rows in one DB transaction.

@@ -14,12 +14,15 @@
       <p v-if="state === 'waiting' || run.type === 'source_initialization'" class="activity-run__summary">{{ runSummaryLabel(run.summary) }}</p>
       <template v-if="state !== 'waiting'">
         <ol v-if="phases.length" class="activity-run__phases" aria-label="当前同步阶段">
-          <li v-for="phase in phases" :key="phase.label" :aria-current="phase.current ? 'step' : undefined">{{ phase.label }}</li>
+          <li v-for="(phase, index) in phases" :key="phase.label" :class="`activity-run__phase--${phase.status}`" :aria-current="phase.current ? 'step' : undefined">
+            <span class="activity-run__phase-number"><AppIcon v-if="phase.status === 'done'" name="check" :size="13" /><span v-else>{{ index + 1 }}</span></span>
+            <span>{{ phase.label }}<small>{{ phase.statusLabel }}</small></span>
+          </li>
         </ol>
         <p v-if="run.live?.currentSong" class="activity-run__summary">当前歌曲：{{ run.live.currentSong }}</p>
         <div v-if="progress" class="activity-run__progress">
-          <span>当前阶段已处理 {{ progress.current }} / {{ progress.total }}</span>
-          <progress :value="progress.current" :max="progress.total" aria-label="当前阶段处理进度" />
+          <div class="activity-run__progress-heading"><span>{{ fileProgress ? '本次文件处理' : '当前阶段' }} · 已处理 {{ progress.current }} / {{ progress.total }}</span><strong>{{ percent(Math.floor(progress.current / progress.total * 100)) }}%</strong></div>
+          <progress :value="progress.current" :max="progress.total" :aria-label="fileProgress ? '本次文件处理进度' : '当前阶段处理进度'" />
         </div>
         <template v-if="run.files && run.files.counts.total > 0">
           <dl class="activity-run__counts" aria-label="本次运行的文件任务统计">
@@ -35,11 +38,11 @@
           </ul>
           <div v-if="files.total.value > files.items.value.length || files.limit.value > 6" class="activity-run__list-actions">
             <span>已显示 {{ files.items.value.length }} / {{ files.total.value }} 项</span>
-            <button v-if="files.total.value > files.items.value.length" class="btn btn-secondary btn-sm" :disabled="files.loading.value || stale" @click="files.loadMore">{{ files.loading.value ? '读取中…' : '显示更多歌曲' }}</button>
-            <button v-if="files.limit.value > 6" class="btn btn-secondary btn-sm" @click="files.collapse">收起</button>
+            <button v-if="files.total.value > files.items.value.length" class="btn btn-ghost btn-sm" :disabled="files.loading.value || stale" @click="files.loadMore">{{ files.loading.value ? '读取中…' : '显示更多歌曲' }}</button>
+            <button v-if="files.limit.value > 6" class="btn btn-ghost btn-sm" @click="files.collapse">收起</button>
           </div>
           <p v-if="files.error.value" class="activity-run__file-note" role="alert">歌曲列表更新失败：{{ files.error.value }}<button class="btn btn-secondary btn-sm" :disabled="files.loading.value" @click="files.retry">重试</button></p>
-          <p v-if="run.files.counts.failed" class="activity-run__file-note">有文件处理失败，可在运行详情查看原因。</p>
+          <p v-if="run.files.counts.failed" class="activity-run__file-note">有文件处理失败。</p>
           <p v-if="run.files.paused" class="activity-run__file-note" role="status">本次下载已暂停领取新任务；其他运行共用的文件仍可继续处理。</p>
         </template>
       </template>
@@ -86,7 +89,14 @@ const state = computed(() => activityState(props.run))
 const title = computed(() => props.run.sourceNames.join('、') || props.run.source || runTypeLabel(props.run.type))
 const phases = computed(() => activityPhases(props.run))
 const detailLink = computed(() => `/task-center/runs/${props.run.id}`)
+const fileProgress = computed(() => {
+  const counts = props.run.files?.counts
+  if (!counts || !counts.total || counts.pending + counts.downloading + counts.tagging === 0) return null
+  return { current: counts.done + counts.failed, total: counts.total }
+})
 const progress = computed(() => {
+  if (fileProgress.value) return fileProgress.value
+  if (!['downloading', 'processing_tags'].includes(props.run.live?.currentStage || '')) return null
   const value = props.run.live?.progress
   return value && value.total > 0 ? { current: Math.max(0, Math.min(value.current, value.total)), total: value.total } : null
 })

@@ -1,8 +1,9 @@
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
-import { findTracksByFilePath, getRecentlyAddedTracks, type PlexTrack } from '../plex-client'
+import { findTracksByFilePath, getRecentlyAddedTracks, getLibraryScanState, invalidateSectionPathIndex, type PlexScanRequest, type PlexTrack } from '../plex-client'
 import { mapLocalPathToPlex, normalizeExistingLocalPath, resolveAccessibleLocalPath } from './path-map'
 import type { PlexMatchAttemptTrace, PlexMatchResult, PlexMatchStrategy } from './plex-match'
+import type { PlexScanEvents } from '../plex-scan-events'
 
 export interface PlexBatchMatchRequest {
   key: string
@@ -12,6 +13,8 @@ export interface PlexBatchMatchRequest {
 
 export interface PlexBatchMatchOptions {
   throwIfCancelled?: () => void
+  scanRequest?: PlexScanRequest
+  scanEvents?: PlexScanEvents
 }
 
 /** Bounded exact-path lookups per round; the Plex section path index itself is shared and TTL-cached. */
@@ -19,6 +22,7 @@ export const PLEX_BATCH_PATH_LOOKUP_CONCURRENCY = 3
 const RECENT_TRACK_LOOKUP_LIMIT = 100
 /** Cancellation is noticed at most this often while the batch waits between rounds. */
 const CANCELLATION_POLL_INTERVAL_MS = 250
+const MAX_SCAN_WAIT_MS = 10 * 60_000
 
 interface BatchEntry {
   key: string
@@ -31,10 +35,9 @@ interface BatchEntry {
 /**
  * Match a batch of expected local files against Plex by exact path only.
  *
- * Every unresolved path shares one delayed retry round, so a batch waits at most
- * `maxRetries * delayMs` in total no matter how many songs are missing. Paths that
- * resolved in an earlier round never issue another lookup. The helper reuses the
- * client's TTL-cached Plex section path index and never triggers a scan or refresh.
+ * Unresolved paths share retry rounds. A requested scan can extend the ordinary
+ * window while it is active; once idle, the configured window allows indexing
+ * to settle. Waiting remains bounded and the final lookup bypasses the TTL cache.
  */
 export async function matchTracksInPlexWithRetry(
   sectionKey: string,
@@ -70,9 +73,38 @@ export async function matchTracksInPlexWithRetry(
   }
 
   let pending = entries.filter(entry => entry.normalizedPath !== null)
+  const started = Date.now()
+  const settleWindowMs = Math.max(1, maxRetries) * delayMs
+  const scanDeadline = started + Math.max(MAX_SCAN_WAIT_MS, settleWindowMs)
+  let idleDeadline = started + settleWindowMs
+  let wasScanning = false
+  let scanCompleted = false
+  let scanActive = false
+  let finalLookup = false
+  let round = 0
+  let lastEventEnd = 0
 
-  for (let round = 0; round <= maxRetries && pending.length > 0; round++) {
+  while (pending.length > 0) {
     throwIfCancelled?.()
+    const events = options.scanEvents?.getState()
+    if (options.scanRequest) {
+      const scan = await getLibraryScanState(sectionKey, options.scanRequest.activityId)
+      scanActive = scan.active || Boolean(events?.active)
+      if (scanActive) idleDeadline = Date.now() + settleWindowMs
+      const advanced = options.scanRequest.previousScanAt !== null && scan.scannedAt !== null && scan.scannedAt > options.scanRequest.previousScanAt
+      const finished = !scanActive && (wasScanning || ((advanced || events?.completed) && !scanCompleted))
+      if (finished) {
+        scanCompleted = true
+        idleDeadline = Date.now() + settleWindowMs
+        invalidateSectionPathIndex(sectionKey)
+      }
+      if (finalLookup) invalidateSectionPathIndex(sectionKey)
+      wasScanning = scanActive
+    }
+    if (events && events.endRevision > lastEventEnd) {
+      invalidateSectionPathIndex(sectionKey)
+      lastEventEnd = events.endRevision
+    }
 
     const exactCandidates = await mapWithConcurrency(
       pending,
@@ -122,10 +154,24 @@ export async function matchTracksInPlexWithRetry(
     }
 
     pending = pending.filter(entry => !resolvedThisRound.has(entry))
+    if (options.scanRequest && resolvedThisRound.size > 0) idleDeadline = Date.now() + settleWindowMs
 
-    if (pending.length > 0 && round < maxRetries) {
-      await cancellableDelay(delayMs, throwIfCancelled)
+    if (pending.length === 0) break
+    if (finalLookup) {
+      if (Date.now() >= scanDeadline || (!scanActive && scanCompleted && resolvedThisRound.size === 0)) break
+      finalLookup = false
     }
+    if (!options.scanRequest && round >= maxRetries) break
+    // An initially idle section is not proof that the requested scan has run.
+    const deadline = options.scanRequest ? Math.min(scanDeadline, scanActive || !scanCompleted ? scanDeadline : idleDeadline) : Infinity
+    if (Date.now() >= deadline) finalLookup = true
+    else {
+      const waitMs = Math.min(delayMs, deadline - Date.now())
+      if (events?.connected) await options.scanEvents!.waitForChange(events.revision, waitMs)
+      else await cancellableDelay(waitMs, throwIfCancelled)
+    }
+    if (options.scanRequest && Date.now() >= deadline) finalLookup = true
+    round++
   }
 
   const results = new Map<string, PlexMatchResult>()
@@ -136,6 +182,7 @@ export async function matchTracksInPlexWithRetry(
       attempts: entry.traces.length,
       localFilePath: entry.normalizedPath,
       traces: entry.traces,
+      ...(options.scanRequest ? { scan: { active: scanActive, completed: scanCompleted, timedOut: (!scanCompleted || scanActive) && Date.now() >= scanDeadline, waitedMs: Date.now() - started } } : {}),
     })
   }
   return results

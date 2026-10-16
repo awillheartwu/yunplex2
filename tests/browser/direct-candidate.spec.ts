@@ -34,7 +34,6 @@ for (const width of [375,1440]) {
     await drawer.getByRole('button',{name:'使用当前候选',exact:true}).click()
     await expect(drawer.getByRole('alert')).toContainText('更新草案失败')
     await expect(drawer.getByRole('button',{name:'使用当前候选',exact:true})).toBeEnabled()
-    await drawer.screenshot({path:`/tmp/direct-candidate-${width}.png`})
     expect(await drawer.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true)
     await drawer.getByRole('button',{name:'使用当前候选',exact:true}).click()
     await expect(drawer).toHaveCount(0)

@@ -5,6 +5,7 @@ import { getDb } from '../db'
 import { getQueueStatus, listDownloadTasks } from '../download/queue'
 import { listRuns } from './store'
 import { getDownloadQueueControl, isRunDownloadPaused } from '../download/queue-control'
+import { getPlexLibraryMonitorSnapshot } from '../plex-library-monitor'
 
 // One read snapshot keeps each task's file counts and visible rows in the same scope.
 export function getActivitySnapshot(live: SyncState): ActivitySnapshot {
@@ -27,6 +28,7 @@ export function getActivitySnapshot(live: SyncState): ActivitySnapshot {
       }
     }
     return {
+      plex: getPlexLibraryMonitorSnapshot(),
       downloadControl: getDownloadQueueControl(),
       running: running.items.map(project), waiting: waiting.items.map(project),
       runningTotal: running.total, waitingTotal: waiting.total,

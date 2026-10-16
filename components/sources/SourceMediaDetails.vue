@@ -2,10 +2,10 @@
   <section class="source-media" :class="{ 'source-media--mobile': mobile, 'source-media--orphaned': orphaned }" :aria-busy="loading">
     <header class="source-media__header">
       <div>
-        <h2>{{ orphaned ? '孤立媒体关联' : '歌曲与媒体' }}</h2>
-        <p>{{ orphaned ? '这些关联已不属于任何当前同步源，可在此检查或移除。' : '媒体关联按网易云歌曲 ID 全局生效；托管文件仍只按精确路径自动复用。' }}</p>
+        <h2>{{ orphaned ? '未使用的关联' : '歌曲与媒体' }}</h2>
+        <p>{{ orphaned ? '这些关联已不属于任何收藏，可查看或移除。' : '同一首歌的关联由所有收藏共用，修改会同时影响这些收藏。' }}</p>
       </div>
-      <NuxtLink v-if="!orphaned" class="btn btn-ghost btn-sm" to="/match-reviews">高级：孤立关联</NuxtLink>
+      <NuxtLink v-if="!orphaned" class="btn btn-ghost btn-sm" to="/match-reviews">高级：未使用的关联</NuxtLink>
     </header>
 
     <div v-if="orphaned || hasSnapshot !== false" class="source-media__filters">
@@ -39,21 +39,21 @@
       </button>
     </div>
 
-    <label v-if="!orphaned && hasSnapshot !== false" class="source-media__reason"><input v-model="scoredOnly" type="checkbox" @change="applyFilters"> 仅看评分产生的关联</label>
+    <label v-if="!orphaned && hasSnapshot !== false" class="source-media__scored"><input v-model="scoredOnly" type="checkbox" @change="applyFilters"> 仅看评分产生的关联</label>
     <p v-if="notice" class="source-media__notice" role="status">{{ notice }}</p>
     <p v-if="error" class="source-media__error" role="alert">{{ error }}</p>
-    <div v-if="loading && !result.items.length" class="source-media__empty">加载媒体状态…</div>
+    <div v-if="loading && !result.items.length" class="source-media__empty">正在读取媒体状态…</div>
     <div v-else-if="!result.items.length" class="source-media__empty">
-      {{ orphaned ? '没有孤立媒体关联' : (state || search || scoredOnly ? '没有符合当前筛选条件的歌曲，请调整筛选。' : '当前来源还没有歌曲快照，请先完成首次媒体接管（如需要），再同步一次。') }}
-      <button v-if="!orphaned && hasSnapshot === false" class="btn btn-secondary btn-sm" @click="load()">刷新快照</button>
+      {{ orphaned ? '没有未使用的关联' : (state || search || scoredOnly ? '没有符合条件的歌曲，换个筛选或搜索词再试。' : '还没有读到这个收藏的歌曲，先同步一次再看。') }}
+      <button v-if="!orphaned && hasSnapshot === false" class="btn btn-secondary btn-sm" @click="load()">刷新列表</button>
     </div>
 
     <div v-else class="source-media__list">
       <article v-for="item in result.items" :key="itemKey(item)" class="source-media__row">
         <div class="source-media__target">
-          <img v-if="item.target.coverUrl" :src="item.target.coverUrl" alt="" loading="lazy" width="36" height="36">
+          <img v-if="item.target.coverUrl" :src="item.target.coverUrl" alt="" loading="lazy" width="80" height="80">
           <div>
-            <strong>{{ item.target.title || `网易云歌曲 #${songId(item)}` }}</strong>
+            <strong :title="item.target.title">{{ item.target.title || `网易云歌曲 #${songId(item)}` }}</strong>
             <span>{{ item.target.artists.join('、') || item.target.albumName || `歌曲 ID ${songId(item)}` }}</span>
           </div>
         </div>
@@ -61,47 +61,63 @@
           <span class="source-media__state" :class="`source-media__state--${item.state}`">{{ stateLabel(item.state) }}</span>
           <strong>{{ bindingLabel(item) }}</strong>
           <span v-if="staleReason(item)" class="source-media__reason">{{ staleReason(item) }}</span>
-          <span v-if="item.binding?.plexFilePath || item.binding?.plexRelativePath" class="source-media__path" :title="item.binding.plexFilePath || item.binding.plexRelativePath">
-            <em>Plex 关联</em>{{ item.binding.plexFilePath || item.binding.plexRelativePath }}
+          <span v-if="plexPath(item)" class="source-media__path" :title="plexPath(item)">
+            <em>Plex 路径</em>{{ plexPath(item) }}
           </span>
           <span v-if="item.localMedia?.filePath" class="source-media__path" :title="item.localMedia.filePath">
-            <em>{{ item.localMedia.ownership === 'managed' ? '托管文件' : '本地外部文件' }}</em>{{ item.localMedia.filePath }}
+            <em>{{ item.localMedia.ownership === 'managed' ? '下载文件' : '本地文件' }}</em>{{ item.localMedia.filePath }}
           </span>
-          <small v-if="!item.localMedia?.filePath && !item.binding?.plexFilePath && !item.binding?.plexRelativePath">尚无可验证路径</small>
+          <small v-if="!item.localMedia?.filePath && !plexPath(item)">还看不到文件路径</small>
         </div>
         <div class="source-media__actions">
-          <button
-            v-if="!orphaned"
-            class="btn btn-secondary btn-sm"
-            type="button"
-            :disabled="acting || !item.target.title"
-            aria-label="使用 Plex 媒体"
-            title="搜索 Plex 曲目，选择并确认要关联的媒体"
-            @click="searchPlex(item)"
-          >
-            <AppIcon name="search" :size="13" />
-            {{ item.binding ? '更换匹配' : '选择媒体' }}
-          </button>
-          <button
-            v-if="canDownloadManaged(item)"
-            class="btn btn-primary btn-sm"
-            type="button"
-            :disabled="managedDownloads.has(songId(item))"
-            @click="downloadManaged(item)"
-          >
-            <AppIcon :name="managedDownloads.has(songId(item)) ? 'loader' : 'download'" :size="13" :class="{ 'animate-spin': managedDownloads.has(songId(item)) }" />
-            {{ item.binding ? '改为下载' : '下载并托管' }}
-          </button>
-          <button
-            v-if="item.binding && item.binding.status !== 'unbound' && (orphaned || item.binding.bindingMethod === 'manual')"
-            class="btn btn-ghost btn-sm text-danger"
-            type="button"
-            :disabled="acting"
-            @click="confirmUnbind(item)"
-          >
-            <AppIcon name="minusCircle" :size="14" />
-            {{ item.binding.bindingMethod === 'manual' ? '取消使用' : '移除关联' }}
-          </button>
+          <ActionHint v-if="!orphaned" :text="changeHint(item)">
+            <button
+              class="btn btn-secondary btn-sm"
+              type="button"
+              :disabled="acting || !item.target.title"
+              :aria-label="item.binding ? '更换 Plex 匹配' : '选择 Plex 媒体'"
+              @click="searchPlex(item)"
+            >
+              <AppIcon name="search" :size="14" />
+              {{ item.binding ? '更换' : '选择' }}
+            </button>
+          </ActionHint>
+          <ActionHint v-if="canDownloadManaged(item)" :text="downloadHint(item)">
+            <button
+              class="btn btn-soft btn-sm"
+              type="button"
+              :disabled="managedDownloads.has(songId(item))"
+              :aria-label="item.binding ? '下载新文件替换当前关联' : '下载并关联这首歌'"
+              @click="downloadManaged(item)"
+            >
+              <AppIcon :name="managedDownloads.has(songId(item)) ? 'loader' : 'download'" :size="14" :class="{ 'animate-spin': managedDownloads.has(songId(item)) }" />
+              下载
+            </button>
+          </ActionHint>
+          <ActionHint v-if="canUnbind(item)" :text="unbindHint()">
+            <button
+              class="btn btn-warning btn-sm"
+              type="button"
+              :disabled="acting"
+              :aria-label="orphaned ? '移除未使用的关联' : '停止使用当前关联'"
+              @click="confirmUnbind(item)"
+            >
+              <AppIcon name="minusCircle" :size="14" />
+              {{ orphaned ? '移除' : '停用' }}
+            </button>
+          </ActionHint>
+          <ActionHint v-if="canValidateBinding(item)" text="核对 Plex 文件和歌单是否一致；找不到文件时会标记为失效。">
+            <button
+              class="btn btn-secondary btn-sm"
+              type="button"
+              :disabled="acting || validatingId !== null"
+              aria-label="重新核对 Plex 文件"
+              @click="validateBinding(item)"
+            >
+              <AppIcon :name="validatingId === songId(item) ? 'loader' : 'checkCircle'" :size="14" :class="{ 'animate-spin': validatingId === songId(item) }" />
+              核对
+            </button>
+          </ActionHint>
         </div>
 
         <div v-if="searchItemKey === itemKey(item)" class="source-media__candidates">
@@ -112,7 +128,7 @@
               <span>{{ track.artist || '未知艺人' }} · {{ track.album || '未知专辑' }}</span>
               <small>{{ track.plexFilePath || '没有媒体路径' }}</small>
             </div>
-            <button class="btn btn-primary btn-sm" type="button" :disabled="!track.plexFilePath" @click="confirmRebind(item, track)">选择</button>
+            <button class="btn btn-soft btn-sm" type="button" :disabled="!track.plexFilePath" @click="confirmRebind(item, track)">选择</button>
           </article>
           <p v-if="!searching && !searchResults.length">没有找到可使用的 Plex 曲目。</p>
         </div>
@@ -123,9 +139,9 @@
 
     <ConfirmDialog
       :visible="Boolean(pendingAction)"
-      :title="pendingAction?.kind === 'download' ? '改为下载独立副本' : pendingAction?.kind === 'rebind' ? '确认使用 Plex 媒体' : '确认移除媒体关联'"
+      :title="pendingAction?.kind === 'download' ? '下载一份新文件' : pendingAction?.kind === 'rebind' ? '确认更换关联的文件' : '确认停止使用'"
       :message="pendingMessage"
-      :confirm-label="pendingAction?.kind === 'download' ? '安排独立下载' : pendingAction?.kind === 'rebind' ? '保存关联' : '移除关联'"
+      :confirm-label="pendingAction?.kind === 'download' ? '开始下载' : pendingAction?.kind === 'rebind' ? '保存关联' : '停止使用'"
       :variant="pendingAction?.kind === 'unbind' ? 'danger' : 'primary'"
       :busy="acting"
       @confirm="executePendingAction"
@@ -173,7 +189,7 @@ const managedDownloads = reactive(new Set<number>())
 
 const stateOptions: Array<{ value: MatchOverviewState; label: string }> = [
   { value: 'matched', label: '已关联' },
-  { value: 'pending_alignment', label: '等待同步对齐' },
+  { value: 'pending_alignment', label: '等待同步更新' },
   { value: 'awaiting_manual', label: '等待手动选择' },
   { value: 'unmatched', label: '待处理' },
   { value: 'binding_stale', label: '关联失效' },
@@ -192,35 +208,62 @@ const mediaReasonOptions = computed(() => [
 
 function songId(item: MatchOverviewItem) { return item.target.neteaseSongId }
 function itemKey(item: MatchOverviewItem) { return item.occurrence?.id ?? `orphan-${songId(item)}` }
-function stateLabel(value: MatchOverviewState) { return stateOptions.find(option => option.value === value)?.label ?? ({ historical_unverified: '历史待验证', removed: '已退出目标' } as Record<string, string>)[value] ?? value }
+function stateLabel(value: MatchOverviewState) { return stateOptions.find(option => option.value === value)?.label ?? ({ historical_unverified: '尚未核对', removed: '已从收藏移除' } as Record<string, string>)[value] ?? value }
+function plexPath(item: MatchOverviewItem) { return item.binding?.plexFilePath || item.binding?.plexRelativePath || '' }
 function bindingLabel(item: MatchOverviewItem) {
-  if (!item.binding || item.binding.status === 'unbound') return '未建立媒体关联'
-  return item.binding.bindingMethod === 'manual' ? `Plex 现有媒体 · #${item.binding.plexRatingKey || '未知'}` : 'YunPlex 托管文件'
+  if (!item.binding || item.binding.status === 'unbound') return '还没有关联的媒体'
+  return item.binding.bindingMethod === 'manual'
+    ? `手动选择的 Plex 文件${item.binding.plexRatingKey ? ` · #${item.binding.plexRatingKey}` : ''}`
+    : 'YunPlex 下载的文件'
 }
 function staleReason(item: MatchOverviewItem): string {
   if (item.state !== 'binding_stale') return ''
   const reason = typeof item.binding?.evidence?.reason === 'string' ? item.binding.evidence.reason : ''
   return ({
-    adopted_media_missing: 'Plex 已找不到原关联路径',
-    plex_validation_missing: 'Plex 已找不到原关联路径',
-    adopted_path_ambiguous: '原关联路径对应多个 Plex 媒体',
-    rebuild_managed_links: '托管关联等待重新验证',
-  } as Record<string, string>)[reason] ?? '原媒体关联未通过精确路径验证'
+    adopted_media_missing: 'Plex 里已经找不到这个文件',
+    plex_validation_missing: 'Plex 里已经找不到这个文件',
+    adopted_path_ambiguous: '这个路径在 Plex 里对应多个文件',
+    rebuild_managed_links: 'YunPlex 下载的文件需要重新核对',
+  } as Record<string, string>)[reason] ?? '这条关联和 Plex 里的文件对不上'
 }
 function canDownloadManaged(item: MatchOverviewItem): boolean {
   return !orphaned.value && (Boolean(item.binding) || ['awaiting_manual', 'unmatched', 'binding_stale', 'sync_failed'].includes(item.state))
 }
+function canUnbind(item: MatchOverviewItem): boolean {
+  return Boolean(item.binding && item.binding.status !== 'unbound' && (orphaned.value || item.binding.bindingMethod === 'manual'))
+}
+function canValidateBinding(item: MatchOverviewItem): boolean {
+  return !orphaned.value && item.binding?.status === 'active' && ['pending_alignment', 'historical_unverified'].includes(item.state)
+}
+function changeHint(item: MatchOverviewItem): string {
+  return item.binding
+    ? '选择新的 Plex 文件，使用这首歌的收藏会同时更新。'
+    : '搜索 Plex 曲目，选择这首歌要使用的文件。'
+}
+function downloadHint(item: MatchOverviewItem): string {
+  return item.binding
+    ? '下载新文件并替换关联，使用这首歌的收藏会同时更新。'
+    : '下载一份新文件并关联这首歌。'
+}
+function unbindHint(): string {
+  return orphaned.value
+    ? '移除已不属于任何收藏的关联。'
+    : '解除关联后，下次同步将重新选择或下载文件。'
+}
+const validatingId = ref<number | null>(null)
 
 const pendingMessage = computed(() => {
   const action = pendingAction.value
   if (!action) return ''
   const affected = action.item.affectedSources.map(source => source.name)
-  const impact = affected.length ? affected.join('、') : '当前没有同步源引用'
-  if (action.kind === 'download') return `为歌曲 #${songId(action.item)} 下载独立托管副本。完成验证前保留当前关联和旧文件，成功后全局切换并对齐已启用来源：${impact}。禁用来源等待手动同步。`
-  if (action.kind === 'rebind') {
-    return `将网易云歌曲 #${songId(action.item)} 由当前 Plex #${action.item.binding?.plexRatingKey || '未关联'} 全局更换到 ${action.track.title}（Plex #${action.track.ratingKey}）。这不是当前歌单的局部设置，将影响 ${affected.length} 个来源：${impact}。`
+  const impact = affected.length ? affected.join('、') : '现在没有收藏使用这首歌'
+  if (action.kind === 'download') {
+    return `为这首歌下载一份新文件。下载和校验完成前继续使用现在的关联和文件，完成后这些收藏会改用新文件：${impact}。暂停同步的收藏要手动同步一次。`
   }
-  return `将移除网易云歌曲 #${songId(action.item)} 的全局媒体关联。受影响来源：${impact}；下次同步会按“未验证媒体”设置重新处理。`
+  if (action.kind === 'rebind') {
+    return `改用 ${action.track.title}（Plex #${action.track.ratingKey}）。以下收藏会同步更新：${impact}。原文件保留。`
+  }
+  return `解除 Plex 关联，以下收藏会受影响：${impact}。下次同步将重新选择或下载音乐，原文件保留。`
 })
 
 let loadRequest = 0
@@ -260,11 +303,11 @@ async function downloadManaged(item: MatchOverviewItem) {
   error.value = ''
   try {
     await api.post(`/playlist-sources/${props.sourceId}/songs/${id}/download-managed`, {})
-    notice.value = '已加入托管下载队列；完成后相关同步源会自动等待重新对齐。'
-    feedback.success('已加入托管下载队列', '完成后相关同步源会自动等待重新对齐。')
+    notice.value = '已加入下载队列；下载完成后，使用这首歌的收藏会在下次同步时更新。'
+    feedback.success('已加入下载队列', '下载完成后，使用这首歌的收藏会在下次同步时更新。')
     emit('changed')
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '启动托管下载失败'
+    error.value = err instanceof Error ? err.message : '开始下载失败'
   } finally {
     managedDownloads.delete(id)
   }
@@ -282,12 +325,40 @@ async function validatePlex() {
       stale: number
       unbound: number
     }>('/match-management/validate', { sourceId: props.sourceId })
-    notice.value = `Plex 验证完成：${data.valid} 条有效，${data.recovered} 条已按路径恢复，${data.stale} 条失效，${data.unbound} 首未关联。`
+    notice.value = `Plex 核对完成：${data.valid} 条有效，${data.recovered} 条已重新对上文件，${data.stale} 条失效，${data.unbound} 首还没有关联。`
     emit('changed')
     await load()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Plex 验证失败'
+    error.value = err instanceof Error ? err.message : 'Plex 核对失败'
   } finally {
+    acting.value = false
+  }
+}
+async function validateBinding(item: MatchOverviewItem) {
+  if (acting.value) return
+  acting.value = true
+  const id = songId(item)
+  validatingId.value = id
+  error.value = ''
+  try {
+    const data = await api.post<{ valid: number; recovered: number; stale: number; unbound: number }>(
+      '/match-management/validate',
+      { sourceId: props.sourceId, songIds: [id] },
+    )
+    const outcome = data.recovered
+      ? '已按新路径重新对上文件'
+      : data.valid
+        ? 'Plex 里的文件仍然有效'
+        : data.stale
+          ? 'Plex 里已经找不到这个文件，建议更换或下载'
+          : '这首歌还没有关联'
+    notice.value = `核对完成：${outcome}。`
+    emit('changed')
+    await load()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '核对失败'
+  } finally {
+    validatingId.value = null
     acting.value = false
   }
 }
@@ -319,26 +390,26 @@ async function executePendingAction() {
         expectedBindingUpdatedAt: action.item.binding?.updatedAt ?? null,
         sourceId: orphaned.value ? undefined : props.sourceId,
       })
-      notice.value = 'Plex 媒体关联已保存；已启用的相关来源已排队对齐，禁用来源等待手动同步。'
-      feedback.success('Plex 媒体关联已保存', '已启用的相关来源已排队对齐，禁用来源等待手动同步。')
+      notice.value = '新的关联已保存；启用中的收藏已排队更新，暂停的收藏要手动同步一次。'
+      feedback.success('新的关联已保存', '启用中的收藏已排队更新，暂停的收藏要手动同步一次。')
     } else if (action.kind === 'download') {
       await api.post(`/match-management/bindings/${songId(action.item)}/download`, {expectedBindingUpdatedAt:action.item.binding?.updatedAt??null})
-      notice.value = '独立副本处理已安排；完成前保留旧关联，禁用来源等待手动同步。'
+      notice.value = '已安排下载；完成前继续使用原文件和原关联，暂停的收藏要手动同步一次。'
     } else {
       await api.post(`/match-management/bindings/${songId(action.item)}/unbind`, {
         expectedBindingUpdatedAt: action.item.binding?.updatedAt,
         mode: 'reevaluate',
         sourceId: orphaned.value ? undefined : props.sourceId,
       })
-      notice.value = '媒体关联已移除；系统会在下次同步时重新评估。'
-      feedback.success('媒体关联已移除', '系统会在下次同步时重新评估。')
+      notice.value = '已停止使用现在的关联；下次同步会重新为这首歌挑选或下载媒体。'
+      feedback.success('已停止使用现在的关联', '下次同步会重新为这首歌挑选或下载媒体。')
     }
     pendingAction.value = null
     searchItemKey.value = ''
     emit('changed')
     await load()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '媒体关联更新失败'
+    error.value = err instanceof Error ? err.message : '关联更新失败'
   } finally {
     acting.value = false
   }
@@ -349,19 +420,20 @@ watch(() => props.sourceId, () => { page.value = 1; void load() }, { immediate: 
 
 <style scoped>
 .source-media { display: grid; gap: var(--space-3_5); min-width: 0; }
-.source-media__header, .source-media__filters, .source-media__row, .source-media__actions { display: flex; align-items: center; }
+.source-media__header, .source-media__filters { display: flex; align-items: center; }
 .source-media__header { justify-content: space-between; gap: var(--space-4); }
 .source-media__header div { min-width: 0; }
 .source-media__header p { margin: var(--space-0_5) 0 0; color: var(--text-muted); font-size: var(--text-xs); line-height: var(--body-leading); }
 .source-media__filters { flex-wrap: wrap; gap: var(--space-2); }
 .source-media__filter { width: 10rem; }
-.source-media__search { position: relative; flex: 1; min-width: 10rem; }
+.source-media__search { position: relative; display: block; flex: 1; min-width: 10rem; }
 .source-media__search svg { position: absolute; left: .7rem; top: 50%; z-index: 1; transform: translateY(-50%); color: var(--text-muted); }
 .source-media__search input { width: 100%; padding-left: var(--space-8); }
+.source-media__scored { display: inline-flex; width: max-content; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); line-height: 1; cursor: pointer; }
 .source-media__list { display: grid; gap: var(--space-2); }
-.source-media__row { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 10rem; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); background: var(--bg-surface); min-width: 0; }
-.source-media__target { display: flex; align-items: center; gap: var(--space-2_5); min-width: 0; }
-.source-media__target img { width: 36px; height: 36px; border-radius: var(--radius-sm); object-fit: cover; }
+.source-media__row { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(0, 2.25fr) max-content; align-items: center; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--border-primary); border-radius: var(--radius-lg); background: var(--bg-surface); min-width: 0; }
+.source-media__target { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.source-media__target img { width: var(--space-20); height: var(--space-20); flex: none; border-radius: var(--radius-md); background: var(--bg-hover); object-fit: cover; }
 .source-media__target div, .source-media__binding { display: grid; gap: var(--space-0_5); min-width: 0; }
 .source-media__target strong, .source-media__target span, .source-media__binding strong, .source-media__binding small, .source-media__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-media__target strong, .source-media__binding strong { color: var(--text-primary); font-size: var(--text-xs); }
@@ -372,7 +444,9 @@ watch(() => props.sourceId, () => { page.value = 1; void load() }, { immediate: 
 .source-media__state { width: max-content; color: var(--text-secondary); font-size: var(--text-xs); }
 .source-media__state--matched { color: var(--success); }
 .source-media__state--awaiting_manual, .source-media__state--binding_stale, .source-media__state--sync_failed, .source-media__state--copyright_restricted, .source-media__state--retry_paused { color: var(--warning); }
-.source-media__actions { align-items: flex-end; flex-direction: column; gap: var(--space-2); }
+.source-media__actions { display: grid; grid-template-columns: repeat(2, 6rem); align-content: center; gap: var(--space-2); }
+.source-media__actions :deep(.action-hint) { width: 100%; }
+.source-media__actions .btn { width: 100%; }
 .source-media__candidates { grid-column: 1 / -1; display: grid; gap: var(--space-1_5); padding-top: var(--space-2); border-top: 1px solid var(--border-primary); }
 .source-media__candidates > article { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2); border-radius: var(--radius-md); background: var(--bg-hover); }
 .source-media__candidates div { display: grid; min-width: 0; }
@@ -385,7 +459,9 @@ watch(() => props.sourceId, () => { page.value = 1; void load() }, { immediate: 
 @media (max-width: 900px) {
   .source-media__header, .source-media__filters { align-items: flex-end; flex-direction: column; }
   .source-media__filter { width: 100%; }
-  .source-media__row { grid-template-columns: 1fr; }
-  .source-media__actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; }
+  .source-media__search { width: 100%; min-width: 0; }
+  .source-media__row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+  .source-media__target strong, .source-media__target span, .source-media__binding strong, .source-media__binding small, .source-media__path { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+  .source-media__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
 }
 </style>

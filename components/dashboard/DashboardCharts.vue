@@ -3,7 +3,7 @@
     <article class="section-card dashboard-chart-card">
       <header class="dashboard-chart-card__header">
         <div>
-          <h3>近七日下载</h3>
+          <h3><AppIcon name="download" :size="17" class="dashboard-chart-card__icon dashboard-chart-card__icon--download" />近七日下载</h3>
           <p>完成的歌曲下载任务</p>
         </div>
         <strong>{{ downloadTotal }} 首</strong>
@@ -34,7 +34,7 @@
     <article class="section-card dashboard-chart-card">
       <header class="dashboard-chart-card__header dashboard-chart-card__header--resource">
         <div>
-          <h3>CPU 与内存</h3>
+          <h3><AppIcon name="activity" :size="17" class="dashboard-chart-card__icon dashboard-chart-card__icon--resource" />CPU 与内存</h3>
           <p>本页最近 5 分钟采样 · 内存为进程 RSS</p>
         </div>
         <div class="resource-legend" aria-label="当前资源占用">
@@ -120,7 +120,10 @@ const resourceAriaLabel = computed(() => latestResource.value
 .dashboard-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3_5); }
 .dashboard-chart-card { min-width: 0; min-height: 13rem; padding: var(--space-4); }
 .dashboard-chart-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-3); }
-.dashboard-chart-card__header h3 { margin: 0; color: var(--text-primary); }
+.dashboard-chart-card__header h3 { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--text-primary); }
+.dashboard-chart-card__icon { flex-shrink: 0; }
+.dashboard-chart-card__icon--download { color: var(--accent); }
+.dashboard-chart-card__icon--resource { color: var(--success); }
 .dashboard-chart-card__header p { margin: var(--space-1) 0 0; color: var(--text-tertiary); font-size: var(--text-xs); }
 .dashboard-chart-card__header > strong { color: var(--accent); font-size: var(--text-sm); }
 .download-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(.35rem, 1vw, .75rem); min-height: 8rem; }

@@ -1,5 +1,5 @@
 <template>
-  <div class="toggle-field">
+  <div :id="setting ? settingTargetId(setting) : undefined" class="toggle-field" :data-setting-target="setting">
     <div class="min-w-0">
       <p class="text-sm font-medium text-[var(--text-primary)]">{{ label }}</p>
       <p v-if="hint" class="text-2xs text-muted-deep mt-0.5">{{ hint }}</p>
@@ -21,9 +21,15 @@
 </template>
 
 <script setup lang="ts">
+import { settingTargetId, type SettingKey } from '~/lib/settings-catalog'
 defineProps<{
   modelValue: boolean
   label: string
+  setting?: SettingKey
+  searchSection?: string
+  searchKeywords?: string
+  searchFallback?: string
+  searchHiddenHint?: string
   hint?: string
   disabled?: boolean
 }>()

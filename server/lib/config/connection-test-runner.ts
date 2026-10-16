@@ -3,13 +3,14 @@ import type { AppConfig, PlexMusicSectionInfo } from './types'
 import { diagnoseStorageVisibility, extractPlexMusicSection, resolveConnectionTestConfig, testDownloadPathConfig } from './connection-test'
 import { ConnectionTestError } from './connection-test-error'
 import { checkCookie } from '../netease'
-import { createPlexClient, initPlexClient } from '../plex-client'
+import { createPlexHttpClient } from '../plex-http'
 import { sanitizeDiagnosticMessage } from '../domain-error'
+import { withExternalRequestSignal } from '../external-request-context'
 
 export type ConnectionTestSection = 'netease' | 'plex' | 'download'
 export interface ConnectionTestResult { section: ConnectionTestSection; message: string; data: Record<string, unknown> }
 
-/** Deadline for one connection test. The external library calls below cannot be cancelled. */
+/** Deadline for one connection test, including transport cancellation. */
 export const CONNECTION_TEST_TIMEOUT_MS = 15_000
 
 const TIMEOUT_FAILURES: Record<ConnectionTestSection, { code: DomainErrorCode; message: string }> = {
@@ -33,12 +34,11 @@ export async function runConnectionTest(section: ConnectionTestSection, candidat
 }
 
 /**
- * Bounds how long a connection test may take and clears the deadline timer in `finally`. The
- * pending library request keeps running in the background: this is a bounded wait, not transport
- * cancellation, and it never retries on its own.
+ * Bounds the wait and aborts pending Plex/NetEase transport requests at the deadline.
  */
 async function withBoundedWait<T>(section: ConnectionTestSection, run: () => Promise<T>): Promise<T> {
-  const pending = run()
+  const controller = new AbortController()
+  const pending = withExternalRequestSignal(controller.signal, run)
   // The deadline may win first; keep a late rejection from surfacing as an unhandled rejection.
   pending.catch(() => {})
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -47,7 +47,11 @@ async function withBoundedWait<T>(section: ConnectionTestSection, run: () => Pro
       pending,
       new Promise<never>((_, reject) => {
         const failure = TIMEOUT_FAILURES[section]
-        timer = setTimeout(() => reject(new ConnectionTestError(failure.code, failure.message)), CONNECTION_TEST_TIMEOUT_MS)
+        timer = setTimeout(() => {
+          const error = new ConnectionTestError(failure.code, failure.message)
+          controller.abort(error)
+          reject(error)
+        }, CONNECTION_TEST_TIMEOUT_MS)
       }),
     ])
   } finally {
@@ -71,21 +75,24 @@ async function testPlex(config: AppConfig): Promise<ConnectionTestResult> {
   const storageVisibility = diagnoseStorageVisibility(config, inspection)
   return {
     section: 'plex',
-    message: storageVisibility.status === 'warning' ? `Plex 连接正常，但文件发布链路需要确认：${storageVisibility.summary}` : `Plex 连接正常 (ID: ${machineId})`,
+    message: 'Plex 连接正常',
     data: { section: 'plex', success: true, machineId, plexSection: inspection.section ?? null, storageVisibility },
   }
 }
 
 async function connectPlex(config: AppConfig): Promise<string> {
   try {
-    return await initPlexClient(config.plex)
+    const response = await createPlexHttpClient(config.plex).query('/') as { MediaContainer?: { machineIdentifier?: string } }
+    const machineId = response.MediaContainer?.machineIdentifier
+    if (!machineId) throw new Error('Plex 服务器未返回有效标识')
+    return machineId
   } catch (error) {
     throw plexConnectionFailure(config, error)
   }
 }
 
 /**
- * Builds Plex context from the configured target only. plex-api internals are never echoed, so a
+ * Builds Plex context from the configured target only. Transport internals are never echoed, so a
  * rejected request can never carry the configured token into the response.
  */
 function plexConnectionFailure(config: AppConfig, error: unknown): ConnectionTestError {
@@ -114,14 +121,14 @@ async function testDownload(config: AppConfig): Promise<ConnectionTestResult> {
   const result = testDownloadPathConfig(config, inspection)
   return {
     section: 'download',
-    message: result.storageVisibility.status === 'warning' ? `下载目录可写，但文件发布链路需要确认：${result.storageVisibility.summary}` : '下载目录可写，Plex 文件发布链路已验证',
+    message: result.storageVisibility.status === 'warning' ? `下载目录可写；${result.storageVisibility.summary}` : '下载目录可写',
     data: { ...result, dir: result.downloadDir } as unknown as Record<string, unknown>,
   }
 }
 
 async function inspectDownloadPlexSection(config: AppConfig) {
   try {
-    await initPlexClient(config.plex)
+    await connectPlex(config)
     return await inspectPlexSection(config)
   } catch (error) {
     return { section: null, plexInspectionError: error instanceof Error ? error.message : '无法连接 Plex' }
@@ -130,7 +137,7 @@ async function inspectDownloadPlexSection(config: AppConfig) {
 
 async function inspectPlexSection(config: AppConfig): Promise<{ section: PlexMusicSectionInfo | null; plexInspectionError?: string }> {
   try {
-    const plex = createPlexClient(config.plex)
+    const plex = createPlexHttpClient(config.plex)
     const payload = await plex.query('/library/sections')
     const section = extractPlexMusicSection(payload, config.plex.section)
     return section ? { section } : { section: null, plexInspectionError: `未找到音乐库「${config.plex.section}」` }

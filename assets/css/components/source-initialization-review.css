@@ -29,11 +29,35 @@
   gap: var(--space-2);
   padding: var(--space-4);
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 .source-adoption__bulk > div {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.source-adoption__bulk > p {
+  flex-basis: 100%;
+}
+.source-adoption__selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+}
+.source-adoption__selection-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.source-adoption__selection-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: var(--body-leading);
 }
 .source-adoption__table-wrap {
   overflow: auto;

@@ -132,8 +132,8 @@
   min-height: var(--control-height);
   padding: 0 var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-surface);
+  border: 1px solid transparent;
+  background: var(--bg-control);
   color: var(--text-secondary);
   font-size: var(--text-base);
   font-weight: var(--font-weight-medium);
@@ -145,7 +145,7 @@
 }
 .filter-chip:hover {
   color: var(--text-primary);
-  border-color: var(--border-secondary);
+  background: var(--bg-control-hover);
 }
 .filter-chip:disabled {
   opacity: var(--opacity-disabled);
@@ -154,7 +154,6 @@
 .filter-chip-active,
 .filter-chip-active:hover {
   color: var(--accent);
-  border-color: var(--accent);
   background: var(--accent-muted);
 }
 .filter-chip__check {
@@ -261,6 +260,7 @@
   gap: var(--space-0_5);
   width: max-content;
   max-width: min(22rem, calc(100vw - var(--space-4)));
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-1_5);
@@ -307,6 +307,7 @@
   color: var(--text-tertiary);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-normal);
+  overflow-wrap: anywhere;
 }
 .list-select__check {
   flex: none;
@@ -374,8 +375,10 @@
   gap: var(--space-3);
 }
 .filter-popover__controls {
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -414,6 +417,9 @@
   gap: var(--space-4);
   margin-top: var(--space-3_5);
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding-bottom: var(--space-4);
 }
@@ -451,9 +457,9 @@
   gap: var(--space-1);
   min-height: 2.5rem;
   padding: var(--space-0_5);
-  border: 1px solid var(--border-primary);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--bg-input);
+  background: var(--bg-control);
 }
 .filter-segment__button {
   display: inline-flex;
@@ -501,57 +507,75 @@
 
 .toast-region {
   position: fixed;
-  right: 1rem;
-  top: 1rem;
+  right: var(--space-4);
+  top: var(--space-4);
   display: flex;
-  width: min(26rem, calc(100vw - 2rem));
+  width: min(24rem, calc(100vw - 2rem));
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-2_5);
   pointer-events: none;
 }
 .toast-card {
+  --toast-tone: var(--accent);
+  --toast-icon-bg: var(--accent-muted);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
   gap: var(--space-3);
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-3_5);
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-primary);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-lg);
+  border: 0;
+  border-inline-start: 3px solid var(--toast-tone);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
   color: var(--text-primary);
   pointer-events: auto;
 }
+.toast-card--detailed { align-items: flex-start; }
+.toast-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--toast-icon-bg);
+  color: var(--toast-tone);
+}
+.toast-close {
+  flex: none;
+  min-width: var(--control-height-xs);
+  min-height: var(--control-height-xs);
+  padding: 0;
+}
 .toast-title {
+  margin: 0;
   font-size: var(--text-base);
-  font-weight: var(--font-weight-bold);
-  line-height: 1.25rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
 }
 .toast-message {
-  margin-top: 0.1rem;
-  font-size: var(--text-xs);
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-  line-height: 1.2rem;
+  line-height: var(--body-leading);
+  overflow-wrap: anywhere;
 }
 .toast-success {
-  border-color: var(--success-border);
-}
-.toast-success > .app-icon {
-  color: var(--success);
+  --toast-tone: var(--success);
+  --toast-icon-bg: var(--success-soft);
 }
 .toast-error {
-  border-color: var(--danger-border);
-}
-.toast-error > .app-icon {
-  color: var(--danger);
+  --toast-tone: var(--danger);
+  --toast-icon-bg: var(--danger-soft);
 }
 .toast-warning {
-  border-color: var(--warning-border);
-}
-.toast-warning > .app-icon {
-  color: var(--warning);
-}
-.toast-info > .app-icon {
-  color: var(--accent);
+  --toast-tone: var(--warning);
+  --toast-icon-bg: var(--warning-soft);
 }
 
 .date-range-popover {

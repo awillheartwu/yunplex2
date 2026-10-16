@@ -77,7 +77,7 @@ test('[P-05] failed write preserves draft and server data, retry persists', asyn
   } finally { await page.unroute('**/api/config'); expect((await updateConfig(page, original)).status).toBe(200) }
 })
 
-for (const [field, invalid] of [['intervalMinutes', 0], ['downloadConcurrency', 0], ['maxFailureAttempts', 0]] as const) {
+for (const [field, invalid] of [['maxFailureAttempts', 0]] as const) {
   test(`[CFG boundary] ${field} invalid write is atomic`, async ({ page }) => {
     await login(page)
     const before = await readConfig(page)

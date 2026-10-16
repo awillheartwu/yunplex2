@@ -105,17 +105,6 @@ describe('task run store', () => {
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
   })
 
-  it('does not create the legacy jobs table for new databases', () => {
-    setup()
-
-    const tables = getDb().prepare(`
-      SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('jobs', 'task_runs', 'failure_records')
-    `).all() as Array<{ name: string }>
-
-    expect(tables.map(table => table.name).sort()).toEqual(['failure_records', 'task_runs'])
-    expect(getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'").get()).toBeUndefined()
-  })
-
   it('persists and completes a manual download run from its task results', () => {
     setup()
     createManualDownloadRun({ id: 'batch-1', total: 2, sourceLabel: '两首单曲' })

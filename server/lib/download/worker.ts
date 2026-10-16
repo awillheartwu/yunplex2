@@ -8,6 +8,8 @@ import {
 import type { AppConfig } from '../config/types'
 import { downloadSingleSong } from './single-song'
 import { resolveSingleSongConfig } from './options'
+import { getDataDir } from '../config/store'
+import { join } from 'node:path'
 
 export interface DownloadWorker {
   getStatus: () => 'ready' | 'failed' | 'stopping'
@@ -167,7 +169,10 @@ export function startDownloadWorker(
     getConcurrency: () => getConfig().sync.downloadConcurrency || 1,
     execute: execute ?? ((task, onProgress, signal) => downloadSingleSong(
         task.songId,
-        resolveSingleSongConfig(getConfig(), executionOverrides(task)),
+        {
+          ...resolveSingleSongConfig(getConfig(), executionOverrides(task)),
+          audioCache: { directory: join(getDataDir(), 'download-cache'), taskId: task.id },
+        },
         onProgress,
         signal,
       )),

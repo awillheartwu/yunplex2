@@ -19,9 +19,9 @@ import {
 import { ConnectionTestError } from './connection-test-error'
 import { sanitizeDiagnosticMessage } from '../domain-error'
 
-export const PATH_MAPPING_DISCLOSURE = '路径映射只负责换算文件名，不会上传、复制或同步任何文件到 Plex 服务器。'
+export const PATH_MAPPING_DISCLOSURE = '路径设置不会传输文件。'
 export const DOWNLOAD_WRITE_PROBE_PREFIX = '.yunplex-write-probe-'
-const DIAGNOSTIC_RELATIVE_PATH = join('路径诊断', '示例专辑', '01 - 示例歌曲.flac')
+const DIAGNOSTIC_RELATIVE_PATH = join('艺人', '专辑', '歌曲.flac')
 
 export function resolveConnectionTestConfig(candidate?: unknown): AppConfig {
   return candidate ? mergeAndValidateConfig(readConfig(), candidate) : readConfig()
@@ -131,9 +131,9 @@ export function diagnoseStorageVisibility(
   const plexPath = mapLocalPathToPlex(localPath, config)
   const roundTripLocalPath = plexPath ? mapPlexPathToLocal(plexPath, config) : null
   const mappingValid = Boolean(plexPath && roundTripLocalPath === localPath)
-  const prefixMatchesSection = sectionLocations.length === 0 || !plexPathPrefix
+  const prefixMatchesSection = sectionLocations.length === 0
     ? null
-    : sectionLocations.some(location => isSamePathOrInside(location, plexPathPrefix))
+    : sectionLocations.some(location => isSamePathOrInside(location, plexPathPrefix || downloadDir))
   const localStorageAliasVerified = Boolean(
     plexPathPrefix
     && serverScope === 'local'
@@ -148,77 +148,57 @@ export function diagnoseStorageVisibility(
 
   if (plexInspectionError) {
     code = 'plex_inspection_unavailable'
-    summary = `无法读取 Plex 音乐库位置，因此尚未验证文件发布链路。${PATH_MAPPING_DISCLOSURE}`
-    action = '先确认 Plex 连接与音乐库名称，再重新测试；同时确认下载目录是 Plex 实际扫描目录的共享挂载。'
+    summary = '无法读取 Plex 音乐库目录。'
+    action = '检查 Plex 连接和音乐库名称后重试。'
   } else if (!section || sectionLocations.length === 0) {
     code = 'section_location_unavailable'
-    summary = `没有取得 Plex 音乐库的实际位置，因此尚未验证文件发布链路。${PATH_MAPPING_DISCLOSURE}`
-    action = '配置并测试 Plex 连接，确认音乐库名称正确且该音乐库至少有一个 Location。'
+    summary = 'Plex 音乐库尚未设置音乐目录。'
+    action = '在 Plex 中为此音乐库添加音乐目录后重试。'
   } else if (!mappingValid) {
     code = 'path_mapping_invalid'
-    summary = `本地路径与 Plex 路径无法完成双向换算。${PATH_MAPPING_DISCLOSURE}`
-    action = '修正下载目录和 Plex 音乐库路径前缀，使同一个相对文件在两端映射后保持一致。'
-  } else if (!plexPathPrefix) {
-    const sameVisiblePath = serverScope === 'local'
-      && sectionLocations.some(location => pathIsVisibleUnderLocalSection(downloadDir, location))
-    if (sameVisiblePath) {
-      code = 'shared_storage_verified'
-      summary = '应用与本机 Plex 使用同一个可访问目录，路径发布链路已通过配置与文件系统验证。'
-      action = '无需调整；下载完成后仍需等待 Plex 扫描并建立媒体索引。'
-      publicationVerified = true
-    } else {
-      code = 'missing_path_prefix'
-      summary = `下载目录与 Plex 音乐库位置不同，且未配置路径前缀。${PATH_MAPPING_DISCLOSURE}`
-      action = `将 Plex 路径前缀设为音乐库位置（例如 ${sectionLocations[0]}），并确保下载目录通过 SMB/NFS/容器挂载或外部发布流程写入同一份文件。`
-    }
+    summary = '下载目录与 Plex 对应目录无法正确换算。'
+    action = '检查两个目录，确保同一首歌在两端的相对路径一致。'
   } else if (prefixMatchesSection === false) {
-    code = 'section_prefix_mismatch'
-    summary = `配置的 Plex 路径前缀不属于所选音乐库的 Location。${PATH_MAPPING_DISCLOSURE}`
-    action = `将 Plex 路径前缀改为与 ${sectionLocations.join('、')} 重叠的根路径，并确认下载目录对应同一份存储。`
-  } else if (localStorageAliasVerified) {
+    code = plexPathPrefix ? 'section_prefix_mismatch' : 'missing_path_prefix'
+    summary = 'Plex 对应目录不在所选音乐库中。'
+    action = `将「Plex 对应目录」设为下载目录在 Plex 中的位置，须位于 ${sectionLocations.join('、')} 内。`
+  } else if (localStorageAliasVerified || (!plexPathPrefix && serverScope === 'local'
+    && sectionLocations.some(location => pathIsVisibleUnderLocalSection(downloadDir, location)))) {
     code = 'shared_storage_verified'
-    summary = '应用与本机 Plex 的路径指向同一个可访问目录，文件发布链路已验证。'
-    action = '无需调整；下载完成后仍需等待 Plex 扫描并建立媒体索引。'
+    summary = 'YunPlex 与 Plex 使用同一音乐目录。'
+    action = '下载完成后，由 Plex 扫描收录歌曲。'
     publicationVerified = true
   } else if (serverScope === 'remote') {
     code = 'remote_storage_unverified'
-    summary = `Plex 位于另一主机；当前只完成了路径换算，尚未证明本地下载文件已发布到远端音乐库。${PATH_MAPPING_DISCLOSURE}`
-    action = '把下载目录直接挂载到 Plex 扫描的同一份 SMB/NFS/容器卷，或配置独立且可审计的复制/发布流程，然后重新测试。'
+    summary = 'Plex 对应目录位于所选音乐库中。'
+    action = `两端应挂载同一份音乐目录。${PATH_MAPPING_DISCLOSURE}`
   } else {
     code = 'mapping_only_unverified'
-    summary = `路径样例可以换算，但无法证明应用与 Plex 看到的是同一份物理文件。${PATH_MAPPING_DISCLOSURE}`
-    action = '确认下载目录与 Plex Location 是同一共享卷或同一容器挂载；若依赖外部复制，请先确认复制完成再触发 Plex 扫描。'
+    summary = 'Plex 对应目录位于所选音乐库中。'
+    action = `两端应挂载同一份音乐目录。${PATH_MAPPING_DISCLOSURE}`
   }
 
   const checks: StorageVisibilityCheck[] = [
     {
       key: 'mapping',
-      label: '路径换算',
+      label: '路径对应',
       status: mappingValid ? 'pass' : 'warning',
       detail: mappingValid
-        ? `样例可双向换算：${localPath} ↔ ${plexPath}`
-        : '样例路径无法双向换算，请检查两个根路径。',
+        ? '歌曲在两个目录中的相对路径一致。'
+        : '请检查下载目录与 Plex 对应目录。',
     },
     {
       key: 'section',
-      label: '音乐库位置',
-      status: section && sectionLocations.length > 0 && prefixMatchesSection !== false ? 'pass' : 'warning',
-      detail: sectionLocations.length > 0
-        ? `Plex「${section?.title ?? config.plex.section}」Location：${sectionLocations.join('、')}`
-        : plexInspectionError || '未读取到 Plex 音乐库 Location。',
-    },
-    {
-      key: 'publication',
-      label: '文件发布',
-      status: publicationVerified ? 'pass' : 'warning',
-      detail: publicationVerified
-        ? '配置与本机文件系统表明两端使用同一个目录。'
-        : '未验证下载结果会出现在 Plex 扫描主机；路径映射本身不会传输文件。',
+      label: '音乐库目录',
+      status: prefixMatchesSection === true ? 'pass' : 'warning',
+      detail: prefixMatchesSection === true
+        ? 'Plex 对应目录位于此音乐库中。'
+        : plexInspectionError || 'Plex 对应目录须位于音乐库的扫描目录中。',
     },
   ]
 
   return {
-    status: publicationVerified ? 'verified' : 'warning',
+    status: publicationVerified ? 'verified' : (code === 'remote_storage_unverified' || code === 'mapping_only_unverified') ? 'configured' : 'warning',
     code,
     summary,
     action,

@@ -11,9 +11,17 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 ARG REYUNPLEX_REVISION
-RUN REYUNPLEX_REVISION=$REYUNPLEX_REVISION pnpm build && rm -rf .output/server/node_modules/NeteaseCloudMusicApi/public
+RUN REYUNPLEX_REVISION=$REYUNPLEX_REVISION pnpm build && rm -rf .output/server/node_modules/@neteasecloudmusicapienhanced/api/public
 
 FROM node:24-alpine AS runtime
+
+ARG REYUNPLEX_VERSION
+ARG REYUNPLEX_REVISION
+ARG REYUNPLEX_SOURCE
+LABEL org.opencontainers.image.title="YunPlex" \
+      org.opencontainers.image.version=$REYUNPLEX_VERSION \
+      org.opencontainers.image.revision=$REYUNPLEX_REVISION \
+      org.opencontainers.image.source=$REYUNPLEX_SOURCE
 
 WORKDIR /app
 

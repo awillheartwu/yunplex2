@@ -60,13 +60,14 @@ export function getDomainErrorDefinition(code: string | null | undefined): Domai
 export function classifyDomainErrorCode(message: string | null | undefined, fallback: DomainErrorCode = 'unknown_error'): DomainErrorCode {
   const text = (message || '').toLowerCase()
   if (!text) return fallback
-  if (/版权|copyright|无法获取歌曲|下载链接/.test(text)) return 'copyright_restricted'
-  if (/cookie|登录状态|未登录|认证|unauthori[sz]ed|forbidden|\b401\b|\b403\b/.test(text)) return 'authentication_failed'
+  if (/版权|copyright/.test(text)) return 'copyright_restricted'
+  if (/cookie|登录状态|未登录|认证|unauthori[sz]ed|\b401\b/.test(text)) return 'authentication_failed'
   if (/限流|频繁|rate.?limit|too many requests|\b429\b/.test(text)) return 'rate_limited'
   if (/服务重启|租约|lease|interrupted|中断/.test(text)) return 'scheduler_interrupted'
   if (/已有.*(?:任务|同步)|正在运行|占用|concurrent|busy/.test(text)) return 'concurrent_operation'
   if (/缺少|必须|无效|不存在|请提供|只支持|需要提供|格式错误|不符合|只有.*可以/.test(text)) return 'validation_failed'
   if (/plex/.test(text) && /连接|不可用|超时|timeout|refused|unreachable|\b50[234]\b/.test(text)) return 'plex_unavailable'
+  if (/网易云/.test(text) && /连接失败|请求超时|\b50[234]\b/.test(text)) return 'netease_unavailable'
   if (/eacces|eperm|enospc|enoent|只读|权限|磁盘|空间|挂载|文件系统/.test(text)) return 'filesystem_failed'
   if (/身份冲突|关联失效|歧义|ambiguous|identity conflict/.test(text)) return 'media_identity_conflict'
   if (/音频文件超过大小上限/.test(text)) return 'validation_failed'

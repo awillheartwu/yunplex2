@@ -3,7 +3,7 @@
     <div class="source-boolean-override__copy">
       <span class="source-boolean-override__label">{{ label }}</span>
       <p class="source-boolean-override__hint">
-        <template v-if="hint">{{ hint }} · </template>设置效果：{{
+        <template v-if="hint">{{ hint }} · </template>当前效果：{{
           effectiveValue === null ? '尚未读取全局设置' : effectiveValue ? '开启' : '关闭'
         }}
       </p>
@@ -14,7 +14,7 @@
       :aria-label="label"
       @change="updateValue"
     >
-      <option value="inherit">继承全局</option>
+      <option value="inherit">使用全局设置</option>
       <option value="true">开启</option>
       <option value="false">关闭</option>
     </select>
@@ -49,7 +49,6 @@ function updateValue(event: Event) {
   width: 100%;
   min-width: 0;
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-primary);
 }
 
 .source-boolean-override__copy {

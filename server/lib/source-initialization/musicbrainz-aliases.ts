@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { version, repository } from '../../../package.json'
 import type { InitializationMatchingConfig, MusicBrainzMatchingEvidence } from '../../../shared/initialization-matching'
 import type { InitializationItemPlan } from './types'
 import { artistMatchingKey as matchingKey } from '../../../shared/initialization-matching-text'
@@ -8,7 +9,7 @@ interface SearchResult { count: number; artists: Artist[] }
 const cache = new Map<string, { expires: number; data: SearchResult }>()
 let tail: Promise<unknown> = Promise.resolve()
 let nextRequestAt = 0
-const USER_AGENT = 'reYunPlex/0.1.0 (https://github.com/awillheartwu/yunplex2)'
+const USER_AGENT = `YunPlex/${version} (${repository.url})`
 const GENERIC_ARTISTS = new Set(['variousartists', 'various', 'unknownartist', 'unknown', 'anonymous', '群星', '佚名', '未知艺术家', '未知艺人'])
 
 async function searchArtist(name: string, signal?: AbortSignal): Promise<SearchResult> {

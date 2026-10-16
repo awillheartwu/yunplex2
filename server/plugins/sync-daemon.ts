@@ -22,6 +22,8 @@ import {
 } from '../lib/maintenance/data-lifecycle'
 import { listRequestedPendingInitializations } from '../lib/source-initialization/store'
 import { enqueueSourceInitialization } from '../lib/source-initialization/service'
+import { startPlexLibraryMonitor } from '../lib/plex-library-monitor'
+import { sourceRequestsBusy } from '../lib/sync/request-store'
 
 const DOWNLOAD_LEASE_SWEEP_INTERVAL_MS = 60 * 1000
 const DATA_LIFECYCLE_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -76,6 +78,11 @@ export default defineNitroPlugin((nitroApp) => {
     () => !isRepairRunning(),
   )
   setSyncWorker(worker)
+  const plexMonitor = startPlexLibraryMonitor(
+    () => readConfig(),
+    () => svc.getState().isRunning || isRepairRunning() || sourceRequestsBusy(),
+    () => { void worker.runOnce() },
+  )
 
   const leaseSweep = setInterval(() => {
     recoverExpiredDownloadTasks()
@@ -90,6 +97,7 @@ export default defineNitroPlugin((nitroApp) => {
     clearInterval(leaseSweep)
     clearInterval(lifecycleSweep)
     const results = await Promise.allSettled([
+      plexMonitor.stop(),
       stopWorker(),
       stopMediaRepairCommands(),
       stopDownloadWorker(),

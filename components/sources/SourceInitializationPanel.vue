@@ -4,29 +4,29 @@
     <template v-else>
       <div class="section-card source-adoption__overview">
       <header class="source-adoption__hero">
-        <div><h2>首次媒体接管</h2><p>先读取网易云和 Plex 生成方案；确认前不会下载，也不会修改 Plex。</p></div>
+        <div><h2>首次媒体接管</h2><p>先对比网易云和 Plex，生成接管方案。</p></div>
         <div class="source-adoption__actions">
-          <StatusBadge :status="statusTone" :label="statusLabel" />
+          <StatusBadge class="source-adoption__status" :status="statusTone" :label="statusLabel" />
           <button v-if="canStart" class="btn btn-primary btn-sm" :disabled="acting" @click="start"><AppIcon name="search" :size="14" />开始分析</button>
-          <button v-if="initialization?.status === 'pending' && !isWaitingAnalysis" class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmSkip = true">跳过接管</button>
-          <button v-if="isAnalyzing || isWaitingAnalysis" class="btn btn-secondary btn-sm" :disabled="acting" @click="cancel">取消分析</button>
-          <button v-if="canRestart && !needsRestart" class="btn btn-secondary btn-sm" :disabled="acting" @click="confirmReanalysis = true">{{ needsRestart ? '规则已更新，重新分析' : '放弃方案并重新分析' }}</button>
+          <button v-if="initialization?.status === 'pending' && !isWaitingAnalysis" class="btn btn-warning btn-sm" :disabled="acting" @click="confirmSkip = true">跳过接管</button>
+          <button v-if="isAnalyzing || isWaitingAnalysis" class="btn btn-ghost btn-sm" :disabled="acting" @click="cancel">取消分析</button>
+          <button v-if="canRestart && !needsRestart" class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析</button>
         </div>
       </header>
 
       <div v-if="initialization" class="source-adoption__steps" aria-label="接管阶段"><div v-for="(step, index) in steps" :key="step.label" :class="{ 'is-current': step.current, 'is-done': step.done }"><span>{{ index + 1 }}</span><strong>{{ step.label }}</strong></div></div>
       <div v-if="initialization" class="source-adoption__metrics"><div v-for="metric in metrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div></div>
       <section v-if="initialization?.matchingConfig" class="matching-snapshot">
-        <div class="matching-snapshot__heading"><div><strong>草案：{{ initialization.matchingConfig.config.enabled ? '增强（实验）' : '标准' }}匹配</strong><p>参数已随草案保存，修改设置不影响当前结果。</p></div>
-        <NuxtLink class="btn btn-secondary btn-sm" :to="{ path: '/config', query: { tab: 'matching', source: sourceId } }">初始化匹配设置</NuxtLink></div>
-        <details><summary>查看分析参数</summary><pre>{{ JSON.stringify(initialization.matchingConfig, null, 2) }}</pre><small>分析时间：{{ initialization.analyzedAt }} · 参数指纹：{{ initialization.matchingConfigFingerprint?.slice(0, 12) }}</small></details>
+        <div class="matching-snapshot__heading"><div><strong>本次分析：{{ initialization.matchingConfig.config.enabled ? '增强匹配（实验）' : '标准匹配' }}</strong><p>结果按这份设置生成，之后修改设置不会影响它。</p></div>
+        <NuxtLink class="btn btn-ghost btn-sm" :to="{ path: '/config', query: { tab: 'matching', source: sourceId } }">调整匹配设置</NuxtLink></div>
+        <details><summary>查看本次使用的设置</summary><pre>{{ JSON.stringify(initialization.matchingConfig, null, 2) }}</pre><small>分析时间：{{ initialization.analyzedAt }} · 设置编号：{{ initialization.matchingConfigFingerprint?.slice(0, 12) }}</small></details>
         <p v-for="warning in initialization.matchingConfig.musicBrainz?.warnings ?? []" :key="warning" role="status">{{ warning }}</p>
       </section>
       </div>
       <aside v-if="initialization?.status === 'awaiting_review'" class="source-adoption__tools">
-        <div class="source-adoption__tools-row"><AppIcon name="info" :size="17" /><strong>按需打开方案工具，审核列表保持在当前页面</strong><button class="btn btn-primary" :disabled="acting" @click="quickOpen = true">快速方案</button><button class="icon-button" :aria-expanded="toolsHintExpanded" :aria-label="toolsHintExpanded ? '收起方案工具提示' : '展开方案工具提示'" @click="toolsHintExpanded = !toolsHintExpanded"><Chevron :open="toolsHintExpanded" /></button></div>
-        <p v-if="toolsHintExpanded">下一步：用“快速方案”批量确认，或点页面底部的“提交接管方案”。关闭面板会保留当前草稿，只有明确确认才会应用决定。</p>
-        <p v-if="initialization.quickStatus === 'queued'" role="status">快速方案已排队，可打开面板查看或取消本次处理。</p>
+        <div class="source-adoption__tools-row"><AppIcon name="info" :size="17" /><strong>快速方案可批量处理，下方列表可逐首核对</strong><button class="btn btn-soft" :disabled="acting" @click="quickOpen = true">快速方案</button><button class="icon-button" :aria-expanded="toolsHintExpanded" :aria-label="toolsHintExpanded ? '收起快速方案提示' : '展开快速方案提示'" @click="toolsHintExpanded = !toolsHintExpanded"><Chevron :open="toolsHintExpanded" /></button></div>
+        <p v-if="toolsHintExpanded">点“快速方案”按分数线批量确认；也可以逐首选择，最后用页面底部的“提交接管方案”完成。关闭快速方案会保留已选内容，提交后才会开始处理。</p>
+        <p v-if="initialization.quickStatus === 'queued'" role="status">快速方案已开始处理，可打开面板查看进度或取消。</p>
       </aside>
       <SourceInitializationQuickPlan
         v-if="initialization?.status === 'awaiting_review'"
@@ -38,6 +38,7 @@
         @close="quickOpen = false"
         @request-commit="quickOpen = false; confirmCommit = true"
         @changed="onQuickChanged"
+        @submitted="emit('submitted')"
       />
       <SourceInitializationReanalysis v-if="reanalysisOpened && initialization" :key="initialization.id" :visible="confirmReanalysis" :submit-error="error" :source-id="sourceId" :initialization="initialization" :busy="acting" @confirm="restartFromDrawer" @cancel="confirmReanalysis = false" />
       <nav v-if="canReview" class="source-adoption__groups" aria-label="候选分组">
@@ -45,13 +46,14 @@
       </nav>
 
       <p v-if="(error || itemsError) && !confirmReanalysis" class="source-adoption__error" role="alert">{{ error || itemsError }}</p>
-      <div v-if="isAnalyzing || isWaitingAnalysis" class="section-card source-adoption__progress"><AppIcon name="loader" :size="18" class="animate-spin" /><div><strong>{{ isWaitingAnalysis ? '分析已排队，等待后台处理' : '正在构建 Plex 全库候选索引' }}</strong><p>{{ isWaitingAnalysis ? '请求已接受，页面会自动刷新分析进度。' : '可离开此页面，任务会在后台继续。' }}</p></div></div>
+      <div v-if="isAnalyzing || isWaitingAnalysis" class="section-card source-adoption__progress"><AppIcon name="loader" :size="18" class="animate-spin" /><div><strong>{{ isWaitingAnalysis ? '分析已排队，等待后台处理' : '正在扫描 Plex 音乐库，生成候选' }}</strong><p>{{ isWaitingAnalysis ? '请求已收到，页面会自动刷新进度。' : '可以离开此页面，任务会在后台继续。' }}</p></div></div>
 
-      <div v-if="needsRestart" class="section-card source-adoption__incompatible"><strong>接管规则已更新</strong><p>当前方案使用旧版匹配规则，仍可查看审核快照，但必须重新分析后才能编辑或提交。现有方案不会被应用。</p><button class="btn btn-primary btn-sm" :disabled="acting" @click="confirmReanalysis = true"><AppIcon name="refresh" :size="16" />重新分析当前歌单</button></div>
+      <div v-if="needsRestart" class="section-card source-adoption__incompatible"><strong>匹配设置已更新</strong><p>当前结果由旧设置生成，可以查看，但不能修改或提交；请重新分析后再继续。</p><button class="btn btn-primary btn-sm" :disabled="acting" @click="confirmReanalysis = true"><AppIcon name="refresh" :size="16" />重新分析</button></div>
+      <aside v-if="libraryChanged && !needsRestart" class="section-card source-adoption__library-change" role="status"><AppIcon name="info" :size="18" /><div><strong>Plex 音乐库有变化</strong><p>音乐库在分析后发生变化，当前选择已保留，可以重新分析查看最新候选。</p></div><button class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析</button></aside>
 
       <div v-if="initialization?.status === 'completed' && isCompatibleReview" class="section-card source-adoption__next">
-        <div><strong>接管已完成</strong><p>接管决定已保存。下载和 Plex 歌单更新的结果请查看同步记录；需要再次同步时，点页面上方“同步”。</p></div>
-        <div class="source-adoption__next-actions"><NuxtLink v-if="initialization.followUpRunId" :to="`/task-center/runs/${initialization.followUpRunId}`" class="btn btn-primary btn-sm">查看同步运行</NuxtLink><NuxtLink :to="{ path: `/sync-sources/${sourceId}`, query: { tab: 'runs' } }" class="btn btn-secondary btn-sm"><AppIcon name="activity" :size="14" />查看运行记录</NuxtLink></div>
+        <div><strong>接管已完成</strong></div>
+        <div class="source-adoption__next-actions"><NuxtLink v-if="initialization.followUpRunId" :to="`/task-center/runs/${initialization.followUpRunId}`" class="btn btn-primary btn-sm">查看同步运行</NuxtLink><NuxtLink :to="{ path: `/sync-sources/${sourceId}`, query: { tab: 'runs' } }" class="btn btn-ghost btn-sm"><AppIcon name="activity" :size="14" />查看运行记录</NuxtLink></div>
       </div>
 
       <SourceInitializationReview
@@ -60,7 +62,12 @@
         :total="result.total"
         :page="result.page"
         :page-size="result.pageSize"
-        :selected="selected"
+        :selected-count="selectedCount"
+        :all-matching-selected="allMatchingSelected"
+        :can-select-all-matching="canSelectAllMatching"
+        :can-adopt-selected="canAdoptSelected"
+        :selection-category-label="selectionCategoryLabel"
+        :is-selected="isSelected"
         :loading="loadingItems"
         :acting="acting"
         :editable="isEditable"
@@ -76,17 +83,19 @@
         @reload="reloadItems(1)"
         @toggle="toggle"
         @toggle-page="togglePage"
+        @select-all-matching="selectAllMatching"
+        @clear-selection="clearSelection"
         @decide="handleReviewDecision"
         @open-evidence="openDrawer"
         @change-page="changePage"
-      ><template #actions><button v-if="isCompatibleReview && initialization?.highConfidenceItems" class="btn btn-secondary btn-sm" :disabled="acting" @click="confirmHighConfidence = true">将 {{ initialization.highConfidenceItems }} 首高置信候选设为使用 Plex</button></template></SourceInitializationReview>
+      ><template #actions><button v-if="isCompatibleReview && initialization?.highConfidenceItems" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmHighConfidence = true">批量设为使用 Plex（{{ initialization.highConfidenceItems }} 首）</button></template></SourceInitializationReview>
 
       <SourceInitializationSummary v-if="isCompatibleReview && initialization?.status === 'awaiting_review' && initialization" :initialization="initialization" :queue-depth="queueDepth" :download-concurrency="downloadConcurrency" :acting="acting" :can-commit="isEditable" @commit="confirmCommit = true" />
       <SourceInitializationEvidence :error="error" :item="drawerItem" :search-results="searchResults" :acting="acting" @close="drawerItem = null" @search="searchPlex" @adopt="adoptCurrentCandidate" @choose="chooseCandidate" @confirm-shared="confirmSharedMedia" />
 
-      <ConfirmDialog :visible="confirmCommit" title="提交首次媒体接管方案" :message="commitMessage" confirm-label="确认并应用" :busy="acting" @confirm="confirmCommit = false; commit()" @cancel="confirmCommit = false" />
-      <ConfirmDialog :visible="confirmHighConfidence" title="批量使用高置信 Plex 候选" :message="`将 ${initialization?.highConfidenceItems || 0} 首高置信候选的草案决定改为“使用 Plex”。这不会立即写入身份，仍需最终提交。`" confirm-label="更新草案" :busy="acting" @confirm="confirmHighConfidence = false; adoptAllHighConfidence()" @cancel="confirmHighConfidence = false" />
-      <ConfirmDialog :visible="confirmSkip" title="跳过首次媒体接管" message="跳过后普通同步会立即恢复当前未验证媒体策略，可能排队下载大量歌曲。确定继续吗？" confirm-label="确认跳过" :busy="acting" @confirm="confirmSkip = false; skip()" @cancel="confirmSkip = false" />
+      <ConfirmDialog :visible="confirmCommit" title="提交接管方案" :message="commitMessage" confirm-label="确认并应用" :busy="acting" @confirm="submitCommit" @cancel="confirmCommit = false" />
+      <ConfirmDialog :visible="confirmHighConfidence" title="批量设为使用 Plex" :message="`把 ${initialization?.highConfidenceItems || 0} 首推荐匹配候选改为“使用 Plex”。只修改当前选择，点“提交接管方案”后才会生效。`" confirm-label="确认修改" :busy="acting" @confirm="confirmHighConfidence = false; adoptAllHighConfidence()" @cancel="confirmHighConfidence = false" />
+      <ConfirmDialog :visible="confirmSkip" title="跳过首次媒体接管" message="跳过后，普通同步会按默认方式处理这些歌曲，可能开始批量下载。确定跳过吗？" confirm-label="确认跳过" :busy="acting" @confirm="confirmSkip = false; skip()" @cancel="confirmSkip = false" />
     </template>
   </section>
 </template>
@@ -98,7 +107,7 @@ import type { InitializationDecision, InitializationReviewItem } from '../../com
 import { useSourceInitialization } from '../../composables/useSourceInitialization'
 
 const props = defineProps<{ sourceId: string; sourceType: 'playlist' | 'album' }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; submitted: [] }>()
 const applicable = computed(() => props.sourceType === 'playlist')
 const confirmCommit = ref(false)
 const confirmSkip = ref(false)
@@ -108,14 +117,15 @@ const quickOpen = ref(false)
 const toolsHintExpanded = ref(true)
 watch(confirmReanalysis, value => { if (value) reanalysisOpened.value = true })
 async function restartFromDrawer() { await restart(); if (!error.value) confirmReanalysis.value = false }
+async function submitCommit(): Promise<void> { confirmCommit.value = false; if (await commit()) emit('submitted') }
 const confirmHighConfidence = ref(false)
 
 const state = useSourceInitialization({ sourceId: props.sourceId, onChanged: () => emit('changed') })
-const { initialization, downloadConcurrency, queueDepth, loading, loadingItems, acting, error, itemsError, result, tier, decision, search, selected, drawerItem, searchResults, isAnalyzing, isWaitingAnalysis, isEditable, needsRestart, canReview, tierLabel, load, reloadItems, start, cancel, skip, restart, decideOne, decideSelected, adoptAllHighConfidence, toggle, togglePage, onSearch, clearFilters, changePage, openDrawer, searchPlex, chooseCandidate, confirmSharedMedia, commit } = state
+const { initialization, libraryChanged, downloadConcurrency, queueDepth, loading, loadingItems, acting, error, itemsError, result, tier, decision, search, selectedCount, allMatchingSelected, canSelectAllMatching, canAdoptSelected, selectionCategoryLabel, isSelected, selectAllMatching, clearSelection, drawerItem, searchResults, isAnalyzing, isWaitingAnalysis, isEditable, needsRestart, canReview, tierLabel, load, reloadItems, start, cancel, skip, restart, decideOne, decideSelected, adoptAllHighConfidence, toggle, togglePage, onSearch, clearFilters, changePage, openDrawer, searchPlex, chooseCandidate, confirmSharedMedia, commit } = state
 
 const tierOptions = [
-  ['strong_id', '强身份'], ['high_confidence', '高置信'], ['possible', '可能候选'], ['ambiguous', '歧义'],
-  ['unmatched', '未匹配'], ['metadata_missing', '元数据缺失'], ['conflict', '冲突'], ['preserved', '已有绑定'],
+  ['strong_id', '明确匹配'], ['high_confidence', '推荐匹配'], ['possible', '需要核对'], ['ambiguous', '多个相近结果'],
+  ['unmatched', '未匹配'], ['metadata_missing', '信息不完整'], ['conflict', '冲突'], ['preserved', '已确认文件'],
 ].map(([value, label]) => ({ value, label }))
 
 const canStart = computed(() => !initialization.value || (['pending', 'failed', 'cancelled'].includes(initialization.value.status) && !isWaitingAnalysis.value))
@@ -124,9 +134,9 @@ const isCompatibleReview = computed(() => Boolean(initialization.value && initia
 const statusLabel = computed(() => ({ pending: '待接管', analyzing: '分析中', awaiting_review: '等待确认', applying: '应用中', completed: '已完成', failed: '失败', cancelled: '已取消', skipped: '已跳过' } as Record<string, string>)[initialization.value?.status || 'pending'] || '待接管')
 const statusTone = computed(() => initialization.value?.status === 'completed' ? 'ok' : initialization.value?.status === 'failed' ? 'error' : isAnalyzing.value ? 'running' : 'warning')
 const metrics = computed(() => [
-  { label: '目标歌曲', value: initialization.value?.totalItems || 0, hint: '本次快照' }, { label: '已有绑定', value: initialization.value?.preservedItems || 0, hint: '继续保留' },
-  { label: '本次接管', value: initialization.value?.adoptItems || 0, hint: '草案选择' },
-  { label: '计划下载', value: initialization.value?.downloadItems || 0, hint: '提交方案后处理' },
+  { label: '歌单歌曲', value: initialization.value?.totalItems || 0 }, { label: '已确认文件', value: initialization.value?.preservedItems || 0 },
+  { label: '使用 Plex', value: initialization.value?.adoptItems || 0 },
+  { label: '计划下载', value: initialization.value?.downloadItems || 0 },
 ])
 const activeGroup = computed(() => evidenceGroups.find(group => group.value === tier.value || group.members.includes(tier.value))?.value ?? '')
 const reviewGroups = computed(() => {
@@ -137,11 +147,11 @@ const reviewGroups = computed(() => {
     item?.unmatchedItems ?? 0, item?.conflictItems ?? 0, item?.preservedItems ?? 0,
   ][index] }))]
 })
-const steps = computed(() => ['分析候选', '确认方案', '应用决定', '普通同步'].map((label, index) => {
+const steps = computed(() => ['分析候选', '确认方案', '保存选择', '普通同步'].map((label, index) => {
   const rank = ({ pending: 0, analyzing: 0, awaiting_review: 1, applying: 2, completed: 3 } as Record<string, number>)[initialization.value?.status || 'pending'] ?? 0
   return { label, current: index === rank, done: index < rank }
 }))
-const commitMessage = computed(() => `将接管 ${initialization.value?.adoptItems || 0} 首、计划下载 ${initialization.value?.downloadItems || 0} 首、暂缓 ${initialization.value?.deferredItems || 0} 首、冲突 ${initialization.value?.conflictItems || 0} 首。后续下载并发为 ${downloadConcurrency.value}；确认前没有产生下载或 Plex 修改。`)
+const commitMessage = computed(() => `将使用 Plex ${initialization.value?.adoptItems || 0} 首、下载 ${initialization.value?.downloadItems || 0} 首、暂缓 ${initialization.value?.deferredItems || 0} 首、冲突 ${initialization.value?.conflictItems || 0} 首。启用中的收藏会继续下载并更新 Plex 歌单；暂停的收藏需要手动同步。下载同时最多 ${downloadConcurrency.value} 首。`)
 
 async function adoptCurrentCandidate(item: InitializationReviewItem): Promise<void> {
   await decideOne(item.neteaseSongId, 'adopt')
@@ -172,7 +182,6 @@ function handleReviewDecision(songId: number, value: InitializationDecision): vo
 .matching-snapshot small { overflow-wrap: anywhere; }
 .source-adoption__next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-4); }
 .source-adoption__next > div:first-child { flex: 1; min-width: 12rem; }
-.source-adoption__next p { margin: var(--space-1) 0 0; color: var(--text-secondary); font-size: var(--text-xs); }
 .source-adoption__next-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 640px) {
   .source-adoption__next { align-items: stretch; flex-direction: column; }

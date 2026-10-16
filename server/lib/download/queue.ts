@@ -11,6 +11,7 @@ import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { classifyDomainErrorCode } from '../../../shared/domain-errors'
 import { ELIGIBLE_DOWNLOAD_CALLERS_SQL, getDownloadQueueControl } from './queue-control'
+import type { DownloadAudioCache } from './audio-cache'
 
 export interface DownloadTask {
   id: string
@@ -87,6 +88,7 @@ export interface DownloadProcessorResult {
   fileType: string
   ops?: { download?: string; lyric?: string; tags?: string; cover?: string; error?: string }
   audioOperation?: 'downloaded' | 'redownloaded' | 'reused'
+  audioCache?: DownloadAudioCache
 }
 
 export type DownloadProcessor = (

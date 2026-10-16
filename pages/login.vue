@@ -79,7 +79,7 @@
             :disabled="resetting"
           >
         </div>
-        <button class="btn btn-secondary auth-submit" type="submit" :disabled="resetting">
+        <button class="btn btn-ghost auth-submit" type="submit" :disabled="resetting">
           <AppIcon v-if="resetting" name="loader" class="animate-spin" :size="16" />
           <AppIcon v-else name="save" :size="16" />
           {{ resetting ? '重置中...' : '重置密码' }}

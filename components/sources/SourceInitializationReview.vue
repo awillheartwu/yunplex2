@@ -8,7 +8,12 @@ const props = defineProps<{
   total: number
   page: number
   pageSize: number
-  selected: Set<number>
+  selectedCount: number
+  allMatchingSelected: boolean
+  canSelectAllMatching: boolean
+  canAdoptSelected: boolean
+  selectionCategoryLabel: string
+  isSelected: (item: InitializationReviewItem) => boolean
   loading: boolean
   acting: boolean
   editable: boolean
@@ -27,6 +32,8 @@ const emit = defineEmits<{
   reload: []
   toggle: [item: InitializationReviewItem]
   togglePage: []
+  selectAllMatching: []
+  clearSelection: []
   decide: [songId: number, decision: InitializationDecision]
   openEvidence: [item: InitializationReviewItem]
   changePage: [page: number]
@@ -68,7 +75,8 @@ function scoreTitle(item: InitializationReviewItem): string {
 }
 
 const actionablePageItems = computed(() => props.items.filter(item => props.editable && item.kind === 'actionable' && item.allowedDecisions.length > 0))
-const allPageSelected = computed(() => actionablePageItems.value.length > 0 && actionablePageItems.value.every(item => props.selected.has(item.neteaseSongId)))
+const allPageSelected = computed(() => actionablePageItems.value.length > 0 && actionablePageItems.value.every(props.isSelected))
+const somePageSelected = computed(() => !allPageSelected.value && actionablePageItems.value.some(props.isSelected))
 function decisionFromEvent(event: Event): InitializationDecision | null {
   const value = (event.target as HTMLSelectElement).value
   return ['adopt', 'download', 'defer'].includes(value) ? value as InitializationDecision : null
@@ -98,16 +106,30 @@ function canChoose(item: InitializationReviewItem): boolean {
         @change="selectDecision"
       />
     </template>
-    <template #summary><span>共 {{ total }} 首 · 已跨页选择 {{ selected.size }} 首</span></template>
+    <template #summary><span>共 {{ total }} 首</span></template>
   </FilterBar>
 
-  <div v-if="selected.size" class="section-card source-adoption__bulk"><strong>已选 {{ selected.size }} 首</strong><div><button class="btn btn-secondary btn-sm" :disabled="acting || !editable" @click="emit('decide', 0, 'adopt')">使用候选</button><button class="btn btn-secondary btn-sm" :disabled="acting || !editable" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-ghost btn-sm" :disabled="acting || !editable" @click="emit('decide', 0, 'defer')">暂缓</button></div></div>
+  <div v-if="editable" class="source-adoption__selection">
+    <div class="source-adoption__selection-controls">
+      <button class="btn btn-ghost btn-sm" :disabled="acting || loading || !actionablePageItems.length" @click="emit('togglePage')">{{ allPageSelected ? '取消本页' : '全选本页' }}</button>
+      <button class="btn btn-soft btn-sm" :disabled="!canSelectAllMatching" @click="emit('selectAllMatching')">{{ selectionCategoryLabel ? `跨页全选「${selectionCategoryLabel}」` : '跨页全选' }}</button>
+      <button v-if="selectedCount || allMatchingSelected" class="btn btn-ghost btn-sm" :disabled="acting" @click="emit('clearSelection')">清空选择</button>
+    </div>
+    <span v-if="!selectionCategoryLabel" class="source-adoption__selection-hint">先选择一个分类，再跨页全选</span>
+    <span v-else-if="allMatchingSelected" class="source-adoption__selection-hint">已选当前筛选范围 {{ selectedCount }} 首，可取消个别歌曲</span>
+    <span v-else class="source-adoption__selection-hint">已选 {{ selectedCount }} 首，翻页保留选择</span>
+  </div>
+  <div v-if="selectedCount" class="section-card source-adoption__bulk">
+    <strong>已选 {{ selectedCount }} 首</strong>
+    <div><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable || !canAdoptSelected" :title="canAdoptSelected ? undefined : '所选歌曲包含没有明确候选的项，请先逐首选择候选'" @click="emit('decide', 0, 'adopt')">使用 Plex</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'defer')">暂缓</button></div>
+    <p v-if="!canAdoptSelected" class="source-adoption__selection-hint">使用 Plex 前，请先为没有明确候选的歌曲逐首选择候选。</p>
+  </div>
   <div class="section-card source-adoption__table-wrap">
     <table class="source-adoption__table">
-      <thead><tr><th><input type="checkbox" :checked="allPageSelected" :disabled="!editable || !actionablePageItems.length" aria-label="选择本页" @change="emit('togglePage')" /></th><th>网易云目标</th><th>Plex 候选</th><th>证据</th><th>决定</th><th><span class="sr-only">操作</span></th></tr></thead>
+      <thead><tr><th><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected" :disabled="acting || loading || !editable || !actionablePageItems.length" aria-label="选择本页" @change="emit('togglePage')" /></th><th>网易云目标</th><th>Plex 候选</th><th>证据</th><th>决定</th><th><span class="sr-only">操作</span></th></tr></thead>
       <tbody>
         <tr v-for="item in items" :key="item.neteaseSongId">
-          <td><input type="checkbox" :checked="selected.has(item.neteaseSongId)" :disabled="!canChoose(item)" :aria-label="`选择 ${item.title || item.neteaseSongId}`" @change="emit('toggle', item)" /></td>
+          <td><input type="checkbox" :checked="isSelected(item)" :disabled="acting || loading || !canChoose(item)" :aria-label="`选择 ${item.title || item.neteaseSongId}`" @change="emit('toggle', item)" /></td>
           <td data-label="网易云目标"><strong>{{ item.title || `歌曲 #${item.neteaseSongId}` }}</strong><span>{{ item.artists.join('、') || '元数据缺失' }} · {{ item.album || '未知专辑' }}</span></td>
           <td data-label="Plex 候选"><template v-if="item.candidate"><strong>{{ item.candidate.title }}</strong><span>{{ item.candidate.artist || '未知艺人' }} · {{ item.candidate.album || '未知专辑' }}</span><small :title="item.candidate.filePath || undefined">{{ item.candidate.filePath || '无可读路径' }}</small></template><span v-else>{{ item.kind === 'preserved' ? '当前绑定将在重新分析后显示' : item.candidates.length ? `${item.candidates.length} 个候选` : '没有候选' }}</span></td>
           <td data-label="证据"><span class="source-adoption__tier" :class="`source-adoption__tier--${item.tier}`">{{ item.evidence.sharedMedia ? (item.evidence.sharedMediaConfirmed ? '共享媒体已确认' : '共享媒体待确认') : tierLabel(item.tier) }}</span><small v-if="topScore(item) !== null" class="source-adoption__score" :title="scoreTitle(item)">评分 {{ topScore(item)!.toFixed(1) }}</small></td>

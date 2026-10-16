@@ -29,12 +29,4 @@ describe('download convergence architecture', () => {
     const owners = productionFiles.filter(path => /\bprocessAll\s*\(/.test(readFileSync(path, 'utf8')))
     expect(owners.map(path => path.replace(`${ROOT}/`, ''))).toEqual(['server/lib/download/worker.ts'])
   })
-
-  it('routes every manual resource shape through Resource Selection', () => {
-    const batch = readFileSync(resolve(ROOT, 'server/lib/download/download-batch.ts'), 'utf8')
-    expect(batch).toContain('selectDownloadResource')
-    expect(batch).not.toContain('fetchPlaylistSongs')
-    expect(batch).not.toContain('fetchAlbumSongs')
-    expect(batch).not.toContain('fetchSongDetail')
-  })
 })

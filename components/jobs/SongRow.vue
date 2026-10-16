@@ -47,7 +47,7 @@
 
         <!-- Ignored failure -->
         <template v-else-if="song.status === 'ignored_failure'">
-          <p class="text-2xs text-muted-deep">此歌曲已达到连续失败阈值，系统已暂停自动重试。可主动重新尝试。</p>
+          <p class="text-2xs text-muted-deep">此歌曲已达到连续失败阈值，系统已暂停自动重试。</p>
           <button
             v-if="showRetry"
             class="btn btn-secondary btn-sm mt-2"
@@ -87,7 +87,7 @@
             class="btn btn-secondary btn-sm mb-2"
             :disabled="retrying"
             @click.stop="$emit('retry')"
-          >{{ retrying ? '重试中...' : '重试下载' }}</button>
+          >{{ retrying ? '重试中...' : '重试处理' }}</button>
           <div v-if="song.ops" class="flex items-center gap-4 mb-2">
             <span class="inline-flex items-center gap-1 text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
               <AppIcon :name="song.ops.download === 'ok' ? 'check' : 'x'" :size="11" /> 下载
@@ -104,37 +104,37 @@
           </div>
 
           <template v-if="song.filePath">
-            <div class="flex justify-between text-2xs">
+            <div class="song-row__field">
               <span class="text-muted-deep">文件路径</span>
-              <span class="text-muted font-mono truncate max-w-[280px]">{{ song.filePath }}</span>
+              <span class="text-muted font-mono">{{ song.filePath }}</span>
             </div>
-            <div class="flex justify-between text-2xs">
+            <div class="song-row__field">
               <span class="text-muted-deep">格式</span>
               <span class="text-muted">{{ song.fileType?.toUpperCase() }}</span>
             </div>
           </template>
           <template v-if="song.metadata">
-            <div v-if="song.metadata.quality" class="flex justify-between text-2xs">
+            <div v-if="song.metadata.quality" class="song-row__field">
               <span class="text-muted-deep">音质</span>
               <span class="text-muted">{{ song.metadata.quality }}</span>
             </div>
-            <div v-if="song.metadata.duration" class="flex justify-between text-2xs">
+            <div v-if="song.metadata.duration" class="song-row__field">
               <span class="text-muted-deep">时长</span>
               <span class="text-muted">{{ formatDuration(song.metadata.duration) }}</span>
             </div>
-            <div v-if="song.metadata.trackNumber" class="flex justify-between text-2xs">
+            <div v-if="song.metadata.trackNumber" class="song-row__field">
               <span class="text-muted-deep">曲目号</span>
               <span class="text-muted">{{ song.metadata.trackNumber }}</span>
             </div>
           </template>
           <div v-if="matchTrace" class="song-row__match-trace">
-            <div class="flex justify-between gap-3 text-2xs">
+            <div class="song-row__field">
               <span class="text-muted-deep">匹配方式</span>
-              <span class="text-muted text-right">{{ matchTraceLabel }}</span>
+              <span class="text-muted">{{ matchTraceLabel }}</span>
             </div>
-            <div v-if="matchTrace.identity?.plexFilePath" class="flex justify-between gap-3 text-2xs">
+            <div v-if="matchTrace.identity?.plexFilePath" class="song-row__field">
               <span class="text-muted-deep">身份路径</span>
-              <span class="text-muted font-mono text-right truncate max-w-[280px]">{{ matchTrace.identity.plexFilePath }}</span>
+              <span class="text-muted font-mono">{{ matchTrace.identity.plexFilePath }}</span>
             </div>
             <p v-if="matchTrace.deletionProtectionReason" class="text-2xs text-warning">{{ matchTrace.deletionProtectionReason }}</p>
           </div>
@@ -174,10 +174,10 @@ const matchTraceLabel = computed(() => {
   const trace = matchTrace.value
   if (!trace) return ''
   const methods: Record<string, string> = {
-    manual: '明确接管的 Plex 媒体', path: '托管文件精确路径',
+    manual: '使用你选定的 Plex 文件', path: '使用路径一致的已下载文件',
   }
   if (trace.identity?.method) return methods[trace.identity.method] || trace.identity.method
-  if (trace.decision === 'preserved') return '删除保护：保留旧项'
+  if (trace.decision === 'preserved') return '暂时保留原有条目'
   return trace.message || trace.source || '历史数据未验证'
 })
 
@@ -191,11 +191,15 @@ function formatDuration(ms: number): string {
 
 <style scoped>
 .song-row{border-left:3px solid;border-left-color:currentColor}
+.song-row.semantic-success,.song-row.semantic-existing{background:var(--bg-surface)}
 .song-row__button{display:flex;width:100%;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-5);border:0;background:transparent;text-align:left;cursor:pointer;transition:background var(--duration-fast) ease}
 .song-row__button:hover{background:color-mix(in srgb,currentColor 7%,var(--bg-surface))}
 .song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:var(--radius-full);background:currentColor}
 .song-status-badge{display:inline-flex;align-items:center;gap:var(--space-1);flex:none;padding:var(--space-0_5) var(--space-2);border:1px solid;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
 .song-row__expanded{padding:0 var(--space-5) var(--space-4) var(--space-12)}
-.song-row__detail-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app)}
+.song-row__detail-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app);text-align:left}
+.song-row__detail-card>.btn{align-self:flex-start}
+.song-row__field{display:grid;grid-template-columns:5rem minmax(0,1fr);gap:var(--space-2);align-items:baseline;font-size:var(--text-xs);text-align:left}
+.song-row__field>span{min-width:0;overflow-wrap:anywhere}
 .song-row__match-trace{display:flex;flex-direction:column;gap:var(--space-1_5);padding-top:var(--space-2);border-top:1px solid var(--border-primary)}
 </style>

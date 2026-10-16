@@ -2,10 +2,8 @@
   <div class="auth-shell">
     <header class="auth-shell__header">
       <div class="auth-shell__brand">
-        <span class="auth-shell__logo">
-          <AppIcon name="music" :size="18" />
-        </span>
-        <span>reYunPlex</span>
+        <AppLogo :size="36" />
+        <span>YunPlex</span>
       </div>
       <button
         class="icon-button"
@@ -59,18 +57,6 @@ const route = useRoute()
   gap: var(--space-2_5);
   font-size: var(--text-md);
   font-weight: var(--font-weight-bold);
-}
-
-.auth-shell__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-md);
-  color: var(--accent);
-  background: var(--accent-muted);
-  border: 1px solid var(--border-primary);
 }
 
 .auth-shell__main {

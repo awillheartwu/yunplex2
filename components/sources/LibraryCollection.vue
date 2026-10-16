@@ -18,8 +18,8 @@
       <div class="collection-item__status"><span :class="`text-${getSyncResultTone(source) === 'danger' ? 'danger' : getSyncResultTone(source) === 'success' ? 'success' : 'muted'}`">{{ getSyncResultLabel(source) }}</span><small>{{ source.lastSyncedAt ? formatSyncSourceRelativeTime(source.lastSyncedAt) : '等待首次同步' }}</small></div>
       <div class="collection-item__actions">
         <NuxtLink v-if="getActionableFailureCount(source)" :to="`/task-center?tab=failures&failureSource=${source.id}`" class="collection-item__issue"><AppIcon name="warn" :size="13" />{{ getActionableFailureCount(source) }} 个问题</NuxtLink>
-        <button v-if="source.type === 'playlist'" class="icon-button" :aria-label="source.enabled ? '暂停此来源' : '启用此来源'" :title="source.enabled ? '暂停自动排期，保留收藏和已有媒体' : '启用此收藏的自动排期'" :disabled="toggling === source.id" @click="$emit('toggle', source)"><AppIcon :name="source.enabled ? 'pause' : 'play'" :size="15" /></button>
-        <button class="btn btn-secondary btn-sm" :disabled="busy || (source.type === 'playlist' && !source.enabled)" @click="$emit('sync', source)"><AppIcon :name="syncing === source.id ? 'loader' : source.type === 'album' ? 'download' : 'sync'" :size="14" :class="{ 'animate-spin': syncing === source.id }" />{{ source.type === 'album' ? '下载' : '同步' }}</button>
+        <button v-if="source.type === 'playlist'" class="icon-button" :aria-label="source.enabled ? '暂停此来源' : '启用此来源'" :title="source.enabled ? '暂停自动同步，保留收藏和音乐文件' : '启用此收藏的自动同步'" :disabled="toggling === source.id" @click="$emit('toggle', source)"><AppIcon :name="source.enabled ? 'pause' : 'play'" :size="15" /></button>
+        <button class="btn btn-soft btn-sm" :disabled="busy || (source.type === 'playlist' && !source.enabled)" @click="$emit('sync', source)"><AppIcon :name="syncing === source.id ? 'loader' : source.type === 'album' ? 'download' : 'sync'" :size="14" :class="{ 'animate-spin': syncing === source.id }" />{{ source.type === 'album' ? '下载' : '同步' }}</button>
       </div>
     </article>
   </div>
@@ -198,9 +198,10 @@ const broken = reactive(new Set<string>())
   gap: var(--space-1);
 }
 .library-collection--list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 9rem max-content;
   gap: 0;
+  column-gap: var(--space-5);
   background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
@@ -208,7 +209,8 @@ const broken = reactive(new Set<string>())
 }
 .library-collection--list .collection-item {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 9rem auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-3_5) var(--space-4);
@@ -217,6 +219,9 @@ const broken = reactive(new Set<string>())
 }
 .library-collection--list .collection-item:last-child {
   border-bottom: 0;
+}
+.library-collection--list .collection-item__art {
+  width: 64px;
 }
 .library-collection--list .collection-item__kind,
 .library-collection--list .collection-item__placeholder span {
@@ -283,6 +288,9 @@ const broken = reactive(new Set<string>())
     grid-template-columns: 48px minmax(0, 1fr);
     gap: var(--space-3);
   }
+  .library-collection--list {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .library-collection--list .collection-item__status {
     grid-column: 2;
     display: flex;
@@ -293,6 +301,7 @@ const broken = reactive(new Set<string>())
   }
   .library-collection--list .collection-item__art {
     align-self: start;
+    width: 48px;
   }
   .library-collection--list .collection-item__placeholder :deep(svg) {
     width: 20px;

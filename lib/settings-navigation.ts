@@ -8,4 +8,4 @@ export const tabs = [
   { key: 'advanced', label: '安全与维护' },
 ]
 
-export const categoryDescriptions: Record<string,string> = { general: '音乐从哪里来，又到哪里去。管理网易云与 Plex 的连接。', media: '决定音乐文件如何保存，以及歌词、封面和标签的处理方式。', sync: '控制更新节奏、首次接管与媒体处理的默认规则。', matching: '为首次媒体接管调整候选规划，并用只读快照比较设置变化。', artists: '统一维护艺人名称，分别控制增强匹配与文件写入替换。', display: '调整文字大小，让工作台适合你的屏幕。', advanced: '管理员账户、数据保留、导入导出与维护操作。' }
+export const categoryDescriptions: Record<string,string> = { general: '网易云音乐与 Plex 的连接设置。', media: '音乐保存位置、歌词、封面与标签。', sync: '同步频率、首次接管与缺失歌曲处理。', matching: '首次接管的候选规则与匹配预览。', artists: '匹配别名与文件标签的名称替换。', display: '调整文字与控件大小。', advanced: '管理员账户、数据保留、导入导出与维护。' }

@@ -4,6 +4,7 @@ import { getDb } from '../db'
 import { dateEndBoundary, dateStartBoundary } from '../date-range'
 import {
   failureFingerprint,
+  failureReasonGroupKey,
   failureSubjectKey,
   normalizeFailureIdentityPart,
 } from './failure-identity'
@@ -49,6 +50,9 @@ export interface FailureRecordFilter {
   failureKind?: string
   excludeFailureKinds?: string[]
   sourceId?: string
+  runId?: string
+  groupId?: string
+  groupKey?: string
   search?: string
   from?: string
   to?: string
@@ -147,7 +151,8 @@ export function recordFailure(input: {
   const runType = run?.type || input.runType
   const occurredAt = input.occurredAt || new Date().toISOString()
   const definition = resolveDomainErrorDefinition(input.failureKind, input.failureReason)
-  const failureReason = sanitizeDiagnosticMessage(input.failureReason) || ''
+  // Timing stays in the run diagnostic; it must not split one cause into many groups.
+  const failureReason = (sanitizeDiagnosticMessage(input.failureReason) || '').replace(/，耗时 \d+ ms/g, '')
   const normalizedInput = { ...input, failureKind: definition.code }
   const fingerprint = failureFingerprint(normalizedInput)
   const occurrenceKey = input.runId
@@ -355,10 +360,7 @@ export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
   }
 }
 
-export function queryFailureRecords(filter: FailureRecordFilter = {}): {
-  items: FailureRecord[]
-  total: number
-} {
+export function buildFailureRecordQuery(filter: FailureRecordFilter = {}) {
   const conditions: string[] = []
   const params: unknown[] = []
   conditions.push('status = ?')
@@ -378,6 +380,25 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   if (filter.sourceId) {
     conditions.push('source_id = ?')
     params.push(filter.sourceId)
+  }
+  if (filter.runId) {
+    conditions.push(`(fr.run_id = ? OR EXISTS (
+      SELECT 1 FROM failure_occurrences fo
+      WHERE fo.fingerprint = fr.fingerprint AND fo.occurrence_key = ?
+    ))`)
+    params.push(filter.runId, `run:${filter.runId}`)
+  }
+  if (filter.groupId) {
+    const group = getDb().prepare('SELECT failure_kind, failure_reason FROM failure_records WHERE id = ?')
+      .get(filter.groupId) as { failure_kind: string; failure_reason: string } | undefined
+    if (group && (!filter.groupKey || filter.groupKey === failureReasonGroupKey(group.failure_kind, group.failure_reason))) {
+      conditions.push('fr.failure_kind = ?')
+      params.push(group.failure_kind)
+      if (group.failure_kind !== 'copyright_restricted') {
+        conditions.push('fr.failure_reason = ?')
+        params.push(group.failure_reason)
+      }
+    } else conditions.push('0 = 1')
   }
   if (filter.from) {
     const boundary = dateStartBoundary(filter.from, filter.timeZone)
@@ -400,9 +421,24 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
     params.push(query, query, query, query, query, query)
   }
   const where = `WHERE ${conditions.join(' AND ')}`
-  const db = getDb()
   const from = 'FROM failure_records fr LEFT JOIN playlist_sources ps ON ps.id = fr.source_id'
+  return { where, from, params }
+}
+
+export function queryFailureRecords(filter: FailureRecordFilter = {}): {
+  items: FailureRecord[]
+  total: number
+  retryableTotal: number
+} {
+  const { where, from, params } = buildFailureRecordQuery(filter)
+  const db = getDb()
   const total = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where}`).get(...params) as { count: number }).count
+  const linkedGroups = db.prepare(`SELECT fr.failure_kind, fr.failure_reason, COUNT(*) AS count
+    ${from} ${where} AND TRIM(fr.download_task_ids) <> ''
+    GROUP BY fr.failure_kind, fr.failure_reason
+  `).all(...params) as Array<{ failure_kind: string; failure_reason: string; count: number }>
+  const retryableTotal = linkedGroups.reduce((count, group) =>
+    resolveDomainErrorDefinition(group.failure_kind, sanitizeDiagnosticMessage(group.failure_reason)).retryable ? count + group.count : count, 0)
   const rows = db.prepare(`
     SELECT fr.*,
       CASE
@@ -415,7 +451,7 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
     ORDER BY fr.last_seen_at DESC
     LIMIT ? OFFSET ?
   `).all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<Record<string, unknown>>
-  return { items: rows.map(rowToRecord), total }
+  return { items: rows.map(rowToRecord), total, retryableTotal }
 }
 
 export function getFailureRecords(ids: string[]): FailureRecord[] {

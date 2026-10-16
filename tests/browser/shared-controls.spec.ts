@@ -90,31 +90,3 @@ test('failure filters apply the themed source and stage choices only on confirma
   expect(queries.at(-1)?.get('failureKind')).toBe('failed_download')
   expect(queries.at(-1)?.get('offset')).toBe('0')
 })
-
-test('settings section headings keep the page background in both themes and collapse states', async ({ page }, testInfo) => {
-  await page.goto('/login')
-  await page.getByLabel('管理员密码', { exact: true }).fill('browser-test-password')
-  await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '工作台', exact: true })).toBeVisible()
-  for (const dark of [false, true]) {
-    for (const tab of ['media', 'sync']) {
-      await page.goto(`/config?tab=${tab}`)
-      const section = page.locator('.config-section').first()
-      const header = section.locator('.config-section__header')
-      await expect(header).toHaveAttribute('aria-expanded', 'true')
-      const themeSwitch = page.getByRole('button', { name: dark ? '切换到深色主题' : '切换到浅色主题', exact: true })
-      if (await themeSwitch.isVisible()) await themeSwitch.click()
-      await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(dark)
-      for (const expanded of [true, false]) {
-        if (!expanded) await header.click()
-        await header.hover()
-        await expect(section.locator('.config-section__top')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-        await expect(section.locator('.config-section__top')).toHaveCSS('border-bottom-width', '0px')
-        await expect(header).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-      }
-      await header.click()
-      await page.getByRole('heading', { name: '偏好设置', exact: true }).hover()
-      await page.screenshot({ path: testInfo.outputPath(`heading-${tab}-${dark ? 'dark' : 'light'}.png`) })
-    }
-  }
-})

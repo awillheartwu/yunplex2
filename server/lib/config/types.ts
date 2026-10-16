@@ -133,7 +133,7 @@ export interface ConnectionTestResult {
   message: string
 }
 
-export type StorageVisibilityStatus = 'verified' | 'warning'
+export type StorageVisibilityStatus = 'verified' | 'configured' | 'warning'
 
 export type StorageVisibilityCode =
   | 'shared_storage_verified'
@@ -167,9 +167,8 @@ export interface StorageVisibilityCheck {
 }
 
 /**
- * Storage visibility is intentionally a warning-level diagnostic. A valid path
- * substitution proves naming equivalence only; it cannot upload a file or prove
- * that a different Plex host is backed by the same physical storage.
+ * A configured path can be valid without local access to Plex's storage.
+ * Only direct filesystem evidence marks the shared directory as verified.
  */
 export interface StorageVisibilityDiagnostic {
   status: StorageVisibilityStatus

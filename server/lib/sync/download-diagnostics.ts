@@ -23,7 +23,7 @@ function includesAny(message: string, patterns: string[]) {
 
 export function isCopyrightFailureMessage(message: string | null | undefined): boolean {
   if (!message) return false
-  return includesAny(message, ['无法获取歌曲', '下载链接'])
+  return /版权|copyright|COPYRIGHT_RESTRICTED/i.test(message)
 }
 
 export function isTagFailureMessage(message: string | null | undefined): boolean {

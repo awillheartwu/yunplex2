@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { Worker } from 'node:worker_threads'
-import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import dayjs from 'dayjs'
 import type { SongTask } from './job/types'
 import type { Tags as NodeId3Tags } from 'node-id3'
 import { downloadAudioToFile } from './download/audio-stream'
 import { validateLocalAudioFile } from './media-validation'
+import { runFlacTagWorkerInline, runMp3TagWorkerInline } from './tag-writer-worker'
+import { prepareAudioCache, type DownloadAudioCache } from './download/audio-cache'
 
 export interface SongMeta {
   title: string
@@ -56,16 +56,10 @@ export function isTagWriteError(error: unknown): error is TagWriteError {
   return error instanceof TagWriteError
 }
 
-const FLAC_TAG_TIMEOUT_MS = 120000
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 30000
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024
 const FILE_WRITE_RETRY_CODES = new Set(['EAGAIN', 'EBUSY', 'EMFILE'])
 const FILE_WRITE_RETRY_DELAYS_MS = [80, 200, 500]
-const MANAGED_FLAC_TAG_FIELDS = [
-  'TITLE', 'ALBUMARTIST', 'ALBUM', 'TRACKNUMBER', 'YEAR', 'DATE', 'ARTIST',
-  'LENGTH', 'DISCNUMBER', 'DISCTOTAL', 'TOTALTRACKS', 'GENRE', 'DESCRIPTION',
-  'PUBLISHER', 'RELEASETYPE',
-] as const
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms))
@@ -103,9 +97,9 @@ interface TagWriteWaiter {
 }
 
 /**
- * Tag writing runs at most one operation at a time process-wide: the FLAC and
- * MP3 workers both read/write whole files and are memory hungry, so a burst of
- * parallel downloads must not fan out into parallel tag writers. Waiting for
+ * Tag writing runs at most one operation at a time process-wide. MP3 still
+ * buffers whole files, while FLAC rewrites and cover readback also consume I/O
+ * and memory; parallel downloads must not fan out into tag writers. Waiting for
  * the slot is abortable; aborting a queued operation never starts its worker.
  */
 class TagWriteGate {
@@ -216,21 +210,17 @@ export function checkAncillaryFiles(
     coverExists: false,
     artistImageExists: false,
   }
-  if (!opts.writeLyrics) return status
-
-  const separate = opts.separateLyricFiles && opts.hasTranslatedLyric
-  if (separate) {
-    status.lyricExists = existsSync(lyricBase + ' (orgi).lrc')
-    status.translatedLyricExists = existsSync(lyricBase + ' (trans).lrc')
-  } else {
-    status.lyricExists = existsSync(lyricBase + '.lrc')
-    // In merged mode, translations are in the same .lrc file
-    status.translatedLyricExists = opts.hasTranslatedLyric ? status.lyricExists : true
-  }
-  if (opts.hasRomajiLyric) {
-    status.romajiLyricExists = existsSync(lyricBase + ' (romaji).lrc')
-  } else {
-    status.romajiLyricExists = true // nothing to write — "exists"
+  if (opts.writeLyrics) {
+    const separate = opts.separateLyricFiles && opts.hasTranslatedLyric
+    if (separate) {
+      status.lyricExists = existsSync(lyricBase + ' (orgi).lrc')
+      status.translatedLyricExists = existsSync(lyricBase + ' (trans).lrc')
+    } else {
+      status.lyricExists = existsSync(lyricBase + '.lrc')
+      // In merged mode, translations are in the same .lrc file
+      status.translatedLyricExists = opts.hasTranslatedLyric ? status.lyricExists : true
+    }
+    status.romajiLyricExists = !opts.hasRomajiLyric || existsSync(lyricBase + ' (romaji).lrc')
   }
   const albumPath = dirname(filePath)
   if (opts.saveAlbumCover) {
@@ -257,6 +247,8 @@ export async function downloadSong(
     translatedLyric?: string
     romajiLyric?: string
     separateLyricFiles?: boolean
+    audioCache?: DownloadAudioCache
+    audioCachePath?: string
   },
   relativePath: string,
   onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
@@ -281,25 +273,37 @@ export async function downloadSong(
   let stagedCommitted = false
 
   try {
-    // Stream the audio to a unique .part file (skipped if url is undefined).
-    // The staged file stays private until tags are written and the atomic
-    // rename below publishes it.
+    if (options.audioCache) await prepareAudioCache(options.audioCache)
+    // Keep the completed raw download separate from the tag writer's working
+    // copy. A failed writer may corrupt its input; retries reuse only the raw cache.
     if (url) {
       try {
         const staged = await downloadAudioToFile({
           url,
-          targetPath: filePath,
+          targetPath: options.audioCachePath ?? filePath,
           fileType,
           signal,
           onProgress: (progress) => onProgress?.(progress.pct, 'downloading'),
         })
         stagedAudioPath = staged.partPath
         signal?.throwIfAborted()
+        if (options.audioCachePath) {
+          await rename(stagedAudioPath, options.audioCachePath)
+          stagedAudioPath = null
+        }
         ops.download = 'ok'
       } catch (error) {
         ops.download = 'failed'
         throw error
       }
+    }
+    if (options.audioCachePath) {
+      signal?.throwIfAborted()
+      stagedAudioPath = `${filePath}.part-${randomUUID()}`
+      await copyFile(options.audioCachePath, stagedAudioPath)
+      signal?.throwIfAborted()
+      // This audio was downloaded by this same task, including a previous attempt.
+      ops.download = 'ok'
     }
 
     // Download lyrics — derive path from audio file path
@@ -334,7 +338,8 @@ export async function downloadSong(
     }
     signal?.throwIfAborted()
 
-    if (options.embedMetadata) {
+    const tagImage = options.embedCover && imageBuffer && imageMimeType(imageBuffer) ? imageBuffer : null
+    if (options.embedMetadata || tagImage) {
       const tagHeartbeat = setInterval(() => onProgress?.(0, 'tagging'), 2000)
       try {
         // Report tagging phase start so UI shows "写标签" immediately
@@ -352,19 +357,17 @@ export async function downloadSong(
         signal?.throwIfAborted()
 
         if (fileType === 'flac') {
-          await writeFlacTags(tagFilePath, meta, imageBuffer, signal)
+          await writeFlacTags(tagFilePath, meta, tagImage, signal, options.embedMetadata)
         } else {
-          await writeMp3Tags(tagFilePath, meta, imageBuffer, signal)
+          await writeMp3Tags(tagFilePath, meta, tagImage, signal, options.embedMetadata)
         }
         signal?.throwIfAborted()
         const validation = validateLocalAudioFile(tagFilePath, fileType)
         if (!validation.valid) throw new Error(validation.reason || '标签写入后的音频文件无效')
-        ops.tags = 'ok'
+        if (options.embedMetadata) ops.tags = 'ok'
 
-        if (options.embedCover && imageBuffer) {
+        if (tagImage) {
           ops.cover = 'ok'
-        } else if (options.embedCover && !imageBuffer) {
-          ops.cover = 'failed'
         }
 
         onProgress?.(100, 'tagging')
@@ -372,18 +375,13 @@ export async function downloadSong(
         const detail = err instanceof Error ? err.message : String(err)
         console.error(`[YunPlex2] 标签写入失败: ${filePath}`, err)
         ops.tags = 'failed'
-        ops.cover = 'failed'
+        if (options.embedCover) ops.cover = 'failed'
         onProgress?.(100, 'tagging')
         throw new TagWriteError({ filePath, fileType, ops, detail, cause: err })
       } finally { clearInterval(tagHeartbeat) }
     }
 
-    if (stagedAudioPath) {
-      signal?.throwIfAborted()
-      await rename(stagedAudioPath, filePath)
-      stagedCommitted = true
-      signal?.throwIfAborted()
-    }
+    if (options.embedCover && !tagImage) ops.cover = 'failed'
 
     // Save standalone cover images
     const artistPath = dirname(albumPath)
@@ -411,6 +409,11 @@ export async function downloadSong(
       }
     }
 
+    signal?.throwIfAborted()
+    if (stagedAudioPath) {
+      await rename(stagedAudioPath, filePath)
+      stagedCommitted = true
+    }
     return { filePath, ops }
   } finally {
     // Never leave an owned .part file behind on failure or cancellation.
@@ -418,6 +421,12 @@ export async function downloadSong(
       await rm(stagedAudioPath, { force: true }).catch(() => undefined)
     }
   }
+}
+
+function imageMimeType(buffer: Buffer): 'image/jpeg' | 'image/png' | null {
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  return null
 }
 
 async function downloadImage(picUrl: string, parentSignal?: AbortSignal): Promise<Buffer | null> {
@@ -491,26 +500,27 @@ export async function writeFlacTags(
   meta: SongMeta,
   imageBuffer: Buffer | null,
   signal?: AbortSignal,
+  writeMetadata = true,
 ): Promise<void> {
-  const tagMap = buildFlacTagMap(meta)
-  await withTagWriteSlot(signal, () => runFlacTagWorkerInline({ filePath, tagMap, imageBuffer }, signal))
+  const tagMap = writeMetadata ? buildFlacTagMap(meta) : {}
+  await withTagWriteSlot(signal, () => runFlacTagWorkerInline({ filePath, tagMap, imageBuffer, writeMetadata }, signal))
 }
 
-export async function writeMp3Tags(
-  filePath: string,
-  meta: SongMeta,
-  imageBuffer: Buffer | null,
-  signal?: AbortSignal,
-): Promise<void> {
+function buildMp3Tags(meta: SongMeta): NodeId3Tags {
   const hasDate = meta.publishTime > 0
   const tags: NodeId3Tags = {
     title: meta.title,
-    albumArtist: meta.albumArtist,
+    performerInfo: meta.albumArtist,
     artist: meta.trackArtist || meta.albumArtist,
     album: meta.album,
     trackNumber: meta.totalTracks
       ? `${meta.trackNumber}/${meta.totalTracks}`
       : String(meta.trackNumber),
+    year: undefined,
+    date: undefined,
+    length: undefined,
+    partOfSet: undefined,
+    genre: undefined,
   }
   if (hasDate) {
     tags.year = dayjs(meta.publishTime).format('YYYY')
@@ -540,10 +550,20 @@ export async function writeMp3Tags(
   if (commentParts.length) {
     tags.comment = { language: 'zho', text: commentParts.join(' | ') }
   }
+  return tags
+}
 
+export async function writeMp3Tags(
+  filePath: string,
+  meta: SongMeta,
+  imageBuffer: Buffer | null,
+  signal?: AbortSignal,
+  writeMetadata = true,
+): Promise<void> {
+  const tags: NodeId3Tags = writeMetadata ? buildMp3Tags(meta) : {}
   if (imageBuffer) {
     tags.image = {
-      mime: 'jpeg',
+      mime: imageMimeType(imageBuffer) ?? 'image/jpeg',
       type: { id: 3, name: 'front cover' },
       description: 'cover',
       imageBuffer,
@@ -557,146 +577,6 @@ export async function writeMp3Tags(
     tags: tags as unknown as Record<string, unknown>,
     imageBuffer,
   }, signal))
-}
-
-function runWorkerWithTimeout(
-  workerCode: string,
-  payload: Record<string, unknown>,
-  label: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(workerCode, {
-      eval: true,
-      workerData: payload,
-    })
-
-    let settled = false
-    const timeout = setTimeout(() => {
-      if (settled) return
-      settled = true
-      signal?.removeEventListener('abort', abort)
-      void worker.terminate()
-      reject(new Error(`${label} 超时（>${Math.floor(FLAC_TAG_TIMEOUT_MS / 1000)}s）`))
-    }, FLAC_TAG_TIMEOUT_MS)
-
-    const finish = (handler: () => void) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      handler()
-    }
-    const abort = () => {
-      finish(() => {
-        void worker.terminate()
-        reject(signal?.reason instanceof Error ? signal.reason : new Error(`${label} 已取消`))
-      })
-    }
-    if (signal?.aborted) {
-      abort()
-      return
-    }
-    signal?.addEventListener('abort', abort, { once: true })
-
-    worker.once('message', (msg: { ok?: boolean; error?: string }) => {
-      finish(() => {
-        signal?.removeEventListener('abort', abort)
-        if (msg?.ok) resolve()
-        else reject(new Error(msg?.error || `${label} 失败`))
-      })
-    })
-
-    worker.once('error', (err) => {
-      finish(() => {
-        signal?.removeEventListener('abort', abort)
-        reject(err)
-      })
-    })
-
-    worker.once('exit', (code) => {
-      if (settled) return
-      finish(() => {
-        signal?.removeEventListener('abort', abort)
-        if (code === 0) resolve()
-        else reject(new Error(`${label} worker 异常退出（code=${code}）`))
-      })
-    })
-  })
-}
-
-function runFlacTagWorkerInline(payload: {
-  filePath: string
-  tagMap: Record<string, string>
-  imageBuffer: Buffer | null
-}, signal?: AbortSignal): Promise<void> {
-  const r = 'requir' + 'e' // evade bundler static analysis
-  const workerCode = `
-    const { parentPort, workerData } = ${r}('node:worker_threads');
-    const Metaflac = ${r}(workerData.modulePath);
-    const MAX_PICTURE_SIZE = 16777215;
-
-    try {
-      const { filePath, tagMap, imageBuffer } = workerData;
-      const flac = new Metaflac(filePath);
-
-      for (const key of ${JSON.stringify(MANAGED_FLAC_TAG_FIELDS)}) {
-        flac.removeTag(key);
-      }
-      for (const [key, value] of Object.entries(tagMap)) {
-        flac.setTag(key + '=' + value);
-      }
-
-      if (imageBuffer && imageBuffer.byteLength <= MAX_PICTURE_SIZE) {
-        flac.importPictureFromBuffer(Buffer.from(imageBuffer));
-      }
-
-      flac.save();
-      parentPort.postMessage({ ok: true });
-    } catch (error) {
-      parentPort.postMessage({
-        ok: false,
-        error: error instanceof Error ? error.message : 'FLAC tag write failed',
-      });
-    }
-  `
-
-  return runWorkerWithTimeout(workerCode, {
-    ...payload,
-    modulePath: createRequire(import.meta.url).resolve('metaflac-js'),
-  }, 'FLAC 标签写入', signal)
-}
-
-function runMp3TagWorkerInline(payload: {
-  filePath: string
-  tags: Record<string, unknown>
-  imageBuffer: Buffer | null
-}, signal?: AbortSignal): Promise<void> {
-  const r = 'requir' + 'e' // evade bundler static analysis
-  const workerCode = `
-    const { parentPort, workerData } = ${r}('node:worker_threads');
-    const NodeID3 = ${r}(workerData.modulePath);
-
-    (async () => {
-      try {
-        const { filePath, tags, imageBuffer } = workerData;
-        if (tags.image && imageBuffer) {
-          tags.image.imageBuffer = Buffer.from(imageBuffer);
-        }
-        await NodeID3.Promise.write(tags, filePath);
-        parentPort.postMessage({ ok: true });
-      } catch (error) {
-        parentPort.postMessage({
-          ok: false,
-          error: error instanceof Error ? error.message : 'MP3 tag write failed',
-        });
-      }
-    })();
-  `
-
-  return runWorkerWithTimeout(workerCode, {
-    ...payload,
-    modulePath: createRequire(import.meta.url).resolve('node-id3'),
-  }, 'MP3 标签写入', signal)
 }
 
 const FILENAME_REPLACE: [RegExp, string][] = [

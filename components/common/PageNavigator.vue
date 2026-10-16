@@ -45,7 +45,7 @@ function submitJump() {
   >
     <p class="page-navigation__range" role="status">{{ rangeLabel }}</p>
     <div class="page-navigation__controls">
-      <button class="btn btn-secondary btn-sm" type="button" :disabled="loading || currentPage <= 1" @click="select(currentPage - 1)">上一页</button>
+      <button class="btn btn-ghost btn-sm" type="button" :disabled="loading || currentPage <= 1" @click="select(currentPage - 1)">上一页</button>
       <ul class="page-navigation__pages" role="list" :aria-label="`${label}页码列表`">
         <li v-for="item in items" :key="item.type === 'page' ? item.page : item.key">
           <button
@@ -63,7 +63,7 @@ function submitJump() {
           <span v-else class="page-navigation__ellipsis" aria-hidden="true">…</span>
         </li>
       </ul>
-      <button class="btn btn-secondary btn-sm" type="button" :disabled="loading || currentPage >= totalPages" @click="select(currentPage + 1)">下一页</button>
+      <button class="btn btn-ghost btn-sm" type="button" :disabled="loading || currentPage >= totalPages" @click="select(currentPage + 1)">下一页</button>
       <span class="page-navigation__compact">{{ currentPage }} / {{ totalPages }}</span>
       <form v-if="totalPages > 7" class="page-navigation__jump" @submit.prevent="submitJump">
         <span aria-hidden="true">跳至</span>
@@ -78,7 +78,7 @@ function submitJump() {
           :disabled="loading"
         >
         <span aria-hidden="true">页</span>
-        <button class="btn btn-secondary btn-sm" type="submit" :disabled="loading">跳转</button>
+        <button class="btn btn-ghost btn-sm" type="submit" :disabled="loading">跳转</button>
       </form>
     </div>
   </nav>
@@ -90,7 +90,7 @@ function submitJump() {
 .page-navigation__controls{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);min-width:0}
 .page-navigation__pages{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-1);margin:0;padding:0;list-style:none}
 .page-navigation__page{min-width:var(--control-height);padding:0 var(--space-2);color:var(--text-secondary);font-variant-numeric:tabular-nums}
-.page-navigation__page--current{border-color:var(--accent-border);background:var(--accent-muted);color:var(--accent);font-weight:var(--font-weight-semibold)}
+.page-navigation__page--current{border-color:transparent;background:var(--accent-muted);color:var(--accent);font-weight:var(--font-weight-semibold)}
 .page-navigation__ellipsis{padding:0 var(--space-1);color:var(--text-tertiary)}
 .page-navigation__jump{display:flex;align-items:center;gap:var(--space-1_5);color:var(--text-tertiary);font-size:var(--text-xs)}
 .page-navigation__jump-input{width:4.5rem;min-height:var(--control-height);padding:0 var(--space-2);text-align:center;font-variant-numeric:tabular-nums}

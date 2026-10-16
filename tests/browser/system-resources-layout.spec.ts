@@ -64,7 +64,6 @@ for (const width of [1440, 390]) {
     await reading.click()
     await expect(reading).toHaveAttribute('aria-label', '切换内存指标，当前RSS 937.8 MiB')
     expect((await page.locator('.system-resources').boundingBox())!.height).toBe(resourceHeight)
-    await expect(page.getByRole('heading', { name: 'CPU 与内存', exact: true })).toHaveCSS('font-size', '16px')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     if (process.env.UI_SCREENSHOTS === '1') {
       await page.locator('.system-resources').evaluate(element => element.scrollIntoView({ block: 'center' }))
@@ -85,7 +84,6 @@ for (const width of [1440, 390]) {
       await page.locator('.system-resources').screenshot({ path: testInfo.outputPath('services-dark.png'), animations: 'disabled' })
     }
     await page.evaluate(() => document.documentElement.style.setProperty('--font-scale', '1.25'))
-    await expect(memory.locator('strong')).toHaveCSS('font-size', '30px')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.evaluate(() => document.documentElement.style.setProperty('--font-scale', '1'))
     await page.evaluate(() => {

@@ -110,6 +110,15 @@ export type InitializationReviewItem = Omit<InitializationItemPlan, 'decision'> 
 export interface InitializationItemsPage {
   items: InitializationReviewItem[]
   total: number
+  selectableTotal: number
+  adoptableTotal: number
   page: number
   pageSize: number
+}
+
+export interface InitializationSelectionFilter {
+  tier: string
+  decision?: InitializationDecision
+  search?: string
+  excludeSongIds?: number[]
 }

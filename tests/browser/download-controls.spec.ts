@@ -41,7 +41,6 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       await expect(page.getByRole('button', { name: '继续下载', exact: true })).toBeVisible()
       await page.reload()
       await expect(page.getByRole('button', { name: '继续下载', exact: true })).toBeVisible()
-      await page.screenshot({ path: `/tmp/reyunplex-download-controls-${theme}-${viewport.width}.png`, fullPage: true })
       await page.getByRole('button', { name: '继续下载', exact: true }).click()
       await expect(page.getByRole('button', { name: '暂停下载', exact: true })).toBeVisible()
       expect(actions).toEqual(['pause', 'resume'])

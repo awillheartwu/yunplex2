@@ -1,13 +1,13 @@
 <template>
   <main class="orphaned-media-page space-y-5">
     <PageHeader
-      title="高级媒体关联"
-      description="仅处理未被任何当前同步源引用的全局媒体关联。日常接管与解绑请在同步源的“媒体与歌曲”中完成。"
+      title="未使用的歌曲关联"
+      description="这些歌曲关联已没有收藏在使用。需要更换文件时，请到对应收藏的“歌曲与媒体”。"
     >
       <template #actions>
-        <NuxtLink class="btn btn-primary btn-sm" to="/sync-sources">
+        <NuxtLink class="btn btn-ghost btn-sm" to="/sync-sources">
           <AppIcon name="source" :size="14" />
-          返回同步源
+          返回音乐库
         </NuxtLink>
       </template>
     </PageHeader>

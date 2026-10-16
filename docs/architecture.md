@@ -5,6 +5,8 @@ reYunPlex 是 Nuxt 4 网页应用，后端使用 Nitro 和 SQLite。一个进程
 ```text
 页面 → composables/useApi.ts → server/api/ → 业务模块 → SQLite / 网易云 / Plex
 页面 ← composables/sse.ts ← /api/sync/events ← 后台任务进度
+同步扫描核对 ← plex-scan-events.ts ← plex-notifications.ts ← Plex SSE
+来源恢复队列、页面提示 ← plex-library-monitor.ts ← 同一 Plex SSE 连接及定时核对
 ```
 
 ## 文件放在哪里
@@ -27,6 +29,8 @@ reYunPlex 是 Nuxt 4 网页应用，后端使用 Nitro 和 SQLite。一个进程
 | `scripts/`、`deploy/`                | 开发检查、诊断、备份和部署工具       |
 
 Nuxt 自动导入 Vue API、组件和 composable。浏览器共享一个 SSE 连接，页面离开时释放订阅；连接恢复后重新读取当前状态。
+
+`server/lib/plex-notifications.ts` 管理 Plex 事件连接、解析与重连；`plex-scan-events.ts` 关联单次扫描，`plex-library-monitor.ts` 负责缓存失效、歌单变化提示和迟到索引的恢复请求。事件只唤醒核对，歌单写入仍由来源队列调用 `sync/service.ts` 完成。具体完成条件和恢复范围见[同步流程](sync-flow.md#plex-完成条件)。
 
 ## 一次同步怎样执行
 

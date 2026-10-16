@@ -145,6 +145,10 @@ esac
 
 echo '==> Checking the SQLite file'
 check_data_file 'after first boot'
+echo '==> Checking native FLAC and metadata reader in a worker'
+flac_fixture=$(base64 < "$(dirname "$0")/../fixtures/silence.flac" | tr -d '\n')
+docker exec -i "$container_id" node --input-type=module - /app/.output/server "$flac_fixture" \
+  < "$(dirname "$0")/tag-runtime-smoke.mjs" || fail 'Tag worker runtime check failed'
 echo '==> Runtime resources after readiness'
 docker stats --no-stream --format 'Memory: {{.MemUsage}}; CPU: {{.CPUPerc}}' "$container_id"
 

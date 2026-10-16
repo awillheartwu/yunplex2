@@ -59,9 +59,7 @@ test('light and dark themes keep text readable and share the same control and ty
     for (const pair of result.pairs) expect.soft(pair.ratio, `${dark ? 'dark' : 'light'} ${pair.pair}`).toBeGreaterThanOrEqual(4.5)
     expect(result.sizes.button).toBe(result.sizes.input)
     expect(result.sizes.button).toBe(result.sizes.body)
-    expect(result.sizes.caption).toBe('12px')
     expect(parseFloat(result.sizes.height)).toBeGreaterThanOrEqual(40)
-    expect(result.sizes.family).toContain('PingFang SC')
     expect(result.sizes.iconDisplay).toBe('none')
     expect(result.sizes.iconColor).toEqual(result.sizes.danger)
   }

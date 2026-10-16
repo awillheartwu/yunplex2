@@ -9,6 +9,8 @@ import {
   type DownloadTask, type DownloadProcessor, type DownloadProcessorResult, type ProcessDownloadQueueOptions,
 } from './queue'
 import { deferFailedDownloadTask } from './retry-store'
+import { withExternalRequestSignal } from '../external-request-context'
+import { clearAudioCache } from './audio-cache'
 
 export async function executeDownloadTasks(
   processor: DownloadProcessor,
@@ -73,7 +75,7 @@ export async function executeDownloadTasks(
         }
         const result = await new Promise<DownloadProcessorResult>((resolve, reject) => {
           resetWatchdog(reject)
-          void processor(task, (pct, phase) => {
+          void withExternalRequestSignal(abortController.signal, () => processor(task, (pct, phase) => {
             if (!watchdogActive) return
             resetWatchdog(reject)
             const status = phase || 'downloading'
@@ -94,7 +96,7 @@ export async function executeDownloadTasks(
               data: { taskId: task.id, songName: task.songName, status, progress: pct, sourceId: task.sourceId },
               timestamp: new Date().toISOString(),
             })
-          }, abortController.signal).then(
+          }, abortController.signal)).then(
             value => {
               if (!watchdogActive) return
               watchdogActive = false
@@ -167,6 +169,7 @@ export async function executeDownloadTasks(
           return true
         })()
         if (!updated) continue
+        if (result.audioCache) await clearAudioCache(result.audioCache)
 
         emitEvent({
           type: 'song-progress',

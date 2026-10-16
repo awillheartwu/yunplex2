@@ -46,7 +46,7 @@ export async function reconcileSource(
   _cancelRequested: () => boolean,
   skipPlexPlaylist = false,
   dryRun = false,
-  options: { automaticMediaFallback?: boolean } = {},
+  options: { automaticMediaFallback?: boolean; requireExistingPlaylist?: boolean } = {},
 ): Promise<ReconcileResult> {
   await initPlexClient(cfg.plex)
 
@@ -56,6 +56,7 @@ export async function reconcileSource(
     : null
 
   if (!plexPlaylist && !skipPlexPlaylist) {
+    if (options.requireExistingPlaylist) throw new Error('Plex 目标歌单已变化，等待正常同步后再恢复索引')
     const plexName = source.plexPlaylistName || source.neteasePlaylistName
     plexPlaylist = await findPlaylist(plexName)
 
@@ -136,13 +137,9 @@ export async function reconcileSource(
   }
 }
 
-/**
- * Refresh Plex library and wait for new tracks to be indexed.
- * Uses probe-based polling: check the first track every 3s, then
- * a per-file cooldown for remaining tracks. Max 60s total.
- */
-export async function triggerRescan(sectionKey: string): Promise<void> {
-  await refreshLibrary(sectionKey)
+/** Start one refresh; batch matching monitors the scan and expected file paths. */
+export async function triggerRescan(sectionKey: string) {
+  return refreshLibrary(sectionKey)
 }
 
 /**

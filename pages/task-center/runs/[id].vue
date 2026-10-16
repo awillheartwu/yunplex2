@@ -3,7 +3,7 @@
     <div v-if="loading" class="run-detail-state">正在加载运行详情…</div>
     <div v-if="runError" class="section-card run-detail-error" role="alert"><strong>暂时无法读取运行记录</strong><p>{{ runError }}</p><button class="btn btn-secondary btn-sm" @click="fetchRun">重新加载</button></div>
     <EmptyState v-if="!loading && !run && !runError" title="运行记录不存在" description="这条记录可能已被保留策略清理。">
-      <NuxtLink to="/task-center?tab=runs" class="btn btn-secondary">返回运行记录</NuxtLink>
+      <NuxtLink to="/task-center?tab=runs" class="btn btn-ghost">返回运行记录</NuxtLink>
     </EmptyState>
     <template v-if="run">
       <div class="run-detail-page__title">
@@ -17,7 +17,7 @@
         </span>
         <button
           v-if="run.type === 'source_initialization' && run.status === 'running' && run.sourceIds?.[0]"
-          class="btn btn-secondary btn-sm"
+          class="btn btn-ghost btn-sm"
           @click="cancelInitialization(run.sourceIds[0])"
         >
           取消分析

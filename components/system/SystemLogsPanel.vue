@@ -6,17 +6,8 @@
         <p>{{ total }} 条 · 自动维护至 2000 条以内 · 最长保留 30 天</p>
       </div>
       <div class="system-logs-panel__actions">
-        <div class="system-logs-panel__filters" aria-label="日志级别">
-          <FilterChip
-            v-for="filter in filters"
-            :key="filter.value || 'all'"
-            :active="activeFilter === filter.value"
-            @click="setFilter(filter.value)"
-          >
-            {{ filter.label }}
-          </FilterChip>
-        </div>
-        <button class="btn btn-secondary btn-sm" type="button" :disabled="loading" @click="fetchLogs">
+        <FilterSegmentGroup :model-value="activeFilter" :options="filters" aria-label="日志级别" @change="setFilter" />
+        <button class="btn btn-ghost btn-sm" type="button" :disabled="loading" @click="fetchLogs">
           <AppIcon :name="loading ? 'loader' : 'refresh'" :size="14" :class="{ 'animate-spin': loading }" />
           刷新
         </button>
@@ -26,7 +17,7 @@
     <div v-if="error" class="system-logs-error" role="alert"><strong>日志读取失败</strong><p>{{ error }}</p><button class="btn btn-secondary btn-sm" :disabled="loading" @click="fetchLogs">重新加载</button></div>
     <div v-if="pendingCount > 0 && page > 1" class="system-logs-new" role="status">
       <span>浏览历史时有 {{ pendingCount }} 条新日志</span>
-      <button class="btn btn-secondary btn-sm" type="button" :disabled="loading" @click="showLatest">查看最新</button>
+      <button class="btn btn-ghost btn-sm" type="button" :disabled="loading" @click="showLatest">查看最新</button>
     </div>
     <div v-if="loading && logs.length === 0" class="system-logs-panel__state">加载日志中…</div>
     <div v-else-if="logs.length > 0" ref="listRoot" class="system-log-list" role="list" aria-label="系统日志列表">
@@ -82,7 +73,7 @@ function errorLabel(code: string) {
 .system-logs-panel__header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap}
 .system-logs-panel__header h2{margin:0;color:var(--text-primary)}
 .system-logs-panel__header p{margin:var(--space-1) 0 0;color:var(--text-tertiary);font-size:var(--text-xs)}
-.system-logs-panel__actions,.system-logs-panel__filters{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.system-logs-panel__actions{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
 .system-log-list{overflow:hidden;border:1px solid var(--border-primary);border-radius:var(--radius-lg);background:var(--bg-input)}
 .system-log-row{display:grid;grid-template-columns:10.5rem 4.2rem max-content minmax(0,1fr);gap:var(--space-3);align-items:start;padding:var(--space-2_5) var(--space-3_5);border-bottom:1px solid var(--border-primary)}
 .system-log-row:last-child{border-bottom:0}.system-log-row:hover{background:var(--bg-hover)}

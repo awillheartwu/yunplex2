@@ -36,7 +36,7 @@ export function useActivityOverview() {
   const clock = useIntervalFn(() => { now.value = Date.now() }, 1000)
   const unsubs: Array<() => void> = []
   onMounted(() => {
-    for (const event of ['queue-update', 'stage-change', 'repair-progress', 'resync'] as const) unsubs.push(sseSubscribe(event, scheduleRefresh))
+    for (const event of ['queue-update', 'stage-change', 'repair-progress', 'plex-scan-progress', 'plex-library-change', 'resync'] as const) unsubs.push(sseSubscribe(event, scheduleRefresh))
     void refresh()
     polling.start()
     clock.start()

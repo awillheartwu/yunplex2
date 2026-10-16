@@ -1,11 +1,11 @@
 <template>
-  <section class="matching-preview" aria-labelledby="matching-preview-title">
+  <section :id="settingTargetId('section:matching.preview')" class="matching-preview" aria-labelledby="matching-preview-title" data-setting-target="section:matching.preview" data-setting-title="只读匹配预览" data-setting-description="选择一个同步源后生成候选方案。" data-setting-tab="matching" data-setting-keywords="预览 试算">
     <div class="matching-preview__header">
       <div>
-        <h3 id="matching-preview-title" class="type-h3">只读匹配预览</h3>
-        <p>选择一个同步源后生成候选规划。预览不会下载、绑定媒体或修改 Plex。</p>
+        <div class="matching-preview__title-row"><AppIcon name="search" :size="18" /><h3 id="matching-preview-title" class="type-h3">{{ settingSections['matching.preview'].title }}</h3></div>
+        <p>{{ settingSections['matching.preview'].description }}</p>
       </div>
-      <NuxtLink v-if="sourceId" class="btn btn-secondary btn-sm" :to="{ path: `/sync-sources/${sourceId}`, query: { tab: 'initialization' } }">
+      <NuxtLink v-if="sourceId" class="btn btn-ghost btn-sm" :to="{ path: `/sync-sources/${sourceId}`, query: { tab: 'initialization' } }">
         <AppIcon name="external" :size="14" />打开来源接管
       </NuxtLink>
     </div>
@@ -24,12 +24,12 @@
         />
       </div>
       <div class="matching-preview__actions">
-        <button type="button" class="btn btn-primary" :disabled="!sourceId || previewLoading" @click="runPreview()">
+        <button type="button" class="btn btn-soft" :disabled="!sourceId || previewLoading" @click="runPreview()">
           <AppIcon :name="previewLoading ? 'loader' : 'search'" :class="{ 'animate-spin': previewLoading }" :size="15" />
           {{ previewLoading ? '生成中…' : runLabel }}
         </button>
-        <button type="button" class="btn btn-secondary" :disabled="!sourceId || previewLoading" @click="runPreview(true)">
-          <AppIcon name="refresh" :size="15" />刷新快照
+        <button type="button" class="btn btn-ghost" :disabled="!sourceId || previewLoading" @click="runPreview(true)">
+          <AppIcon name="refresh" :size="15" />重新读取
         </button>
       </div>
     </div>
@@ -46,33 +46,33 @@
     </div>
     <div v-if="result && expired" class="matching-preview__message matching-preview__message--warning" role="status">
       <AppIcon name="warn" :size="15" />
-      <span>这份预览快照已过期，结果不能继续作为当前比较依据。请点击“刷新快照”重新读取来源。</span>
+      <span>预览数据已过期，点“重新读取”获取最新歌曲后再比较。</span>
     </div>
     <div v-if="result && stale && !expired" class="matching-preview__message matching-preview__message--warning" role="status">
       <AppIcon name="warn" :size="15" />
-      <span>设置已修改，下面的结果仍来自上一次运行。重新预览会沿用同一个来源快照。</span>
+      <span>设置已修改，下面还是之前的结果。点“重新预览”按新设置比较同一批歌曲。</span>
     </div>
 
     <template v-if="result && !expired">
       <div v-if="result.musicBrainz" class="matching-preview__message" role="status">
-        <div>MusicBrainz：查询 {{ result.musicBrainz.queried }} 位艺人，返回 {{ result.musicBrainz.groups.length }} 组无同名歧义的异名记录，{{ result.musicBrainz.skipped }} 位未查询。
+        <div>MusicBrainz：已查询 {{ result.musicBrainz.queried }} 位艺人的别名，返回 {{ result.musicBrainz.groups.length }} 组没有同名歧义的记录，{{ result.musicBrainz.skipped }} 位未查询。
           <p v-for="warning in result.musicBrainz.warnings" :key="warning">{{ warning }}</p>
           <details v-if="result.musicBrainz.groups.length"><summary>查看 MusicBrainz 证据</summary><ul><li v-for="group in result.musicBrainz.groups" :key="group.mbid">{{ group.name }}：{{ group.aliases.join('、') }} · MBID {{ group.mbid }} · 搜索分 {{ group.score }}</li></ul></details>
         </div>
       </div>
       <div class="matching-preview__meta">
         <span>{{ result.sourceName }} · {{ result.total }} 首歌曲 · Plex 音乐库 {{ result.trackCount }} 首</span>
-          <span>快照于 {{ formatDate(result.capturedAt) }} 生成，20 分钟内有效</span>
+          <span>数据读取于 {{ formatDate(result.capturedAt) }}，20 分钟内有效</span>
       </div>
       <div class="matching-preview__counts" aria-label="匹配结果前后对比">
         <div class="matching-preview__count-column">
-          <strong>快照基线</strong>
+          <strong>开始预览时的设置</strong>
           <div class="matching-preview__count-grid">
             <span v-for="metric in countMetrics" :key="`before-${metric.key}`"><small>{{ metric.label }}</small><b>{{ result.before[metric.key] }}</b></span>
           </div>
         </div>
         <div class="matching-preview__count-column matching-preview__count-column--after">
-          <strong>当前参数草稿</strong>
+          <strong>当前编辑中的设置</strong>
           <div class="matching-preview__count-grid">
             <span v-for="metric in countMetrics" :key="`after-${metric.key}`"><small>{{ metric.label }}</small><b>{{ result.after[metric.key] }}</b></span>
           </div>
@@ -81,21 +81,21 @@
 
       <div v-if="result.aliasSuggestions.length" class="matching-preview__suggestions" aria-labelledby="matching-suggestions-title">
         <div>
-          <h4 id="matching-suggestions-title" class="type-h4">预览发现的别名建议</h4>
-          <p>建议只来自本次只读预览。确认后会加入当前草稿，仍需在页底保存。</p>
+          <h4 id="matching-suggestions-title" class="type-h4"><AppIcon name="link" :size="16" />预览发现的别名建议</h4>
+          <p>加入草稿后，在页底保存。</p>
         </div>
         <ul>
           <li v-for="suggestion in result.aliasSuggestions" :key="`${suggestion.name}-${suggestion.aliases.join('|')}`">
             <span><strong>{{ suggestion.name }}</strong> ← {{ suggestion.aliases.join('、') }}<small>{{ suggestion.count }} 次 · {{ suggestion.examples.join('、') }}</small></span>
-            <button type="button" class="btn btn-ghost btn-sm" @click="$emit('use-alias-suggestion', suggestion)">加入艺人别名</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="$emit('use-alias-suggestion', suggestion)">加入艺人别名</button>
           </li>
         </ul>
       </div>
 
       <div class="matching-preview__results-head">
         <div>
-          <h4 class="type-h4">逐首变化</h4>
-          <p>展开条目查看规则理由、冲突和候选。没有任何外部写入动作。</p>
+          <h4 class="type-h4"><AppIcon name="list" :size="16" />逐首变化</h4>
+          <p>展开条目查看规则理由、冲突和候选。</p>
         </div>
       </div>
       <FilterBar
@@ -137,13 +137,14 @@
       <PageNavigator :page="page" :page-size="pageSize" :total="filteredItems.length" label="匹配预览" @change="page = $event" />
     </template>
     <p v-else-if="!previewLoading && !previewError && sourceId" class="matching-preview__empty">选择“生成预览”后，这里会显示前后计数和逐首候选变化。</p>
-    <p v-else-if="!sourceId && !sourcesLoading && !sourcesError" class="matching-preview__empty">先选择一个来源。切换来源会清除旧快照和结果，避免误读。</p>
+    <p v-else-if="!sourceId && !sourcesLoading && !sourcesError" class="matching-preview__empty">先选择一个来源。切换收藏后会重新读取歌曲。</p>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import type { InitializationMatchingConfig, MatchingAlias, MatchingCounts, MatchingPreviewItem, MatchingPreviewResult } from '~~/shared/initialization-matching'
+import { settingSections, settingTargetId } from '~~/lib/settings-catalog'
 
 const props = defineProps<{ config: InitializationMatchingConfig }>()
 defineEmits<{ 'use-alias-suggestion': [value: MatchingAlias & { count: number; examples: string[] }] }>()
@@ -317,6 +318,19 @@ function formatDate(value: string): string {
   gap: var(--space-4);
   padding-top: var(--space-2);
 }
+
+.matching-preview__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.matching-preview__title-row .app-icon {
+  color: var(--accent);
+}
+
+.matching-preview h4 { display: flex; align-items: center; gap: var(--space-2); }
+.matching-preview h4 > .app-icon { color: var(--accent); flex-shrink: 0; }
 
 .matching-preview__header,
 .matching-preview__controls,

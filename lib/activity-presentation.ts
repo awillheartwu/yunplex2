@@ -31,12 +31,21 @@ export function activityPlanLink(run: ActivityRun): string {
     : `/task-center/runs/${run.id}`
 }
 export function activityPhases(run: ActivityRun) {
-  if (!run.live || activityState(run) !== 'running') return []
+  if (run.type !== 'sync' || !run.live || activityState(run) !== 'running') return []
   const stage = run.live.currentStage
-  const current = ['fetching_playlist', 'comparing'].includes(stage) ? 0
-    : ['downloading', 'processing_tags', 'repair'].includes(stage) ? 1
-      : ['refreshing_plex', 'updating_plex_playlist', 'reorder'].includes(stage) ? 2 : -1
+  const phases = [
+    { label: '分析网易云', stages: ['fetching_playlist', 'comparing'] },
+    { label: '下载与标签', stages: ['downloading', 'processing_tags'] },
+    { label: 'Plex 读取', stages: ['refreshing_plex'] },
+    { label: '同步歌单', stages: ['updating_plex_playlist', 'reorder'] },
+  ]
+  const current = phases.findIndex(phase => phase.stages.includes(stage))
   if (current < 0) return []
-  // Earlier phases may have been skipped; do not invent successful execution.
-  return ['读取与分析', '文件处理', 'Plex 更新'].map((label, index) => ({ label, current: index === current }))
+  return phases.map((phase, index) => {
+    const visited = phase.stages.some(value => run.live?.stageHistory?.includes(value as SyncStage))
+    const status = index === current ? 'current'
+      : index > current ? 'pending' : !visited ? 'skipped'
+        : index === 1 && run.files?.counts.failed ? 'warning' : 'done'
+    return { label: phase.label, current: index === current, status, statusLabel: { current: '进行中', done: '已完成', warning: '有失败', skipped: '已跳过', pending: '待开始' }[status] }
+  })
 }

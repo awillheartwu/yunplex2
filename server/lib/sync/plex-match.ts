@@ -4,7 +4,7 @@ import { findTracksByFilePath, getRecentlyAddedTracks, type PlexTrack } from '..
 import { mapLocalPathToPlex, normalizeExistingLocalPath, resolveAccessibleLocalPath } from './path-map'
 
 export type PlexMatchStrategy = 'path_lookup' | 'recent_path_lookup'
-export type PlexMatchFailureCause = 'library_visibility' | 'unknown'
+export type PlexMatchFailureCause = 'library_visibility' | 'scan_timeout' | 'unknown'
 
 export interface PlexMatchAttemptTrace {
   attempt: number
@@ -20,6 +20,7 @@ export interface PlexMatchResult {
   attempts: number
   localFilePath: string | null
   traces: PlexMatchAttemptTrace[]
+  scan?: { active: boolean; completed: boolean; timedOut: boolean; waitedMs: number }
 }
 
 /** Plex scraper metadata is presentation only; retry exclusively by exact file path. */
@@ -104,12 +105,14 @@ function trackMapsToLocalPath(track: PlexTrack, expectedLocalPath: string, cfg: 
 }
 
 export function inferPlexMatchFailureCause(result: PlexMatchResult): PlexMatchFailureCause {
+  if (result.scan?.timedOut) return 'scan_timeout'
   return !result.ratingKey && result.localFilePath ? 'library_visibility' : 'unknown'
 }
 
 export function describePlexMatchFailure(cause: PlexMatchFailureCause, cfg: AppConfig): string {
+  if (cause === 'scan_timeout') return '等待 Plex 扫描与索引超过上限，托管音频已保留；请查看 Plex 扫描状态，稍后同步将复用文件并继续核对。'
   if (cause === 'library_visibility') {
-    return `Plex 没有看到托管文件的精确路径。当前下载目录是 ${cfg.download.dir}，Plex 媒体库路径前缀为 ${cfg.download.plexLibraryPathPrefix || '(未配置)'}。请确认共享目录与路径映射。`
+    return `Plex 在等待扫描与索引后仍没有返回托管文件的精确路径。当前下载目录是 ${cfg.download.dir}，Plex 媒体库路径前缀为 ${cfg.download.plexLibraryPathPrefix || '(未配置)'}。请核对扫描结果、共享目录和路径映射。`
   }
   return 'Plex 在重试窗口内没有返回托管文件的精确路径，请检查媒体库扫描与路径映射。'
 }

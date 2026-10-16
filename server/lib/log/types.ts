@@ -34,6 +34,8 @@ export interface SyncState {
   currentRunId?: string | null
   isRunning: boolean
   currentStage: SyncStage
+  /** Stages actually entered for the current source, in execution order. */
+  stageHistory?: SyncStage[]
   startedAt: string | null
   currentSourceName: string | null
   lastSyncAt: string | null

@@ -4,7 +4,7 @@ export const evidenceGroups = [
   { value: 'needs_review', label: '需要核对', members: ['possible', 'ambiguous'] },
   { value: 'no_candidate', label: '无可用候选', members: ['unmatched', 'metadata_missing'] },
   { value: 'conflict', label: '存在冲突', members: ['conflict'] },
-  { value: 'preserved', label: '已有绑定', members: ['preserved'] },
+  { value: 'preserved', label: '已确认文件', members: ['preserved'] },
 ]
 export const mediaGroups = [
   { value: 'matched', label: '已关联', members: ['matched'] },

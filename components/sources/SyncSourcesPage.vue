@@ -5,7 +5,7 @@
       description="收藏的歌单与专辑，都在这里。"
     >
       <template #actions>
-        <button class="btn btn-secondary btn-sm sync-sources-page__toolbar-button" type="button" :disabled="loading" @click="refreshSources">
+        <button class="btn btn-ghost btn-sm sync-sources-page__toolbar-button" type="button" :disabled="loading" @click="refreshSources">
           <AppIcon :name="loading ? 'loader' : 'refresh'" :size="14" :class="loading ? 'animate-spin' : ''" />
           刷新
         </button>
@@ -66,7 +66,7 @@
       </template>
 
       <template #advanced-footer="{ close }">
-        <button class="btn btn-secondary" type="button" @click="resetDraftFilters">重置</button>
+        <button class="btn btn-ghost" type="button" @click="resetDraftFilters">重置</button>
         <button class="btn btn-primary" type="button" @click="applyDraftFilters(close)">应用</button>
       </template>
 
@@ -123,7 +123,7 @@
         :description="hasResultFilters ? '试试其他关键词，或清除筛选查看全部收藏。' : filterType === 'album' ? '从添加音乐页面可将专辑保存到音乐库' : '添加网易云歌单 ID 以开始同步管理'"
       >
         <template #default>
-          <button v-if="hasResultFilters" class="btn btn-secondary" @click="clearSourceFilters">清除筛选</button>
+          <button v-if="hasResultFilters" class="btn btn-ghost" @click="clearSourceFilters">清除筛选</button>
           <button v-else-if="filterType !== 'album'" class="btn btn-primary mt-4" @click="openAddPlaylist">添加歌单</button>
           <NuxtLink v-else to="/manual-download" class="btn btn-primary mt-4 inline-block">去添加音乐</NuxtLink>
         </template>
@@ -191,7 +191,7 @@ watch(view, value => { try { localStorage.setItem('reyunplex-library-view', valu
 <style>
 
 .library-load-error{display:grid;justify-items:start;gap:var(--space-3);padding:var(--space-8);border:1px solid var(--danger-border);border-radius:var(--radius-lg);color:var(--danger);background:var(--danger-soft)}
-.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar .list-select{width:9rem}.library-view-toggle{display:flex;gap:var(--space-1)}.library-view-toggle button{min-height:var(--control-height);min-width:var(--control-height)}.library-view-toggle button[aria-pressed="true"]{background:var(--bg-surface);color:var(--accent);border-color:var(--accent)}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar .list-select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
+.library-facts{display:flex;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-1) 0;color:var(--text-secondary);font-size:var(--text-sm)}.library-facts strong{font-weight:var(--font-weight-semibold);color:var(--text-primary)}.library-viewbar{display:flex;align-items:center;gap:var(--space-4);color:var(--text-tertiary);font-size:var(--text-xs)}.library-viewbar__right{display:flex;gap:var(--space-3);margin-left:auto}.library-viewbar .list-select{width:9rem}.library-view-toggle{display:flex;gap:var(--space-1)}.library-view-toggle button{min-height:var(--control-height);min-width:var(--control-height)}.library-view-toggle button[aria-pressed="true"]{background:var(--accent-muted);color:var(--accent);border-color:transparent}.library-select-all{display:flex;align-items:center;gap:var(--space-2);min-height:44px}.sync-batch-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--accent-muted);border-color:var(--accent)}.sync-batch-bar__actions{display:flex;flex-wrap:wrap;gap:var(--space-1_5)}.sync-sources-page .page-tabs{width:max-content;max-width:100%}.library-viewbar+div{min-width:0}@media(max-width:767px){.library-facts{gap:var(--space-2) var(--space-4)}.library-viewbar{flex-wrap:wrap;gap:var(--space-2)}.library-viewbar__right{gap:var(--space-1_5)}.library-viewbar .list-select{width:8rem}.sync-batch-bar{align-items:stretch;flex-direction:column}}
 .library-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .library-controls { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 @media(max-width:720px) { .library-heading { align-items: flex-start; flex-direction: column; } }

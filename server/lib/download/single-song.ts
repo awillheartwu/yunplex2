@@ -11,6 +11,7 @@ import type { LyricOrder, MultiArtistFormat } from '../config/types'
 import { getLocalMediaAsset } from '../sync/local-media-store'
 import { plexPathsExactlyEqual } from '../sync/identity-normalization'
 import { withDownloadRequestContext } from './netease-request'
+import { cachedAudioPath, findCachedAudio, type DownloadAudioCache } from './audio-cache'
 
 export interface SingleSongConfig {
   quality: string
@@ -28,6 +29,7 @@ export interface SingleSongConfig {
   downloadRomajiLyric: boolean
   downloadMode?: DownloadMode
   target?: AudioTargetIntent
+  audioCache?: DownloadAudioCache
 }
 
 export type AudioTargetIntent =
@@ -52,6 +54,7 @@ export async function downloadSingleSong(
   fileType: string
   ops: SongOps
   audioOperation: 'downloaded' | 'redownloaded' | 'reused'
+  audioCache?: DownloadAudioCache
 }> {
   return withDownloadRequestContext(signal, () => executeSingleSong(songId, config, onProgress, signal), () => onProgress?.(0, 'downloading'))
 }
@@ -61,15 +64,19 @@ async function executeSingleSong(
   config: SingleSongConfig,
   onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
   signal?: AbortSignal,
-): Promise<{ filePath: string; fileType: string; ops: SongOps; audioOperation: 'downloaded' | 'redownloaded' | 'reused' }> {
+): Promise<{ filePath: string; fileType: string; ops: SongOps; audioOperation: 'downloaded' | 'redownloaded' | 'reused'; audioCache?: DownloadAudioCache }> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
   const previousAsset = getLocalMediaAsset(songId)
+  const cachedAudio = config.audioCache ? findCachedAudio(config.audioCache) : null
 
   // 1. Fetch song detail
   const song = await fetchSongDetail(songId, config.cookie)
   signal?.throwIfAborted()
 
   const configuredAudioPath = config.target?.kind === 'existing' ? config.target.path : undefined
+  if (configuredAudioPath && !inferFileTypeFromPath(configuredAudioPath)) {
+    throw Object.assign(new Error('标签补全与音频替换仅支持 FLAC、MP3 文件'), { code: 'DOWNLOAD_FORMAT_UNSUPPORTED' })
+  }
   const existingAudioPath = configuredAudioPath
     && !relative(config.downloadDir, configuredAudioPath).startsWith('..')
     && existsSync(configuredAudioPath)
@@ -78,8 +85,8 @@ async function executeSingleSong(
   const existingAudioIsValid = !existingAudioPath || validateLocalAudioFile(existingAudioPath).valid
 
   let url: string | undefined
-  let fileType = existingAudioPath ? inferFileTypeFromPath(existingAudioPath) : ''
-  if (mode === 'replace' || !fileType || !existingAudioIsValid) {
+  let fileType = cachedAudio?.fileType ?? (existingAudioPath ? inferFileTypeFromPath(existingAudioPath) : '')
+  if (!cachedAudio && (mode === 'replace' || !fileType || !existingAudioIsValid)) {
     const songUrl = await getSongUrl(song.id, config.quality, config.cookie)
     signal?.throwIfAborted()
     url = songUrl.url
@@ -105,6 +112,7 @@ async function executeSingleSong(
   let relativePath: string
 
   const shouldReuseAudioPath = Boolean(configuredAudioPath)
+    && inferFileTypeFromPath(configuredAudioPath!) === fileType
     && (
       mode === 'replace'
         ? inferFileTypeFromPath(configuredAudioPath!) === fileType
@@ -231,6 +239,10 @@ async function executeSingleSong(
       translatedLyric: lyricData?.translated,
       romajiLyric: config.downloadRomajiLyric ? lyricData?.romaji : undefined,
       separateLyricFiles: lyricData?.separateFiles,
+      ...(config.audioCache && !skipAudio ? {
+        audioCache: config.audioCache,
+        audioCachePath: cachedAudio?.filePath ?? cachedAudioPath(config.audioCache, fileType),
+      } : {}),
     },
     relativePath,
     onProgress,
@@ -246,6 +258,7 @@ async function executeSingleSong(
     audioOperation: result.ops.download === 'ok'
       ? mode === 'replace' ? 'redownloaded' : 'downloaded'
       : 'reused',
+    audioCache: config.audioCache,
   }
 }
 

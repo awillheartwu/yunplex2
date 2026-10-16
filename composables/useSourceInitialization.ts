@@ -1,12 +1,15 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type {
   InitializationCandidate,
   InitializationDecision,
   InitializationItemsPage,
   InitializationReviewItem,
+  InitializationSelectionFilter,
   SourceInitializationSummary,
 } from '../server/lib/source-initialization/types'
 import type { CandidateScore } from '../shared/initialization-scoring'
+import { evidenceGroups } from '../shared/review-filter-groups'
+import { sseSubscribe } from './sse'
 
 export type { InitializationDecision, InitializationItemsPage, InitializationReviewItem, SourceInitializationSummary }
 
@@ -21,6 +24,7 @@ export interface SourceInitializationSnapshot {
   initialization: SourceInitializationSummary | null
   downloadConcurrency: number
   convergenceQueueDepth: number
+  libraryChangedAt?: string | null
 }
 
 export interface PlexSearchResult {
@@ -41,14 +45,14 @@ interface UseSourceInitializationOptions {
 }
 
 const tierLabels: Record<string, string> = {
-  strong_id: '强身份',
-  high_confidence: '高置信',
-  possible: '可能候选',
-  ambiguous: '歧义',
+  strong_id: '明确匹配',
+  high_confidence: '推荐匹配',
+  possible: '需要核对',
+  ambiguous: '多个相近结果',
   unmatched: '未匹配',
-  metadata_missing: '元数据缺失',
+  metadata_missing: '信息不完整',
   conflict: '冲突',
-  preserved: '已有绑定',
+  preserved: '已确认文件',
 }
 
 const evidenceLabels: Record<string, string> = {
@@ -102,16 +106,22 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   const initialization = ref<SourceInitializationSummary | null>(null)
   const downloadConcurrency = ref(1)
   const queueDepth = ref(0)
+  const libraryChangedAt = ref<string | null>(null)
+  const libraryChanged = computed(() => initialization.value?.status === 'awaiting_review'
+    && Boolean(initialization.value.analyzedAt && libraryChangedAt.value
+      && Date.parse(libraryChangedAt.value) > Date.parse(initialization.value.analyzedAt)))
   const loading = ref(true)
   const loadingItems = ref(false)
   const acting = ref(false)
   const error = ref('')
   const itemsError = ref('')
-  const result = ref<InitializationItemsPage>({ items: [], total: 0, page: 1, pageSize: 50 })
+  const result = ref<InitializationItemsPage>({ items: [], total: 0, selectableTotal: 0, adoptableTotal: 0, page: 1, pageSize: 50 })
   const tier = ref('')
   const decision = ref('')
   const search = ref('')
   const selected = ref(new Set<number>())
+  const allMatchingSelected = ref(false)
+  const excluded = ref(new Set<number>())
   const drawerItem = ref<InitializationReviewItem | null>(null)
   const searchResults = ref<PlexSearchResult[]>([])
 
@@ -121,12 +131,36 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   const isEditable = computed(() => initialization.value?.status === 'awaiting_review' && initialization.value.rulesCompatible && !isQuickQueued.value)
   const needsRestart = computed(() => Boolean(initialization.value && ['awaiting_review', 'completed'].includes(initialization.value.status) && !initialization.value.rulesCompatible))
   const canReview = computed(() => Boolean(initialization.value && ['awaiting_review', 'completed'].includes(initialization.value.status)))
-  const itemRules = new Map<number, InitializationReviewItem>()
+  const itemRules = reactive(new Map<number, InitializationReviewItem>())
+  const selectionCategory = computed(() => evidenceGroups.find(group => group.value === tier.value || group.members.includes(tier.value)))
+  const selectionCategoryLabel = computed(() => tierLabels[tier.value] || selectionCategory.value?.label || '')
+  const canSelectAllMatching = computed(() => Boolean(isEditable.value && !acting.value && !loadingItems.value && !itemsError.value && selectionCategory.value && tier.value !== 'preserved' && result.value.selectableTotal > 0))
+  const selectedCount = computed(() => allMatchingSelected.value ? Math.max(0, result.value.selectableTotal - excluded.value.size) : selected.value.size)
+  const selectedAdoptableCount = computed(() => allMatchingSelected.value
+    ? result.value.adoptableTotal - [...excluded.value].filter(isAdoptableSong).length
+    : [...selected.value].filter(isAdoptableSong).length)
+  const canAdoptSelected = computed(() => selectedCount.value > 0 && selectedAdoptableCount.value === selectedCount.value)
   let snapshotRequest = 0
   let itemsRequest = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
   let pollingTimer: ReturnType<typeof setInterval> | null = null
   let disposed = false
+  let noticeRequest = 0
+  let nextNoticePollAt = 0
+  const noticeUnsubscribers: Array<() => void> = []
+
+  function clearSelection(): void {
+    selected.value = new Set()
+    allMatchingSelected.value = false
+    excluded.value = new Set()
+  }
+
+  const stopSelectionWatch = watch([tier, decision, search], () => {
+    clearSelection()
+    itemsRequest += 1
+    loadingItems.value = true
+  }, { flush: 'sync' })
+  const stopEditableWatch = watch(isEditable, editable => { if (!editable) clearSelection() })
 
   function setActionError(message: string): void {
     error.value = message
@@ -137,8 +171,8 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   }
 
   function resetReviewState(): void {
-    result.value = { items: [], total: 0, page: 1, pageSize: 50 }
-    selected.value = new Set()
+    result.value = { items: [], total: 0, selectableTotal: 0, adoptableTotal: 0, page: 1, pageSize: 50 }
+    clearSelection()
     itemRules.clear()
     drawerItem.value = null
     searchResults.value = []
@@ -182,6 +216,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
       initialization.value = data.initialization
       downloadConcurrency.value = data.downloadConcurrency
       queueDepth.value = data.convergenceQueueDepth
+      libraryChangedAt.value = data.libraryChangedAt ?? null
       if (previousId !== data.initialization?.id) resetReviewState()
       if (data.initialization && ['awaiting_review', 'completed'].includes(data.initialization.status)) {
         await reloadItems(1)
@@ -206,6 +241,11 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
 
   function canChoose(item: InitializationReviewItem, value: InitializationDecision): boolean {
     return item.kind === 'actionable' && item.allowedDecisions.includes(value)
+  }
+
+  function isAdoptableSong(songId: number): boolean {
+    const item = itemRules.get(songId)
+    return Boolean(item && canChoose(item, 'adopt'))
   }
 
   async function start(): Promise<void> {
@@ -256,7 +296,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     error.value = ''
     try {
       await api.post(`/playlist-sources/${options.sourceId}/initialization/restart`, { initializationId: current.id })
-      selected.value = new Set()
+      clearSelection()
       options.onChanged?.()
       await load()
     } catch (value) {
@@ -266,12 +306,12 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     }
   }
 
-  async function setDecision(payload: { songIds?: number[]; tier?: string; decision: InitializationDecision }): Promise<void> {
+  async function setDecision(payload: { songIds?: number[]; tier?: string; filter?: InitializationSelectionFilter; decision: InitializationDecision }): Promise<void> {
     if (!ensureEditable()) return
     const ids = payload.songIds || []
     // A tier-wide action includes unloaded pages; cached rows cannot establish its eligibility.
     // The server validates the draft and limits adoption to rows with a candidate.
-    if (!payload.tier) {
+    if (!payload.tier && !payload.filter) {
       const candidateItems = ids.map(id => itemRules.get(id))
       if (!candidateItems.length || candidateItems.some(item => !item || !canChoose(item, payload.decision))) {
         setActionError('所选歌曲当前不允许这个处理决定，请刷新后重试')
@@ -285,7 +325,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
         ...payload,
         initializationId: initialization.value?.id,
       })
-      selected.value = new Set()
+      clearSelection()
       await load()
     } catch (value) {
       error.value = errorMessage(value, '更新草案失败')
@@ -299,6 +339,16 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   }
 
   function decideSelected(value: InitializationDecision): Promise<void> {
+    if (allMatchingSelected.value) {
+      if (!canSelectAllMatching.value || !selectedCount.value || (value === 'adopt' && !canAdoptSelected.value)) {
+        setActionError('请检查当前分类和所选歌曲的候选，再批量修改')
+        return Promise.resolve()
+      }
+      return setDecision({
+        filter: { tier: tier.value, decision: decision.value ? decision.value as InitializationDecision : undefined, search: search.value, excludeSongIds: [...excluded.value] },
+        decision: value,
+      })
+    }
     return setDecision({ songIds: [...selected.value], decision: value })
   }
 
@@ -310,8 +360,25 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     return Boolean(isEditable.value && item.kind === 'actionable' && item.allowedDecisions.length)
   }
 
+  function isSelected(item: InitializationReviewItem): boolean {
+    return allMatchingSelected.value ? isSelectable(item) && !excluded.value.has(item.neteaseSongId) : selected.value.has(item.neteaseSongId)
+  }
+
+  function selectAllMatching(): void {
+    if (!canSelectAllMatching.value) return
+    clearSelection()
+    allMatchingSelected.value = true
+  }
+
   function toggle(item: InitializationReviewItem): void {
-    if (!isSelectable(item)) return
+    if (acting.value || loadingItems.value || !isSelectable(item)) return
+    if (allMatchingSelected.value) {
+      const next = new Set(excluded.value)
+      if (next.has(item.neteaseSongId)) next.delete(item.neteaseSongId)
+      else next.add(item.neteaseSongId)
+      excluded.value = next
+      return
+    }
     const next = new Set(selected.value)
     if (next.has(item.neteaseSongId)) next.delete(item.neteaseSongId)
     else next.add(item.neteaseSongId)
@@ -319,8 +386,18 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   }
 
   function togglePage(): void {
+    if (acting.value || loadingItems.value) return
     const pageItems = result.value.items.filter(isSelectable)
-    const allSelected = pageItems.length > 0 && pageItems.every(item => selected.value.has(item.neteaseSongId))
+    const allSelected = pageItems.length > 0 && pageItems.every(isSelected)
+    if (allMatchingSelected.value) {
+      const next = new Set(excluded.value)
+      for (const item of pageItems) {
+        if (allSelected) next.add(item.neteaseSongId)
+        else next.delete(item.neteaseSongId)
+      }
+      excluded.value = next
+      return
+    }
     const next = new Set(selected.value)
     for (const item of pageItems) {
       if (allSelected) next.delete(item.neteaseSongId)
@@ -406,19 +483,22 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     finally { acting.value = false }
   }
 
-  async function commit(): Promise<void> {
+  async function commit(): Promise<boolean> {
     const current = initialization.value
     if (acting.value || !current || !isEditable.value) {
       if (current && !isEditable.value) setActionError(isQuickQueued.value ? '快速方案已提交，等待后台处理' : '候选规则已更新，请先重新分析')
-      return
+      return false
     }
     acting.value = true
+    error.value = ''
     try {
       await api.post(`/playlist-sources/${options.sourceId}/initialization/commit`, { initializationId: current.id })
       options.onChanged?.()
       await load()
+      return true
     } catch (value) {
       error.value = errorMessage(value, '提交失败')
+      return false
     } finally {
       acting.value = false
     }
@@ -426,18 +506,35 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
 
   function dispose(): void {
     disposed = true
+    noticeRequest++
+    noticeUnsubscribers.splice(0).forEach(unsubscribe => unsubscribe())
+    stopSelectionWatch()
+    stopEditableWatch()
     if (searchTimer) clearTimeout(searchTimer)
     if (pollingTimer) clearInterval(pollingTimer)
     searchTimer = null
     pollingTimer = null
   }
 
+  async function refreshLibraryNotice(): Promise<void> {
+    const request = ++noticeRequest
+    try {
+      const data = await api.get<SourceInitializationSnapshot>(`/playlist-sources/${options.sourceId}/initialization`)
+      if (!disposed && request === noticeRequest) libraryChangedAt.value = data.libraryChangedAt ?? null
+    } catch { /* This hint must not disturb draft choices or page errors. */ }
+  }
+
   if (options.registerLifecycle !== false) {
     onMounted(() => {
       disposed = false
       void load()
+      for (const event of ['plex-library-change', 'resync'] as const) noticeUnsubscribers.push(sseSubscribe(event, () => { void refreshLibraryNotice() }))
       pollingTimer = setInterval(() => {
         if (isAnalyzing.value || isWaitingAnalysis.value) void load({ quiet: true })
+        else if (initialization.value?.status === 'awaiting_review' && Date.now() >= nextNoticePollAt) {
+          nextNoticePollAt = Date.now() + 30_000
+          void refreshLibraryNotice()
+        }
       }, options.pollIntervalMs ?? 2500)
     })
     onUnmounted(dispose)
@@ -445,6 +542,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
 
   return {
     initialization,
+    libraryChanged,
     downloadConcurrency,
     queueDepth,
     loading,
@@ -457,6 +555,11 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     decision,
     search,
     selected,
+    selectedCount,
+    allMatchingSelected,
+    selectionCategoryLabel,
+    canSelectAllMatching,
+    canAdoptSelected,
     drawerItem,
     searchResults,
     isAnalyzing,
@@ -477,8 +580,11 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     decideSelected,
     adoptAllHighConfidence,
     isSelectable,
+    isSelected,
     toggle,
     togglePage,
+    selectAllMatching,
+    clearSelection,
     onSearch,
     clearFilters,
     changePage,

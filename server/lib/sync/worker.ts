@@ -131,6 +131,8 @@ export function startWorker(
         const prepared = syncService.prepareSyncForSource(request.sourceId, {
           mode: request.mode,
           trigger: request.trigger,
+          plexRecoveryOnly: request.kind === 'plex_recovery',
+          ...(request.plexRecoverySnapshot ? { plexRecoverySnapshot: request.plexRecoverySnapshot } : {}),
           ...(request.takeOverExternal ? { takeOverExternal: true } : {}),
         })
         if (!attachSourceRequestRun(request, prepared.runId)) {

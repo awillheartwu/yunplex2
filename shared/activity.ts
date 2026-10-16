@@ -2,6 +2,7 @@ import type { TaskRunSummary } from '../server/lib/job/types'
 import type { DownloadTask, QueueStatus } from '../server/lib/download/queue'
 import type { SyncState } from '../server/lib/log/types'
 import type { DownloadQueueControl } from '../server/lib/download/queue-control'
+import type { PlexLibraryMonitorSnapshot } from './plex-monitor'
 
 export interface ActivityRun extends TaskRunSummary {
   sourceIds: string[]
@@ -10,6 +11,7 @@ export interface ActivityRun extends TaskRunSummary {
   live: SyncState | null
 }
 export interface ActivitySnapshot {
+  plex?: PlexLibraryMonitorSnapshot
   downloadControl?: DownloadQueueControl
   running: ActivityRun[]
   waiting: ActivityRun[]

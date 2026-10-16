@@ -13,7 +13,7 @@ export const STAGE_LABELS: Record<string, string> = {
   comparing: '对比歌曲',
   downloading: '下载歌曲',
   processing_tags: '写入元数据',
-  refreshing_plex: '刷新 Plex 库',
+  refreshing_plex: '等待 Plex 扫描与索引',
   updating_plex_playlist: '更新 Plex 歌单',
   reorder: '重排歌单',
   cancelled: '已取消',
@@ -21,15 +21,26 @@ export const STAGE_LABELS: Record<string, string> = {
 }
 
 export interface SyncRunOptions {
+  /** Internal event follow-up: reuse indexed media without downloads or rescans. */
+  plexRecoveryOnly?: boolean
+  plexRecoverySnapshot?: PlexRecoverySnapshot
   mode?: SyncMode
   sourceIds?: string[]
   takeOverExternal?: boolean
   trigger?: 'user' | 'schedule' | 'system' | 'retry'
 }
 
+export interface PlexRecoverySnapshot {
+  configFingerprint: string
+  playlistRatingKey: string
+  neteaseCursor: string
+  plexFingerprint: string
+  bindingVersions: Array<[number, string | null]>
+}
+
 export function createInitialState(): SyncState {
   return {
-    isRunning: false, currentStage: 'idle', startedAt: null,
+    isRunning: false, currentStage: 'idle', stageHistory: [], startedAt: null,
     currentSourceName: null,
     lastSyncAt: null, lastSyncResult: null, syncCount: 0,
     successCount: 0, failureCount: 0, currentSong: null,
@@ -40,5 +51,6 @@ export function createInitialState(): SyncState {
 export class CancellationError extends Error {
   constructor() {
     super('Cancelled')
+    this.name = 'CancellationError'
   }
 }

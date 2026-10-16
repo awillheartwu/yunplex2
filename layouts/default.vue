@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell flex overflow-x-hidden" :style="shellStyle">
+  <div class="app-shell flex overflow-x-clip" :style="shellStyle">
     <a href="#main-content" class="skip-link">跳转到主要内容</a>
     <Sidebar id="app-sidebar" class="app-sidebar hidden md:flex" />
 
@@ -47,7 +47,7 @@ import { useSidebarState } from '~/composables/useSidebarState'
 import { useDialogFocus } from '~/composables/useDialogFocus'
 
 const route = useRoute()
-useHead(() => ({ title: `${pageContext(route.path).title} · reYunPlex` }))
+useHead(() => ({ title: `${pageContext(route.path).title} · YunPlex` }))
 const mobileNavOpen = ref(false)
 const mobileNavigation = ref<HTMLElement | null>(null)
 useDialogFocus(mobileNavOpen, mobileNavigation, () => { mobileNavOpen.value = false })
