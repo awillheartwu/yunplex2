@@ -3,9 +3,8 @@ import type { InitializationMatchingConfig } from '../../../shared/initializatio
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
 import { plexCandidate, type InitializationItemPlan } from './types'
-import { aliasKeys, matchingKey, titleParts, versionEvidence, type TitleParts } from './matching-normalization'
-import { artistCreditKeys } from './artist-credits'
-import { artistMatchingKey } from '../../../shared/initialization-matching-text'
+import { aliasKeys, matchingKey, titleParts, type TitleParts } from './matching-normalization'
+import { candidateFacts, type CandidateFacts } from './candidate-facts'
 import { compareCandidateQuality } from './candidate-quality'
 import { corroboratedArtistEvidence } from './corroborated-recommendation'
 import { classicalWorkKey, closeSpelling } from './supplemental-recall'
@@ -66,10 +65,16 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
     const song = songMap.get(plan.neteaseSongId)
     if (!song) return plan
     const title = titleParts(song.name, config)
+    const facts=new Map<string,CandidateFacts>()
+    const factsFor=(entry:IndexedTrack)=>{
+      const key=String(entry.track.ratingKey)
+      if(!facts.has(key))facts.set(key,candidateFacts(song,entry.track,config,{songTitle:title,trackTitle:entry.title,paths:entry.paths}))
+      return facts.get(key)!
+    }
     if (plan.tier === 'strong_id' && plan.candidate) {
       const entry = indexed.find(item => String(item.track.ratingKey) === plan.candidate!.ratingKey)
-      const version = entry && versionEvidence(title, entry.title, config)
-      if (version && entry && !otherOwner(entry, song.id) && !version.excluded && !version.conflicts.length && !version.review.length) return { ...plan, evidence: {...plan.evidence, scoreVersion:1, scoredCandidates:scoredCandidates(song,[entry.track],config)} }
+      const version = entry && factsFor(entry).version
+      if (version && entry && !otherOwner(entry, song.id) && !version.excluded && !version.conflicts.length && !version.review.length) return { ...plan, evidence: {...plan.evidence, scoreVersion:1, scoredCandidates:scoredCandidates(song,[entry.track],config,facts)} }
     }
     const titleKeys = new Set(title.variants)
     for (const key of aliasKeys(song.name, config.titleAliases, config)) titleKeys.add(key)
@@ -79,7 +84,7 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
     const recallReasons = new Map<IndexedTrack, string[]>()
     const constrained = (entry: IndexedTrack): boolean => {
       if (!(song.dt > 0 && Number(entry.track.duration) > 0) || Math.abs(song.dt - Number(entry.track.duration)) > config.reviewDurationMs) return false
-      const support = artistSupport(song, entry, config, title)
+      const support = factsFor(entry).artist
       return support.complete || support.primary || support.pathArtist
     }
     const recall = (entry: IndexedTrack, reason: string) => {
@@ -99,9 +104,10 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
         if (song.dt > 0 && Number(entry.track.duration) > 0 && Math.abs(song.dt - Number(entry.track.duration)) <= config.recommendDurationMs) recall(entry, '艺人、专辑、曲序与接近时长补充召回：标题不同，需确认')
       }
     }
-    const scored = scoredCandidates(song, [...pool].map(entry=>entry.track), config)
+    for(const entry of pool)factsFor(entry)
+    const scored = scoredCandidates(song, [...pool].map(entry=>entry.track), config, facts)
     const rank = new Map(scored.map((value,index)=>[value.candidate.ratingKey,index]))
-    const evaluations = [...pool].map(entry => evaluate(song, title, entry, titleKeys, config, otherOwner(entry, song.id), recallReasons.get(entry) ?? [])).filter((value): value is Evaluation => value !== null)
+    const evaluations = [...pool].map(entry => evaluate(song, entry, titleKeys, config, otherOwner(entry, song.id), recallReasons.get(entry) ?? [], factsFor(entry))).filter((value): value is Evaluation => value !== null)
     evaluations.sort((a,b)=>(rank.get(String(a.entry.track.ratingKey))??Infinity)-(rank.get(String(b.entry.track.ratingKey))??Infinity))
     const recommended = evaluations.filter(item => item.recommend)
     const reviewable = evaluations.filter(item => item.review)
@@ -139,18 +145,20 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
       },
     }
   })
-  const claims = new Map<string, Set<number>>()
+  const claims = new Map<string, Set<InitializationItemPlan>>()
+  const order = new Map(result.map((plan,index)=>[plan.neteaseSongId,index]))
   for (const plan of result) if (plan.candidate) {
     for (const key of [`key:${plan.candidate.ratingKey}`, ...(plan.candidate.filePath ? [`path:${normalizePlexPath(plan.candidate.filePath)}`] : [])]) {
       if (!claims.has(key)) claims.set(key, new Set())
-      claims.get(key)!.add(plan.neteaseSongId)
+      claims.get(key)!.add(plan)
     }
   }
   return result.map(plan => {
     if (!plan.candidate || plan.tier === 'preserved') return plan
     const shared = [`key:${plan.candidate.ratingKey}`, ...(plan.candidate.filePath ? [`path:${normalizePlexPath(plan.candidate.filePath)}`] : [])].some(key => (claims.get(key)?.size ?? 0) > 1)
     if (!shared) return plan
-    const peers = result.filter(other => other.candidate && (other.candidate.ratingKey === plan.candidate!.ratingKey || (plan.candidate!.filePath && normalizePlexPath(other.candidate.filePath || '') === normalizePlexPath(plan.candidate!.filePath))))
+    const peerKeys = [`key:${plan.candidate.ratingKey}`, ...(plan.candidate.filePath ? [`path:${normalizePlexPath(plan.candidate.filePath)}`] : [])]
+    const peers = [...new Set(peerKeys.flatMap(key=>[...(claims.get(key)??[])]))].sort((a,b)=>order.get(a.neteaseSongId)!-order.get(b.neteaseSongId)!)
     const safe = plan.candidate.filePath && peers.every(other =>
       ['high_confidence', 'strong_id', 'preserved'].includes(other.tier)
       && other.candidate?.ratingKey === plan.candidate!.ratingKey
@@ -167,23 +175,19 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
   })
 }
 
-function evaluate(song: NeteaseSong, title: TitleParts, entry: IndexedTrack, keys: Set<string>, config: InitializationMatchingConfig, identityConflict: boolean, recallReasons: string[]): Evaluation | null {
+function evaluate(song: NeteaseSong, entry: IndexedTrack, keys: Set<string>, config: InitializationMatchingConfig, identityConflict: boolean, recallReasons: string[], facts:CandidateFacts): Evaluation | null {
   const track = entry.track, reasons: string[] = [], conflicts: string[] = []
-  const version = versionEvidence(title, entry.title, config)
+  const {version,delta,albumExact:album,numberEqual:number,artist:{complete,primary,pathArtist,missingOneContributor,missingCollaborators}}=facts
   if (version.excluded) return null
   conflicts.push(...version.conflicts)
   if (identityConflict) conflicts.push('此媒体已关联其他网易云歌曲，或文件标识属于另一首歌曲')
   reasons.push(...version.review, ...recallReasons)
   const exact = keys.has(entry.title.core) || [...aliasKeys(track.title, config.titleAliases, config)].some(key => keys.has(key))
   reasons.push(exact ? '标题归一化或已确认别名一致' : '扩展标题或文件名召回，需确认')
-  const { complete, primary, pathArtist, missingOneContributor, missingCollaborators } = artistSupport(song, entry, config, title)
   reasons.push(complete ? '完整艺人集合一致（含已确认别名）' : primary ? '主要艺人一致，其他参与者需确认' : pathArtist ? '目录艺人一致，Plex 艺人需确认' : '艺人信息不足或不同')
-  const delta = song.dt > 0 && Number(track.duration) > 0 ? Math.abs(song.dt - Number(track.duration)) : null
   if (delta === null && config.missingDuration === 'exclude') return null
   const durationOk = delta !== null && delta <= config.recommendDurationMs && delta / song.dt * 100 <= config.recommendDurationPercent
   reasons.push(delta === null ? '时长缺失，需确认' : `时长相差 ${delta} 毫秒`)
-  const album = matchingKey(song.album.name, config) === matchingKey(track.parentTitle || '', config) && Boolean(song.album.name)
-  const number = song.no > 0 && song.no === Number(track.index)
   if (!album && config.albumPolicy !== 'ignore') reasons.push('专辑不同或缺失')
   if (!number && config.trackPolicy !== 'ignore') reasons.push('曲序不同或缺失')
   const metadataAllowed = (config.albumPolicy !== 'require' || album) && (config.trackPolicy !== 'require' || number)
@@ -203,24 +207,4 @@ function evaluate(song: NeteaseSong, title: TitleParts, entry: IndexedTrack, key
   if (crossEvidence && !complete) reasons.push(crossEvidence)
   if (entry.paths.length !== 1) reasons.push('媒体路径缺失或包含多个文件，需确认')
   return { entry, reasons, conflicts, strictAlbumMatch: recommend && complete && album && number && delta !== null && delta <= 500, identityConflict, versionConflict: version.conflicts.length > 0, recommend, review, delta, album, number }
-}
-function artistSupport(song: NeteaseSong, entry: IndexedTrack, config: InitializationMatchingConfig, title: TitleParts): { complete: boolean; primary: boolean; pathArtist: boolean; missingOneContributor: boolean; missingCollaborators: boolean } {
-  const names = [...new Set(song.artists.map(artist => artist.name).filter(Boolean))]
-  const desired = names.map(name => aliasKeys(name, config.useArtistAliases ? config.artistAliases : [], config, true))
-  for (const key of artistCreditKeys(title.contributors, desired, config)) {
-    if (!desired.some(group => group.has(key))) desired.push(new Set([key]))
-  }
-  const track = entry.track
-  const artistText = config.useTrackArtist && track.originalTitle ? track.originalTitle : track.grandparentTitle || ''
-  const actual = artistCreditKeys([artistText, ...entry.title.contributors], desired, config)
-  const covered = desired.map(set => actual.some(key => set.has(key)))
-  const complete = desired.length > 0 && covered.every(Boolean) && actual.every(key => desired.some(set => set.has(key)))
-  const primary = covered[0] === true
-  const pathArtist = config.usePathHints && entry.paths.some(path => path.split('/').slice(0, -1).some(part => desired.some(set => set.has(artistMatchingKey(part, config)))))
-  const primaryAlbumArtist = desired[0]?.has(artistMatchingKey(track.grandparentTitle || '', config)) ?? false
-  const missingOneContributor = desired.length >= 2 && desired.length <= 3 && primary && primaryAlbumArtist
-    && actual.length === desired.length - 1 && actual.every(key => desired.some(set => set.has(key)))
-  const missingCollaborators = primary && covered.some(value => !value) && actual.length > 0
-    && actual.every(key => desired.some(set => set.has(key)))
-  return { complete, primary, pathArtist, missingOneContributor, missingCollaborators }
 }

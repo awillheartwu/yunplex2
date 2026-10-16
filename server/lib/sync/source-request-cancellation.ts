@@ -10,9 +10,9 @@ export function cancelSourceRequests(cancelSync: () => boolean): boolean {
     ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, created_at,batch_position,rowid LIMIT 1`)
     .get() as { id: string; batch_id: string | null } | undefined
   if (!current) return cancelSync()
-  const rows = db.prepare(`SELECT id,source_id,initialization_id,run_id,status FROM source_sync_queue
+  const rows = db.prepare(`SELECT id,source_id,initialization_id,run_id,status,request_kind FROM source_sync_queue
     WHERE ${current.batch_id ? 'batch_id' : 'id'}=? AND status IN ('pending','running')`)
-    .all(current.batch_id ?? current.id) as Array<{ id: string; source_id: string; initialization_id: string | null; run_id: string | null; status: string }>
+    .all(current.batch_id ?? current.id) as Array<{ id: string; source_id: string; initialization_id: string | null; run_id: string | null; status: string; request_kind: string }>
   const now = new Date().toISOString()
   db.transaction(() => {
     for (const row of rows) {
@@ -21,13 +21,14 @@ export function cancelSourceRequests(cancelSync: () => boolean): boolean {
         continue
       }
       db.prepare("UPDATE source_sync_queue SET status='cancelled',finished_at=?,updated_at=?,last_error='用户取消' WHERE id=?").run(now, now, row.id)
-      if (row.initialization_id) setInitializationStatus(row.initialization_id, 'cancelled', { summary: '用户取消分析' })
-      const run = row.run_id ? getRun(row.run_id) : null
+      if (row.request_kind === 'analysis' && row.initialization_id) setInitializationStatus(row.initialization_id, 'cancelled', { summary: '用户取消分析' })
+      if (row.request_kind === 'initialization_apply') db.prepare("UPDATE initialization_quick_operations SET status='cancelled',previous_json=NULL WHERE request_id=?").run(row.id)
+      const run = row.request_kind !== 'initialization_apply' && row.run_id ? getRun(row.run_id) : null
       if (run) saveRun({ ...run, status: 'cancelled', finishedAt: now, summary: '用户取消' })
       db.prepare("UPDATE playlist_sources SET last_schedule_status='idle',last_schedule_error=NULL WHERE id=?").run(row.source_id)
     }
   })()
-  for (const row of rows) if (row.status === 'running' && row.initialization_id) cancelSourceInitialization(row.source_id)
+  for (const row of rows) if (row.status === 'running' && row.request_kind === 'analysis' && row.initialization_id) cancelSourceInitialization(row.source_id)
   cancelSync()
   return true
 }

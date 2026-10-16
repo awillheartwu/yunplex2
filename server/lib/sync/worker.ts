@@ -98,7 +98,7 @@ export function startWorker(
         const cancelled = (getDb().prepare('SELECT cancel_requested_at FROM source_sync_queue WHERE id=?').get(request.id) as { cancel_requested_at: string | null }).cancel_requested_at
         if (cancelled) {
           if (request.kind === 'initialization_apply') getDb().prepare("UPDATE initialization_quick_operations SET status='cancelled' WHERE request_id=?").run(request.id)
-          if (request.initializationId) {
+          if (request.kind === 'analysis' && request.initializationId) {
             setInitializationStatus(request.initializationId, 'cancelled', { summary: '用户取消分析' })
             const run = request.runId ? getRun(request.runId) : null
             if (run) saveRun({ ...run, status: 'cancelled', finishedAt: new Date().toISOString(), summary: '用户取消分析' })
@@ -107,11 +107,9 @@ export function startWorker(
           continue
         }
         if (request.kind === 'initialization_apply') {
-          const operationId = request.followUpOf?.replace(/^quick:/, '')
-          const id = (getDb().prepare('SELECT initialization_id FROM initialization_quick_operations WHERE id=?').get(operationId) as {initialization_id:string} | undefined)?.initialization_id
-          if (!id) throw new Error('快速处理请求缺少草案')
+          const id = request.initializationId
+          if (!id) throw new Error('应用请求缺少歌曲安排')
           await commitSourceInitialization(id, true)
-          getDb().prepare("UPDATE initialization_quick_operations SET status='executed' WHERE initialization_id=? AND status='queued'").run(id)
           finishSourceRequest(request, 'success', getConfig(), null)
           continue
         }
@@ -160,20 +158,21 @@ export function startWorker(
       } catch (error) {
         if (stopping) {
           getDb().prepare("UPDATE source_sync_queue SET status='pending', lease_owner=NULL, lease_expires_at=NULL WHERE id=? AND lease_owner=?").run(request.id, workerId)
-          if (request.initializationId) {
+          if (request.kind === 'analysis' && request.initializationId) {
             setInitializationStatus(request.initializationId, 'pending', { error: '服务停止，等待恢复分析' })
             const run = request.runId ? getRun(request.runId) : null
             if (run) saveRun({ ...run, status: 'running', finishedAt: null, summary: '服务停止，等待恢复分析' })
           }
           break
         }
-        if (request.kind === 'initialization_apply') getDb().prepare("UPDATE initialization_quick_operations SET status='failed' WHERE request_id=?").run(request.id)
         finishSourceRequest(
           request,
           'failure',
           getConfig(),
           error instanceof Error ? error.message : String(error),
         )
+        if (request.kind === 'initialization_apply') getDb().prepare(`UPDATE initialization_quick_operations
+          SET status=CASE WHEN (SELECT status FROM source_sync_queue WHERE id=?)='cancelled' THEN 'cancelled' ELSE 'failed' END,previous_json=NULL WHERE request_id=?`).run(request.id,request.id)
       } finally {
         clearInterval(leaseHeartbeat)
         heartbeatAt = new Date().toISOString()

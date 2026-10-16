@@ -228,7 +228,6 @@ export function createSchema(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'pending'
         CHECK(status IN ('pending','analyzing','awaiting_review','applying','completed','failed','cancelled','skipped')),
       netease_cursor TEXT,
-      plex_fingerprint TEXT,
       total_items INTEGER NOT NULL DEFAULT 0,
       preserved_items INTEGER NOT NULL DEFAULT 0,
       strong_items INTEGER NOT NULL DEFAULT 0,

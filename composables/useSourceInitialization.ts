@@ -10,6 +10,7 @@ import type {
 import type { CandidateScore } from '../shared/initialization-scoring'
 import { evidenceGroups } from '../shared/review-filter-groups'
 import { sseSubscribe } from './sse'
+import type { DeferredInitializationGroup, InitializationProcessing } from '../shared/source-onboarding'
 
 export type { InitializationDecision, InitializationItemsPage, InitializationReviewItem, SourceInitializationSummary }
 
@@ -22,9 +23,9 @@ export interface SourceInitializationApi {
 export interface SourceInitializationSnapshot {
   applicable: boolean
   initialization: SourceInitializationSummary | null
-  downloadConcurrency: number
-  convergenceQueueDepth: number
   libraryChangedAt?: string | null
+  processing?: InitializationProcessing | null
+  deferredGroups?: DeferredInitializationGroup[]
 }
 
 export interface PlexSearchResult {
@@ -104,8 +105,8 @@ function errorMessage(error: unknown, fallback: string): string {
 export function useSourceInitialization(options: UseSourceInitializationOptions) {
   const api = options.api || useApi()
   const initialization = ref<SourceInitializationSummary | null>(null)
-  const downloadConcurrency = ref(1)
-  const queueDepth = ref(0)
+  const processing = ref<InitializationProcessing | null>(null)
+  const deferredGroups = ref<DeferredInitializationGroup[]>([])
   const libraryChangedAt = ref<string | null>(null)
   const libraryChanged = computed(() => initialization.value?.status === 'awaiting_review'
     && Boolean(initialization.value.analyzedAt && libraryChangedAt.value
@@ -208,18 +209,20 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   async function load(options_: { quiet?: boolean } = {}): Promise<void> {
     const request = ++snapshotRequest
     if (!options_.quiet) error.value = ''
-    loading.value = true
+    if (!options_.quiet) loading.value = true
     try {
       const data = await api.get<SourceInitializationSnapshot>(`/playlist-sources/${options.sourceId}/initialization`)
       if (disposed || request !== snapshotRequest) return
       const previousId = initialization.value?.id
+      const previousRevision = initialization.value?.revision
+      const previousStatus = initialization.value?.status
       initialization.value = data.initialization
-      downloadConcurrency.value = data.downloadConcurrency
-      queueDepth.value = data.convergenceQueueDepth
+      processing.value = data.processing ?? null
+      deferredGroups.value = data.deferredGroups ?? []
       libraryChangedAt.value = data.libraryChangedAt ?? null
       if (previousId !== data.initialization?.id) resetReviewState()
       if (data.initialization && ['awaiting_review', 'completed'].includes(data.initialization.status)) {
-        await reloadItems(1)
+        if (!options_.quiet || previousId !== data.initialization.id || previousRevision !== data.initialization.revision || previousStatus !== data.initialization.status) await reloadItems(previousId === data.initialization.id ? result.value.page : 1)
       } else if (!data.initialization || !['awaiting_review', 'completed'].includes(data.initialization.status)) {
         resetReviewState()
       }
@@ -248,12 +251,12 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     return Boolean(item && canChoose(item, 'adopt'))
   }
 
-  async function start(): Promise<void> {
+  async function start(autoProcess = false): Promise<void> {
     if (acting.value) return
     acting.value = true
     error.value = ''
     try {
-      await api.post(`/playlist-sources/${options.sourceId}/initialization/start`, {})
+      await api.post(`/playlist-sources/${options.sourceId}/initialization/start`, { autoProcess })
       await load()
     } catch (value) {
       error.value = errorMessage(value, '启动失败')
@@ -263,7 +266,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
   }
 
   async function cancel(): Promise<void> {
-    if (acting.value || (!isAnalyzing.value && !isWaitingAnalysis.value)) return
+    if (acting.value || (!isAnalyzing.value && !isWaitingAnalysis.value && !isQuickQueued.value)) return
     acting.value = true
     try {
       await api.post(`/playlist-sources/${options.sourceId}/initialization/cancel`, {})
@@ -483,7 +486,20 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     finally { acting.value = false }
   }
 
-  async function commit(): Promise<boolean> {
+  async function arrange(scope: 'default' | 'deferred' | 'needs_review'): Promise<boolean> {
+    if (!ensureEditable() || !initialization.value) return false
+    acting.value = true
+    error.value = ''
+    try {
+      await api.post(`/playlist-sources/${options.sourceId}/initialization/arrange`, { initializationId: initialization.value.id, scope })
+      await load()
+      options.onChanged?.()
+      return true
+    } catch (value) { error.value = errorMessage(value, '自动安排失败'); return false }
+    finally { acting.value = false }
+  }
+
+  async function commit(confirmDeferred = false): Promise<boolean> {
     const current = initialization.value
     if (acting.value || !current || !isEditable.value) {
       if (current && !isEditable.value) setActionError(isQuickQueued.value ? '快速方案已提交，等待后台处理' : '候选规则已更新，请先重新分析')
@@ -492,7 +508,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     acting.value = true
     error.value = ''
     try {
-      await api.post(`/playlist-sources/${options.sourceId}/initialization/commit`, { initializationId: current.id })
+      await api.post(`/playlist-sources/${options.sourceId}/initialization/commit`, { initializationId: current.id, confirmDeferred })
       options.onChanged?.()
       await load()
       return true
@@ -530,7 +546,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
       void load()
       for (const event of ['plex-library-change', 'resync'] as const) noticeUnsubscribers.push(sseSubscribe(event, () => { void refreshLibraryNotice() }))
       pollingTimer = setInterval(() => {
-        if (isAnalyzing.value || isWaitingAnalysis.value) void load({ quiet: true })
+        if (isAnalyzing.value || isWaitingAnalysis.value || isQuickQueued.value || processing.value?.active) void load({ quiet: true })
         else if (initialization.value?.status === 'awaiting_review' && Date.now() >= nextNoticePollAt) {
           nextNoticePollAt = Date.now() + 30_000
           void refreshLibraryNotice()
@@ -542,9 +558,9 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
 
   return {
     initialization,
+    processing,
+    deferredGroups,
     libraryChanged,
-    downloadConcurrency,
-    queueDepth,
     loading,
     loadingItems,
     acting,
@@ -593,6 +609,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     chooseCandidate,
     confirmSharedMedia,
     commit,
+    arrange,
     dispose,
   }
 }

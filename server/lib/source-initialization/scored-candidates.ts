@@ -1,11 +1,12 @@
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
 import type { InitializationMatchingConfig } from '../../../shared/initialization-matching'
+import type { CandidateFacts } from './candidate-facts'
 import { scoreCandidate } from './candidate-score'
 import { compareCandidateQuality } from './candidate-quality'
 import { plexCandidate } from './types'
-export function scoredCandidates(song:NeteaseSong,tracks:PlexTrack[],config:InitializationMatchingConfig) {
-  const values=[...new Map(tracks.map(track=>[String(track.ratingKey),track])).values()].map(track=>({track,score:scoreCandidate(song,track,config)}))
+export function scoredCandidates(song:NeteaseSong,tracks:PlexTrack[],config:InitializationMatchingConfig,facts?:Map<string,CandidateFacts>) {
+  const values=[...new Map(tracks.map(track=>[String(track.ratingKey),track])).values()].map(track=>({track,score:scoreCandidate(song,track,config,facts?.get(String(track.ratingKey)))}))
   const directory=(track:PlexTrack)=>Boolean(config.preferredDirectory&&track.Media?.some(media=>media.Part?.some(part=>part.file?.startsWith(config.preferredDirectory.replace(/\/+$/,'')+'/'))))
   values.sort((a,b)=>Number(b.score.eligible)-Number(a.score.eligible)||b.score.total-a.score.total||Number(b.score.completeArtists)-Number(a.score.completeArtists)||b.score.titleStrength-a.score.titleStrength
     ||(a.score.durationDeltaMs??Infinity)-(b.score.durationDeltaMs??Infinity)||b.score.parts.album-a.score.parts.album||b.score.parts.track-a.score.parts.track

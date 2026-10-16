@@ -19,11 +19,6 @@
   color: var(--text-tertiary);
   font-size: var(--text-xs);
 }
-.source-adoption__metrics small {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  display: block;
-}
 .source-adoption__actions {
   display: flex;
   align-items: center;
@@ -38,16 +33,6 @@
   .source-adoption__status { min-height: var(--control-height-touch); }
 }
 .source-adoption__overview { overflow: hidden; }
-.source-adoption__steps { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); font-size: var(--text-xs); }
-.source-adoption__steps > div { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
-.source-adoption__steps > div + div::before { content: '→'; color: var(--text-muted); margin-right: var(--space-2); }
-.source-adoption__steps span { font-variant-numeric: tabular-nums; }
-.source-adoption__steps .is-current { color: var(--accent); }
-.source-adoption__steps .is-done { color: var(--success); }
-.source-adoption__metrics { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); padding: 0 var(--space-4) var(--space-4); }
-.source-adoption__metrics > div { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--text-sm); }
-.source-adoption__metrics span { color: var(--text-secondary); }
-.source-adoption__metrics strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .source-adoption__groups { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .source-adoption__groups [aria-pressed="true"] { background: var(--accent-muted); color: var(--accent); }
 .source-adoption__groups span { font-variant-numeric: tabular-nums; }

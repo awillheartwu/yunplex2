@@ -5,6 +5,7 @@ import { getCopyrightCount, getActionableFailureCount, getSourceDisplayName } fr
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 import { createLatestAsyncGuard, useDebounceFn, useRafThrottleFn } from '~~/composables/useTiming'
 import { useFeedback } from '~~/composables/useFeedback'
+import type { CreatedPlaylistSources } from '../shared/source-onboarding'
 
 export function useSyncSourcesPage() {
   const api = useApi()
@@ -300,10 +301,11 @@ export function useSyncSourcesPage() {
   }
 
   function openAddPlaylist() { showAdd.value = true }
-  function onPlaylistCreated(count = 1) {
+  function onPlaylistCreated(result: CreatedPlaylistSources) {
     filterType.value = 'playlist'
     void refreshSources()
-    feedback.success(`已添加 ${count} 个歌单同步源`)
+    feedback.success(`已添加 ${result.sourceIds.length} 个歌单`, result.mode === 'automatic' ? '后台将自动分析、下载并更新 Plex' : '分析后可以查看和调整歌曲安排')
+    if (result.sourceIds[0]) void router.push({ path: `/sync-sources/${result.sourceIds[0]}`, query: { tab: 'initialization', onboarding: result.sourceIds } })
   }
   function onAlbumCreated(count = 1) {
     filterType.value = 'album'

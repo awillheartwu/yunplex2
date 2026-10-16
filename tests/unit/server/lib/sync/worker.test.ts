@@ -97,6 +97,7 @@ describe('source scheduler worker', () => {
 
     expect(service.prepareSyncForSource).toHaveBeenCalledWith('source-1', {
       mode: 'normal',
+      plexRecoveryOnly: false,
       trigger: 'user',
     })
   })
@@ -178,6 +179,7 @@ describe('source scheduler worker', () => {
 
     expect(service.prepareSyncForSource).toHaveBeenCalledWith('source-1', {
       mode: 'normal',
+      plexRecoveryOnly: false,
       trigger: 'schedule',
     })
     expect(worker.getStatus().queueDepth).toBe(0)

@@ -65,6 +65,8 @@ export async function finalizeSourceConvergence(
   } else if (
     failCount > 0
     || ignoredCount > 0
+    || restrictedCount > 0
+    || awaitingManualCount > 0
     || (!skipRemoveExtra && preservedExtraCount > 0)
   ) {
     sourceStatus = 'partial'
@@ -99,6 +101,7 @@ export async function finalizeSourceConvergence(
             failCount > 0 ? `${failCount} 首失败` : '',
             restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '',
             ignoredCount > 0 ? `${ignoredCount} 首已暂停重试` : '',
+            awaitingManualCount > 0 ? `${awaitingManualCount} 首暂未加入同步` : '',
             !skipRemoveExtra && preservedExtraCount > 0 ? `${preservedExtraCount} 首保留待确认` : '',
           ].filter(Boolean).join('，'),
       lastJobId: job.getId(),

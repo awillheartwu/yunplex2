@@ -29,6 +29,8 @@ export function confirmSharedMedia(initializationId: string, songId: number, fin
       const candidate = (JSON.parse(String(peer.candidates_json)) as Array<{ratingKey: string; filePath: string; title: string; artist: string; album: string; durationMs: number | null}>).find(item => item.ratingKey === review.ratingKey && normalizePlexPath(item.filePath || '') === normalizePlexPath(review.filePath))
       if (!candidate) throw new InitializationConflictError('共享候选已不存在')
       peerEvidence.sharedMediaConfirmed = fingerprint
+      peerEvidence.decisionOrigin = 'manual'
+      delete peerEvidence.quickDecision
       getDb().prepare("UPDATE source_initialization_items SET candidate_rating_key=?,candidate_file_path=?,candidate_title=?,candidate_artist=?,candidate_album=?,candidate_duration_ms=?,decision='adopt',decision_status='proposed',evidence_json=?,updated_at=? WHERE initialization_id=? AND netease_song_id=?")
         .run(review.ratingKey, review.filePath, candidate.title, candidate.artist, candidate.album, candidate.durationMs, JSON.stringify(peerEvidence), new Date().toISOString(), initializationId, song.songId)
     }

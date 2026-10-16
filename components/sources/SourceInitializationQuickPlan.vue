@@ -32,7 +32,9 @@ const queued = computed(() => props.initialization.quickStatus === 'queued')
 const blocked = computed(() => Boolean(props.disabled) || queued.value || Boolean(props.busy) || confirming.value || restoring.value)
 const thresholdValid = computed(() => Number.isInteger(threshold.value) && Number(threshold.value) >= 0 && Number(threshold.value) <= 100)
 const canPreview = computed(() => !blocked.value && scoreReady.value && thresholdValid.value)
-const canConfirm = computed(() => Boolean(preview.value) && canPreview.value && !loading.value && !paging.value)
+const canConfirm = computed(() => preview.value?.initializationId === props.initialization.id
+  && preview.value?.revision === props.initialization.revision && preview.value?.threshold === Number(threshold.value)
+  && canPreview.value && !loading.value && !paging.value)
 const totalPages = computed(() => preview.value ? Math.max(1, Math.ceil(preview.value.total / preview.value.pageSize)) : 1)
 const maxBucket = computed(() => Math.max(1, ...(preview.value?.histogram ?? [])))
 const metrics = computed(() => {
@@ -149,7 +151,11 @@ async function confirmPlan(start: boolean): Promise<void> {
       token: current.token,
       start,
     })
-    if (result.status === 'queued') notice.value = '已提交，后台会按本次预览处理；处理完成前不能再修改。'
+    preview.value = null
+    if (result.status === 'queued') {
+      saved.value = null
+      notice.value = '已提交，后台会按本次预览处理；处理完成前不能再修改。'
+    }
     else {
       saved.value = { operationId: current.operationId, token: current.token }
       notice.value = '已保存，还没有开始处理。'
@@ -201,13 +207,13 @@ async function cancelQueued(): Promise<void> {
         <p>按分数线批量处理：达标的歌曲使用 Plex，未达标的加入下载。</p>
       </div>
       <div v-if="queued"><StatusBadge status="running" label="已排队" /><button class="btn btn-warning btn-sm" :disabled="confirming" @click="cancelQueued">取消本次处理</button></div>
-      <StatusBadge v-else-if="saved" status="warning" label="已保存" />
+      <StatusBadge v-else-if="saved && !preview" status="warning" label="已保存" />
     </header>
 
     <div class="source-adoption__quick-controls">
       <label class="source-adoption__quick-threshold">
         <span>分数线（0–100 整数）</span>
-        <input v-model.number="threshold" class="form-input" type="number" min="0" max="100" step="1" inputmode="numeric" :disabled="blocked || !scoreReady" />
+        <input v-model.number="threshold" class="form-input" type="number" min="0" max="100" step="1" inputmode="numeric" :disabled="blocked || loading || paging || !scoreReady" />
       </label>
       <button class="btn btn-primary" :disabled="!canPreview || loading" @click="previewPlan">
         <AppIcon name="search" :size="14" />{{ loading ? '生成中…' : preview ? '重新预览' : '生成预览' }}
@@ -267,16 +273,16 @@ async function cancelQueued(): Promise<void> {
         </ul>
       </div>
 
-      <div v-if="!saved" class="source-adoption__quick-actions">
+      <div class="source-adoption__quick-actions">
         <button class="btn btn-primary" :disabled="!canConfirm || confirming || blocked" @click="confirmPlan(true)">开始处理</button>
         <button class="btn btn-secondary" :disabled="!canConfirm || confirming || blocked" @click="confirmPlan(false)">只保存，不执行</button>
       </div>
     </template>
 
-    <div v-if="saved" class="source-adoption__quick-actions">
+    <div v-if="saved && !preview" class="source-adoption__quick-actions">
       <p>提交后开始接管和同步；未再次编辑时，可以恢复保存前的选择。</p>
-      <button class="btn btn-primary" :disabled="blocked" @click="emit('requestCommit')">提交并开始处理</button>
-      <button class="btn btn-secondary btn-sm" :disabled="restoring || busy || queued" @click="restorePlan">恢复之前的选择</button>
+      <button class="btn btn-primary" :disabled="blocked || loading || paging" @click="emit('requestCommit')">提交并开始处理</button>
+      <button class="btn btn-secondary btn-sm" :disabled="blocked || loading || paging" @click="restorePlan">恢复之前的选择</button>
     </div>
   </template>
   </AppDrawer>

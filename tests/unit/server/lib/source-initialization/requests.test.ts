@@ -6,7 +6,7 @@ import { closeDb, getDb, initDb, readConfigFromDb } from '~~/server/lib/db'
 import { getSource, updateSource } from '~~/server/lib/playlist/store'
 import { getRun, saveRun } from '~~/server/lib/run/store'
 import { analyzeSourceInitialization, commitSourceInitialization, skipSourceInitialization } from '~~/server/lib/source-initialization/service'
-import { requestSourceInitialization, restartSourceInitialization } from '~~/server/lib/source-initialization/requests'
+import { requestInitializationApply, requestSourceInitialization, restartSourceInitialization } from '~~/server/lib/source-initialization/requests'
 import { getInitialization, setInitializationDecisions, setInitializationStatus } from '~~/server/lib/source-initialization/store'
 import { resolveInitializationGate } from '~~/server/lib/source-initialization/gate'
 import { cancelSourceRequests } from '~~/server/lib/sync/source-request-cancellation'
@@ -44,6 +44,72 @@ function config() { const value = readConfigFromDb(); value.sync.enabled = false
 function service() {
   return { getState: () => ({ isRunning: false }), prepareSyncForSource: vi.fn((id: string) => ({ runId: `sync-${id}`, run: async () => ({ lastSyncResult: 'success', failures: [] }) })), cancelSync: () => true }
 }
+
+describe('queued initialization application', () => {
+  for (const scenario of ['normal', 'cancel', 'restart', 'failure', 'existing_quick_request'] as const) {
+    it(`applies ordinary submissions through the worker after ${scenario}`, async () => {
+      const analysis = requestSourceInitialization('source-1', 'user')
+      const analyzer = startWorker(config, service() as never, directory)
+      await analyzer.runOnce()
+      await stopWorker()
+      const id = analysis.initializationId
+      const accepted = requestInitializationApply('source-1', id)
+      expect(requestInitializationApply('source-1', id)).toEqual(accepted)
+      expect(getInitialization(id)?.quickStatus).toBe('queued')
+      expect(() => setInitializationDecisions({ initializationId: id, songIds: [42], decision: 'download' })).toThrow('已提交')
+      expect(() => restartSourceInitialization('source-1', id)).toThrow('已排队')
+      expect(() => skipSourceInitialization('source-1')).toThrow('已排队')
+      expect(getDb().prepare('SELECT COUNT(*) n FROM song_identity_bindings').get()).toEqual({ n: 0 })
+
+      const consumer = () => ({ ...service(), getState: () => ({ isRunning: getInitialization(id)?.status === 'completed' }) })
+      let finalRequest = accepted
+      if (scenario === 'cancel') {
+        cancelSourceRequests(() => false)
+        expect(getInitialization(id)?.status).toBe('awaiting_review')
+        expect(getRun(analysis.runId)?.status).toBe('awaiting_action')
+        finalRequest = requestInitializationApply('source-1', id)
+        expect(finalRequest.requestId).not.toBe(accepted.requestId)
+      } else if (scenario === 'restart' || scenario === 'existing_quick_request') {
+        if (scenario === 'restart') {
+          getDb().prepare("UPDATE source_sync_queue SET status='running',lease_owner='old-process' WHERE id=?").run(accepted.requestId)
+          setInitializationStatus(id, 'applying')
+        } else {
+          const op = getDb().prepare('SELECT quick_operation_id id FROM source_initializations WHERE id=?').get(id) as { id: string }
+          getDb().prepare("UPDATE initialization_quick_operations SET request_id=?,status='queued' WHERE id=?").run(accepted.requestId,op.id)
+          getDb().prepare('UPDATE source_sync_queue SET initialization_id=NULL,follow_up_of=? WHERE id=?').run(`quick:${op.id}`,accepted.requestId)
+        }
+        closeDb(); initDb(directory)
+        recoverInterruptedSourceRequests()
+        expect(getInitialization(id)?.status).toBe('awaiting_review')
+        expect(requestInitializationApply('source-1', id)).toEqual(accepted)
+      } else if (scenario === 'failure') {
+        remote.tracks.mockRejectedValueOnce(new Error('temporary Plex failure'))
+        await startWorker(config, consumer() as never, directory).runOnce()
+        await stopWorker()
+        expect(getInitialization(id)?.quickStatus).toBe('failed')
+        finalRequest = requestInitializationApply('source-1', id)
+        expect(finalRequest.requestId).not.toBe(accepted.requestId)
+      }
+      const sync = consumer()
+      await startWorker(config, sync as never, directory).runOnce()
+      expect(sync.prepareSyncForSource).not.toHaveBeenCalled()
+      expect(getInitialization(id)).toMatchObject({ status: 'completed', quickStatus: 'executed' })
+      expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id=?').get(finalRequest.requestId)).toEqual({ status: 'completed' })
+      expect(getDb().prepare('SELECT netease_song_id,plex_rating_key FROM song_identity_bindings').all()).toEqual([{ netease_song_id: 42, plex_rating_key: '100' }])
+      expect(getDb().prepare("SELECT COUNT(*) n FROM source_sync_queue WHERE request_kind='convergence'").get()).toEqual({ n: 1 })
+      expect(getDb().prepare("SELECT enabled FROM playlist_sources WHERE id='source-1'").get()).toEqual({ enabled: 0 })
+      expect(requestInitializationApply('source-1', id).status).toBe('completed')
+    })
+  }
+
+  it('requires explicit confirmation before queuing deferred songs', async () => {
+    const reviewedPlan = await reviewed()
+    setInitializationDecisions({ initializationId: reviewedPlan.initializationId, songIds: [42], decision: 'defer' })
+    expect(() => requestInitializationApply('source-1', reviewedPlan.initializationId)).toThrow('暂不加入')
+    expect(getDb().prepare('SELECT COUNT(*) n FROM source_sync_queue').get()).toEqual({ n: 0 })
+    expect(requestInitializationApply('source-1', reviewedPlan.initializationId, true).status).toBe('queued')
+  })
+})
 
 describe('durable source operations', () => {
   it('restarts atomically, keeps the gate shut, and rejects a stale page', async () => {
@@ -91,12 +157,13 @@ describe('durable source operations', () => {
     expect(getInitialization(old.initializationId)?.followUpRunId).toBe('sync-source-1')
     expect(getDb().prepare('SELECT COUNT(*) count FROM task_run_links').get()).toEqual({ count: 2 })
   })
-  it('checks enabled state after external validation and before committing', async () => {
+  it('keeps this manual follow-up when automatic sync is disabled during validation', async () => {
     const old = await reviewed()
     updateSource('source-1', { enabled: true })
     remote.tracks.mockImplementationOnce(async () => { updateSource('source-1', { enabled: false }); return [] })
-    expect(await commitSourceInitialization(old.initializationId)).toMatchObject({ shouldSync: false, followUpRequestId: null })
-    expect(getDb().prepare('SELECT COUNT(*) count FROM source_sync_queue').get()).toEqual({ count: 0 })
+    expect(await commitSourceInitialization(old.initializationId)).toMatchObject({ shouldSync: true, followUpRequestId: expect.any(String) })
+    expect(getDb().prepare('SELECT allow_disabled FROM source_sync_queue').get()).toEqual({ allow_disabled: 1 })
+    expect(getSource('source-1')?.enabled).toBe(false)
   })
   it('does not reset the active commit when a concurrent commit is rejected', async () => {
     const old = await reviewed()

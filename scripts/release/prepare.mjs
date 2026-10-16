@@ -12,9 +12,10 @@ try {
   }
   requireCleanBranch('dev')
   const stableTags = git('tag', '--list').split('\n').filter(value => /^v\d+\.\d+\.\d+$/.test(value))
-  if (!stableTags.length && mode !== 'first') throw new Error('Use pnpm release:first for the initial 2.0.1 release')
-  if (mode === 'first' && (stableTags.length || packageAt().version !== '2.0.1')) {
-    throw new Error('First release requires version 2.0.1 and no existing stable release tags')
+  packageAt()
+  if (!stableTags.length && mode !== 'first') throw new Error('Use pnpm release:first for the initial release at the current package version')
+  if (mode === 'first' && stableTags.length) {
+    throw new Error('First release requires no existing stable release tags')
   }
   const options = ['--skip.tag']
   if (mode === 'first') options.push('--first-release')

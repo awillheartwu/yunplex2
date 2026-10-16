@@ -40,7 +40,7 @@ Nuxt 自动导入 Vue API、组件和 composable。浏览器共享一个 SSE 连
 sync/source-requests.ts 接受请求
   → sync/request-store.ts 保存请求
   → sync/worker.ts 依次执行
-  → 需要首次接管时，调用 source-initialization/service.ts 分析并等你确认
+  → 需要首次接管时，调用 source-initialization/service.ts 分析并安排歌曲
   → 可以同步时，调用 sync/service.ts
       → 获取网易云歌曲与顺序
       → lookup.ts 查已有媒体，source-downloads.ts 安排缺失文件
@@ -50,7 +50,7 @@ sync/source-requests.ts 接受请求
 
 同步请求串行执行，下载任务按全局并发数执行。`source-schedule-store.ts` 计算来源下次运行时间，并处理请求领取和重启恢复。API 只调用这套流程。
 
-首次接管分析不会下载歌曲或修改 Plex；确认方案后，启用中的来源排队继续同步。具体操作见[首次接管](initialization-matching.md)。
+首次接管分析不会下载歌曲或修改 Plex；自动模式分析后排队应用，审批模式等用户提交。两种模式均由来源队列应用安排并接续同步，暂停自动同步的收藏也能执行这一次手动请求。具体操作见[首次接管](initialization-matching.md)。
 
 ## 文件怎样保存
 
@@ -82,7 +82,7 @@ download/file-task-command.ts 保存文件任务
 
 数据库是 `<dataDir>/data.db`，默认放在项目 `data/`。`schema.ts` 定义结构，`initDb()` 负责打开并初始化。配置、凭据和运行数据留在数据目录，不放进版本库。
 
-媒体关联由手动选择或唯一的托管文件准确路径确认。标题、艺人和专辑相似只用于候选推荐。同步删除针对具体 `playlistItemID`；执行前核对当前关联，写 Plex 后重新读取成员与顺序。
+日常同步由手动选择或唯一的托管文件准确路径确认媒体关联。首次准备可按用户选择的自动方案采用评分候选，应用时仍检查身份版本、共享归属和具体路径。同步删除针对具体 `playlistItemID`；执行前核对当前关联，写 Plex 后重新读取成员与顺序。
 
 ## API 与错误
 

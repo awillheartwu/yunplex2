@@ -2,13 +2,17 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { closeDb, getDb, initDb } from '~~/server/lib/db'
+import { closeDb, getDb, initDb, readConfigFromDb } from '~~/server/lib/db'
+import { arrangeInitializationPlan } from '~~/server/lib/source-initialization/automatic-plan'
+import { runDataLifecycleMaintenance } from '~~/server/lib/maintenance/data-lifecycle'
 import { upsertSongIdentityBinding } from '~~/server/lib/sync/identity-store'
 import { cancelQuickPlan, confirmQuickPlan, previewQuickPlan, readQuickPreview, restoreQuickPlan } from '~~/server/lib/source-initialization/quick-plan'
+import { quickMediaPermissions } from '~~/server/lib/source-initialization/quick-permissions'
 import {
   ensurePendingInitialization,
   getInitialization,
   replaceInitializationPlans,
+  setInitializationDecisions,
   setInitializationCandidate,
   setInitializationStatus,
 } from '~~/server/lib/source-initialization/store'
@@ -314,10 +318,10 @@ describe('quick plan confirmation', () => {
       id: first.requestId,
       request_kind: 'initialization_apply',
       trigger: 'user',
-      follow_up_of: `quick:${preview.operationId}`,
+      follow_up_of: expect.stringMatching(new RegExp(`^apply:${initializationId}:`)),
       allow_disabled: 1,
       status: 'pending',
-      initialization_id: null,
+      initialization_id: initializationId,
     }])
 
     const repeated = confirmQuickPlan('source-1', preview.operationId, preview.token, true)
@@ -342,6 +346,68 @@ describe('quick plan confirmation', () => {
 })
 
 describe('quick plan restore', () => {
+  it('restores an existing full-row undo snapshot', () => {
+    const id = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
+    const before = itemSnapshots(id)
+    const rows = getDb().prepare('SELECT * FROM source_initialization_items WHERE initialization_id=?').all(id)
+    const previous = { rows, ...quickPointer(id) }
+    const preview = previewQuickPlan('source-1', id, revisionOf(id), 85)
+    confirmQuickPlan('source-1', preview.operationId, preview.token, false)
+    getDb().prepare('UPDATE initialization_quick_operations SET previous_json=? WHERE id=?').run(JSON.stringify(previous),preview.operationId)
+    restoreQuickPlan('source-1', preview.operationId, preview.token)
+    expect(itemSnapshots(id)).toEqual(before)
+  })
+
+  it('keeps undo proportional to changed fields and restores analysis evidence intact', () => {
+    const id = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
+    getDb().prepare("UPDATE source_initialization_items SET evidence_json=json_set(evidence_json,'$.analysisDetail',?) WHERE initialization_id=?")
+      .run('analysis evidence '.repeat(10_000), id)
+    const before = itemSnapshots(id)
+    const preview = previewQuickPlan('source-1', id, revisionOf(id), 85)
+    confirmQuickPlan('source-1', preview.operationId, preview.token, false)
+    expect(String(operation(preview.operationId).previous_json).length).toBeLessThan(JSON.stringify(before).length / 10)
+    restoreQuickPlan('source-1', preview.operationId, preview.token)
+    expect(itemSnapshots(id)).toEqual(before)
+  })
+
+  it('does not persist previews or undo payloads for automatic arrangements', () => {
+    const id = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
+    expect(arrangeInitializationPlan('source-1', id)).toMatchObject({ matched: 1, downloads: 0, started: false })
+    const op = getDb().prepare('SELECT * FROM initialization_quick_operations WHERE initialization_id=?').get(id) as Record<string, unknown>
+    expect(op.previous_json).toBeNull()
+    expect(String(op.plan_json).length).toBeLessThan(100)
+    expect(getInitialization(id)?.savedQuickOperation).toBeNull()
+    expect(item(id, 81)).toMatchObject({ decision: 'adopt', candidate_rating_key: 'plex-81' })
+  })
+
+  it('retains authorization of unchanged songs when arranging only deferred items', () => {
+    const id = createReview('source-1', [
+      { songId: 81, scored: [scoreEntry(candidate(81), 95)] },
+      { songId: 82, scored: [scoreEntry(candidate(82), 90)] },
+    ])
+    arrangeInitializationPlan('source-1', id)
+    setInitializationDecisions({ initializationId: id, songIds: [82], decision: 'defer' })
+    expect(arrangeInitializationPlan('source-1', id, 'deferred')).toMatchObject({ changed: 1, matched: 1 })
+    expect(quickMediaPermissions(id)).toEqual(new Map([[81, [81]], [82, [82]]]))
+  })
+
+  it('compacts ended undo payloads without deleting authorization or active undo', () => {
+    const id = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
+    const ended = previewQuickPlan('source-1', id, revisionOf(id), 85)
+    confirmQuickPlan('source-1', ended.operationId, ended.token, false)
+    getDb().prepare("UPDATE initialization_quick_operations SET status='executed' WHERE id=?").run(ended.operationId)
+    setInitializationStatus(id, 'completed')
+    const activeId = createReview('source-2', [{ songId: 82, scored: [scoreEntry(candidate(82), 95)] }])
+    const active = previewQuickPlan('source-2', activeId, revisionOf(activeId), 95)
+    confirmQuickPlan('source-2', active.operationId, active.token, false)
+    const before = operation(ended.operationId)
+    expect(runDataLifecycleMaintenance(readConfigFromDb().sync).compactedInitializationOperations).toBe(1)
+    expect(operation(ended.operationId)).toMatchObject({ previous_json: null, bindings_json: before.bindings_json, plan_json: before.plan_json })
+    expect(operation(active.operationId).previous_json).not.toBeNull()
+    restoreQuickPlan('source-2', active.operationId, active.token)
+    expect(item(activeId, 82).decision).toBe('defer')
+  })
+
   it('restores the prior threshold and saved shared authorization across successive saves', () => {
     const shared = candidate(71)
     const id = createReview('source-1', [{songId:71,scored:[scoreEntry(shared,90)]},{songId:72,scored:[scoreEntry(shared,90)]}])
@@ -407,6 +473,32 @@ describe('quick plan restore', () => {
 })
 
 describe('quick plan shared media ownership', () => {
+  it.each(['cancelled', 'failed'] as const)('revalidates a %s plan against current owner versions', status => {
+    const owner = {
+      neteaseSongId: 99, plexSectionKey: '1', plexFilePath: '/music/shared.flac',
+      plexRatingKey: 'plex-shared', bindingMethod: 'manual' as const, status: 'active' as const, evidence: {},
+    }
+    upsertSongIdentityBinding(owner)
+    const shared = candidate(81, { ratingKey: owner.plexRatingKey, filePath: owner.plexFilePath })
+    const id = createReview('source-1', [
+      { songId: 81, scored: [scoreEntry(shared, 95)] },
+      { songId: 82, scored: [scoreEntry(shared, 95)] },
+    ])
+    const preview = previewQuickPlan('source-1', id, revisionOf(id), 85)
+    const accepted = confirmQuickPlan('source-1', preview.operationId, preview.token, true)
+    if (status === 'cancelled') cancelQuickPlan('source-1', id)
+    else {
+      getDb().prepare("UPDATE source_sync_queue SET status='failed' WHERE id=?").run(accepted.requestId)
+      getDb().prepare("UPDATE initialization_quick_operations SET status='failed' WHERE id=?").run(preview.operationId)
+    }
+
+    expect(quickMediaPermissions(id)).toEqual(new Map([[81, [81, 82, 99]], [82, [81, 82, 99]]]))
+    upsertSongIdentityBinding({ ...owner, evidence: { changed: true } })
+    expect(quickMediaPermissions(id).size).toBe(0)
+    expect(item(id, 81).decision).toBe('adopt')
+    expect(item(id, 82).decision).toBe('adopt')
+  })
+
   it('cancels a queued operation without applying identities and allows a new preview', () => {
     const initializationId = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
     const preview = previewQuickPlan('source-1', initializationId, revisionOf(initializationId), 85)

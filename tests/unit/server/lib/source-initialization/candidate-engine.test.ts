@@ -3,6 +3,7 @@ import type { NeteaseSong } from '~~/server/lib/netease'
 import type { PlexTrack } from '~~/server/lib/plex-client'
 import type { SongIdentityBinding } from '~~/server/lib/sync/identity-store'
 import { buildInitializationPlans } from '~~/server/lib/source-initialization/candidate-engine'
+import { DEFAULT_INITIALIZATION_MATCHING } from '~~/shared/initialization-matching'
 
 function song(overrides: Partial<NeteaseSong> = {}): NeteaseSong {
   return {
@@ -52,6 +53,13 @@ function binding(overrides: Partial<SongIdentityBinding> = {}): SongIdentityBind
 }
 
 describe('first media adoption candidate engine', () => {
+  it('keeps expanded recall out of scoring when enhanced matching is disabled', () => {
+    const input = { songs: [song()], tracks: [track({ title: 'Signals' })], bindings: new Map(),
+      matching: { ...DEFAULT_INITIALIZATION_MATCHING, fuzzyTitles: true } }
+    expect(buildInitializationPlans(input)[0]!).toMatchObject({ tier: 'unmatched', evidence: { scoredCandidates: [] } })
+    const enhanced = buildInitializationPlans({ ...input, matching: { ...input.matching, enabled: true } })[0]!
+    expect((enhanced.evidence.scoredCandidates as Array<{score:{eligible:boolean}}>).some(item=>item.score.eligible)).toBe(true)
+  })
   it('preserves an active binding only when its current Plex path is still present', () => {
     const result = buildInitializationPlans({
       songs: [song()],

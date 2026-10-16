@@ -133,7 +133,14 @@ function canChoose(item: InitializationReviewItem): boolean {
           <td data-label="网易云目标"><strong>{{ item.title || `歌曲 #${item.neteaseSongId}` }}</strong><span>{{ item.artists.join('、') || '元数据缺失' }} · {{ item.album || '未知专辑' }}</span></td>
           <td data-label="Plex 候选"><template v-if="item.candidate"><strong>{{ item.candidate.title }}</strong><span>{{ item.candidate.artist || '未知艺人' }} · {{ item.candidate.album || '未知专辑' }}</span><small :title="item.candidate.filePath || undefined">{{ item.candidate.filePath || '无可读路径' }}</small></template><span v-else>{{ item.kind === 'preserved' ? '当前绑定将在重新分析后显示' : item.candidates.length ? `${item.candidates.length} 个候选` : '没有候选' }}</span></td>
           <td data-label="证据"><span class="source-adoption__tier" :class="`source-adoption__tier--${item.tier}`">{{ item.evidence.sharedMedia ? (item.evidence.sharedMediaConfirmed ? '共享媒体已确认' : '共享媒体待确认') : tierLabel(item.tier) }}</span><small v-if="topScore(item) !== null" class="source-adoption__score" :title="scoreTitle(item)">评分 {{ topScore(item)!.toFixed(1) }}</small></td>
-          <td data-label="决定"><span v-if="item.kind === 'preserved'" class="source-adoption__preserved">保留现有绑定</span><select v-else :value="item.decision" class="form-input" :disabled="acting || !canChoose(item)" :aria-label="`${item.title} 的处理决定`" :title="item.unavailableReason || undefined" @change="decisionFromEvent($event) && emit('decide', item.neteaseSongId, decisionFromEvent($event)!)"><option v-for="value in item.allowedDecisions" :key="value" :value="value">{{ value === 'adopt' ? '使用 Plex' : value === 'download' ? '下载并托管' : '暂缓' }}</option></select></td>
+          <td data-label="决定">
+            <span v-if="item.kind === 'preserved'" class="source-adoption__preserved">保留现有绑定</span>
+            <template v-else>
+              <select v-if="canChoose(item)" :value="item.decision" class="form-input" :disabled="acting" :aria-label="`${item.title} 的处理决定`" @change="decisionFromEvent($event) && emit('decide', item.neteaseSongId, decisionFromEvent($event)!)"><option v-for="value in item.allowedDecisions" :key="value" :value="value">{{ value === 'adopt' ? '使用 Plex' : value === 'download' ? '下载并托管' : '暂缓（不加入同步）' }}</option></select>
+              <span v-else>{{ item.decision === 'adopt' ? '使用 Plex' : item.decision === 'download' ? '下载并托管' : '暂缓（不加入同步）' }}</span>
+              <small v-if="item.evidence.quickDecision && item.evidence.decisionOrigin !== 'manual'">{{ item.decision === 'adopt' ? '系统自动选择' : item.decision === 'download' ? '已自动安排下载' : '' }}</small>
+            </template>
+          </td>
           <td data-label="详情"><button class="btn btn-ghost btn-sm" @click="emit('openEvidence', item)">查看证据</button></td>
         </tr>
       </tbody>

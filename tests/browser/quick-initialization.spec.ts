@@ -67,9 +67,9 @@ function quickPreview(page: number, threshold = 85) {
   }
 }
 
-function routeSource(page: Page, options: { initialization?: () => Record<string, unknown>; items?: unknown[] } = {}): void {
+function routeSource(page: Page, options: { initialization?: () => Record<string, unknown>; items?: unknown[]; processing?: () => unknown } = {}): void {
   void page.route('**/api/playlist-sources/quick-source', route => route.fulfill({ json: ok(source) }))
-  void page.route('**/api/playlist-sources/quick-source/initialization', route => route.fulfill({ json: ok({ applicable: true, initialization: options.initialization ? options.initialization() : initialization(), downloadConcurrency: 3, convergenceQueueDepth: 0 }) }))
+  void page.route('**/api/playlist-sources/quick-source/initialization', route => route.fulfill({ json: ok({ applicable: true, initialization: options.initialization ? options.initialization() : initialization(), processing: options.processing?.() ?? null }) }))
   void page.route('**/api/playlist-sources/quick-source/initialization/items**', route => route.fulfill({ json: ok({ items: options.items ?? [], total: options.items?.length ?? 0, page: 1, pageSize: 50 }) }))
   void page.route('**/api/runs**', route => route.fulfill({ json: ok({ items: [], total: 0 }) }))
 }
@@ -110,38 +110,39 @@ for (const width of [375, 1440]) {
     expect(await drawer.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     await page.keyboard.press('Escape')
 
-    await page.getByRole('button', { name: '快速方案', exact: true }).click()
+    await page.getByRole('button', { name: '按分数线重新安排', exact: true }).click()
     await expect(quick.getByLabel('分数线（0–100 整数）')).toHaveValue('85')
-    await quick.getByRole('button', { name: '生成快速预览' }).click()
+    await quick.getByRole('button', { name: '生成预览' }).click()
     await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(50)
     await page.keyboard.press('Escape')
     await expect(quick).toBeHidden()
-    await expect(page.getByRole('button', { name: '快速方案', exact: true })).toBeFocused()
-    await page.getByRole('button', { name: '快速方案', exact: true }).click()
+    await expect(page.getByRole('button', { name: '按分数线重新安排', exact: true })).toBeFocused()
+    await page.getByRole('button', { name: '按分数线重新安排', exact: true }).click()
     expect(previewBodies[0]).toEqual({ initializationId: 'quick-init', revision: 7, threshold: 85 })
-    await expect(quick.getByText('预览分数线 85 · 共 60 首 · 第 1 / 2 页')).toBeVisible()
-    await expect(quick.locator('.source-adoption__quick-counts')).toContainText('采用 Plex40')
+    await expect(quick.getByText('分数线 85 · 共 60 首 · 第 1 / 2 页')).toBeVisible()
+    await expect(quick.locator('.source-adoption__quick-counts')).toContainText('使用 Plex40')
     await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(50)
-    await expect(quick.getByText('共享组 #1、#7')).toBeVisible()
+    await expect(quick.getByText('这首歌与另外 1 首共用一个文件，确认后会一起处理。')).toBeVisible()
 
     await quick.getByRole('button', { name: '下一页' }).click()
-    await expect(quick.getByText('预览分数线 85 · 共 60 首 · 第 2 / 2 页')).toBeVisible()
+    await expect(quick.getByText('分数线 85 · 共 60 首 · 第 2 / 2 页')).toBeVisible()
     await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(10)
     await expect(quick.getByText('快速样本歌曲 60')).toBeVisible()
 
     await quick.getByLabel('分数线（0–100 整数）').fill('90')
     await expect(quick.locator('.source-adoption__quick-items')).toHaveCount(0)
-    await expect(quick.getByText('分数线已修改，旧预览已失效')).toBeVisible()
-    await quick.getByRole('button', { name: '生成快速预览' }).click()
+    await expect(quick.getByText('分数线已修改，请重新生成预览。')).toBeVisible()
+    await quick.getByRole('button', { name: '生成预览' }).click()
     expect(previewBodies[1]).toEqual({ initializationId: 'quick-init', revision: 7, threshold: 90 })
 
-    await quick.getByRole('button', { name: '确认并启动处理' }).click()
+    await quick.getByRole('button', { name: '开始处理', exact: true }).click()
     expect(confirmBodies[0]).toEqual({ operationId: 'op-1', token: 'token-1', start: true })
-    await expect(quick.getByText('快速方案已提交并排队')).toBeVisible()
-    await expect(quick.getByText('正在等待后台处理')).toBeVisible()
-    await expect(quick.getByRole('button', { name: '确认并启动处理' })).toBeDisabled()
-    await expect(page.getByRole('button', { name: '提交接管方案' })).toBeDisabled()
-    await expect(page.locator('.source-adoption__table select').first()).toBeDisabled()
+    await expect(quick.getByText('已排队')).toBeVisible()
+    await expect(quick.getByText('已提交，正在后台处理；完成前不能再修改。')).toBeVisible()
+    await expect(quick.getByRole('button', { name: '开始处理', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '开始下载并同步', exact: true })).toBeDisabled()
+    await expect(page.getByLabel('审核样本歌曲 的处理决定', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.source-adoption__table')).toContainText('暂缓（不加入同步）')
     expect(await quick.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })
@@ -169,21 +170,21 @@ test('quick plan keeps its preview on failure and restores a saved draft', async
 
   await page.goto('/sync-sources/quick-source?tab=initialization')
   const quick = page.getByRole('dialog', { name: '快速方案', exact: true })
-  await page.getByRole('button', { name: '快速方案', exact: true }).click()
-  await quick.getByRole('button', { name: '生成快速预览' }).click()
+  await page.getByRole('button', { name: '按分数线重新安排', exact: true }).click()
+  await quick.getByRole('button', { name: '生成预览' }).click()
   await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(50)
 
-  await quick.getByRole('button', { name: '仅保存草案' }).click()
+  await quick.getByRole('button', { name: '只保存，不执行' }).click()
   await expect(quick.getByRole('alert')).toContainText('草案已变化')
   await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(50)
 
-  await quick.getByRole('button', { name: '仅保存草案' }).click()
-  await expect(quick.getByText('草案已保存，尚未启动处理')).toBeVisible()
+  await quick.getByRole('button', { name: '只保存，不执行' }).click()
+  await expect(quick.getByText('已保存，还没有开始处理。')).toBeVisible()
   await expect(quick.locator('.source-adoption__quick-items')).toHaveCount(0)
-  await quick.getByRole('button', { name: '恢复此前草案' }).click()
-  await expect(quick.getByText('已恢复此前草案。')).toBeVisible()
+  await quick.getByRole('button', { name: '恢复之前的选择' }).click()
+  await expect(quick.getByText('已恢复到保存前的选择。')).toBeVisible()
   expect(restoreBodies).toEqual([{ operationId: 'op-1', token: 'token-1' }])
-  await expect(quick.getByRole('button', { name: '恢复此前草案' })).toHaveCount(0)
+  await expect(quick.getByRole('button', { name: '恢复之前的选择' })).toHaveCount(0)
 })
 
 test('quick plan refuses drafts without score version 1', async ({ page }) => {
@@ -193,8 +194,109 @@ test('quick plan refuses drafts without score version 1', async ({ page }) => {
 
   await page.goto('/sync-sources/quick-source?tab=initialization')
   const quick = page.getByRole('dialog', { name: '快速方案', exact: true })
-  await page.getByRole('button', { name: '快速方案', exact: true }).click()
-  await expect(quick).toContainText('需要重新分析')
-  await expect(quick.getByRole('button', { name: '生成快速预览' })).toBeDisabled()
+  await page.getByRole('button', { name: '按分数线重新安排', exact: true }).click()
+  await expect(quick).toContainText('请先重新分析')
+  await expect(quick.getByRole('button', { name: '生成预览' })).toBeDisabled()
   await expect(quick.getByLabel('分数线（0–100 整数）')).toBeDisabled()
 })
+
+for (const scenario of [{ width: 375, start: true }, { width: 1440, start: true }, { width: 1440, start: false }]) {
+  test(`new preview replaces saved quick plan at ${scenario.width}px with start=${scenario.start}`, async ({ page }) => {
+    await page.setViewportSize({ width: scenario.width, height: 900 })
+    await login(page)
+    const oldSaved = { operationId: 'default-op', token: 'default-token' }
+    const newSaved = { operationId: 'new-op', token: 'new-token' }
+    const state = { revision: 7, quickStatus: 'saved', saved: oldSaved as typeof oldSaved | null }
+    routeSource(page, { initialization: () => initialization({ revision: state.revision, quickStatus: state.quickStatus, savedQuickOperation: state.saved }) })
+    const previewBodies: unknown[] = [], confirmBodies: unknown[] = [], commitBodies: unknown[] = [], restoreBodies: unknown[] = []
+    await page.route('**/api/playlist-sources/quick-source/initialization/quick-preview', route => {
+      previewBodies.push(route.request().postDataJSON())
+      return route.fulfill({ json: ok({ ...quickPreview(1, 95), ...newSaved }) })
+    })
+    await page.route('**/api/playlist-sources/quick-source/initialization/quick-confirm', route => {
+      confirmBodies.push(route.request().postDataJSON())
+      if (confirmBodies.length === 1 && scenario.start && scenario.width === 1440) {
+        return route.fulfill({ json: { code: 1, msg: '临时提交失败，请重试', data: null } })
+      }
+      state.revision++
+      state.quickStatus = scenario.start ? 'queued' : 'saved'
+      state.saved = scenario.start ? null : newSaved
+      return route.fulfill({ json: ok({ operationId: newSaved.operationId, requestId: scenario.start ? 'new-request' : null, status: state.quickStatus }) })
+    })
+    await page.route('**/api/playlist-sources/quick-source/initialization/commit', route => {
+      commitBodies.push(route.request().postDataJSON())
+      return route.fulfill({ json: ok({}) })
+    })
+    await page.route('**/api/playlist-sources/quick-source/initialization/quick-restore', route => {
+      restoreBodies.push(route.request().postDataJSON())
+      state.revision++
+      state.saved = oldSaved
+      return route.fulfill({ json: ok({ restored: true }) })
+    })
+
+    await page.goto('/sync-sources/quick-source?tab=initialization')
+    await page.getByRole('button', { name: '按分数线重新安排', exact: true }).click()
+    const quick = page.getByRole('dialog', { name: '快速方案', exact: true })
+    await expect(quick.getByRole('button', { name: '提交并开始处理', exact: true })).toBeVisible()
+    await quick.getByLabel('分数线（0–100 整数）').fill('95')
+    await quick.getByRole('button', { name: '生成预览', exact: true }).click()
+    await expect(quick.getByText('分数线 95 · 共 60 首 · 第 1 / 2 页', { exact: true })).toBeVisible()
+    expect(previewBodies).toEqual([{ initializationId: 'quick-init', revision: 7, threshold: 95 }])
+    await expect(quick.getByRole('button', { name: '提交并开始处理', exact: true })).toHaveCount(0)
+    const submit = quick.getByRole('button', { name: scenario.start ? '开始处理' : '只保存，不执行', exact: true })
+    await submit.click()
+    if (scenario.start && scenario.width === 1440) {
+      await expect(quick.getByRole('alert')).toContainText('临时提交失败')
+      await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(50)
+      await submit.click()
+    }
+    expect(confirmBodies.every(body => JSON.stringify(body) === JSON.stringify({ ...newSaved, start: scenario.start }))).toBe(true)
+    expect(confirmBodies.length).toBe(scenario.start && scenario.width === 1440 ? 2 : 1)
+    expect(commitBodies).toEqual([])
+    if (scenario.start) await expect(quick.getByText('已排队', { exact: true })).toBeVisible()
+    else {
+      await expect(quick.locator('.source-adoption__quick-items li')).toHaveCount(0)
+      await quick.getByRole('button', { name: '恢复之前的选择', exact: true }).click()
+      expect(restoreBodies).toEqual([newSaved])
+    }
+  })
+}
+
+for (const width of [375, 1440]) {
+  test(`ordinary initialization queues and cancels without losing choices at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await login(page)
+    let attempts = 0, queued = false, cancelled = false
+    routeSource(page, {
+      initialization: () => initialization({ adoptItems: 40, downloadItems: 10, quickStatus: queued ? 'queued' : cancelled ? 'cancelled' : 'saved' }),
+      processing: () => queued || cancelled ? {
+        active: queued, status: queued ? 'queued' : 'cancelled', stage: '应用歌曲安排',
+        runId: null, total: 60, synced: 0, failed: 0, remaining: 60, error: null,
+      } : null,
+    })
+    await page.route('**/api/playlist-sources/quick-source/initialization/commit', route => {
+      attempts++
+      expect(route.request().postDataJSON()).toEqual({ initializationId: 'quick-init', confirmDeferred: false })
+      if (attempts === 1) return route.fulfill({ json: { code: 1, msg: '模拟排队失败', data: null } })
+      queued = true
+      return route.fulfill({ json: ok({ requestId: 'ordinary-request', status: 'queued' }) })
+    })
+    await page.route('**/api/playlist-sources/quick-source/initialization/cancel', route => {
+      queued = false; cancelled = true
+      return route.fulfill({ json: ok(null) })
+    })
+    await page.goto('/sync-sources/quick-source?tab=initialization')
+    const submit = page.locator('.source-adoption__commit').getByRole('button', { name: '开始下载并同步', exact: true })
+    await submit.click()
+    await expect(page.getByText('模拟排队失败', { exact: true })).toBeVisible()
+    await expect(submit).toBeEnabled()
+    await submit.click()
+    await expect(page.getByRole('heading', { name: '已安排，等待后台处理', exact: true })).toBeVisible()
+    await expect(submit).toBeDisabled()
+    await page.getByRole('button', { name: '取消本次处理', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '本次处理已取消', exact: true })).toBeVisible()
+    await expect(submit).toBeEnabled()
+    await expect(page.locator('.source-adoption__commit')).toContainText('选用 Plex 40 首 · 下载 10 首')
+    expect(attempts).toBe(2)
+  })
+}

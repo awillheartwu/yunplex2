@@ -80,7 +80,7 @@ describe('MusicBrainz initialization aliases', () => {
     const started: number[] = []
     const fetcher = vi.fn(async (url: URL, options: RequestInit) => {
       started.push(Date.now())
-      expect(options.headers).toMatchObject({ 'User-Agent': expect.stringContaining('reYunPlex/') })
+      expect(options.headers).toMatchObject({ 'User-Agent': expect.stringContaining('YunPlex/') })
       expect(url.origin).toBe('https://musicbrainz.org')
       return new Response(JSON.stringify({ count: 0, artists: [] }), { status: 200 })
     })

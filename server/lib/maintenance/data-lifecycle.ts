@@ -38,6 +38,7 @@ export interface DataLifecyclePolicy {
 }
 
 export interface DataLifecycleResult {
+  compactedInitializationOperations: number
   deletedLogs: number
   compactedRuns: number
   deletedRuns: number
@@ -194,6 +195,13 @@ export function runDataLifecycleMaintenance(
   `
 
   const result = db.transaction(() => {
+    const compactedInitializationOperations = db.prepare(`UPDATE initialization_quick_operations SET previous_json=NULL
+      WHERE previous_json IS NOT NULL AND (status!='saved'
+        OR EXISTS (SELECT 1 FROM source_initializations si WHERE si.id=initialization_id AND si.status!='awaiting_review')
+        OR EXISTS (SELECT 1 FROM source_sync_queue q WHERE q.initialization_id=initialization_quick_operations.initialization_id
+          AND q.request_kind='initialization_apply' AND q.status IN ('pending','running')))`)
+      .run().changes
+    db.prepare("DELETE FROM initialization_quick_operations WHERE status='preview' AND expires_at<?").run(now.toISOString())
     const deletedLogsByAge = db.prepare('DELETE FROM logs WHERE timestamp < ?').run(logCutoff).changes
     const logCount = (db.prepare('SELECT COUNT(*) AS count FROM logs').get() as { count: number }).count
     const overflowLogs = Math.max(0, logCount - policy.logMaxRows)
@@ -285,6 +293,7 @@ export function runDataLifecycleMaintenance(
     `).run(policy.failureOccurrencesPerFingerprint).changes
 
     return {
+      compactedInitializationOperations,
       deletedLogs: deletedLogsByAge + deletedLogsByCount,
       compactedRuns: compactedByAge + compactedByBudget,
       deletedRuns,

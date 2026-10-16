@@ -31,7 +31,7 @@
         <ToggleField :model-value="modelValue.fuzzyTitles" setting="initializationMatching.fuzzyTitles" label="启用模糊标题" search-keywords="相似 模糊" hint="扩大标题相似候选，更多结果会进入人工复核" @update:model-value="update('fuzzyTitles', $event)" />
         <ToggleField :model-value="modelValue.supplementalTitleRecall" setting="initializationMatching.supplementalTitleRecall" label="补充更多标题候选" search-keywords="附注 数字 古典" hint="作品附注、双语标题、数字写法与古典作品编号等仅用于补充待审候选" @update:model-value="update('supplementalTitleRecall', $event)" />
         <ToggleField :model-value="modelValue.metadataFallback" setting="initializationMatching.metadataFallback" label="专辑曲序补充检索" search-keywords="曲序 时长" hint="标题未命中时，按艺人、专辑、曲序和时长补充待审候选" @update:model-value="update('metadataFallback', $event)" />
-        <ToggleField :model-value="modelValue.preferExactAlbum" setting="initializationMatching.preferExactAlbum" label="目标专辑唯一优选" hint="艺人、专辑和曲序完全一致、时长差不超过 500 毫秒，且同专辑只有一个候选时优先推荐。" @update:model-value="update('preferExactAlbum', $event)" />
+        <ToggleField :model-value="modelValue.preferExactAlbum" setting="initializationMatching.preferExactAlbum" label="目标专辑唯一优选" hint="艺人、专辑和曲序完全一致、时长差不超过 500 毫秒，且同专辑只有一个候选时优先推荐；不改变自动安排的评分顺序。" @update:model-value="update('preferExactAlbum', $event)" />
         <ToggleField :model-value="modelValue.corroboratedRecommendations" setting="initializationMatching.corroboratedRecommendations" label="多项信息印证时推荐" hint="标题、专辑、曲序、时长和路径相符时，可推荐艺人标签有差异的唯一候选。" @update:model-value="update('corroboratedRecommendations', $event)" />
         <ToggleField :model-value="modelValue.useTrackArtist" setting="initializationMatching.useTrackArtist" label="使用歌曲艺人" hint="将歌曲艺人加入候选比较字段" @update:model-value="update('useTrackArtist', $event)" />
         <ToggleField :model-value="modelValue.useArtistAliases" setting="initializationMatching.useArtistAliases" label="使用艺人别名" hint="使用艺人名称页中已开启的匹配规则" @update:model-value="update('useArtistAliases', $event)" />
@@ -44,10 +44,10 @@
       </div>
     </ConfigSection>
 
-    <ConfigSection section-key="matching.recommendations" title="批量推荐策略" description="控制多候选、双语标题与艺人差异的推荐方式" search-tab="matching" search-keywords="推荐 候选 MusicBrainz" :collapsed="!!collapsed['批量推荐策略']" @toggle="collapsed['批量推荐策略'] = !collapsed['批量推荐策略']">
+    <ConfigSection section-key="matching.recommendations" title="批量推荐策略" description="控制候选的推荐分类；默认安排和分数线方案仍按评分选择可用候选" search-tab="matching" search-keywords="推荐 候选 MusicBrainz" :collapsed="!!collapsed['批量推荐策略']" @toggle="collapsed['批量推荐策略'] = !collapsed['批量推荐策略']">
       <template #icon><SidebarIcon name="checkCircle" :active="true" /></template>
       <div class="initialization-matching-settings__field-grid">
-        <FormField setting="initializationMatching.duplicatePolicy" label="多个候选时" search-keywords="重复 最高质量" hint="按无损、位深、采样率和码率优选，或保留人工复核。"><select :value="modelValue.duplicatePolicy" class="form-input" @change="update('duplicatePolicy', ($event.target as HTMLSelectElement).value as InitializationMatchingConfig['duplicatePolicy'])"><option value="highest_quality">优选最高质量</option><option value="review">保留人工复核</option></select></FormField>
+        <FormField setting="initializationMatching.duplicatePolicy" label="多个候选时" search-keywords="重复 最高质量" hint="多个可推荐候选时优选质量或标为待核对；主动自动安排时仍采用最高分。"><select :value="modelValue.duplicatePolicy" class="form-input" @change="update('duplicatePolicy', ($event.target as HTMLSelectElement).value as InitializationMatchingConfig['duplicatePolicy'])"><option value="highest_quality">优选最高质量</option><option value="review">保留人工复核</option></select></FormField>
       </div>
       <ToggleField :model-value="modelValue.foldArtistDiacritics" setting="initializationMatching.foldArtistDiacritics" label="忽略艺人名重音符号" search-keywords="变音 重音" hint="比较 GIVĒON / Giveon 等艺人名写法" @update:model-value="update('foldArtistDiacritics', $event)" />
       <ToggleField :model-value="modelValue.corroboratedBilingualTitles" setting="initializationMatching.corroboratedBilingualTitles" label="双语标题印证时推荐" hint="需开启「比较双语标题」；完整艺人、专辑和曲序一致且时长差不超过 500 毫秒时推荐。" @update:model-value="update('corroboratedBilingualTitles', $event)" />

@@ -51,7 +51,7 @@ export default defineNitroPlugin((nitroApp) => {
       if (changed > 0) {
         appendLog({
           level: 'info',
-          message: `自动维护完成：清理 ${result.deletedLogs} 条诊断日志、${result.deletedRuns} 条运行、${result.deletedDownloadTasks} 条下载明细和 ${result.deletedResolvedFailures} 条已解决异常`,
+          message: `自动维护完成：清理 ${result.deletedLogs} 条诊断日志、${result.deletedRuns} 条运行、${result.deletedDownloadTasks} 条下载明细、${result.deletedResolvedFailures} 条已解决异常和 ${result.compactedInitializationOperations} 份方案撤销数据`,
           stage: 'maintenance',
         })
       }

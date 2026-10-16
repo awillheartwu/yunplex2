@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
 import type { PlaylistSource } from '../playlist/types'
 import type { AppConfig } from '../config/types'
+import { getInitializationApplyRequest, getInitializationRequest } from '../sync/request-store'
 import type { InitializationDecision, InitializationItemPlan, InitializationSelectionFilter, InitializationTier, SourceInitializationStatus, SourceInitializationSummary } from './types'
 
 import { INITIALIZATION_RULE_VERSION, type InitializationItemsPage, type InitializationReviewItem } from './types'
@@ -12,23 +13,25 @@ import { INITIALIZATION_RULE_VERSION, type InitializationItemsPage, type Initial
 type SummaryRow = Record<string, unknown>
 
 function mapSummary(row: SummaryRow): SourceInitializationSummary {
-  const quick = row.quick_operation_id ? getDb().prepare('SELECT id,token,status,applied_revision FROM initialization_quick_operations WHERE id=?').get(row.quick_operation_id) as {id:string;token:string;status:string;applied_revision:number}|undefined : undefined
+  const quick = row.quick_operation_id ? getDb().prepare('SELECT id,token,status,applied_revision,previous_json IS NOT NULL AS restorable FROM initialization_quick_operations WHERE id=?').get(row.quick_operation_id) as {id:string;token:string;status:string;applied_revision:number;restorable:number}|undefined : undefined
+  const analysis = getInitializationRequest(String(row.id)), apply = getInitializationApplyRequest(String(row.id))
   return {
     id: String(row.id), sourceId: String(row.source_id), runId: row.run_id ? String(row.run_id) : null,
     followUpRunId: row.follow_up_run_id ? String(row.follow_up_run_id) : null,
     trigger: String(row.trigger), status: row.status as SourceInitializationStatus,
+    autoProcess: Boolean(row.auto_process),
     revision: Number(row.revision ?? 0), quickThreshold: row.quick_threshold as number | null, scoreVersion: row.score_version as number | null,
-    quickStatus: quick?.status ?? null,
-    savedQuickOperation: quick?.status === 'saved' && quick.applied_revision === row.revision ? {operationId:quick.id,token:quick.token} : null,
+    quickStatus: apply && ['pending','running'].includes(apply.status) ? 'queued'
+      : row.status === 'awaiting_review' && apply && ['failed','cancelled'].includes(apply.status) ? apply.status : quick?.status ?? null,
+    savedQuickOperation: quick?.status === 'saved' && quick.restorable && quick.applied_revision === row.revision ? {operationId:quick.id,token:quick.token} : null,
     ruleVersion: Number(row.rule_version ?? 0),
     rulesCompatible: Number(row.rule_version ?? 0) === INITIALIZATION_RULE_VERSION,
     matchingConfig: row.matching_config_json ? JSON.parse(String(row.matching_config_json)) : null,
     matchingConfigFingerprint: row.matching_config_fingerprint ? String(row.matching_config_fingerprint) : null,
     matchingDataFingerprint: row.matching_data_fingerprint ? String(row.matching_data_fingerprint) : null,
-    requestId: (getDb().prepare('SELECT id FROM source_sync_queue WHERE initialization_id=?').get(row.id) as { id: string } | undefined)?.id ?? null,
-    requestStatus: (getDb().prepare('SELECT status FROM source_sync_queue WHERE initialization_id=?').get(row.id) as { status: string } | undefined)?.status ?? null,
+    requestId: analysis?.id ?? null,
+    requestStatus: analysis?.status ?? null,
     neteaseCursor: row.netease_cursor ? String(row.netease_cursor) : null,
-    plexFingerprint: row.plex_fingerprint ? String(row.plex_fingerprint) : null,
     totalItems: Number(row.total_items), preservedItems: Number(row.preserved_items), strongItems: Number(row.strong_items),
     highConfidenceItems: Number(row.high_confidence_items), possibleItems: Number(row.possible_items), ambiguousItems: Number(row.ambiguous_items),
     unmatchedItems: Number(row.unmatched_items), adoptItems: Number(row.adopt_items), downloadItems: Number(row.download_items),
@@ -79,11 +82,11 @@ export function listRequestedPendingInitializations(): SourceInitializationSumma
 }
 
 export function setInitializationStatus(id: string, status: SourceInitializationStatus, patch: Partial<{
-  runId: string | null; followUpRunId: string | null; neteaseCursor: string | null; plexFingerprint: string | null; summary: string; error: string | null
+  runId: string | null; followUpRunId: string | null; neteaseCursor: string | null; summary: string; error: string | null
 }> = {}): SourceInitializationSummary {
   const now = new Date().toISOString()
   const sets = ['status = ?', 'updated_at = ?']; const values: unknown[] = [status, now]
-  const columns = { runId: 'run_id', followUpRunId: 'follow_up_run_id', neteaseCursor: 'netease_cursor', plexFingerprint: 'plex_fingerprint', summary: 'summary', error: 'error' } as const
+  const columns = { runId: 'run_id', followUpRunId: 'follow_up_run_id', neteaseCursor: 'netease_cursor', summary: 'summary', error: 'error' } as const
   for (const [key, column] of Object.entries(columns) as Array<[keyof typeof columns, string]>) {
     if (patch[key] !== undefined) { sets.push(`${column} = ?`); values.push(patch[key]) }
   }
@@ -161,8 +164,8 @@ export function assertAwaitingReview(initializationId: string): void {
   const row = getDb().prepare('SELECT status, rule_version FROM source_initializations WHERE id = ?').get(initializationId) as { status?: string; rule_version: number } | undefined
   if (row?.status !== 'awaiting_review') throw new InitializationConflictError('当前接管方案不在等待确认状态')
   if (row.rule_version !== INITIALIZATION_RULE_VERSION) throw new InitializationConflictError('候选规则已更新，请重新分析后提交')
-  const queued = getDb().prepare("SELECT 1 FROM initialization_quick_operations WHERE initialization_id=? AND status='queued'").get(initializationId)
-  if (queued) throw new InitializationConflictError('快速方案已提交，正在等待后台处理')
+  const apply = getInitializationApplyRequest(initializationId)
+  if (apply && ['pending','running'].includes(apply.status)) throw new InitializationConflictError('歌曲安排已提交，正在等待后台处理')
 }
 
 export function setInitializationDecisions(input: { initializationId: string; songIds?: number[]; tier?: InitializationTier; filter?: InitializationSelectionFilter; decision: InitializationDecision }): number {

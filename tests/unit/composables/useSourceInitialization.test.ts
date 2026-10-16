@@ -55,8 +55,6 @@ describe('useSourceInitialization', () => {
     resolveFirst({ applicable: true, initialization: summary({ id: 'stale' }), downloadConcurrency: 1, convergenceQueueDepth: 1 })
     await firstLoad
     expect(state.initialization.value?.id).toBe('latest')
-    expect(state.downloadConcurrency.value).toBe(4)
-    expect(state.queueDepth.value).toBe(8)
   })
 
   it('debounces search, reports page errors, and clears pending timers on dispose', async () => {
@@ -102,7 +100,7 @@ describe('useSourceInitialization', () => {
     await state.restart()
     expect(api.post).toHaveBeenCalledWith('/playlist-sources/source-1/initialization/restart', { initializationId: 'initialization-1' })
     await state.commit()
-    expect(api.post).toHaveBeenCalledWith('/playlist-sources/source-1/initialization/commit', { initializationId: 'initialization-1' })
+    expect(api.post).toHaveBeenCalledWith('/playlist-sources/source-1/initialization/commit', { initializationId: 'initialization-1', confirmDeferred: false })
     expect(changed).toHaveBeenCalled()
   })
 

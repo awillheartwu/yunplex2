@@ -3,6 +3,9 @@ import { success, fail } from '../../lib/response'
 import { listSources, createSource } from '../../lib/playlist/store'
 import { readConfig } from '../../lib/config/store'
 import { getSyncWorker } from '../../lib/sync/instance'
+import { getDb } from '../../lib/db'
+import { requestSourceInitialization } from '../../lib/source-initialization/requests'
+import type { PlaylistStartMode } from '../../../shared/source-onboarding'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -13,10 +16,14 @@ export default defineEventHandler(async (event) => {
     name?: string
     artist?: string
     coverUrl?: string
+    startMode?: PlaylistStartMode
+    enabled?: boolean
   }>(event)
-  if (!body?.neteasePlaylistId || typeof body.neteasePlaylistId !== 'number') {
+  if (!Number.isSafeInteger(body?.neteasePlaylistId) || body.neteasePlaylistId <= 0) {
     return fail('请提供有效的 ID')
   }
+  if (body.startMode !== undefined && !['automatic', 'review'].includes(body.startMode)) return fail('请选择有效的开始方式')
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return fail('自动同步开关无效')
 
   const existing = listSources()
   if (existing.some(s => s.neteasePlaylistId === body.neteasePlaylistId && s.type === (body.type || 'playlist'))) {
@@ -32,7 +39,15 @@ export default defineEventHandler(async (event) => {
       name: body.name,
       artist: body.artist,
       coverUrl: body.coverUrl,
+      enabled: body.enabled,
     })
+    if (source.type === 'playlist' && body.startMode) {
+      getDb().transaction(() => {
+        getDb().prepare('UPDATE source_initializations SET auto_process=? WHERE source_id=? AND status=\'pending\'')
+          .run(Number(body.startMode === 'automatic'), source.id)
+        requestSourceInitialization(source.id, 'user')
+      })()
+    }
     let autoSync: SourceRequestsResult | undefined
     if (body.type === 'album' && cfg.sync.autoDownloadAlbum) {
       autoSync = requestSources({ sourceIds: [source.id], mode: 'full', trigger: 'system' })

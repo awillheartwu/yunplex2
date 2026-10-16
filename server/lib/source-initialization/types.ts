@@ -41,6 +41,7 @@ export interface SourceInitializationSummary {
   followUpRunId: string | null
   trigger: string
   status: SourceInitializationStatus
+  autoProcess?: boolean
   revision?: number
   quickThreshold?: number | null
   quickStatus?: string | null
@@ -54,7 +55,6 @@ export interface SourceInitializationSummary {
   requestId: string | null
   requestStatus: string | null
   neteaseCursor: string | null
-  plexFingerprint: string | null
   totalItems: number
   preservedItems: number
   strongItems: number

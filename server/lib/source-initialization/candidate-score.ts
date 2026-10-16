@@ -2,8 +2,8 @@ import type { InitializationMatchingConfig } from '../../../shared/initializatio
 import type { CandidateScore, CandidateScoreParts } from '../../../shared/initialization-scoring'
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
-import { artistCreditKeys } from './artist-credits'
-import { aliasKeys, matchingKey, titleParts, versionEvidence, type TitleParts } from './matching-normalization'
+import { candidateFacts, type CandidateFacts } from './candidate-facts'
+import { aliasKeys, type TitleParts } from './matching-normalization'
 
 /**
  * Pure candidate scoring for initialization review.
@@ -36,23 +36,10 @@ export const CANDIDATE_SCORE_BLOCKS = {
   missingDuration: 'missing-duration',
 } as const
 
-/** Placeholder credits such as compilations never prove a different artist. */
-const UNKNOWN_ARTISTS = ['Various Artists', 'Various', 'VA', '群星', '合辑', '未知艺人', '佚名', 'Unknown Artist', 'Unknown']
-
-export function scoreCandidate(song: NeteaseSong, track: PlexTrack, config: InitializationMatchingConfig): CandidateScore {
+export function scoreCandidate(song: NeteaseSong, track: PlexTrack, config: InitializationMatchingConfig, facts: CandidateFacts = candidateFacts(song,track,config)): CandidateScore {
   const blocked: string[] = []
   const risks: string[] = []
-  const songTitle = titleParts(song.name, config)
-  const trackTitle = titleParts(track.title || '', config)
-  const version = versionEvidence(songTitle, trackTitle, config)
-  const delta = song.dt > 0 && Number(track.duration) > 0 ? Math.abs(song.dt - Number(track.duration)) : null
-  const songAlbumKey = matchingKey(song.album.name || '', config)
-  const trackAlbumKey = matchingKey(track.parentTitle || '', config)
-  const albumExact = Boolean(songAlbumKey) && songAlbumKey === trackAlbumKey
-  const trackIndex = Number(track.index)
-  const numberKnown = song.no > 0 && Number.isInteger(trackIndex) && trackIndex > 0
-  const numberEqual = numberKnown && trackIndex === song.no
-  const artist = artistEvidence(song, track, songTitle, trackTitle, config)
+  const {songTitle,trackTitle,version,delta,songAlbumKey,trackAlbumKey,albumExact,numberKnown,numberEqual,artist,paths}=facts
   const title = titleEvidence(song, track, songTitle, trackTitle, config, {
     completeArtists: artist.complete, albumExact, numberEqual, delta,
   })
@@ -73,7 +60,6 @@ export function scoreCandidate(song: NeteaseSong, track: PlexTrack, config: Init
   if (version.excluded) addOnce(blocked, CANDIDATE_SCORE_BLOCKS.versionExcluded)
   if (version.conflicts.length) addOnce(blocked, CANDIDATE_SCORE_BLOCKS.versionConflict)
 
-  const paths = track.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? []) ?? []
   if (!paths.length) addOnce(blocked, CANDIDATE_SCORE_BLOCKS.pathsMissing)
   else if (paths.length > 1) addOnce(blocked, CANDIDATE_SCORE_BLOCKS.pathsNotUnique)
   if (paths.some(path => [...path.matchAll(/\[netease-(\d+)\]/gi)].some(match => Number(match[1]) !== song.id))) {
@@ -161,48 +147,6 @@ function normalizedSimilarity(left: string, right: string): number {
   return 1 - previous[b.length]! / length
 }
 
-interface ArtistEvidence {
-  matchedWeight: number
-  totalWeight: number
-  extra: string[]
-  complete: boolean
-  strength: number
-  missing: boolean
-  mismatch: boolean
-}
-
-function artistEvidence(song: NeteaseSong, track: PlexTrack, songTitle: TitleParts, trackTitle: TitleParts, config: InitializationMatchingConfig): ArtistEvidence {
-  const names = [...new Set(song.artists.map(artist => artist.name).filter(Boolean))]
-  const desired = names.map(name => aliasKeys(name, config.useArtistAliases ? config.artistAliases : [], config, true))
-  for (const key of artistCreditKeys(songTitle.contributors, desired, config)) {
-    if (!desired.some(group => group.has(key))) desired.push(new Set([key]))
-  }
-  const artistText = config.useTrackArtist && track.originalTitle ? track.originalTitle : track.grandparentTitle || ''
-  const actual = artistCreditKeys([artistText, ...trackTitle.contributors], desired, config)
-  // The target's first artist is the primary credit; participants carry one
-  // unit each, and every extra actual name dilutes the ratio.
-  const weights = desired.map((_group, index) => index === 0 ? 2 : 1)
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
-  let matchedWeight = 0
-  desired.forEach((group, index) => {
-    if (actual.some(key => group.has(key))) matchedWeight += weights[index]!
-  })
-  const extra = actual.filter(key => !desired.some(group => group.has(key)))
-  const unknown = new Set(UNKNOWN_ARTISTS.map(name => matchingKey(name, config)))
-  const missing = desired.length === 0 || actual.length === 0
-  const mismatch = !missing && matchedWeight === 0
-    && desired.some(group => [...group].some(key => !unknown.has(key)))
-    && extra.some(key => !unknown.has(key))
-  return {
-    matchedWeight,
-    totalWeight,
-    extra,
-    complete: desired.length > 0 && matchedWeight === totalWeight && extra.length === 0,
-    strength: totalWeight > 0 ? matchedWeight / (totalWeight + extra.length) : 0,
-    missing,
-    mismatch,
-  }
-}
 
 function addOnce(list: string[], value: string): void {
   if (!list.includes(value)) list.push(value)

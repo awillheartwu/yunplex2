@@ -35,12 +35,12 @@ docker compose up -d --build
 
 ## 使用 GHCR 镜像
 
-正式镜像在 release 最终确认后发布，仅提供 `linux/amd64`。具体 GHCR 地址与 digest 以对应 release 的分发结果为准；其他架构使用源码自行构建。版本基线为 `2.0.1`，源码中的版本号不代表该镜像已公开发布。
+正式镜像在 release 最终确认后发布，仅提供 `linux/amd64`。具体 GHCR 地址与 digest 以对应 release 的分发结果为准；其他架构使用源码自行构建。版本基线为 `2.0.9`，源码中的版本号不代表该镜像已公开发布。
 
 下载 [deploy/ghcr.compose.yml](deploy/ghcr.compose.yml)，将以下内容保存为同目录的 `.env`，替换镜像账号和两个本机绝对目录：
 
 ```dotenv
-YUNPLEX_IMAGE=ghcr.io/你的账号/yunplex:2.0.1
+YUNPLEX_IMAGE=ghcr.io/你的账号/yunplex:2.0.9
 YUNPLEX_DATA_DIR=/path/to/yunplex-data
 YUNPLEX_MUSIC_DIR=/path/to/music
 YUNPLEX_UID=1000

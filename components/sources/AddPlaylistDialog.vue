@@ -32,7 +32,7 @@
               class="btn btn-sm"
               :class="dialogType === t.key ? 'btn-soft' : 'btn-ghost'"
               :aria-pressed="dialogType === t.key"
-              :disabled="saving"
+              :disabled="saving || addedInBatch.length > 0"
               @click="switchType(t.key)"
             >
               <AppIcon :name="t.key === 'playlist' ? 'source' : 'album'" :size="16" />{{ t.label }}
@@ -268,7 +268,7 @@
 
           <!-- Footer -->
           <div
-            class="flex items-center justify-between gap-3 px-5 py-3 shrink-0"
+            class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 shrink-0"
             style="border-top: 1px solid var(--border-primary); background: var(--bg-app)"
           >
             <div class="add-collection-selection">
@@ -280,12 +280,7 @@
               <p>仅当前已加载、符合筛选且未添加的 {{ pageSelectableIds.length }} 个</p>
             </div>
             <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
-            <div class="flex gap-2">
-              <button class="btn btn-ghost" :disabled="saving" @click="close">取消</button>
-              <button class="btn btn-primary" :disabled="saving || selectedIds.length === 0" @click="handleAddSelected">
-                {{ saving ? '添加中...' : '确认添加' }}
-              </button>
-            </div>
+            <AddPlaylistActions :playlist="dialogType === 'playlist'" :busy="saving" :disabled="selectedIds.length === 0" @cancel="close" @start="handleAddSelected" />
           </div>
         </template>
 
@@ -309,17 +304,16 @@
                 inputmode="numeric"
                 placeholder="例如：123456789"
                 class="form-input w-full"
-                @keydown.enter.prevent="handleAddSingle"
+                @keydown.enter.prevent="handleAddSingle('review')"
               />
             </div>
           </div>
           <div
-            class="flex items-center justify-end gap-2 px-5 py-3 shrink-0"
+            class="flex flex-wrap items-center justify-end gap-2 px-5 py-3 shrink-0"
             style="border-top: 1px solid var(--border-primary); background: var(--bg-app)"
           >
             <p v-if="saveError" class="add-collection-error" role="alert">{{ saveError }}</p>
-            <button class="btn btn-ghost" :disabled="saving" @click="close">取消</button>
-            <button class="btn btn-primary" :disabled="saving" @click="handleAddSingle">确认添加</button>
+            <AddPlaylistActions :playlist="dialogType === 'playlist'" :busy="saving" :disabled="!manualId.trim()" @cancel="close" @start="handleAddSingle" />
           </div>
         </template>
       </div>
@@ -331,6 +325,7 @@
 import { getSyncSourceCoverUrl } from '~/composables/useSyncSourcePresentation'
 import { useDialogFocus } from '~/composables/useDialogFocus'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
+import type { CreatedPlaylistSources, PlaylistStartMode } from '../../shared/source-onboarding'
 
 interface NeteasePlaylist {
   id: number
@@ -354,14 +349,20 @@ interface AlbumItem {
 const props = defineProps<{ visible: boolean; sourceIds: number[] }>()
 const emit = defineEmits<{
   'update:visible': [v: boolean]
-  created: [count: number]
+  created: [result: CreatedPlaylistSources]
   'created-album': [count: number]
 }>()
 
 const api = useApi()
 const dialogPanel = ref<HTMLElement | null>(null)
 function close() {
-  if (!saving.value) emit('update:visible', false)
+  if (saving.value) return
+  if (addedInBatch.value.length) {
+    if (dialogType.value === 'album') emit('created-album', addedInBatch.value.length)
+    else emit('created', { sourceIds: [...addedInBatch.value], mode: batchMode.value })
+    addedInBatch.value = []
+  }
+  emit('update:visible', false)
 }
 useDialogFocus(() => props.visible, dialogPanel, close)
 
@@ -373,7 +374,7 @@ const typeTabs = [
 ]
 
 function switchType(key: 'playlist' | 'album') {
-  if (saving.value) return
+  if (saving.value || addedInBatch.value.length) return
   saveError.value = ''
   dialogType.value = key
   selectedIds.value = []
@@ -395,6 +396,9 @@ const saving = ref(false)
 const error = ref('')
 const saveError = ref('')
 const selectedIds = ref<number[]>([])
+const addedInBatch = ref<string[]>([])
+const addedResourceIds = ref<number[]>([])
+const batchMode = ref<PlaylistStartMode>('review')
 const manualId = ref('')
 const manualEntry = ref(false)
 const manualInput = ref<HTMLInputElement | null>(null)
@@ -406,7 +410,7 @@ watch(manualEntry, async (value) => {
 })
 
 function isAdded(pid: number): boolean {
-  return props.sourceIds.includes(pid)
+  return props.sourceIds.includes(pid) || addedResourceIds.value.includes(pid)
 }
 
 // ── Playlist tab ──
@@ -547,34 +551,41 @@ function publishYear(ts: number): string {
 }
 
 // ── Add actions ──
-async function handleAddSelected() {
+async function handleAddSelected(mode: PlaylistStartMode = 'review') {
   if (saving.value || selectedIds.value.length === 0) return
   saving.value = true
   saveError.value = ''
   const isAlbum = dialogType.value === 'album'
+  batchMode.value = mode
   try {
-    for (const pid of selectedIds.value) {
+    const pendingIds = [...selectedIds.value]
+    for (const pid of pendingIds) {
       const album = isAlbum ? albums.value.find((a) => a.id === pid) : null
       const playlist = !isAlbum ? list.value.find((p) => p.id === pid) : null
-      await api.post('/playlist-sources', {
+      const source = await api.post<{ id: string }>('/playlist-sources', {
         neteasePlaylistId: pid,
         type: isAlbum ? 'album' : 'playlist',
         subscribed: playlist?.subscribed ?? false,
         coverUrl: album?.picUrl || playlist?.coverImgUrl || undefined,
         ...(album ? { name: album.name, artist: album.artist?.name } : {}),
+        ...(!isAlbum ? { startMode: mode } : {}),
       })
+      addedInBatch.value.push(source.id)
+      addedResourceIds.value.push(pid)
+      selectedIds.value = selectedIds.value.filter(id => id !== pid)
     }
     emit('update:visible', false)
-    if (isAlbum) emit('created-album', selectedIds.value.length)
-    else emit('created', selectedIds.value.length)
+    if (isAlbum) emit('created-album', addedInBatch.value.length)
+    else emit('created', { sourceIds: [...addedInBatch.value], mode })
+    addedInBatch.value = []
   } catch (err) {
-    saveError.value = err instanceof Error ? err.message : '添加同步源失败'
+    saveError.value = `${err instanceof Error ? err.message : '添加同步源失败'}${addedInBatch.value.length ? `；已有 ${addedInBatch.value.length} 个添加成功并按所选方式准备，其余可继续添加。` : ''}`
   } finally {
     saving.value = false
   }
 }
 
-async function handleAddSingle() {
+async function handleAddSingle(mode: PlaylistStartMode = 'review') {
   if (saving.value) return
   const value = manualId.value.trim(),
     id = Number(value)
@@ -587,15 +598,17 @@ async function handleAddSingle() {
   const isAlbum = dialogType.value === 'album'
   try {
     const playlist = !isAlbum ? list.value.find((p) => p.id === id) : null
-    await api.post('/playlist-sources', {
+    const source = await api.post<{ id: string }>('/playlist-sources', {
       neteasePlaylistId: id,
       type: isAlbum ? 'album' : 'playlist',
       subscribed: playlist?.subscribed ?? false,
       coverUrl: playlist?.coverImgUrl || undefined,
+      ...(!isAlbum ? { startMode: mode } : {}),
     })
     emit('update:visible', false)
-    if (isAlbum) emit('created-album', 1)
-    else emit('created', 1)
+    if (isAlbum) emit('created-album', addedInBatch.value.length + 1)
+    else emit('created', { sourceIds: [...addedInBatch.value, source.id], mode })
+    addedInBatch.value = []
   } catch (err) {
     saveError.value = err instanceof Error ? err.message : '添加同步源失败'
   } finally {
@@ -607,6 +620,8 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
+      addedInBatch.value = []
+      addedResourceIds.value = []
       manualId.value = ''
       manualEntry.value = false
       selectedIds.value = []

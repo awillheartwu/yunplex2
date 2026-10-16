@@ -1,4 +1,5 @@
 import { quickMediaPermissions } from './quick-permissions'
+import { arrangeInitializationPlan } from './automatic-plan'
 import { sharedMediaPermissions } from './shared-media'
 import { InitializationConflictError } from './errors'
 import { createHash, randomUUID } from 'node:crypto'
@@ -13,10 +14,11 @@ import type { TaskRun, TaskRunTrigger } from '../job/types'
 import { INITIALIZATION_RULE_VERSION, type InitializationCommitResult } from './types'
 import { requestSourceInitialization } from './requests'
 import { persistSourceRequest } from '../sync/request-store'
+import { getInitializationApplyRequest } from '../sync/request-store'
 import { buildInitializationPlans } from './candidate-engine'
 import { captureMatchingPolicy, matchingFingerprint } from './matching-snapshot'
 import { resolveMusicBrainzAliases } from './musicbrainz-aliases'
-import { ensurePendingInitialization, getInitialization, getLatestInitialization, replaceInitializationPlans, setInitializationStatus, upsertMediaDecision } from './store'
+import { ensurePendingInitialization, getInitialization, getLatestInitialization, refreshDecisionCounts, replaceInitializationPlans, setInitializationStatus, upsertMediaDecision } from './store'
 
 const running = new Map<string, AbortController>()
 
@@ -43,7 +45,10 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
   if (!initialization || initialization.sourceId !== sourceId || getLatestInitialization(sourceId)?.id !== initialization.id) throw new Error('接管分析请求已过期')
   if (initialization.status === 'applying') throw new InitializationConflictError('首次媒体接管方案正在应用')
   if (expectedInitializationId && !['pending', 'analyzing', 'awaiting_review'].includes(initialization.status)) throw new Error('接管分析请求已结束')
-  if (initialization.status === 'awaiting_review') return { initializationId: initialization.id, runId: initialization.runId! }
+  if (initialization.status === 'awaiting_review') {
+    if (!initialization.quickStatus) arrangeInitializationPlan(sourceId, initialization.id)
+    return { initializationId: initialization.id, runId: initialization.runId! }
+  }
   const controller = new AbortController(); running.set(sourceId, controller)
   const previousRun = initialization.runId ? getRun(initialization.runId) : null
   const run = { ...(previousRun ?? taskRun({ trigger, sourceId, sourceName: source.name, status: 'running', summary: '正在分析首次媒体接管候选' })), status: 'running' as const, startedAt: new Date().toISOString(), finishedAt: null, summary: '正在分析首次媒体接管候选' }
@@ -77,13 +82,13 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
       replaceInitializationPlans(initialization.id, plans)
       getDb().prepare('UPDATE source_initializations SET score_version=1 WHERE id=?').run(initialization.id)
       const neteaseCursor = fingerprint(playlist.trackIds.map(track => track.id))
-      const plexFingerprint = fingerprint(tracks.map(track => [track.ratingKey, track.Media?.flatMap(media => media.Part?.map(part => part.file) ?? [])]))
       const summary = `分析完成：${plans.length} 首，${plans.filter(plan => plan.tier === 'strong_id').length} 首强身份，${plans.filter(plan => plan.tier === 'high_confidence').length} 首高置信`
-      const reviewed = setInitializationStatus(initialization.id, 'awaiting_review', { neteaseCursor, plexFingerprint, summary })
+      const reviewed = setInitializationStatus(initialization.id, 'awaiting_review', { neteaseCursor, summary })
       const durationMs = reviewed.analyzedAt
         ? Math.max(0, Date.parse(reviewed.analyzedAt) - Date.parse(run.startedAt))
         : 0
       saveRun({ ...run, status: 'awaiting_action', durationMs, summary, totalSongs: plans.length, skippedSongs: plans.filter(plan => plan.tier === 'preserved').length })
+      arrangeInitializationPlan(sourceId, initialization.id)
     })()
     return { initializationId: initialization.id, runId: run.id }
   } catch (error) {
@@ -153,15 +158,16 @@ async function applySourceInitialization(initializationId: string, allowDisabled
   try {
     const db = getDb()
     db.transaction(() => {
-      const cancelledQuick = db.prepare("SELECT 1 FROM initialization_quick_operations op JOIN source_sync_queue q ON q.id=op.request_id WHERE op.initialization_id=? AND op.status='queued' AND q.cancel_requested_at IS NOT NULL").get(initialization.id)
+      const cancelledQuick = db.prepare("SELECT 1 FROM source_sync_queue WHERE initialization_id=? AND request_kind='initialization_apply' AND status IN ('pending','running') AND cancel_requested_at IS NOT NULL").get(initialization.id)
       if (cancelledQuick) throw new InitializationConflictError('快速处理已取消')
       const currentSource = getSource(source.id)
       if (!currentSource) throw new Error('歌单来源不存在')
       const sharedPermissions = new Map([...sharedMediaPermissions(initialization.id), ...quickMediaPermissions(initialization.id)])
       // Validate every selected member before any shared identity is written.
+      const rowById = new Map(rows.map(row => [Number(row.netease_song_id), row]))
       for (const [songId, peers] of [...sharedPermissions]) {
         const valid = peers.every(id => {
-          const peer = rows.find(row => Number(row.netease_song_id) === id)
+          const peer = rowById.get(id)
           if (!peer) return true // Existing owners were version/path checked by the permission builder.
           const track = trackByRatingKey.get(String(peer.candidate_rating_key || ''))
           const paths = track?.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? []) ?? []
@@ -195,16 +201,23 @@ async function applySourceInitialization(initializationId: string, allowDisabled
           applied++
         } catch (error) {
           if (!(error instanceof BindingVersionConflictError) && !(error instanceof BindingIdentityConflictError)) throw error
+          if (initialization.autoProcess) {
+            upsertMediaDecision(source.id, songId, 'download', initialization.id)
+            db.prepare("UPDATE source_initialization_items SET decision='download', decision_status='applied', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
+            downloads++
+            continue
+          }
           upsertMediaDecision(source.id, songId, 'defer', initialization.id)
-          db.prepare("UPDATE source_initialization_items SET tier='conflict', decision_status='conflict', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
+          db.prepare("UPDATE source_initialization_items SET tier='conflict', decision='defer', decision_status='conflict', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
           conflicts++
         }
       }
       summary = `首次媒体接管完成：接管 ${applied}，计划下载 ${downloads}，暂缓 ${deferred}，冲突 ${conflicts}`
+      refreshDecisionCounts(initialization.id)
       setInitializationStatus(initialization.id, 'completed', { summary })
       if (initialization.runId) {
         const previous = getRun(initialization.runId)
-        const existing = taskRun({ id: initialization.runId, trigger: initialization.trigger as TaskRunTrigger, sourceId: source.id, sourceName: source.name, status: conflicts ? 'partial' : 'success', summary, total: rows.length, success: applied + downloads, skipped: deferred, failed: conflicts })
+        const existing = taskRun({ id: initialization.runId, trigger: initialization.trigger as TaskRunTrigger, sourceId: source.id, sourceName: source.name, status: conflicts || deferred ? 'partial' : 'success', summary, total: rows.length, success: applied + downloads, skipped: deferred, failed: conflicts })
         if (previous) {
           existing.startedAt = previous.startedAt
           existing.durationMs = Math.max(0, Date.parse(existing.finishedAt || new Date().toISOString()) - Date.parse(previous.startedAt))
@@ -214,6 +227,7 @@ async function applySourceInitialization(initializationId: string, allowDisabled
       const followUpRequestId = (currentSource.enabled || allowDisabled) ? persistSourceRequest({ sourceId: source.id, kind: 'convergence', trigger: 'user', followUpOf: initialization.id, allowDisabled }) : null
       result = { applied, deferred, downloads, conflicts, shouldSync: currentSource.enabled || allowDisabled, sourceId: source.id, followUpRequestId }
       db.prepare('UPDATE source_initializations SET commit_result_json=? WHERE id=?').run(JSON.stringify(result), initialization.id)
+      db.prepare("UPDATE initialization_quick_operations SET status='executed',previous_json=NULL WHERE initialization_id=? AND status IN ('saved','queued','failed','cancelled')").run(initialization.id)
       // Keep the executed review and score evidence for audit and later correction.
     })()
   } finally { release() }
@@ -221,11 +235,11 @@ async function applySourceInitialization(initializationId: string, allowDisabled
 }
 
 export async function commitSourceInitialization(initializationId: string, allowQueued = false): Promise<InitializationCommitResult> {
-  const quick = getDb().prepare("SELECT status FROM initialization_quick_operations WHERE initialization_id=? AND status='queued'").get(initializationId)
-  if (quick && !allowQueued) throw new InitializationConflictError('快速方案已排队，不能重复提交')
+  const apply = getInitializationApplyRequest(initializationId)
+  if (apply && ['pending','running'].includes(apply.status) && !allowQueued) throw new InitializationConflictError('歌曲安排已排队，不能重复提交')
   if (getInitialization(initializationId)?.status === 'applying') throw new InitializationConflictError('首次媒体接管方案正在应用，请稍后刷新')
   try {
-    return await applySourceInitialization(initializationId, allowQueued || Boolean(getInitialization(initializationId)?.quickStatus))
+    return await applySourceInitialization(initializationId, true)
   } catch (error) {
     const current = getInitialization(initializationId)
     if (current?.status === 'applying') {
@@ -239,6 +253,8 @@ export async function commitSourceInitialization(initializationId: string, allow
 
 export function skipSourceInitialization(sourceId: string): void {
   const latest = getLatestInitialization(sourceId)
+  const apply = latest && getInitializationApplyRequest(latest.id)
+  if (apply && ['pending','running'].includes(apply.status)) throw new InitializationConflictError('歌曲安排已排队，请先取消本次处理')
   if (latest && ['analyzing', 'applying'].includes(latest.status)) {
     throw new Error('首次媒体接管正在处理，不能跳过')
   }

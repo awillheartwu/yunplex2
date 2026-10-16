@@ -24,9 +24,9 @@ export interface SourceRequestInput {
 
 export function persistSourceRequest(input: SourceRequestInput): string {
   const db = getDb()
-  const key = input.initializationId ? 'initialization_id' : input.followUpOf ? 'follow_up_of' : null
+  const key = input.kind === 'analysis' && input.initializationId ? 'initialization_id' : input.followUpOf ? 'follow_up_of' : null
   if (key) {
-    const existing = db.prepare(`SELECT id FROM source_sync_queue WHERE ${key}=?`).get(input.initializationId ?? input.followUpOf) as { id: string } | undefined
+    const existing = db.prepare(`SELECT id FROM source_sync_queue WHERE ${key}=?${key === 'initialization_id' ? " AND request_kind='analysis'" : ''}`).get(key === 'initialization_id' ? input.initializationId : input.followUpOf) as { id: string } | undefined
     if (existing) return existing.id
   }
   const id = randomUUID()
@@ -45,8 +45,14 @@ export function persistSourceRequest(input: SourceRequestInput): string {
 }
 
 export function getInitializationRequest(initializationId: string) {
-  return getDb().prepare('SELECT id, status, run_id AS runId FROM source_sync_queue WHERE initialization_id=?')
+  return getDb().prepare("SELECT id, status, run_id AS runId FROM source_sync_queue WHERE initialization_id=? AND request_kind='analysis'")
     .get(initializationId) as { id: string; status: string; runId: string | null } | undefined
+}
+
+export function getInitializationApplyRequest(initializationId: string) {
+  return getDb().prepare(`SELECT id,status,last_error FROM source_sync_queue
+    WHERE initialization_id=? AND request_kind='initialization_apply' ORDER BY created_at DESC,rowid DESC LIMIT 1`)
+    .get(initializationId) as { id: string; status: string; last_error: string | null } | undefined
 }
 
 export function sourceRequestsBusy(): boolean {

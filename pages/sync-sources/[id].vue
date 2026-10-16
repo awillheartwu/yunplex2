@@ -1,22 +1,24 @@
 <template>
   <div class="source-detail page-stack">
+    <SourceInitializationLeaveGuard ref="initializationGuard" :pending="activeTab === 'initialization' && initializationPending.pending && !deleting" :analyzing="initializationPending.analyzing" />
     <div v-if="loading" class="section-card p-12 text-center text-muted">正在加载同步源…</div>
     <div v-else-if="loadError && !source" class="source-detail__load-error" role="alert"><h1>暂时无法读取来源</h1><p>{{ loadError }}</p><button class="btn btn-secondary" @click="refresh">重新加载</button><NuxtLink to="/sync-sources">返回音乐库</NuxtLink></div>
     <EmptyState v-else-if="!source" title="同步源不存在" description="它可能已经被删除。"><NuxtLink to="/sync-sources" class="btn btn-ghost">返回音乐库</NuxtLink></EmptyState>
     <template v-else>
       <div v-if="loadError" class="source-detail__load-error" role="alert"><span>{{ loadError }}</span><button class="btn btn-secondary btn-sm" @click="refresh">重新加载</button></div>
       <NuxtLink to="/sync-sources" class="btn btn-ghost btn-xs source-detail__back"><AppIcon name="arrowLeft" :size="14" />返回</NuxtLink>
+      <nav v-if="onboardingIds.length > 1 && onboardingIndex >= 0" class="section-card source-detail__onboarding" aria-label="本次新增的歌单"><span>本次添加 {{ onboardingIds.length }} 个歌单 · 当前第 {{ onboardingIndex + 1 }} 个，各歌单按所选方式在后台准备</span><div><NuxtLink v-if="onboardingIndex > 0" :to="onboardingLink(onboardingIds[onboardingIndex - 1]!)" class="btn btn-ghost btn-sm">上一个歌单</NuxtLink><NuxtLink v-if="onboardingIndex + 1 < onboardingIds.length" :to="onboardingLink(onboardingIds[onboardingIndex + 1]!)" class="btn btn-secondary btn-sm">下一个歌单</NuxtLink></div></nav>
       <header class="source-detail__header section-card">
         <img v-if="source.coverUrl && !coverFailed" :src="source.coverUrl" :alt="`${source.name} 封面`" @error="coverFailed = true" /><div v-else class="source-detail__cover"><AppIcon :name="source.type === 'album' ? 'album' : 'music'" :size="28" /></div>
         <div class="source-detail__identity"><div class="flex flex-wrap items-center gap-2"><SourceBadge :type="source.type" /><StatusBadge :status="source.enabled?'ok':'idle'" :label="source.enabled?'已启用':'已禁用'" /></div><h1>{{ source.name || source.neteasePlaylistName }}</h1><p>{{ source.neteasePlaylistName }} · {{ sourceCountLabel }}</p></div>
-        <div class="source-detail__header-actions"><button class="btn btn-primary btn-sm" :disabled="acting || (source.type === 'playlist' && !source.enabled)" @click="sync('normal')"><AppIcon name="sync" :size="14" />同步</button><button class="btn btn-secondary btn-sm" @click="openTab('settings')"><AppIcon name="settings" :size="14" />设置</button></div>
+        <div class="source-detail__header-actions"><button class="btn btn-primary btn-sm" :disabled="acting" @click="sync('normal')"><AppIcon name="sync" :size="14" />同步</button><button class="btn btn-secondary btn-sm" @click="openTab('settings')"><AppIcon name="settings" :size="14" />设置</button></div>
       </header>
       <section v-if="requestState && requestPresentation" class="section-card source-detail__request" aria-label="当前来源请求" aria-live="polite">
         <div><strong :class="`text-${requestPresentation.tone}`">{{ requestPresentation.label }}</strong><p>{{ requestPresentation.detail }}</p></div>
         <NuxtLink v-if="requestState.runId" :to="`/task-center/runs/${requestState.runId}`" class="btn btn-ghost btn-sm">查看运行结果</NuxtLink>
         <button v-if="requestState.kind === 'analysis' && requestState.status === 'completed'" class="btn btn-ghost btn-sm" @click="openTab('initialization')">查看接管结果</button>
       </section>
-      <PageTabs v-model="activeTab" :tabs="tabs" aria-label="同步源详情" @change="syncTabQuery" />
+      <PageTabs :model-value="activeTab" :tabs="tabs" aria-label="同步源详情" @change="openTab" />
       <aside v-if="source.plexNotice" class="section-card source-detail__plex-notice" role="status"><AppIcon name="info" :size="18" /><span>{{ source.plexNotice.message }}</span><button class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')">检查同步</button></aside>
 
       <section v-if="activeTab==='overview'" class="source-detail__overview">
@@ -29,7 +31,7 @@
         <details class="source-maintenance" open><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新检查整张歌单，并按当前设置补齐歌曲、移除多余条目和调整顺序。"><button aria-label="完整比较" class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />检查同步</button></ActionHint><ActionHint text="重新查找这份收藏中自动匹配的歌曲，再同步 Plex 歌单；你手动选过的歌曲会保留。"><button aria-label="重建托管关联" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重新匹配</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载由应用保存的音乐；新文件检查通过后替换旧文件，下载失败则保留旧文件。"><button aria-label="重新下载托管媒体" class="btn btn-warning btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="查找并下载缺失的音乐文件；这一步不会调整 Plex 歌单。"><button aria-label="补全媒体" class="btn btn-info btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补齐文件</button></ActionHint><ActionHint text="移除这份收藏和未提交的方案，停止自动同步；音乐文件会保留。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
         <section v-if="recentRuns.length" class="section-card source-detail__section"><header><div><h2>最近运行</h2><p>该来源最近的任务记录。</p></div><button class="btn btn-ghost btn-xs" @click="openTab('runs')"><AppIcon name="activity" :size="14" />全部记录</button></header><div class="source-detail__runs"><RunCard v-for="run in recentRuns.slice(0,3)" :key="run.id" :run="run" /></div></section>
       </section>
-      <SourceInitializationPanel v-else-if="activeTab==='initialization'" :source-id="source.id" :source-type="source.type" @changed="refresh" @submitted="onInitializationSubmitted" />
+      <SourceInitializationPanel v-else-if="activeTab==='initialization'" :key="source.id" :source-id="source.id" :source-type="source.type" @changed="refresh" @submitted="onInitializationSubmitted" @pending-change="initializationPending = $event" @media="openTab('media')" />
       <section v-else-if="activeTab==='media'" class="section-card source-detail__section"><SourceMediaDetails :source-id="source.id" @changed="refresh" /></section>
       <section v-else-if="activeTab==='runs'" class="source-detail__runs-tab"><header class="section-card source-detail__runs-header"><div><h2>运行记录</h2><p>查看该来源最近的接管、同步、下载与修复任务。</p></div><button class="btn btn-ghost btn-xs" @click="loadRuns"><AppIcon name="refresh" :size="13" />刷新</button></header><p v-if="runsLoading" class="text-muted text-sm" role="status">正在读取运行记录…</p><div v-else-if="runsError" class="source-detail__load-error" role="alert"><p>{{ runsError }}</p><button class="btn btn-secondary btn-sm" @click="loadRuns">重试运行记录</button></div><EmptyState v-else-if="!recentRuns.length" title="暂无运行记录" description="该来源还没有可显示的任务。" /><div v-else class="source-detail__runs"><RunCard v-for="run in recentRuns" :key="run.id" :run="run" /></div><NuxtLink :to="`/task-center?tab=runs&runSource=${source.id}`" class="btn btn-ghost w-fit">在活动中查看完整记录</NuxtLink></section>
       <SourceSettingsPanel v-if="settingsVisited" v-show="activeTab === 'settings'" :key="source.id" :source="source" @saved="onSaved" />
@@ -55,12 +57,26 @@ const route=useRoute();const router=useRouter();const api=useApi();const source=
 const allowedTabs=['overview','initialization','media','runs','settings'];const activeTab=ref(allowedTabs.includes(String(route.query.tab))?String(route.query.tab):'overview');const tabs=[{key:'overview',label:'概览'},{key:'initialization',label:'首次媒体接管'},{key:'media',label:'歌曲与媒体'},{key:'runs',label:'运行记录'},{key:'settings',label:'设置'}]
 const requestPresentation = computed(() => requestState.value ? sourceRequestProgress(requestState.value) : null)
 const settingsVisited = ref(activeTab.value === 'settings')
+const initializationGuard = ref<{ confirmNavigation: () => boolean | Promise<boolean> } | null>(null)
+const initializationPending = ref({ pending: false, analyzing: false })
+const onboardingIds = computed(() => {
+  const value = route.query.onboarding
+  return (Array.isArray(value) ? value : [value]).filter((id): id is string => typeof id === 'string' && Boolean(id))
+})
+const onboardingIndex = computed(() => onboardingIds.value.indexOf(String(route.params.id)))
+function onboardingLink(id: string) { return { path: `/sync-sources/${encodeURIComponent(id)}`, query: { tab: 'initialization', onboarding: onboardingIds.value } } }
 watch(activeTab, tab => { if (tab === 'settings') settingsVisited.value = true })
 const initializationLabel=computed(()=>({pending:'待接管',analyzing:'分析中',awaiting_review:'等待确认',applying:'应用中',completed:'已完成',failed:'失败',cancelled:'已取消',skipped:'已跳过'} as Record<string,string>)[source.value?.initializationStatus||'']||'不适用')
 const sourceCountLabel=computed(()=>{const value=source.value;if(!value)return '0 首';if(value.type==='playlist'&&value.initializationTotalItems&&['analyzing','awaiting_review','applying'].includes(value.initializationStatus||''))return `${value.initializationTotalItems} 首（方案内）`;return `${value.trackCount||0} 首`})
 function syncTabQuery(){void router.replace({query:{...route.query,tab:activeTab.value==='overview'?undefined:activeTab.value}})}
-function openTab(tab:string){activeTab.value=tab;syncTabQuery()}
-function onInitializationSubmitted() { openTab('runs'); void refresh() }
+async function openTab(tab:string) {
+  if (tab === activeTab.value) return
+  if (activeTab.value === 'initialization' && !await initializationGuard.value?.confirmNavigation()) return
+  activeTab.value = tab
+  await nextTick()
+  syncTabQuery()
+}
+function onInitializationSubmitted() { void refresh() }
 async function refresh() {
   const id = String(route.params.id), generation = ++sourceGeneration
   loading.value = !source.value
@@ -125,6 +141,7 @@ watch(() => route.query.tab, tab => { activeTab.value = allowedTabs.includes(Str
 watch(() => route.params.id, () => {
   sourceGeneration++; runsGeneration++
   source.value = null; recentRuns.value = []; runsError.value = ''; notice.value = ''; error.value = ''; coverFailed.value = false
+  initializationPending.value = { pending: false, analyzing: false }
   void refresh()
 })
 onUnmounted(() => { sourceGeneration++; runsGeneration++ })
@@ -408,6 +425,8 @@ onUnmounted(() => { resumeUnsubscribe?.(); plexUnsubscribe?.() })
 .source-detail__metric-action > div { min-width: 0; }
 .source-detail__metric-action > .btn { flex: none; }
 .source-detail__operations :deep(.action-hint) { flex: 0 1 auto; }
+.source-detail__onboarding { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-4); color: var(--text-secondary); font-size: var(--text-sm); }
+.source-detail__onboarding > div { display: flex; gap: var(--space-2); }
 @media (max-width: 560px) {
   .source-detail__metric-action { flex-wrap: wrap; }
   .source-detail__operations :deep(.action-hint), .source-detail__operations :deep(.btn) { width: 100%; }

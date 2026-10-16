@@ -8,6 +8,7 @@ import type { InitializationMatchingConfig, MusicBrainzMatchingEvidence } from '
 import { withMusicBrainzAliases } from './musicbrainz-aliases'
 import { artistMatchingKey as matchingKey } from '../../../shared/initialization-matching-text'
 import { enhanceInitializationPlans } from './enhanced-matching'
+import { scoredCandidates } from './scored-candidates'
 
 const ARTIST_SEPARATOR = /\s*(?:&|\/|、|,|，|\+|;|；|\b(?:feat(?:uring)?|ft|with|and)\.?\b)\s*/giu
 
@@ -132,6 +133,8 @@ export function buildInitializationPlans(input: {
       return { ...base, tier: 'conflict', candidate: null, candidates: safeIdTracks.map(plexCandidate), evidence: { rule: 'duplicate_netease_path_id' }, decision: 'defer' }
     }
 
+    if(input.matching?.enabled)return {...base,tier:'unmatched',candidate:null,candidates:[],evidence:{rule:'pending_enhanced_recall'},decision:'defer'}
+
     const titleTracks = [...new Map((byTitle.get(canonical(song.name)) ?? []).map(track => [track.ratingKey, track])).values()]
       .filter(track => titlesMatchConservatively(song.name, track.title))
     const high = titleTracks.filter(track => completeArtistSet(song, track, aliases)
@@ -156,8 +159,14 @@ export function buildInitializationPlans(input: {
     return { ...base, tier: 'unmatched', candidate: null, candidates: [], evidence: { rule: 'no_local_candidate' }, decision: 'defer' }
   })
   if (!input.matching?.enabled) {
-    const scorePlans = enhanceInitializationPlans(plans,input.songs,input.tracks,{...DEFAULT_INITIALIZATION_MATCHING,...input.matching},input.bindings)
-    return plans.map((plan,index)=>({...plan,evidence:{...plan.evidence,scoreVersion:1,scoredCandidates:scorePlans[index]?.evidence.scoredCandidates??[],scoredCandidateCount:scorePlans[index]?.evidence.scoredCandidateCount??0}}))
+    const config = {...DEFAULT_INITIALIZATION_MATCHING,...input.matching}
+    const tracksByKey = new Map(input.tracks.map(track=>[String(track.ratingKey),track]))
+    const songsById = new Map(input.songs.map(song=>[song.id,song]))
+    return plans.map(plan=>{
+      const candidates = plan.tier === 'preserved' ? [] : plan.candidates.flatMap(candidate=>tracksByKey.has(candidate.ratingKey)?[tracksByKey.get(candidate.ratingKey)!]:[])
+      const scored = scoredCandidates(songsById.get(plan.neteaseSongId)!,candidates,config)
+      return {...plan,evidence:{...plan.evidence,scoreVersion:1,scoredCandidates:scored,scoredCandidateCount:scored.length}}
+    })
   }
   const config = withMusicBrainzAliases(input.matching, input.musicBrainz)
   const enhanced = enhanceInitializationPlans(plans, input.songs, input.tracks, config, input.bindings)

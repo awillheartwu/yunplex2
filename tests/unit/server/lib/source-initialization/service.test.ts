@@ -210,7 +210,7 @@ describe('source initialization analysis hard gate', () => {
     expect(getDb().prepare('SELECT COUNT(*) count FROM source_media_decisions').get()).toEqual({ count: 0 })
   })
 
-  it('completes a disabled source without requesting follow-up sync or downloads', async () => {
+  it('keeps automatic sync disabled while requesting this manual follow-up', async () => {
     const { commitSourceInitialization, analyzeSourceInitialization } = await import('~~/server/lib/source-initialization/service')
     const { getInitialization, setInitializationDecisions } = await import('~~/server/lib/source-initialization/store')
     const analyzed = await analyzeSourceInitialization('source-1', 'user')
@@ -218,7 +218,7 @@ describe('source initialization analysis hard gate', () => {
 
     const result = await commitSourceInitialization(analyzed.initializationId)
 
-    expect(result).toMatchObject({ applied: 1, downloads: 0, conflicts: 0, shouldSync: false })
+    expect(result).toMatchObject({ applied: 1, downloads: 0, conflicts: 0, shouldSync: true })
     expect(getInitialization(analyzed.initializationId)?.status).toBe('completed')
     expect(getRun(analyzed.runId)?.status).toBe('success')
     expect(getDb().prepare('SELECT COUNT(*) count FROM download_tasks').get()).toEqual({ count: 0 })
@@ -242,7 +242,7 @@ describe('source initialization analysis hard gate', () => {
 
     const result = await commitSourceInitialization(analyzed.initializationId)
 
-    expect(result).toMatchObject({ applied: 0, conflicts: 1, shouldSync: false })
+    expect(result).toMatchObject({ applied: 0, conflicts: 1, shouldSync: true })
     expect(getDb().prepare('SELECT COUNT(*) count FROM song_identity_bindings').get()).toEqual({ count: 0 })
     expect(getActiveMediaDecisions('source-1')).toEqual(new Map([[42, 'defer']]))
   })
@@ -263,9 +263,9 @@ describe('source initialization analysis hard gate', () => {
     }
     fetchPlaylistSongs.mockResolvedValueOnce(sharedSnapshot).mockResolvedValueOnce(sharedSnapshot)
     const { commitSourceInitialization, analyzeSourceInitialization } = await import('~~/server/lib/source-initialization/service')
-    const { getActiveMediaDecisions, setInitializationDecisions } = await import('~~/server/lib/source-initialization/store')
+    const { getActiveMediaDecisions, setInitializationCandidate } = await import('~~/server/lib/source-initialization/store')
     const analyzed = await analyzeSourceInitialization('source-1', 'user')
-    setInitializationDecisions({ initializationId: analyzed.initializationId, tier: 'high_confidence', decision: 'adopt' })
+    for (const songId of [42,43]) setInitializationCandidate({ initializationId: analyzed.initializationId, songId, candidate: { ratingKey: '100', filePath: '/music/Signal.flac', title: 'Signal', artist: 'Alpha', album: 'Night Drive' } })
 
     const result = await commitSourceInitialization(analyzed.initializationId)
 
@@ -313,4 +313,74 @@ it('quick confirmation of a disabled source is durable, idempotent and requests 
   expect(getDb().prepare("SELECT allow_disabled FROM source_sync_queue WHERE follow_up_of=?").get(init.id)).toEqual({allow_disabled:1})
   expect(await commitSourceInitialization(init.id,true)).toEqual(result)
   expect(getDb().prepare("SELECT enabled FROM playlist_sources WHERE id='source-1'").get()).toEqual({enabled:0})
+})
+
+describe('quick plan retry', () => {
+  it('still rejects a moved Plex file when resubmitting a cancelled plan', async () => {
+    const { analyzeSourceInitialization, commitSourceInitialization } = await import('~~/server/lib/source-initialization/service')
+    const { previewQuickPlan, confirmQuickPlan, cancelQuickPlan } = await import('~~/server/lib/source-initialization/quick-plan')
+    const { getInitialization } = await import('~~/server/lib/source-initialization/store')
+    const analyzed = await analyzeSourceInitialization('source-1', 'user')
+    const init = getInitialization(analyzed.initializationId)!
+    const preview = previewQuickPlan('source-1', init.id, init.revision!, 0)
+    confirmQuickPlan('source-1', preview.operationId, preview.token, true)
+    cancelQuickPlan('source-1', init.id)
+    const [track] = await getSectionTracks()
+    getSectionTracks.mockResolvedValueOnce([{ ...track!, Media: [{ Part: [{ file: '/music/moved/Signal.flac' }] }] }])
+
+    expect(await commitSourceInitialization(init.id)).toMatchObject({ applied: 0, downloads: 0, conflicts: 1 })
+    expect(getDb().prepare('SELECT COUNT(*) count FROM song_identity_bindings').get()).toEqual({ count: 0 })
+  })
+
+  for (const status of ['cancelled', 'failed'] as const) {
+    for (const autoProcess of [false, true]) {
+      it(`keeps Plex choices after a ${status} attempt in ${autoProcess ? 'automatic' : 'review'} mode`, async () => {
+        const { analyzeSourceInitialization, commitSourceInitialization } = await import('~~/server/lib/source-initialization/service')
+        const { previewQuickPlan, confirmQuickPlan, cancelQuickPlan } = await import('~~/server/lib/source-initialization/quick-plan')
+        const { getInitialization } = await import('~~/server/lib/source-initialization/store')
+        const { startWorker, stopWorker } = await import('~~/server/lib/sync/worker')
+        const { readConfigFromDb } = await import('~~/server/lib/db')
+        const original = await fetchPlaylistSongs()
+        const playlist = autoProcess ? original : {
+          ...original, trackIds: [{ id: 42 }, { id: 43 }],
+          songs: [original.songs[0]!, { ...original.songs[0]!, id: 43 }],
+        }
+        fetchPlaylistSongs.mockResolvedValueOnce(playlist)
+        const analyzed = await analyzeSourceInitialization('source-1', 'user')
+        const init = getInitialization(analyzed.initializationId)!
+        getDb().prepare('UPDATE source_initializations SET auto_process=? WHERE id=?').run(Number(autoProcess), init.id)
+        const preview = previewQuickPlan('source-1', init.id, init.revision!, 0)
+        const accepted = confirmQuickPlan('source-1', preview.operationId, preview.token, true)
+
+        if (status === 'cancelled') cancelQuickPlan('source-1', init.id)
+        else {
+          fetchPlaylistSongs.mockResolvedValueOnce(playlist)
+          getSectionTracks.mockRejectedValueOnce(new Error('Plex temporarily unavailable'))
+          const service = {
+            getState: () => ({ isRunning: false }),
+            prepareSyncForSource: vi.fn(),
+            cancelSync: () => false,
+          }
+          const worker = startWorker(readConfigFromDb, service as never, directory)
+          try {
+            await worker.runOnce()
+            expect(service.prepareSyncForSource).not.toHaveBeenCalled()
+          } finally { await stopWorker() }
+        }
+        expect(getDb().prepare('SELECT status FROM initialization_quick_operations WHERE id=?').get(preview.operationId)).toEqual({ status })
+        expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id=?').get(accepted.requestId)).toEqual({ status })
+        expect(getInitialization(init.id)?.status).toBe('awaiting_review')
+
+        fetchPlaylistSongs.mockResolvedValueOnce(playlist)
+        const result = await commitSourceInitialization(init.id)
+        expect(result).toMatchObject({ applied: playlist.songs.length, downloads: 0, conflicts: 0, deferred: 0 })
+        expect(getDb().prepare('SELECT netease_song_id,plex_rating_key FROM song_identity_bindings ORDER BY netease_song_id').all())
+          .toEqual(playlist.songs.map(song => ({ netease_song_id: song.id, plex_rating_key: '100' })))
+        expect(getDb().prepare('SELECT COUNT(*) count FROM source_media_decisions').get()).toEqual({ count: 0 })
+        expect(getDb().prepare('SELECT COUNT(*) count FROM download_tasks').get()).toEqual({ count: 0 })
+        expect(await commitSourceInitialization(init.id)).toEqual(result)
+        expect(getDb().prepare("SELECT COUNT(*) count FROM source_sync_queue WHERE request_kind='convergence'").get()).toEqual({ count: 1 })
+      })
+    }
+  }
 })
