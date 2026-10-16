@@ -36,6 +36,8 @@ try {
     })().catch(error => { throw error; });
   `, {
     eval: true,
+    // Piping this harness with --input-type=module must not change the CJS worker.
+    execArgv: [],
     workerData: {
       filePath, flac: runtimeRequire.resolve('flac-bindings/api'),
       reader: runtimeRequire.resolve('music-metadata'), images: runtimeRequire.resolve('image-size'),
