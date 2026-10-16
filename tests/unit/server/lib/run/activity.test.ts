@@ -59,7 +59,7 @@ describe('activity snapshot and presentation', () => {
     const sync = snapshot.running.find(item => item.id === 'sync')!
     const manual = snapshot.running.find(item => item.id === 'manual')!
     expect(activityStage(sync)).toBe('等待 Plex 识别')
-    expect(activityPhases(sync).filter(item => item.current).map(item => item.label)).toEqual(['Plex 更新'])
+    expect(activityPhases(sync).filter(item => item.current).map(item => item.label)).toEqual(['Plex 读取'])
     expect(manual.live).toBeNull()
     expect(activityStage(manual)).toBe('文件处理已完成，等待运行结果')
     expect(activityPhases(manual)).toEqual([])

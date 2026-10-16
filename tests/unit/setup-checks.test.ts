@@ -11,8 +11,8 @@ vi.mock('../../server/lib/netease', () => ({
   checkCookie: vi.fn(async () => ({ valid: true, profile: { nickname: 'Tester', userId: 123 } })),
 }))
 
-vi.mock('../../server/lib/plex-client', () => ({
-  initPlexClient: vi.fn(async () => 'machine-id'),
+vi.mock('../../server/lib/plex-http', () => ({
+  createPlexHttpClient: () => ({ query: vi.fn(async () => ({ MediaContainer: { machineIdentifier: 'machine-id', Directory: [] } })) }),
 }))
 
 let dataDir = ''

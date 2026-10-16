@@ -153,7 +153,7 @@ describe('current database schema baseline', () => {
       VALUES ('old-draft','old-source','completed',80,72,?,?)`).run(now, now)
     db.prepare(`INSERT INTO source_sync_queue (id,source_id,schedule_window,status,available_at,created_at,updated_at)
       VALUES ('old-request','old-source','manual:old','completed',?,?,?)`).run(now, now, now)
-    db.exec('DROP INDEX idx_source_request_initialization; DROP INDEX idx_source_request_follow_up')
+    db.exec('DROP INDEX idx_source_request_initialization; DROP INDEX idx_source_request_follow_up; DROP INDEX idx_source_request_apply')
     for (const column of ['request_kind','mode','trigger','batch_id','batch_position','initialization_id','follow_up_of','allow_disabled','take_over_external','cancel_requested_at']) {
       db.exec(`ALTER TABLE source_sync_queue DROP COLUMN ${column}`)
     }

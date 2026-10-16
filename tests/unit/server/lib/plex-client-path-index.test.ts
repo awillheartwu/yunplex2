@@ -5,16 +5,17 @@ const plexApiMock = vi.hoisted(() => ({
   activeServer: '',
 }))
 
-vi.mock('plex-api', () => ({
-  default: vi.fn(function MockPlexApi(options: { hostname?: string }) {
-    plexApiMock.activeServer = options.hostname ?? ''
+vi.mock('~~/server/lib/plex-http', () => ({
+  createPlexHttpClient(options: { server: string }) {
+    plexApiMock.activeServer = options.server
     return {
       query: plexApiMock.query,
       postQuery: vi.fn(),
       putQuery: vi.fn(),
       deleteQuery: vi.fn(),
+      request: vi.fn(async () => ({ headers: new Headers() })),
     }
-  }),
+  },
 }))
 
 const config = {
@@ -351,7 +352,7 @@ describe('Plex section path index', () => {
 
     plexApiMock.query.mockImplementation(async (path: string) => {
       if (path === '/') return { MediaContainer: { machineIdentifier: 'machine-1' } }
-      if (path === '/library/sections/12/refresh') return { MediaContainer: {} }
+      if (path === '/library/sections') return { MediaContainer: { Directory: [{ key: '12', refreshing: false }] } }
       libraryQueries += 1
       const current = libraryQueries === 1 ? beforeRefresh : afterRefresh
       return {
@@ -382,7 +383,7 @@ describe('Plex section path index', () => {
 
     plexApiMock.query.mockImplementation(async (path: string) => {
       if (path === '/') return { MediaContainer: { machineIdentifier: 'machine-1' } }
-      if (path.startsWith('/library/sections/12/refresh?path=')) return { MediaContainer: {} }
+      if (path === '/library/sections') return { MediaContainer: { Directory: [{ key: '12', refreshing: false }] } }
       libraryQueries += 1
       const current = libraryQueries === 1 ? beforeRefresh : afterRefresh
       return {
@@ -417,7 +418,7 @@ describe('Plex section path index', () => {
 
     plexApiMock.query.mockImplementation(async (path: string) => {
       if (path === '/') return { MediaContainer: { machineIdentifier: 'machine-1' } }
-      if (path === '/library/sections/12/refresh') return { MediaContainer: {} }
+      if (path === '/library/sections') return { MediaContainer: { Directory: [{ key: '12', refreshing: false }] } }
       libraryQueries += 1
       if (libraryQueries === 1) return firstPage
       return {

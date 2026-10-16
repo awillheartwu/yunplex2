@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies from lockfile
         run: pnpm install --frozen-lockfile
 
+      - name: Verify native FLAC dependency
+        run: DEBUG=flac:native node --input-type=module -e "await import('flac-bindings/api')"
+
       - name: Run repository quality gates
         run: pnpm check:ci
 

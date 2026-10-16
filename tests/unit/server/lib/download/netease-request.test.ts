@@ -7,7 +7,7 @@ import { closeDb, initDb } from '~~/server/lib/db'
 import { controlledNeteaseRequest, DOWNLOAD_METADATA_TIMEOUT_MS, withDownloadRequestContext } from '~~/server/lib/download/netease-request'
 
 const require = createRequire(import.meta.url)
-const transport = createRequire(require.resolve('NeteaseCloudMusicApi'))('axios').default as {
+const transport = createRequire(require.resolve('@neteasecloudmusicapienhanced/api'))('axios').default as {
   (config: { url: string }): Promise<unknown>
   defaults: { adapter: unknown }
 }

@@ -40,17 +40,17 @@ describe('Plex storage visibility diagnostics', () => {
     })
 
     expect(diagnostic.sample).toEqual({
-      relativePath: '路径诊断/示例专辑/01 - 示例歌曲.flac',
-      localPath: join(downloadDir, '路径诊断/示例专辑/01 - 示例歌曲.flac'),
-      plexPath: '/volume1/music/路径诊断/示例专辑/01 - 示例歌曲.flac',
-      roundTripLocalPath: join(downloadDir, '路径诊断/示例专辑/01 - 示例歌曲.flac'),
+      relativePath: diagnostic.sample.relativePath,
+      localPath: join(downloadDir, diagnostic.sample.relativePath),
+      plexPath: `/volume1/music/${diagnostic.sample.relativePath}`,
+      roundTripLocalPath: join(downloadDir, diagnostic.sample.relativePath),
       roundTripMatches: true,
     })
     expect(diagnostic.mappingValid).toBe(true)
     expect(diagnostic.publicationVerified).toBe(false)
-    expect(diagnostic.status).toBe('warning')
+    expect(diagnostic.status).toBe('configured')
     expect(diagnostic.code).toBe('remote_storage_unverified')
-    expect(diagnostic.summary).toContain('只完成了路径换算')
+    expect(diagnostic.action).toContain('路径设置不会传输文件')
     expect(diagnostic.action).toContain('挂载')
   })
 
@@ -108,7 +108,7 @@ describe('Plex storage visibility diagnostics', () => {
 
     expect(diagnostic.code).toBe('section_prefix_mismatch')
     expect(diagnostic.prefixMatchesSection).toBe(false)
-    expect(diagnostic.sample.plexPath).toBe('/srv/plex/路径诊断/示例专辑/01 - 示例歌曲.flac')
+    expect(diagnostic.sample.plexPath).toBe(`/srv/plex/${diagnostic.sample.relativePath}`)
   })
 
   it('warns instead of failing when Plex inspection is unavailable', () => {

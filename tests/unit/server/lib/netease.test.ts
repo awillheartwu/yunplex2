@@ -4,7 +4,7 @@ const songDetail = vi.hoisted(() => vi.fn())
 const playlistDetail = vi.hoisted(() => vi.fn())
 const albumDetail = vi.hoisted(() => vi.fn())
 
-vi.mock('NeteaseCloudMusicApi', () => ({
+vi.mock('@neteasecloudmusicapienhanced/api', () => ({
   default: {
     login_status: vi.fn(),
     song_url_v1: vi.fn(),
@@ -107,7 +107,7 @@ describe('fetchPlaylistSongs safety', () => {
     playlistDetail.mockResolvedValue({ status: 503, body: { code: 503 } })
     const { fetchPlaylistSongs } = await import('~~/server/lib/netease')
 
-    await expect(fetchPlaylistSongs(100, undefined, 'cookie')).rejects.toThrow('HTTP 503')
+    await expect(fetchPlaylistSongs(100, undefined, 'cookie')).rejects.toMatchObject({ providerCode: 503, endpoint: 'playlist_detail' })
     expect(songDetail).not.toHaveBeenCalled()
   })
 
@@ -130,22 +130,24 @@ describe('optional download album metadata', () => {
   })
 
   it('falls back to song metadata when the album endpoint reports 404', async () => {
-    albumDetail.mockRejectedValue(Object.assign(new Error('album missing'), { httpStatus: 404 }))
+    albumDetail.mockRejectedValue({ status: 404, body: { code: 404 } })
     const { fetchAlbumDetail } = await import('~~/server/lib/netease')
     await expect(fetchAlbumDetail(44, 'fixture-cookie')).resolves.toBeNull()
   })
 
-  it.each([401, 403, 429, 503])('preserves HTTP %i for queue control or retry', async httpStatus => {
-    const error = Object.assign(new Error('upstream failure'), { httpStatus })
-    albumDetail.mockRejectedValue(error)
+  it.each([401, 403, 429, 503])('preserves upstream status %i for queue control or retry', async providerCode => {
+    albumDetail.mockRejectedValue({ status: providerCode, body: { code: providerCode } })
     const { fetchAlbumDetail } = await import('~~/server/lib/netease')
-    await expect(fetchAlbumDetail(44, 'fixture-cookie')).rejects.toBe(error)
+    await expect(fetchAlbumDetail(44, 'fixture-cookie')).rejects.toMatchObject({ providerCode, endpoint: 'album' })
   })
 
   it('preserves cancellation instead of continuing the download', async () => {
     const error = new DOMException('cancelled', 'AbortError')
-    albumDetail.mockRejectedValue(error)
     const { fetchAlbumDetail } = await import('~~/server/lib/netease')
-    await expect(fetchAlbumDetail(44, 'fixture-cookie')).rejects.toBe(error)
+    const { withExternalRequestSignal } = await import('~~/server/lib/external-request-context')
+    const controller = new AbortController()
+    controller.abort(error)
+    await expect(withExternalRequestSignal(controller.signal, () => fetchAlbumDetail(44, 'fixture-cookie'))).rejects.toBe(error)
+    expect(albumDetail).not.toHaveBeenCalled()
   })
 })

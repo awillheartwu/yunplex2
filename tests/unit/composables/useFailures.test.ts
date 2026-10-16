@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { reactive, watch } from 'vue'
 import { useFailures } from '~~/composables/useFailures'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -7,7 +8,10 @@ describe('failure list pagination', () => {
   it('preserves a failed page, clamps after resolution, and resets for new filters', async () => {
     const get = vi.fn()
     vi.stubGlobal('useApi', () => ({ get }))
+    vi.stubGlobal('reactive', reactive)
+    vi.stubGlobal('watch', watch)
     const failures = useFailures()
+    failures.view.value = 'songs'
     get.mockResolvedValueOnce({ items: [{ id: 'first' }], total: 120 })
     await failures.fetch()
     get.mockResolvedValueOnce({ items: [{ id: 'second' }], total: 120 })

@@ -23,7 +23,7 @@ describe('download diagnostics', () => {
   })
 
   it('classifies copyright failures and skips Plex retry', () => {
-    const diagnosis = classifyDownloadFailure('无法获取歌曲下载链接')
+    const diagnosis = classifyDownloadFailure('网易云歌曲版权受限（COPYRIGHT_RESTRICTED）')
 
     expect(diagnosis).toMatchObject({
       status: 'copyright_restricted',
@@ -34,5 +34,6 @@ describe('download diagnostics', () => {
       retryable: false,
     })
     expect(shouldAttemptPlexRetryForResolution('needs_download', 'copyright_restricted')).toBe(false)
+    expect(classifyDownloadFailure('无法获取歌曲下载链接')).toMatchObject({ status: 'failed_download', retryable: true })
   })
 })

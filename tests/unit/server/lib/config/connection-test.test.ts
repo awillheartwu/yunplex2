@@ -10,14 +10,14 @@ import { CONNECTION_TEST_TIMEOUT_MS, runConnectionTest } from '~~/server/lib/con
 
 const mocks = vi.hoisted(() => ({
   checkCookie: vi.fn(),
-  initPlexClient: vi.fn(),
+  plexQuery: vi.fn(),
   writeFileSync: vi.fn(),
   rmSync: vi.fn(),
   statfsSync: vi.fn(),
 }))
 
 vi.mock('~~/server/lib/netease', () => ({ checkCookie: mocks.checkCookie }))
-vi.mock('~~/server/lib/plex-client', () => ({ createPlexClient: vi.fn(), initPlexClient: mocks.initPlexClient }))
+vi.mock('~~/server/lib/plex-http', () => ({ createPlexHttpClient: () => ({ query: mocks.plexQuery }) }))
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -46,7 +46,7 @@ beforeEach(async () => {
   initDb(dataDir)
   const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs')
   mocks.checkCookie.mockReset()
-  mocks.initPlexClient.mockReset()
+  mocks.plexQuery.mockReset()
   mocks.writeFileSync.mockReset().mockImplementation(actualFs.writeFileSync)
   mocks.rmSync.mockReset().mockImplementation(actualFs.rmSync)
   mocks.statfsSync.mockReset().mockImplementation(actualFs.statfsSync)
@@ -113,20 +113,20 @@ describe('connection test failure classification', () => {
     const token = 'super-secret-plex-token'
     const candidate = { plex: { server: '192.168.1.50', port: 32400, token, section: '音乐' } }
 
-    mocks.initPlexClient.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED 192.168.1.50:32400'), { code: 'ECONNREFUSED' }))
+    mocks.plexQuery.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED 192.168.1.50:32400'), { code: 'ECONNREFUSED' }))
     const refused = await runConnectionTest('plex', candidate).catch(error => error)
     expect(refused.code).toBe('plex_unavailable')
     expect(refused.message).toContain('192.168.1.50:32400')
     expect(refused.message).not.toContain(token)
 
-    mocks.initPlexClient.mockRejectedValueOnce(new Error('Plex Server denied request, you must provide a way to authenticate!'))
+    mocks.plexQuery.mockRejectedValueOnce(new Error('Plex GET / 请求失败（HTTP 401）'))
     const unauthorized = await runConnectionTest('plex', candidate).catch(error => error)
     expect(unauthorized.message).toContain('Token 无效')
     expect(unauthorized.message).not.toContain(token)
   })
 
   it('redacts credential-shaped text that was typed into the Plex server field', async () => {
-    mocks.initPlexClient.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))
+    mocks.plexQuery.mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))
     const failure = await runConnectionTest('plex', {
       plex: { server: '192.168.1.50?token=leaked-plex-token', port: 32400, token: 'real-token', section: '音乐' },
     }).catch(error => error)

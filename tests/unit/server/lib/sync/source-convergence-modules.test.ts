@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import type { NeteaseSong } from '~~/server/lib/netease'
-import { createSource, getSource } from '~~/server/lib/playlist/store'
+import { createSource, getSource, updateSource } from '~~/server/lib/playlist/store'
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import { RunBuilder } from '~~/server/lib/run/builder'
 import { saveSyncRun } from '~~/server/lib/run/store'
@@ -215,7 +215,7 @@ describe('source finalization projection', () => {
     }
   })
 
-  it('treats copyright-only exclusions as a successful source with warnings', async () => {
+  it('keeps copyright-only exclusions visible as an incomplete source', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'reyunplex-source-copyright-'))
     initDb(dir)
     try {
@@ -223,6 +223,7 @@ describe('source finalization projection', () => {
         type: 'album',
         name: 'Copyright Source',
       })
+      updateSource(persistedSource.id, { requiresMatchReconcile: true })
       const job = new RunBuilder(false)
       const restricted = resolution(2, 'copyright_restricted')
       const songId = job.addSongs(persistedSource.id, [{
@@ -247,14 +248,14 @@ describe('source finalization projection', () => {
         plexPlaylist: null,
       })
 
-      expect(result).toMatchObject({ status: 'success', failedSongs: 0 })
+      expect(result).toMatchObject({ status: 'partial', failedSongs: 0 })
       expect(result.summary).toContain('1 版权受限')
       expect(getSource(persistedSource.id)).toMatchObject({
-        lastStatus: 'success',
-        lastError: null,
-        lastTrackUpdateTime: 456,
-        trackIdSnapshot: '[2]',
-        requiresMatchReconcile: false,
+        lastStatus: 'partial',
+        lastError: '1 首版权受限',
+        lastTrackUpdateTime: null,
+        trackIdSnapshot: null,
+        requiresMatchReconcile: true,
       })
     } finally {
       closeDb()

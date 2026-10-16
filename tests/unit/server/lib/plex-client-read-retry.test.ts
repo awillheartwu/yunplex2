@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const transport = vi.hoisted(() => ({ query: vi.fn(), putQuery: vi.fn(), postQuery: vi.fn(), deleteQuery: vi.fn() }))
-vi.mock('plex-api', () => ({ default: vi.fn(function MockPlexApi() { return transport }) }))
+const transport = vi.hoisted(() => ({ query: vi.fn(), putQuery: vi.fn(), postQuery: vi.fn(), deleteQuery: vi.fn(), request: vi.fn() }))
+vi.mock('~~/server/lib/plex-http', () => ({ createPlexHttpClient: () => transport }))
 
 const config = { server: 'fixture.invalid', port: 32400, token: 'fixture', section: 'Music' }
 const reset = () => Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
@@ -60,8 +60,9 @@ describe('Plex connection recovery', () => {
     transport.putQuery.mockRejectedValue(error)
     await expect(insertTrackIntoPlaylist('playlist', 'track')).rejects.toBe(error)
     expect(transport.putQuery).toHaveBeenCalledTimes(1)
-    transport.query.mockReset().mockRejectedValue(error)
+    transport.query.mockResolvedValue({ MediaContainer: { Directory: [{ key: '12', refreshing: false }] } })
+    transport.request.mockRejectedValue(error)
     await expect(refreshLibrary('12')).rejects.toBe(error)
-    expect(transport.query).toHaveBeenCalledTimes(1)
+    expect(transport.request.mock.calls).toEqual([['/library/sections/12/refresh', 'POST']])
   })
 })
