@@ -15,6 +15,7 @@ describe('playlist source row mapping', () => {
       plex_playlist_name: 'Plex',
       plex_playlist_rating_key: '',
       sync_limit: null,
+      quality: null,
       last_synced_at: null,
       last_status: 'idle',
       last_error: null,

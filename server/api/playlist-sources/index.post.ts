@@ -6,6 +6,7 @@ import { getSyncWorker } from '../../lib/sync/instance'
 import { getDb } from '../../lib/db'
 import { requestSourceInitialization } from '../../lib/source-initialization/requests'
 import type { PlaylistStartMode } from '../../../shared/source-onboarding'
+import { isAudioQuality, type AudioQuality } from '../../../shared/audio-quality'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
@@ -18,12 +19,14 @@ export default defineEventHandler(async (event) => {
     coverUrl?: string
     startMode?: PlaylistStartMode
     enabled?: boolean
+    quality?: AudioQuality | null
   }>(event)
   if (!Number.isSafeInteger(body?.neteasePlaylistId) || body.neteasePlaylistId <= 0) {
     return fail('请提供有效的 ID')
   }
   if (body.startMode !== undefined && !['automatic', 'review'].includes(body.startMode)) return fail('请选择有效的开始方式')
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return fail('自动同步开关无效')
+  if (body.quality !== undefined && body.quality !== null && !isAudioQuality(body.quality)) return fail('请选择有效的音质，或使用全局设置')
 
   const existing = listSources()
   if (existing.some(s => s.neteasePlaylistId === body.neteasePlaylistId && s.type === (body.type || 'playlist'))) {
@@ -40,6 +43,7 @@ export default defineEventHandler(async (event) => {
       artist: body.artist,
       coverUrl: body.coverUrl,
       enabled: body.enabled,
+      quality: body.quality,
     })
     if (source.type === 'playlist' && body.startMode) {
       getDb().transaction(() => {

@@ -22,7 +22,7 @@
       <!-- ═══ Tab: 连接 ═══ -->
       <template v-if="activeTab === 'general'">
         <!-- Netease -->
-        <ConfigSection section-key="netease" title="网易云音乐" description="用于获取歌单和歌曲下载链接的认证信息" search-tab="general" search-keywords="Cookie 账号 登录 认证 音质" :collapsed="!!collapsed.netease" @toggle="toggle('netease')">
+        <ConfigSection section-key="netease" title="网易云音乐" description="用于获取歌单和歌曲下载链接的认证信息" search-tab="general" search-keywords="Cookie 账号 登录 认证" :collapsed="!!collapsed.netease" @toggle="toggle('netease')">
           <template #icon><SidebarIcon name="music" :active="true" /></template>
           <template #status><ConnectionStatus :pending="testing.netease" :result="testResult.netease" /></template>
           <template #actions><button type="button" class="btn btn-soft btn-sm" :disabled="testing.netease" @click="testConnection('netease')">
@@ -30,17 +30,6 @@
             </button></template>
           <FormField setting="netease.cookie" label="Cookie" search-keywords="账号 登录 认证" hint="从浏览器开发者工具中复制网易云音乐的 Cookie" required>
             <input v-model="form.netease.cookie" type="password" placeholder="MUSIC_U=xxx; __csrf=xxx; ..." class="form-input font-mono" @focus="($event.target as HTMLInputElement).type='text'" @blur="($event.target as HTMLInputElement).type='password'" />
-          </FormField>
-          <FormField setting="netease.quality" label="音质偏好" search-keywords="无损 FLAC HiRes 码率">
-            <select v-model="form.netease.quality" class="form-input">
-              <option value="standard">标准 (128kbps)</option>
-              <option value="higher">较高 (192kbps)</option>
-              <option value="exhigh">极高 (320kbps)</option>
-              <option value="lossless">无损 (FLAC)</option>
-              <option value="hires">Hi-Res</option>
-              <option value="jyeffect">高清环绕声</option>
-              <option value="jymaster">超清母带</option>
-            </select>
           </FormField>
         </ConfigSection>
         <!-- Plex -->
@@ -65,11 +54,16 @@
       <!-- ═══ Tab: 下载 ═══ -->
       <template v-if="activeTab === 'media'">
       <!-- Download -->
-      <ConfigSection section-key="download" title="下载与文件" description="歌曲文件的存储路径和元数据处理选项" search-tab="media" search-keywords="路径 存储 目录 封面 标签" :collapsed="!!collapsed.download" @toggle="toggle('download')">
+      <ConfigSection section-key="download" title="下载与文件" description="默认下载音质、歌曲文件的存储路径和元数据处理选项" search-tab="media" search-keywords="音质 无损 FLAC HiRes 码率 路径 存储 目录 封面 标签" :collapsed="!!collapsed.download" @toggle="toggle('download')">
         <template #icon><SidebarIcon name="download" :active="true" /></template>
           <template #actions><button type="button" class="btn btn-soft btn-sm" :disabled="testing.download" @click="testConnection('download')">
             {{ testing.download ? '检查中...' : '检查下载目录' }}
           </button></template>
+        <FormField setting="netease.quality" label="音质偏好" search-keywords="默认 无损 FLAC HiRes 码率" hint="歌单和专辑默认使用此音质，可在各自设置中单独调整；更改后不会自动重新下载已有音乐。">
+          <select v-model="form.netease.quality" class="form-input" aria-label="全局下载音质">
+            <option v-for="option in AUDIO_QUALITY_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
+        </FormField>
         <FormField setting="download.dir" label="下载目录" search-keywords="路径 挂载 NAS Docker" hint="YunPlex 保存音乐的位置；Docker 内填写挂载后的目录，如 /mnt/nas。" required>
           <input v-model="form.download.dir" type="text" placeholder="/mnt/nas" class="form-input" />
         </FormField>
@@ -383,6 +377,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { AUDIO_QUALITY_OPTIONS } from '~~/shared/audio-quality'
 import type { ArtistNameSettings } from '~~/shared/artist-names'
 import { tabs, categoryDescriptions } from '~/lib/settings-navigation'
 import { getSettingsTarget, settingLabel, settingTargetId } from '~/lib/settings-catalog'

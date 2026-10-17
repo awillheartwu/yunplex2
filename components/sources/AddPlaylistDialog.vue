@@ -59,6 +59,14 @@
             }}
           </button>
         </div>
+        <div class="add-collection-quality">
+          <FormField label="下载音质" hint="适用于本次添加的收藏，之后可在各自设置中单独调整。">
+            <select v-model="sourceQuality" class="form-input" aria-label="新收藏下载音质" :disabled="saving || addedInBatch.length > 0">
+              <option :value="null">使用全局设置</option>
+              <option v-for="option in AUDIO_QUALITY_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+          </FormField>
+        </div>
         <template v-if="!error && !manualEntry">
           <div v-if="loading" class="text-sm text-muted py-12 text-center">加载列表...</div>
 
@@ -326,6 +334,7 @@ import { getSyncSourceCoverUrl } from '~/composables/useSyncSourcePresentation'
 import { useDialogFocus } from '~/composables/useDialogFocus'
 import { countActiveFilters } from '~~/composables/useFilterQuery'
 import type { CreatedPlaylistSources, PlaylistStartMode } from '../../shared/source-onboarding'
+import { AUDIO_QUALITY_OPTIONS, type AudioQuality } from '../../shared/audio-quality'
 
 interface NeteasePlaylist {
   id: number
@@ -399,6 +408,7 @@ const selectedIds = ref<number[]>([])
 const addedInBatch = ref<string[]>([])
 const addedResourceIds = ref<number[]>([])
 const batchMode = ref<PlaylistStartMode>('review')
+const sourceQuality = ref<AudioQuality | null>(null)
 const manualId = ref('')
 const manualEntry = ref(false)
 const manualInput = ref<HTMLInputElement | null>(null)
@@ -566,6 +576,7 @@ async function handleAddSelected(mode: PlaylistStartMode = 'review') {
         neteasePlaylistId: pid,
         type: isAlbum ? 'album' : 'playlist',
         subscribed: playlist?.subscribed ?? false,
+        quality: sourceQuality.value,
         coverUrl: album?.picUrl || playlist?.coverImgUrl || undefined,
         ...(album ? { name: album.name, artist: album.artist?.name } : {}),
         ...(!isAlbum ? { startMode: mode } : {}),
@@ -602,6 +613,7 @@ async function handleAddSingle(mode: PlaylistStartMode = 'review') {
       neteasePlaylistId: id,
       type: isAlbum ? 'album' : 'playlist',
       subscribed: playlist?.subscribed ?? false,
+      quality: sourceQuality.value,
       coverUrl: playlist?.coverImgUrl || undefined,
       ...(!isAlbum ? { startMode: mode } : {}),
     })
@@ -625,6 +637,7 @@ watch(
       manualId.value = ''
       manualEntry.value = false
       selectedIds.value = []
+      sourceQuality.value = null
       saveError.value = ''
       clearPlaylistDialogFilters()
       clearAlbumDialogFilters()
@@ -689,6 +702,11 @@ watch(
 .add-collection-list-label {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+}
+.add-collection-quality {
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-primary);
+  flex: none;
 }
 .add-collection-filters { display: grid; gap: var(--space-2); }
 .add-collection-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }

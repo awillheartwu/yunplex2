@@ -27,6 +27,7 @@ const source: PlaylistSource = {
   plexPlaylistName: 'Source',
   plexPlaylistRatingKey: 'playlist-1',
   syncLimit: null,
+  quality: null,
   lastSyncedAt: null,
   lastStatus: 'idle',
   lastError: null,

@@ -15,6 +15,7 @@ function makeSource(overrides: Partial<PlaylistSource> = {}): PlaylistSource {
     plexPlaylistName: 'Source',
     plexPlaylistRatingKey: 'plex-1',
     syncLimit: null,
+    quality: null,
     lastSyncedAt: '2026-06-10T10:00:00.000Z',
     lastStatus: 'success',
     lastError: null,

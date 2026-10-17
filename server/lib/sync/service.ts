@@ -112,9 +112,9 @@ export function getSyncService(getConfig: () => AppConfig) {
     if (!dryRun) saveSyncRun(job.getRun(), options?.trigger || 'system')
 
     try {
-      const cfg = getConfig()
-      const multiFormat = cfg.other?.multiArtistFormat ?? 'ampersand'
-      setArtistAliases(cfg.other?.artistAliases ?? {}, cfg.other?.applyAliasToAlbum ?? false)
+      const globalConfig = getConfig()
+      const multiFormat = globalConfig.other?.multiArtistFormat ?? 'ampersand'
+      setArtistAliases(globalConfig.other?.artistAliases ?? {}, globalConfig.other?.applyAliasToAlbum ?? false)
       const splitArtists = createSplitArtists(multiFormat)
 
       const allSources = getEnabledSources()
@@ -122,11 +122,11 @@ export function getSyncService(getConfig: () => AppConfig) {
         ? listSources().filter((s) => targetIds.includes(s.id)) // manual trigger: include disabled (e.g. albums)
         : allSources
       if (sources.length === 0) throw new Error('没有可同步的歌单源，请在「歌单源」页面添加')
-      assertSourcesReadyForConvergence(sources, cfg)
+      assertSourcesReadyForConvergence(sources, globalConfig)
 
       // ── Validate ──
-      if (!cfg.netease.cookie) throw new Error('未配置网易云 Cookie')
-      if (!cfg.plex.server || !cfg.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
+      if (!globalConfig.netease.cookie) throw new Error('未配置网易云 Cookie')
+      if (!globalConfig.plex.server || !globalConfig.plex.token) throw new Error('未配置 Plex 服务器地址或 Token')
       job.setSourceIds(sources.map(source => source.id))
       if (!dryRun) saveSyncRun(job.getRun())
 
@@ -139,6 +139,10 @@ export function getSyncService(getConfig: () => AppConfig) {
 
       for (const source of sources) {
         throwIfCancelled()
+        const cfg = {
+          ...globalConfig,
+          netease: { ...globalConfig.netease, quality: source.quality ?? globalConfig.netease.quality },
+        }
         currentSourceId = source.id
         currentSourceName = source.name || `网易云歌单 #${source.neteasePlaylistId}`
         state.stageHistory = []

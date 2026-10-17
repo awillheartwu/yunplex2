@@ -1,18 +1,12 @@
 import type { InitializationMatchingConfig } from '../../../shared/initialization-matching'
+import type { AudioQuality } from '../../../shared/audio-quality'
+
+export type { AudioQuality } from '../../../shared/audio-quality'
 
 export interface NeteaseConfig {
   cookie: string
   quality: AudioQuality
 }
-
-export type AudioQuality =
-  | 'standard'
-  | 'higher'
-  | 'exhigh'
-  | 'lossless'
-  | 'hires'
-  | 'jyeffect'
-  | 'jymaster'
 
 export interface PlexConfig {
   server: string

@@ -39,6 +39,18 @@
     </section>
     <section class="section-card source-settings__section">
       <header>
+        <AppIcon name="download" :size="20" />
+        <div><h2>下载设置</h2></div>
+      </header>
+      <FormField label="下载音质" hint="仅影响这份收藏之后的下载；更改后不会自动重新下载已有音乐。">
+        <select v-model="form.quality" class="form-input" aria-label="收藏下载音质">
+          <option :value="null">使用全局设置{{ globalQualityLabel ? `（${globalQualityLabel}）` : '' }}</option>
+          <option v-for="option in AUDIO_QUALITY_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+        </select>
+      </FormField>
+    </section>
+    <section class="section-card source-settings__section">
+      <header>
         <AppIcon name="calendar" :size="20" />
         <div>
           <h2>同步安排</h2>
@@ -115,6 +127,7 @@
 <script setup lang="ts">
 import type { PlaylistSource } from '~~/server/lib/playlist/types'
 import type { AppConfig, ExtraTrackRemovalPolicy } from '~~/server/lib/config/types'
+import { AUDIO_QUALITY_OPTIONS, type AudioQuality } from '~~/shared/audio-quality'
 const props = defineProps<{ source: PlaylistSource }>()
 const emit = defineEmits<{ saved: [source: PlaylistSource] }>()
 const api = useApi()
@@ -125,9 +138,12 @@ const globalForceFull = ref<boolean | null>(null)
 const globalSkipRemove = ref<boolean | null>(null)
 const globalRemovalPolicy = ref<ExtraTrackRemovalPolicy | null>(null)
 const globalSkipPlaylist = ref<boolean | null>(null)
+const globalQuality = ref<AudioQuality | null>(null)
+const globalQualityLabel = computed(() => AUDIO_QUALITY_OPTIONS.find(option => option.value === globalQuality.value)?.label)
 function settings(source: PlaylistSource) {
   return {
     name: source.name,
+    quality: source.quality ?? null,
     plexPlaylistName: source.plexPlaylistName,
     syncLimit: source.syncLimit,
     syncIntervalMinutes: source.syncIntervalMinutes,
@@ -183,6 +199,7 @@ async function loadDefaults() {
   defaultsError.value = ''
   try {
     const config = await api.get<AppConfig>('/config')
+    globalQuality.value = config.netease.quality
     globalInitialize.value = config.sync.initializeMediaOnFirstSync ?? true
     globalForceFull.value = config.sync.forceFullCompare
     globalSkipRemove.value = config.sync.skipRemoveExtraTracks

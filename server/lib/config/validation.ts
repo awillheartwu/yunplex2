@@ -1,6 +1,7 @@
 import type { AppConfig, AudioQuality, ExtraTrackRemovalPolicy, LyricOrder, MultiArtistFormat, UnverifiedMediaPolicy } from './types'
 import { DEFAULT_CONFIG } from './defaults'
 import { deepMerge } from './merge'
+import { AUDIO_QUALITY_OPTIONS } from '../../../shared/audio-quality'
 import { ConfigValidationError, MATCHING_KEYS, assertMatchingPatchShape, migrateInitializationMatching, validateInitializationMatching } from './initialization-matching-validation'
 
 export { deepMerge } from './merge'
@@ -8,15 +9,7 @@ export { ConfigValidationError, validateInitializationMatching } from './initial
 
 type PlainRecord = Record<string, unknown>
 
-const AUDIO_QUALITIES = new Set<AudioQuality>([
-  'standard',
-  'higher',
-  'exhigh',
-  'lossless',
-  'hires',
-  'jyeffect',
-  'jymaster',
-])
+const AUDIO_QUALITIES = new Set<AudioQuality>(AUDIO_QUALITY_OPTIONS.map(option => option.value))
 
 const MULTI_ARTIST_FORMATS = new Set<MultiArtistFormat>([
   'feat',

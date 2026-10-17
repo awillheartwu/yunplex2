@@ -181,6 +181,7 @@ export function createSchema(db: Database.Database): void {
       skip_remove_extra_tracks INTEGER,
       requires_match_reconcile INTEGER NOT NULL DEFAULT 0,
       sync_interval_minutes   INTEGER CHECK(sync_interval_minutes IS NULL OR sync_interval_minutes BETWEEN 1 AND 1440),
+      quality                 TEXT,
       initialize_media_on_first_sync INTEGER CHECK(initialize_media_on_first_sync IS NULL OR initialize_media_on_first_sync IN (0, 1)),
       next_sync_at            TEXT,
       last_schedule_status    TEXT NOT NULL DEFAULT 'idle'
@@ -457,6 +458,9 @@ export function createSchema(db: Database.Database): void {
   }
 
   const sourceColumns = db.prepare("PRAGMA table_info('playlist_sources')").all() as Array<{ name: string }>
+  if (!sourceColumns.some(column => column.name === 'quality')) {
+    db.prepare('ALTER TABLE playlist_sources ADD COLUMN quality TEXT').run()
+  }
   if (!sourceColumns.some(column => column.name === 'initialize_media_on_first_sync')) {
     db.prepare('ALTER TABLE playlist_sources ADD COLUMN initialize_media_on_first_sync INTEGER').run()
   }

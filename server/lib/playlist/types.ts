@@ -1,3 +1,5 @@
+import type { AudioQuality } from '../config/types'
+
 export type SourceType = 'playlist' | 'album'
 export type SourceScheduleStatus = 'idle' | 'queued' | 'running' | 'success' | 'partial' | 'failed'
 export type SourceInitializationStatus = 'pending' | 'analyzing' | 'awaiting_review' | 'applying' | 'completed' | 'failed' | 'cancelled' | 'skipped'
@@ -15,6 +17,7 @@ export interface PlaylistSource {
   plexPlaylistName: string
   plexPlaylistRatingKey: string
   syncLimit: number | null
+  quality: AudioQuality | null
   lastSyncedAt: string | null
   lastStatus: 'idle' | 'success' | 'partial' | 'failed'
   lastError: string | null
@@ -70,6 +73,7 @@ export interface PlaylistSourceRow {
   plex_playlist_name: string
   plex_playlist_rating_key: string
   sync_limit: number | null
+  quality: AudioQuality | null
   last_synced_at: string | null
   last_status: string
   last_error: string | null
@@ -123,6 +127,7 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     plexPlaylistName: row.plex_playlist_name,
     plexPlaylistRatingKey: row.plex_playlist_rating_key,
     syncLimit: row.sync_limit,
+    quality: row.quality,
     lastSyncedAt: row.last_synced_at,
     lastStatus: row.last_status as PlaylistSource['lastStatus'],
     lastError: row.last_error,

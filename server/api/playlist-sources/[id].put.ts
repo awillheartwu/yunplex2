@@ -1,6 +1,7 @@
 import { success, fail } from '../../lib/response'
 import { getSource, updateSource } from '../../lib/playlist/store'
 import { getSyncWorker } from '../../lib/sync/instance'
+import { isAudioQuality, type AudioQuality } from '../../../shared/audio-quality'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -15,6 +16,7 @@ export default defineEventHandler(async (event) => {
     plexPlaylistName?: string
     plexPlaylistRatingKey?: string
     syncLimit?: number | null
+    quality?: AudioQuality | null
     syncIntervalMinutes?: number | null
     autoCreatePlexPlaylist?: boolean
     forceFullCompare?: boolean | null
@@ -25,6 +27,8 @@ export default defineEventHandler(async (event) => {
     initializeMediaOnFirstSync?: boolean | null
     neteasePlaylistName?: string
   }>(event)
+
+  if (body.quality !== undefined && body.quality !== null && !isAudioQuality(body.quality)) return fail('请选择有效的音质，或使用全局设置')
 
   if (
     body.syncIntervalMinutes !== undefined
@@ -40,6 +44,7 @@ export default defineEventHandler(async (event) => {
     plexPlaylistName: body.plexPlaylistName,
     plexPlaylistRatingKey: body.plexPlaylistRatingKey,
     syncLimit: body.syncLimit,
+    quality: body.quality,
     syncIntervalMinutes: body.syncIntervalMinutes,
     nextSyncAt: body.syncIntervalMinutes !== undefined ? null : undefined,
     autoCreatePlexPlaylist: body.autoCreatePlexPlaylist,
