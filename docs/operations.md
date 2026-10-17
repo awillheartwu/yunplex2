@@ -11,7 +11,7 @@
 
 runner 使用 `self-hosted`、`linux`、`docker` 标签，网络沿用 `core-net`。当前 runner 的 `docker_host` 会自动把宿主 Docker socket 挂到每个 job，工作流不重复挂载。`privileged: false` 不能收回 socket 的宿主管理权限；因此这台 runner 只能执行受信任代码，工作流排除了 fork PR。代码没有上传应用数据或备份的步骤。
 
-工作流使用 Node 24 Trixie 镜像，其 C++ 运行库支持 FLAC 原生依赖要求的 `CXXABI_1.3.15`；runner 复用 NAS 已保存的镜像，缺失时才拉取。通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile，安装后先核验原生模块可加载。唯一远程 action 是固定提交的官方 checkout。
+质量检查、NAS 部署和 GHCR 分发任务统一使用 Node 24 Trixie 镜像，其 C++ 运行库支持 FLAC 原生依赖要求的 `CXXABI_1.3.15`；runner 复用 NAS 已保存的镜像，缺失时才拉取。质量检查通过 Corepack 按 package.json 启用 pnpm，安装使用 lockfile，安装后先核验原生模块可加载。唯一远程 action 是固定提交的官方 checkout。
 
 部署工具使用固定摘要的官方 `docker:27.5.1-cli` 镜像，内含 Docker 27.5.1 和 Compose 2.33.0。首次缺失时由 NAS 拉取，之后直接从本地镜像复制两个命令到 job；临时容器只用于取文件，用完删除。工具本身不需要 Actions 缓存或密钥，也不进入应用镜像；GHCR 分发的凭据单独配置。
 

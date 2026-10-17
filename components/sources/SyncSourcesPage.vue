@@ -9,8 +9,8 @@
           <AppIcon :name="loading ? 'loader' : 'refresh'" :size="14" :class="loading ? 'animate-spin' : ''" />
           刷新
         </button>
-        <button class="btn btn-primary btn-sm sync-sources-page__toolbar-button" type="button" @click="openAddPlaylist">
-          <AppIcon name="plus" :size="15" />
+        <button class="btn btn-primary sync-sources-page__toolbar-button" type="button" @click="openAddPlaylist">
+          <AppIcon name="plus" :size="16" />
           添加歌单
         </button>
       </template>
