@@ -12,10 +12,14 @@ const lockName = 'reyunplex-publish-lock'
 
 export async function publish(env = process.env) {
   const { RELEASE_TAG: tag, GHCR_IMAGE: destination, GHCR_USERNAME: username, GHCR_TOKEN: password, NAS_APP_ROOT: appRoot } = env
-  const revision = taggedRevision(tag ?? '')
+  const testRevision = env.GHCR_TEST_REVISION?.trim()
+  const testing = Boolean(testRevision)
+  if (testing && (!/^[a-f0-9]{40}$/.test(testRevision) || tag)) throw new Error('Test publication requires a full GHCR_TEST_REVISION and no RELEASE_TAG')
+  const revision = testing ? testRevision : taggedRevision(tag ?? '')
   const { version } = packageAt(revision)
-  if (tag !== `v${version}`) throw new Error('Release tag does not match package.json at that commit')
-  if (git('branch', '--show-current') !== 'main') throw new Error('Dispatch publication from main')
+  if (!testing && tag !== `v${version}`) throw new Error('Release tag does not match package.json at that commit')
+  const branch = git('branch', '--show-current')
+  if (branch !== 'main' && !(testing && branch === 'dev')) throw new Error('Dispatch publication from main, or a test from dev')
   git('merge-base', '--is-ancestor', revision, 'HEAD')
   if (!/^ghcr\.io\/[a-z0-9][a-z0-9-]*\/[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(destination ?? '')) {
     throw new Error('Set GHCR_IMAGE to a lowercase ghcr.io/owner/image without a tag')
@@ -23,7 +27,7 @@ export async function publish(env = process.env) {
   if (!username || !password) throw new Error('Set GHCR_USERNAME and GHCR_TOKEN in Forgejo secrets')
   if (!/^\/volume\d+\/docker\/reyunplex$/.test(appRoot ?? '')) throw new Error('Set the existing NAS_APP_ROOT deployment variable')
   if (!['true', 'false'].includes(env.GHCR_UPDATE_LATEST)) throw new Error('GHCR_UPDATE_LATEST must be true or false')
-  const updateLatest = env.GHCR_UPDATE_LATEST === 'true'
+  const updateLatest = !testing && env.GHCR_UPDATE_LATEST === 'true'
   const image = `reyunplex:${revision}`
   const authDir = await mkdtemp(join(tmpdir(), 'yunplex-ghcr-'))
   const dockerEnv = { ...process.env, DOCKER_CONFIG: authDir }
@@ -73,8 +77,8 @@ export async function publish(env = process.env) {
       if (!probe.ready || probe.version !== version) throw new Error('Running image version or application readiness did not match')
     }
     await requireAcceptedDeployment()
-    const fixedTags = [`sha-${revision}`, version]
-    // Check both immutable destinations before the first registry write.
+    const fixedTags = testing ? [`test-${revision.slice(0, 12)}`] : [`sha-${revision}`, version]
+    // Check immutable destinations before the first registry write.
     for (const name of fixedTags) {
       const existing = await client.manifest(name)
       if (existing && existing.imageId !== candidate.Id) throw new Error(`GHCR ${name} already contains different content; refusing to replace it`)
@@ -106,6 +110,18 @@ export async function publish(env = process.env) {
       return result
     }
     const sha = await push(fixedTags[0], true)
+    if (testing) {
+      const reference = `${destination}:${fixedTags[0]}`
+      const local = await inspect('image', reference)
+      if (local && local.Id !== candidate.Id) throw new Error(`Local ${reference} belongs to another image; preserve or remove it explicitly`)
+      if (!local) aliases.push(reference)
+      await docker(['pull', reference])
+      const pulled = await inspect('image', reference)
+      if (pulled?.Id !== candidate.Id) throw new Error('Pulled test image does not match the accepted NAS image')
+      console.log(`Test push and authenticated pull verified: ${reference} (${sha.digest}); platform linux/amd64; image ${candidate.Id}.`)
+      console.log('Stable version and latest tags were not changed.')
+      return
+    }
     const release = await push(version, true)
     if (sha.digest !== release.digest) throw new Error('Version and SHA tags have different remote manifest digests')
     if (updateLatest) {

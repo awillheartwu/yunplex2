@@ -6,8 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '最终确认发布的 tag，例如 v2.0.1'
-        required: true
+        description: '正式发布填写 tag，例如 v2.0.9；测试时留空'
+        required: false
+        type: string
+      test_revision:
+        description: '测试填写 NAS 当前已验收的完整提交 SHA；只推送 test-<SHA前12位>'
+        required: false
         type: string
       update_latest:
         description: '将 latest 更新到本次正式版本；补发历史版本时关闭'
@@ -21,7 +25,7 @@ permissions:
 # Same NAS Docker daemon as ci.yml. Never build or deploy in this workflow.
 jobs:
   publish:
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (github.ref == 'refs/heads/dev' && inputs.test_revision != '')))
     runs-on: [self-hosted, linux, docker]
     container:
       image: node:24-trixie
@@ -29,14 +33,15 @@ jobs:
     env:
       DOCKER_API_VERSION: '1.43'
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      GHCR_TEST_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_revision || '' }}
       GHCR_UPDATE_LATEST: ${{ github.event_name == 'push' && 'true' || inputs.update_latest }}
       GHCR_IMAGE: ${{ vars.GHCR_IMAGE }}
       NAS_APP_ROOT: ${{ vars.NAS_APP_ROOT }}
     steps:
-      - name: Check out release tools from main
+      - name: Check out publication tools
         uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.test_revision != '' && github.ref_name || 'main' }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -48,3 +53,9 @@ jobs:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: node scripts/release/publish.mjs
+
+      - name: Verify the pulled test image using disposable volumes
+        if: github.event_name == 'workflow_dispatch' && inputs.test_revision != ''
+        env:
+          NASUID: ${{ vars.NAS_UID }}:${{ vars.NAS_GID }}
+        run: sh tests/acceptance/docker-smoke.sh "reyunplex:$GHCR_TEST_REVISION"
