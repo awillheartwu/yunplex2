@@ -12,9 +12,9 @@ const lockName = 'reyunplex-publish-lock'
 
 export async function publish(env = process.env) {
   const { RELEASE_TAG: tag, GHCR_IMAGE: destination, GHCR_USERNAME: username, GHCR_TOKEN: password, NAS_APP_ROOT: appRoot } = env
-  const testRevision = env.GHCR_TEST_REVISION?.trim()
+  const testRevision = /^test-([a-f0-9]{40})$/.exec(tag ?? '')?.[1]
   const testing = Boolean(testRevision)
-  if (testing && (!/^[a-f0-9]{40}$/.test(testRevision) || tag)) throw new Error('Test publication requires a full GHCR_TEST_REVISION and no RELEASE_TAG')
+  if (tag?.startsWith('test-') && !testing) throw new Error('Test publication requires test- followed by the full accepted NAS revision')
   const revision = testing ? testRevision : taggedRevision(tag ?? '')
   const { version } = packageAt(revision)
   if (!testing && tag !== `v${version}`) throw new Error('Release tag does not match package.json at that commit')
