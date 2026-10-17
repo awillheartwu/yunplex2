@@ -31,6 +31,7 @@ const EXPECTED_TABLES = [
   'local_media_assets',
   'logs',
   'media_corrections',
+  'netease_song_details',
   'playlist_extra_observations',
   'playlist_source_track_occurrences',
   'playlist_sources',
