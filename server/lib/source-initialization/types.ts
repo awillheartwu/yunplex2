@@ -42,6 +42,7 @@ export interface SourceInitializationSummary {
   trigger: string
   status: SourceInitializationStatus
   autoProcess?: boolean
+  reevaluateAutomatic?: boolean
   revision?: number
   quickThreshold?: number | null
   quickStatus?: string | null

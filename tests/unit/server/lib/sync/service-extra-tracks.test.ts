@@ -13,7 +13,8 @@ import { getSyncService } from '~~/server/lib/sync/service'
 import type { SyncMode } from '~~/server/lib/sync/service-state'
 
 const remote = vi.hoisted(() => ({
-  fetchPlaylistSongs: vi.fn(),
+  fetchPlaylistSummary: vi.fn(),
+  fetchNeteaseSongDetails: vi.fn(),
   getPlaylistSnapshotByRatingKey: vi.fn(),
   getPlaylistTracks: vi.fn(),
   getTrackByRatingKey: vi.fn(),
@@ -23,7 +24,11 @@ const remote = vi.hoisted(() => ({
 
 vi.mock('~~/server/lib/netease', () => ({
   checkCookie: async () => ({ valid: true }),
-  fetchPlaylistSongs: remote.fetchPlaylistSongs,
+  fetchPlaylistSummary: remote.fetchPlaylistSummary,
+  fetchNeteaseSongDetails: remote.fetchNeteaseSongDetails,
+  fetchAlbumSongs: vi.fn(),
+  mapRawSong: vi.fn(),
+  findInvalidRawSongField: vi.fn(() => null),
   clearAlbumCache: () => undefined,
   setArtistAliases: () => undefined,
 }))
@@ -87,10 +92,11 @@ async function runComparison(hasRetainedExtra: boolean, mode: SyncMode = 'full')
     grandparentTitle: 'Artist', parentTitle: 'Album',
   }
   const tracks = hasRetainedExtra ? [target, extra] : [target]
-  remote.fetchPlaylistSongs.mockResolvedValue({
-    songs: [song], trackIds: [{ id: 1 }], allTrackIds: [{ id: 1 }],
-    trackUpdateTime: 1, playlistName: 'Source',
+  remote.fetchPlaylistSummary.mockResolvedValue({
+    trackIds: [{ id: 1 }], allTrackIds: [{ id: 1 }],
+    trackUpdateTime: 1, playlistName: 'Source', playlist: null,
   })
+  remote.fetchNeteaseSongDetails.mockResolvedValue({ songs: [song], rawSongs: [] })
   remote.getPlaylistSnapshotByRatingKey.mockResolvedValue({ updatedAt: 1, tracks })
   remote.getPlaylistTracks.mockResolvedValue(tracks)
   remote.getTrackByRatingKey.mockResolvedValue(target)

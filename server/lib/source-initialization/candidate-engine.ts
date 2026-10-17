@@ -71,6 +71,7 @@ export function buildInitializationPlans(input: {
   aliases?: Record<string, string>
   matching?: InitializationMatchingConfig
   musicBrainz?: MusicBrainzMatchingEvidence
+  reevaluateAutomatic?: boolean
 }): InitializationItemPlan[] {
   const aliases = input.aliases ?? {}
   const byTitle = new Map<string, PlexTrack[]>()
@@ -109,7 +110,10 @@ export function buildInitializationPlans(input: {
     const currentBindingTrack = binding?.status === 'active'
       ? findCurrentBindingTrack(binding, input.tracks)
       : null
-    if (binding && currentBindingTrack) {
+    const reevaluateAutomaticBinding = Boolean(input.reevaluateAutomatic
+      && binding?.bindingOrigin === 'auto'
+      && binding.bindingMethod === 'manual')
+    if (binding && currentBindingTrack && !reevaluateAutomaticBinding) {
       const candidate = plexCandidate(currentBindingTrack)
       return {
         ...base,

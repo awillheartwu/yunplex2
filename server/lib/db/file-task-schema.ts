@@ -61,7 +61,7 @@ export function createFileTaskSchema(db: Database.Database): void {
     `)
 
     const taskColumns = new Set((db.prepare('PRAGMA table_info(download_tasks)').all() as Array<{ name: string }>).map(row => row.name))
-    for (const [name, definition] of Object.entries({ auto_retry_count: 'INTEGER NOT NULL DEFAULT 0', next_attempt_at: 'TEXT' })) {
+    for (const [name, definition] of Object.entries({ auto_retry_count: 'INTEGER NOT NULL DEFAULT 0', next_attempt_at: 'TEXT', error_code: 'TEXT' })) {
       if (!taskColumns.has(name)) db.exec(`ALTER TABLE download_tasks ADD COLUMN ${name} ${definition}`)
     }
     const linkColumns = db.prepare('PRAGMA table_info(run_file_tasks)').all() as Array<{ name: string }>

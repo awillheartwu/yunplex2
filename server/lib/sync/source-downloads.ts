@@ -190,6 +190,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
                   title: diagnosis.title,
                   message: task.error,
                   stage: diagnosis.phase,
+                  code: diagnosis.errorCode,
                   songName: resolution.song.name,
                   artist,
                 },

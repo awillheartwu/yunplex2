@@ -27,11 +27,11 @@ onBeforeUnmount(() => { comparisonRequest++ })
 </script>
 
 <template>
-  <AppDrawer :visible="visible" title="重新分析" wide :busy="busy" @close="emit('cancel')">
-  <section class="matching-reanalysis" aria-label="重新分析前比较" :aria-busy="loading">
+  <AppDrawer :visible="visible" title="重新分析当前方案" wide :busy="busy" @close="emit('cancel')">
+  <section class="matching-reanalysis" aria-label="重新分析当前方案前比较" :aria-busy="loading">
     <header class="matching-reanalysis__heading">
       <AppIcon name="refresh" :size="18" />
-      <div><h3>按当前设置重新分析</h3></div>
+      <div><h3>按当前设置重新分析当前方案</h3></div>
     </header>
     <div class="matching-reanalysis__notice">
       <strong>会重新生成一份方案</strong>
@@ -56,7 +56,7 @@ onBeforeUnmount(() => { comparisonRequest++ })
   <template #footer>
     <p v-if="submitError" class="matching-reanalysis__error" role="alert">{{ submitError }}</p>
     <div class="matching-reanalysis__actions">
-      <button class="btn btn-primary" :disabled="busy || loading || !preview || !!error" @click="emit('confirm')">确认并重新分析</button>
+      <button class="btn btn-primary" :disabled="busy || loading || !preview || !!error" @click="emit('confirm')">确认并重新分析当前方案</button>
       <button class="btn btn-ghost" :disabled="busy" @click="emit('cancel')">保留当前方案</button>
       <NuxtLink class="btn btn-ghost" :to="{ path: '/config', query: { tab: 'matching', source: sourceId } }">调整匹配规则</NuxtLink>
     </div>

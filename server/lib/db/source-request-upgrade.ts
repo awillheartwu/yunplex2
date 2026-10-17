@@ -19,7 +19,7 @@ export function upgradeSourceRequests(db: Database.Database): void {
       allow_disabled: 'INTEGER NOT NULL DEFAULT 0', take_over_external: 'INTEGER NOT NULL DEFAULT 0',
       plex_recovery_json: 'TEXT',
     })
-    add('source_initializations', { rule_version: 'INTEGER NOT NULL DEFAULT 0', commit_result_json: 'TEXT', matching_config_json: 'TEXT', matching_config_fingerprint: 'TEXT', matching_data_fingerprint: 'TEXT', auto_process: 'INTEGER NOT NULL DEFAULT 0' })
+    add('source_initializations', { rule_version: 'INTEGER NOT NULL DEFAULT 0', commit_result_json: 'TEXT', matching_config_json: 'TEXT', matching_config_fingerprint: 'TEXT', matching_data_fingerprint: 'TEXT', auto_process: 'INTEGER NOT NULL DEFAULT 0', reevaluate_automatic: 'INTEGER NOT NULL DEFAULT 0' })
     upgradeQuickInitialization(db)
     db.exec(`
       UPDATE source_sync_queue SET trigger='user' WHERE schedule_window LIKE 'manual:%' AND trigger='schedule' AND request_kind='convergence';

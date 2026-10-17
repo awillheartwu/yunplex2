@@ -1,7 +1,7 @@
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
-import { checkCookie, fetchPlaylistSongs, fetchAlbumSongs, clearAlbumCache, setArtistAliases } from '../netease'
+import { checkCookie, clearAlbumCache, setArtistAliases } from '../netease'
 import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
 import { saveSyncRun } from '../run/store'
@@ -22,16 +22,19 @@ import { observePlaylistSourceTracks } from './match-management-store'
 import { captureBindingVersions } from './identity-coordinator'
 import {
   getSourceFailurePolicy,
-  shouldPauseSourceFailure,
+  isTerminalFailure,
+  pauseExhaustedFailures,
 } from '../tasks/failure-records'
 import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
 import { buildSyncRunSummary } from './service-summary'
 import {
   buildNeteasePlaylistCursor,
   buildPlexPlaylistFingerprint,
+  buildPlexPathSnapshot,
   classifyPlexPlaylistObservation,
+  serializeOrderedSnapshot,
 } from './playlist-fingerprint'
-import { hasMissingMediaPolicyWork } from './missing-media-policy'
+import { planMissingMedia } from './missing-media-policy'
 import { finalizeSourceConvergence } from './source-finalization'
 import { applySourceDownloads } from './source-downloads'
 import { reconcilePlexPlaylist } from './source-plex-reconciliation'
@@ -40,6 +43,14 @@ import { assertSourcesReadyForConvergence } from '../source-initialization/gate'
 import { withExternalRequestSignal } from '../external-request-context'
 import { getMediaCorrection } from './media-corrections'
 import { plexRecoveryConfigFingerprint } from './plex-index-recovery'
+import {
+  addMissingDetailSongs,
+  applySourceFailureMemory,
+  loadSourceSongSnapshot,
+  resolveIgnoredPlexMatchSongIds,
+  resolveSourceSkipState,
+} from './source-preparation'
+import { detectPlexPathDrift, resolveTrustedSongSnapshot } from './source-snapshot'
 
 export { STAGE_LABELS } from './service-state'
 
@@ -186,11 +197,21 @@ export function getSyncService(getConfig: () => AppConfig) {
             throw new Error(err.message)
           }
 
-          const { songs: yunSongs, trackUpdateTime: rawTrackUpdateTime, trackIds, allTrackIds, playlistName: nePlaylistName } = source.type === 'album'
-            ? { songs: await fetchAlbumSongs(playlistId, cfg.netease.cookie), trackUpdateTime: null, trackIds: [], allTrackIds: [], playlistName: source.neteasePlaylistName }
-            : await fetchPlaylistSongs(playlistId, sourceSongLimit, cfg.netease.cookie)
+          const {
+            songs: yunSongs,
+            trackUpdateTime,
+            trackIds,
+            allTrackIds,
+            playlistName: nePlaylistName,
+            detailSummary,
+          } = await loadSourceSongSnapshot({
+            source,
+            playlistId,
+            limit: sourceSongLimit,
+            cookie: cfg.netease.cookie,
+            dryRun,
+          })
           throwIfCancelled()
-          const trackUpdateTime = rawTrackUpdateTime
 
           // Detect Netease playlist rename
           if (nePlaylistName && nePlaylistName !== source.neteasePlaylistName) {
@@ -239,6 +260,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           }
           let plexUpdatedAt: number | null = null
           let observedPlexFingerprint: string | null = null
+          let observedPlexPaths: string | null = null
           let plexObservationKind: ReturnType<typeof classifyPlexPlaylistObservation> = 'initial'
           if (source.plexPlaylistRatingKey) {
             await initPlexClient(cfg.plex)
@@ -247,6 +269,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             if (snapshot) {
               plexUpdatedAt = snapshot.updatedAt
               observedPlexFingerprint = buildPlexPlaylistFingerprint(snapshot.tracks)
+              observedPlexPaths = buildPlexPathSnapshot(snapshot.tracks)
               plexObservationKind = classifyPlexPlaylistObservation(observedPlexFingerprint, {
                 lastObservedPlexFingerprint: source.lastObservedPlexFingerprint,
                 lastAppliedPlexFingerprint: source.lastAppliedPlexFingerprint,
@@ -274,6 +297,8 @@ export function getSyncService(getConfig: () => AppConfig) {
               source.plexUpdatedAt = null
               source.lastObservedPlexFingerprint = null
               source.lastAppliedPlexFingerprint = null
+              source.observedPlexPaths = null
+              source.appliedPlexPaths = null
               source.requiresMatchReconcile = true
               stepContext.plexPlaylistRatingKey = undefined
               if (!dryRun) {
@@ -282,6 +307,8 @@ export function getSyncService(getConfig: () => AppConfig) {
                   plexUpdatedAt: null,
                   lastObservedPlexFingerprint: null,
                   lastAppliedPlexFingerprint: null,
+                  observedPlexPaths: null,
+                  appliedPlexPaths: null,
                   requiresMatchReconcile: true,
                 })
               }
@@ -292,6 +319,8 @@ export function getSyncService(getConfig: () => AppConfig) {
             recordSourceObservation(source.id, {
               neteaseCursor,
               plexFingerprint: observedPlexFingerprint,
+              neteaseIds: serializeOrderedSnapshot(currentIdOrder),
+              plexPaths: observedPlexPaths,
             })
           }
 
@@ -306,15 +335,35 @@ export function getSyncService(getConfig: () => AppConfig) {
             && typeof source.plexUpdatedAt === 'number'
             && plexUpdatedAt > source.plexUpdatedAt
             && trackUpdateTime === source.lastTrackUpdateTime
+          const {
+            changedRatingKeys: changedPlexRatingKeys,
+            detected: plexPathDriftDetected,
+          } = detectPlexPathDrift({
+            appliedPaths: source.appliedPlexPaths,
+            observedPaths: observedPlexPaths,
+            enabled: cfg.sync.reconcileOnPlexDrift !== false,
+            isAlbum,
+            dryRun,
+            hasPlexPlaylist: Boolean(source.plexPlaylistRatingKey),
+          })
           const plexDriftDetected = !isAlbum
             && !dryRun
             && cfg.sync.reconcileOnPlexDrift !== false
             && Boolean(source.plexPlaylistRatingKey)
-            && (plexObservationKind === 'external_change' || legacyTimestampDrift)
-            && (currentSnapshotAlreadyCompared || legacyTimestampDrift)
+            && (
+              plexPathDriftDetected
+              || (
+                (plexObservationKind === 'external_change' || legacyTimestampDrift)
+                && (currentSnapshotAlreadyCompared || legacyTimestampDrift)
+              )
+            )
           const missingMediaPolicyEnabled = !plexRecoveryOnly && mode !== 'redownload_managed'
+          const failurePolicy = getSourceFailurePolicy(source.id)
           const missingMediaWorkDetected = missingMediaPolicyEnabled
-            && hasMissingMediaPolicyWork(yunSongs, cfg)
+            && [...planMissingMedia(yunSongs, cfg, { validateAudio: false }).values()].some(plan =>
+              !['manual_exempt', 'reuse_managed', 'wait_manual'].includes(plan.disposition)
+              && !isTerminalFailure(failurePolicy.failuresBySongId[plan.songId], cfg.sync.maxFailureAttempts),
+            )
           const det = detectChanges({
             isAlbum,
             trackUpdateTime,
@@ -329,7 +378,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             fullCompareAfterDays: effectiveSettings.fullCompareAfterDays,
             lastFullCompareAt: source.lastFullCompareAt,
             currentIdOrder,
-            trackIdSnapshot: source.trackIdSnapshot,
+            trackIdSnapshot: source.observedNeteaseIds ?? source.trackIdSnapshot,
             plexDriftDetected,
           })
           const retryUnresolvedSnapshot = det.skipEntirely
@@ -338,7 +387,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           job.finishStep(
             s1,
             missingSongDetailIds.length > 0 ? 'partial' : 'success',
-            `歌单获取完成，共 ${authoritativeTrackCount} 个目标${missingSongDetailIds.length > 0 ? `，${missingSongDetailIds.length} 首缺少详情` : ''}（${det.changedMsg}${det.diffMsg ? '，' + det.diffMsg : ''}）`,
+            `歌单获取完成，共 ${authoritativeTrackCount} 个目标${missingSongDetailIds.length > 0 ? `，${missingSongDetailIds.length} 首缺少详情` : ''}${detailSummary ?? ''}（${det.changedMsg}${det.diffMsg ? '，' + det.diffMsg : ''}）`,
           )
 
           if (rebuildMatch && !dryRun) {
@@ -349,10 +398,18 @@ export function getSyncService(getConfig: () => AppConfig) {
           }
 
           // Skip entirely if Netease unchanged
+          const { unresolvedMissingDetailIds, hasActionableFailures, unresolvedPartialState }
+            = resolveSourceSkipState({
+              source,
+              missingSongDetailIds,
+              failurePolicy,
+              maxFailureAttempts: cfg.sync.maxFailureAttempts,
+            })
           if (
             det.skipEntirely
-            && !retryUnresolvedSnapshot
-            && missingSongDetailIds.length === 0
+            && !hasActionableFailures
+            && !unresolvedPartialState
+            && unresolvedMissingDetailIds.length === 0
             && !(authoritativeTrackCount === 0 && source.lastStatus !== 'success')
           ) {
             const unchangedStatus = source.lastStatus === 'idle' ? 'success' : source.lastStatus
@@ -360,6 +417,7 @@ export function getSyncService(getConfig: () => AppConfig) {
               lastSyncedAt: new Date().toISOString(), lastStatus: unchangedStatus, lastError: source.lastError,
               lastJobId: job.getId(), trackCount: authoritativeTrackCount,
               lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt,
+              observedNeteaseIds: serializeOrderedSnapshot(currentIdOrder),
               consecutiveSkips: (source.consecutiveSkips || 0) + 1,
             })
             if (unchangedStatus === 'success') successfulSources++
@@ -395,23 +453,31 @@ export function getSyncService(getConfig: () => AppConfig) {
             }
           }
 
-          // ── Step 2a: Load download retry policy without removing target identities ──
-          // Copyright/failure memory is allowed to suppress another download,
-          // but it must never remove a desired song from reconciliation. If it
-          // disappeared here, an existing Plex occurrence could be classified
-          // as extra and deleted simply because a previous download failed.
-          const failurePolicy = getSourceFailurePolicy(source.id)
-          const knownRestricted = failurePolicy.copyrightSongIds
-          const maxFailures = cfg.sync.maxFailureAttempts
+          // ── Step 2a: Load Plex retry state without removing target identities ──
+          const ignoredPlexMatchSongIds = resolveIgnoredPlexMatchSongIds(failurePolicy)
 
           // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
           setStage('comparing')
+          const forceFullVerification = isAlbum || plexRecoveryOnly || modePolicy.forceFullCompare
+            || effectiveSettings.forceFullCompare || source.requiresMatchReconcile
+            || rebuildMatch || missingMediaWorkDetected || det.autoForce || dryRun
+          const trustedSongIds = resolveTrustedSongSnapshot({
+            source,
+            currentIdOrder,
+            observedPlexPaths,
+            changedRatingKeys: changedPlexRatingKeys,
+            forceFullVerification,
+          })
           const { resolutions, plexPlaylist: plexPlaylistResult, sectionKey, extraTracks } = await reconcileSource(
             source, yunSongs, cfg, job, splitArtists,
             () => cancelRequested,
             skipPlexPL,
             dryRun,
-            { automaticMediaFallback: missingMediaPolicyEnabled, requireExistingPlaylist: plexRecoveryOnly },
+            {
+              automaticMediaFallback: missingMediaPolicyEnabled,
+              requireExistingPlaylist: plexRecoveryOnly,
+              trustedSongIds,
+            },
           )
           throwIfCancelled()
           const bindingVersionSnapshot = captureBindingVersions(currentIdOrder)
@@ -433,33 +499,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             neteaseIndex,
           }))
           job.addSongs(source.id, allSongs)
-          for (const missingSongId of missingSongDetailIds) {
-            const [taskSongId] = job.addSongs(source.id, [{
-              songName: `网易云歌曲 #${missingSongId}`,
-              artist: '详情未返回',
-              album: '未知专辑',
-              status: 'failed_download',
-              neteaseSongId: missingSongId,
-            }])
-            if (taskSongId) {
-              job.updateSong(taskSongId, {
-                phase: 'download',
-                error: {
-                  title: '网易云未返回歌曲详情',
-                  message: '无法获取目标歌曲信息，本轮保持 Plex 歌单不变',
-                  stage: 'download',
-                  songName: `网易云歌曲 #${missingSongId}`,
-                },
-                metadata: {
-                  matchTrace: {
-                    source: 'download_required',
-                    decision: 'preserved',
-                    deletionProtectionReason: '网易云 song_detail 未返回该 trackId，本轮目标不完整',
-                  },
-                },
-              })
-            }
-          }
+          addMissingDetailSongs(job, source.id, missingSongDetailIds)
 
           if (!dryRun) {
             recordSourceComparison(source.id, {
@@ -468,21 +508,16 @@ export function getSyncService(getConfig: () => AppConfig) {
             })
           }
 
-          // Apply failure memory only after Plex/path/identity lookup. A song
-          // already present in Plex remains a normal target even when a past
-          // download attempt was restricted or exhausted.
-          for (const r of resolutions) {
-            if (r.plexRatingKey || !['needs_download', 'unavailable'].includes(r.resolution)) continue
-            if (redownloadAll) continue
-            if (retrySourceFailures) continue
-            if (knownRestricted.includes(r.song.id)) {
-              r.resolution = 'copyright_restricted'
-              continue
-            }
-            if (shouldPauseSourceFailure(failurePolicy.failuresBySongId[r.song.id], maxFailures)) {
-              r.resolution = 'ignored_failure'
-            }
-          }
+          // Failure memory is applied only after Plex/path/identity lookup. A
+          // song already present in Plex remains a normal target even when a
+          // past download attempt was restricted or exhausted.
+          applySourceFailureMemory({
+            resolutions,
+            failurePolicy,
+            maxFailures: cfg.sync.maxFailureAttempts,
+            retrySourceFailures,
+            redownloadAll,
+          })
 
           // Update job song statuses from TrackResolution results
           for (const r of resolutions) {
@@ -568,6 +603,8 @@ export function getSyncService(getConfig: () => AppConfig) {
               skipRemoveExtra,
               retryUnresolvedSnapshot: plexRecoveryOnly || retryUnresolvedSnapshot,
               needsPlexRefresh,
+              ignoredPlexMatchSongIds,
+              forcePlexRetry: det.needFullCompare || retrySourceFailures || plexRecoveryOnly,
               ...(plexRecoveryOnly ? {
                 expectedPlexFingerprint: observedPlexFingerprint!,
                 assertRecoveryContextUnchanged: () => {
@@ -635,6 +672,9 @@ export function getSyncService(getConfig: () => AppConfig) {
   finishedJob.summary = summary
   if (!dryRun) {
     saveSyncRun(finishedJob)
+    for (const source of sources) {
+      pauseExhaustedFailures(source.id, globalConfig.sync.maxFailureAttempts)
+    }
   }
 
   finishState(finishedJob.status === 'failed'

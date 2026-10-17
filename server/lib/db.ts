@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG } from './config/defaults'
 import { migrateConfig } from './config/validation'
 import { seedConfig, coerceValue } from './db/config-seed'
 import { createSchema } from './db/schema'
+import { migrateLegacyFailureKinds } from './db/failure-kind-migration'
 
 let db: Database.Database | null = null
 
@@ -25,6 +26,7 @@ export function initDb(dataDir: string): Database.Database {
   db.pragma('foreign_keys = ON')
 
   createSchema(db)
+  migrateLegacyFailureKinds(db)
   seedConfig(db, dataDir)
 
   return db

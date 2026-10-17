@@ -70,12 +70,17 @@ export function useTaskCenterPage() {
   ]
   const failureStatusTabs: Array<{ label: string; value: FailureRecordStatus }> = [
     { label: '待处理', value: 'open' },
+    { label: '已暂停', value: 'paused' },
     { label: '已忽略', value: 'ignored' },
     { label: '已解决', value: 'resolved' },
   ]
   const failureKindFilters = [
     { label: '全部阶段', value: '' },
     { label: '下载失败', value: 'failed_download' },
+    { label: '音源不可用', value: 'source_unavailable' },
+    { label: '歌曲详情缺失', value: 'source_missing' },
+    { label: '音频文件损坏', value: 'invalid_audio' },
+    { label: '音频格式不支持', value: 'unsupported_format' },
     { label: '元数据失败', value: 'failed_tags' },
     { label: 'Plex 匹配失败', value: 'failed_plex_match' },
     { label: 'Plex 更新失败', value: 'failed_plex_insert' },
@@ -125,7 +130,7 @@ export function useTaskCenterPage() {
     if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(failures.filter.value.from, failures.filter.value.to) })
     return chips
   })
-  const failureEmptyTitle = computed(() => failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : '没有待处理问题')
+  const failureEmptyTitle = computed(() => failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : failures.filter.value.status === 'paused' ? '暂无已暂停问题' : '没有待处理问题')
   const failureEmptyDescription = computed(() => failures.filter.value.status === 'open' ? '失败项重试成功后会自动从这里消失。' : '当前状态下没有匹配记录。')
 
   function switchTab(tab: TaskCenterTab) {

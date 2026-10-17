@@ -66,7 +66,14 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
 
   // Incremental diff: compare with last snapshot
   let oldSnapshot: number[] = []
-  try { if (trackIdSnapshot) oldSnapshot = JSON.parse(trackIdSnapshot) } catch { /* ignore */ }
+  try {
+    if (trackIdSnapshot) {
+      const parsed = JSON.parse(trackIdSnapshot) as unknown
+      // Ordered ID snapshots are stored as strings, while the legacy
+      // trackIdSnapshot column stores numbers. Normalize both here.
+      if (Array.isArray(parsed)) oldSnapshot = parsed.map(Number).filter(Number.isInteger)
+    }
+  } catch { /* ignore */ }
 
   const oldIds = new Set(oldSnapshot)
   const currentIds = new Set(currentIdOrder)

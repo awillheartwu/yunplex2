@@ -32,6 +32,9 @@ export interface PlaylistSource {
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
+  observedNeteaseIds?: string | null
+  observedPlexPaths?: string | null
+  appliedPlexPaths?: string | null
   /** Latest Plex contents fetched, whether or not the run converged. */
   lastObservedPlexFingerprint: string | null
   /** Plex contents read back after the application's own successful mutation. */
@@ -89,6 +92,9 @@ export interface PlaylistSourceRow {
   last_full_compare_at: string | null
   plex_updated_at: number | null
   track_id_snapshot: string | null
+  observed_netease_ids?: string | null
+  observed_plex_paths?: string | null
+  applied_plex_paths?: string | null
   last_observed_plex_fingerprint: string | null
   last_applied_plex_fingerprint: string | null
   last_observed_netease_cursor: string | null
@@ -142,6 +148,9 @@ export function rowToSource(row: PlaylistSourceRow): PlaylistSource {
     lastFullCompareAt: row.last_full_compare_at,
     plexUpdatedAt: row.plex_updated_at,
     trackIdSnapshot: row.track_id_snapshot,
+    observedNeteaseIds: row.observed_netease_ids ?? null,
+    observedPlexPaths: row.observed_plex_paths ?? null,
+    appliedPlexPaths: row.applied_plex_paths ?? null,
     lastObservedPlexFingerprint: row.last_observed_plex_fingerprint,
     lastAppliedPlexFingerprint: row.last_applied_plex_fingerprint,
     lastObservedNeteaseCursor: row.last_observed_netease_cursor,

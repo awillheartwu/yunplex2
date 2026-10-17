@@ -256,7 +256,7 @@ describe('source finalization projection', () => {
         lastError: '1 首版权受限',
         lastTrackUpdateTime: null,
         trackIdSnapshot: null,
-        requiresMatchReconcile: true,
+        requiresMatchReconcile: false,
       })
     } finally {
       closeDb()

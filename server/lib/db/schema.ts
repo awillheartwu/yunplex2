@@ -121,6 +121,7 @@ export function createSchema(db: Database.Database): void {
       file_type       TEXT,
       quality         TEXT,
       error           TEXT,
+      error_code      TEXT,
       retry_count     INTEGER NOT NULL DEFAULT 0,
       auto_retry_count INTEGER NOT NULL DEFAULT 0,
       next_attempt_at TEXT,
@@ -166,6 +167,9 @@ export function createSchema(db: Database.Database): void {
       last_full_compare_at    TEXT,
       plex_updated_at         INTEGER,
       track_id_snapshot       TEXT,
+      observed_netease_ids    TEXT,
+      observed_plex_paths     TEXT,
+      applied_plex_paths      TEXT,
       last_observed_plex_fingerprint TEXT,
       last_applied_plex_fingerprint TEXT,
       last_observed_netease_cursor TEXT,
@@ -332,6 +336,7 @@ export function createSchema(db: Database.Database): void {
       plex_relative_path TEXT NOT NULL DEFAULT '',
       plex_rating_key TEXT,
       binding_method TEXT NOT NULL CHECK(binding_method IN ('path','manual')),
+      binding_origin TEXT NOT NULL DEFAULT 'manual' CHECK(binding_origin IN ('auto','confirmed','manual')),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','stale','unbound')),
       evidence_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
@@ -340,6 +345,12 @@ export function createSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_path ON song_identity_bindings(plex_file_path);
     CREATE INDEX IF NOT EXISTS idx_song_identity_bindings_rating_key ON song_identity_bindings(plex_rating_key);
+
+    CREATE TABLE IF NOT EXISTS netease_song_details (
+      netease_song_id INTEGER PRIMARY KEY,
+      raw_json        TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS playlist_source_track_occurrences (
       id TEXT PRIMARY KEY,
@@ -412,7 +423,7 @@ export function createSchema(db: Database.Database): void {
       run_type          TEXT NOT NULL,
       failure_kind      TEXT NOT NULL,
       failure_reason    TEXT NOT NULL DEFAULT '',
-      status            TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','ignored','resolved')),
+      status            TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','ignored','resolved','paused')),
       first_seen_at     TEXT NOT NULL,
       last_seen_at      TEXT NOT NULL,
       ignored_at        TEXT,
@@ -438,6 +449,42 @@ export function createSchema(db: Database.Database): void {
   `)
 
   createFileTaskSchema(db)
+  const failureTable = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='failure_records'").get() as { sql: string } | undefined
+  if (failureTable?.sql && !failureTable.sql.includes("'paused'")) {
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS failure_records_new;
+        CREATE TABLE failure_records_new (
+          id                TEXT PRIMARY KEY,
+          fingerprint       TEXT NOT NULL UNIQUE,
+          subject_key       TEXT NOT NULL,
+          song_id           INTEGER,
+          song_name         TEXT NOT NULL,
+          artist            TEXT NOT NULL DEFAULT '',
+          source_id         TEXT,
+          source_name       TEXT NOT NULL DEFAULT '',
+          run_id            TEXT,
+          run_type          TEXT NOT NULL,
+          failure_kind      TEXT NOT NULL,
+          failure_reason    TEXT NOT NULL DEFAULT '',
+          status            TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','ignored','resolved','paused')),
+          first_seen_at     TEXT NOT NULL,
+          last_seen_at      TEXT NOT NULL,
+          ignored_at        TEXT,
+          resolved_at       TEXT,
+          occurrence_count  INTEGER NOT NULL DEFAULT 1,
+          retry_count       INTEGER NOT NULL DEFAULT 0,
+          download_task_ids TEXT
+        );
+        INSERT INTO failure_records_new SELECT * FROM failure_records;
+        DROP TABLE failure_records;
+        ALTER TABLE failure_records_new RENAME TO failure_records;
+        CREATE INDEX IF NOT EXISTS idx_failure_records_status ON failure_records(status, last_seen_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_failure_records_run ON failure_records(run_id);
+        CREATE INDEX IF NOT EXISTS idx_failure_records_subject ON failure_records(subject_key);
+      `)
+    })()
+  }
   upgradeSourceRequests(db)
   const downloadTaskColumns = db.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
   if (!downloadTaskColumns.some(column => column.name === 'operation')) {
@@ -464,6 +511,36 @@ export function createSchema(db: Database.Database): void {
   if (!sourceColumns.some(column => column.name === 'initialize_media_on_first_sync')) {
     db.prepare('ALTER TABLE playlist_sources ADD COLUMN initialize_media_on_first_sync INTEGER').run()
   }
+  for (const column of ['observed_netease_ids', 'observed_plex_paths', 'applied_plex_paths']) {
+    if (!sourceColumns.some(item => item.name === column)) {
+      db.prepare(`ALTER TABLE playlist_sources ADD COLUMN ${column} TEXT`).run()
+    }
+  }
+
+  const bindingColumns = db.prepare("PRAGMA table_info('song_identity_bindings')").all() as Array<{ name: string }>
+  if (!bindingColumns.some(column => column.name === 'binding_origin')) {
+    db.prepare("ALTER TABLE song_identity_bindings ADD COLUMN binding_origin TEXT NOT NULL DEFAULT 'manual'").run()
+    db.prepare(`
+      UPDATE song_identity_bindings
+      SET binding_origin = CASE
+        WHEN binding_method = 'path' THEN 'auto'
+        WHEN json_extract(evidence_json, '$.quickDecision.origin') IN ('rule_recommended', 'threshold_match')
+          AND EXISTS (
+            SELECT 1 FROM source_initializations initialization
+            WHERE initialization.id = json_extract(song_identity_bindings.evidence_json, '$.initializationId')
+              AND initialization.auto_process = 1
+          ) THEN 'auto'
+        WHEN json_extract(evidence_json, '$.quickDecision.origin') IN ('rule_recommended', 'threshold_match')
+          THEN 'confirmed'
+        ELSE 'manual'
+      END
+    `).run()
+  }
+  db.prepare(`
+    UPDATE song_identity_bindings
+    SET evidence_json = json_set(evidence_json, '$.selectedBy', binding_origin)
+    WHERE binding_origin IN ('auto', 'confirmed')
+  `).run()
 
   // Preserved items already have an active identity binding. Older review
   // drafts could incorrectly make them actionable and include them in the

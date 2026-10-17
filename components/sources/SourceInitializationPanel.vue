@@ -15,7 +15,7 @@
           <button v-if="initialization?.status === 'pending' && !isWaitingAnalysis" class="btn btn-warning btn-sm" :disabled="acting" @click="confirmSkip = true">跳过接管</button>
           <button v-if="initialization?.status === 'analyzing' || isWaitingAnalysis" class="btn btn-ghost btn-sm" :disabled="acting" @click="cancel">取消分析</button>
           <button v-if="isQuickQueued" class="btn btn-ghost btn-sm" :disabled="acting" @click="cancel">取消本次处理</button>
-          <button v-if="canRestart && !needsRestart" class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析</button>
+          <button v-if="canRestart && !needsRestart" class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析当前方案</button>
         </div>
       </header>
 
@@ -54,8 +54,8 @@
       <p v-if="initialization?.error" class="source-adoption__error" role="alert">{{ initialization.error }}</p>
       <div v-if="isAnalyzing || isWaitingAnalysis" class="section-card source-adoption__progress"><AppIcon name="loader" :size="18" class="animate-spin" /><div><strong>{{ isWaitingAnalysis ? '分析已排队，等待后台处理' : '正在扫描 Plex 音乐库，生成候选' }}</strong><p>{{ isWaitingAnalysis ? '请求已收到，页面会自动刷新进度。' : '可以离开此页面，任务会在后台继续。' }}</p></div></div>
 
-      <div v-if="needsRestart" class="section-card source-adoption__incompatible"><strong>匹配设置已更新</strong><p>当前结果由旧设置生成，可以查看，但不能修改或提交；请重新分析后再继续。</p><button class="btn btn-primary btn-sm" :disabled="acting" @click="confirmReanalysis = true"><AppIcon name="refresh" :size="16" />重新分析</button></div>
-      <aside v-if="libraryChanged && !needsRestart" class="section-card source-adoption__library-change" role="status"><AppIcon name="info" :size="18" /><div><strong>Plex 音乐库有变化</strong><p>音乐库在分析后发生变化，当前选择已保留，可以重新分析查看最新候选。</p></div><button class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析</button></aside>
+      <div v-if="needsRestart" class="section-card source-adoption__incompatible"><strong>匹配设置已更新</strong><p>当前结果由旧设置生成，可以查看，但不能修改或提交；请重新分析后再继续。</p><button class="btn btn-primary btn-sm" :disabled="acting" @click="confirmReanalysis = true"><AppIcon name="refresh" :size="16" />重新分析当前方案</button></div>
+      <aside v-if="libraryChanged && !needsRestart" class="section-card source-adoption__library-change" role="status"><AppIcon name="info" :size="18" /><div><strong>Plex 音乐库有变化</strong><p>音乐库在分析后发生变化，当前选择已保留，可以重新分析查看最新候选。</p></div><button class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalysis = true">重新分析当前方案</button></aside>
 
       <button v-if="initialization?.status === 'completed'" class="btn btn-ghost btn-sm" :aria-expanded="reviewExpanded" @click="reviewExpanded = !reviewExpanded">{{ reviewExpanded ? '收起歌曲安排' : '查看本次歌曲安排' }}</button>
 

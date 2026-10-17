@@ -20,6 +20,7 @@ function mapSummary(row: SummaryRow): SourceInitializationSummary {
     followUpRunId: row.follow_up_run_id ? String(row.follow_up_run_id) : null,
     trigger: String(row.trigger), status: row.status as SourceInitializationStatus,
     autoProcess: Boolean(row.auto_process),
+    reevaluateAutomatic: Boolean(row.reevaluate_automatic),
     revision: Number(row.revision ?? 0), quickThreshold: row.quick_threshold as number | null, scoreVersion: row.score_version as number | null,
     quickStatus: apply && ['pending','running'].includes(apply.status) ? 'queued'
       : row.status === 'awaiting_review' && apply && ['failed','cancelled'].includes(apply.status) ? apply.status : quick?.status ?? null,

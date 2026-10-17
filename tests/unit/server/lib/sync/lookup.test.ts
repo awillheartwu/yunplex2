@@ -11,8 +11,9 @@ import { ensurePendingInitialization, upsertMediaDecision } from '~~/server/lib/
 
 const getPlaylistTracks = vi.fn()
 const getTrackByRatingKey = vi.fn()
+const getTracksByRatingKeys = vi.fn()
 const findTracksByFilePath = vi.fn()
-vi.mock('~~/server/lib/plex-client', () => ({ getPlaylistTracks, getTrackByRatingKey, findTracksByFilePath }))
+vi.mock('~~/server/lib/plex-client', () => ({ getPlaylistTracks, getTrackByRatingKey, getTracksByRatingKeys, findTracksByFilePath }))
 
 let root = ''
 const song: NeteaseSong = { id: 357279, name: '无地自容', no: 8, dt: 339666, disc: '1', artists: [{ name: '黑豹乐队' }], album: { id: 35273, name: '黑豹', picUrl: '', publishTime: 662659200004 } }
@@ -27,7 +28,7 @@ function cfg(): AppConfig {
 function track(ratingKey: string, file: string, playlistItemID?: number) { return { ratingKey, title: '任意标题', grandparentTitle: '任意艺人', parentTitle: '任意专辑', playlistItemID, Media: [{ Part: [{ file }] }] } }
 
 describe('safe media reuse', () => {
-  beforeEach(() => { vi.resetAllMocks(); root = mkdtempSync(join(tmpdir(), 'reyunplex-lookup-')); initDb(root); getPlaylistTracks.mockResolvedValue([]); getTrackByRatingKey.mockResolvedValue(null); findTracksByFilePath.mockResolvedValue([]) })
+  beforeEach(() => { vi.resetAllMocks(); root = mkdtempSync(join(tmpdir(), 'reyunplex-lookup-')); initDb(root); getPlaylistTracks.mockResolvedValue([]); getTrackByRatingKey.mockResolvedValue(null); getTracksByRatingKeys.mockResolvedValue(new Map()); findTracksByFilePath.mockResolvedValue([]) })
   afterEach(() => { closeDb(); rmSync(root, { recursive: true, force: true }) })
 
   it('reuses a managed file by exact path regardless of Plex metadata', async () => {

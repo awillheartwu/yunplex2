@@ -1,3 +1,5 @@
+import type { DomainErrorCode } from '../../../shared/domain-errors'
+
 // ── Status enums ──
 
 export type JobStatus = 'running' | 'awaiting_action' | 'success' | 'partial' | 'failed' | 'cancelled'
@@ -60,6 +62,7 @@ export interface StepError {
   title: string
   message: string
   stage: string
+  code?: DomainErrorCode
   songName?: string
   artist?: string
   context?: Record<string, unknown>

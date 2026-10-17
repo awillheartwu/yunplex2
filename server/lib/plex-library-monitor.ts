@@ -6,7 +6,12 @@ import { getPlaylistSnapshotByRatingKey, initPlexClient, invalidateSectionPathIn
 import { listSources } from './playlist/store'
 import { withExternalRequestSignal } from './external-request-context'
 import { emitEvent } from './sync/events'
-import { buildPlexPlaylistFingerprint } from './sync/playlist-fingerprint'
+import {
+  buildPlexPathMap,
+  buildPlexPlaylistFingerprint,
+  findChangedPlexRatingKeys,
+  parsePlexPathSnapshot,
+} from './sync/playlist-fingerprint'
 import { enqueueIndexedRecovery, findIndexedRecoverySources } from './sync/plex-index-recovery'
 
 const POLL_MS = 60_000
@@ -160,12 +165,25 @@ export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => 
           sourceIds.add(source.id)
           const playlist = await getPlaylistSnapshotByRatingKey(source.plexPlaylistRatingKey, 99999)
           const baseline = source.lastAppliedPlexFingerprint ?? source.lastObservedPlexFingerprint
-          const drifted = !playlist || (baseline !== null && buildPlexPlaylistFingerprint(playlist.tracks) !== baseline)
+          const contentDrifted = playlist
+            ? baseline !== null && buildPlexPlaylistFingerprint(playlist.tracks) !== baseline
+            : false
+          const changedPaths = playlist && source.appliedPlexPaths
+            ? findChangedPlexRatingKeys(
+                parsePlexPathSnapshot(source.appliedPlexPaths),
+                buildPlexPathMap(playlist.tracks),
+              )
+            : []
+          const drifted = !playlist || contentDrifted || changedPaths.length > 0
           const previous = notices.get(source.id)
           if (drifted) notices.set(source.id, playlist
-            ? { kind: 'changed', message: config.sync.reconcileOnPlexDrift !== false
-                ? 'Plex 歌单的曲目或顺序已在外部修改，下次正常同步将按当前设置核对。'
-                : 'Plex 歌单的曲目或顺序已在外部修改；自动核对外部变化已关闭，可手动检查同步。' }
+            ? { kind: 'changed', message: changedPaths.length > 0 && !contentDrifted
+                ? (config.sync.reconcileOnPlexDrift !== false
+                    ? 'Plex 歌单中的文件路径已在外部变化，下次正常同步将重新核对对应歌曲。'
+                    : 'Plex 歌单中的文件路径已在外部变化；自动核对外部变化已关闭，可手动检查同步。')
+                : (config.sync.reconcileOnPlexDrift !== false
+                    ? 'Plex 歌单的曲目或顺序已在外部修改，下次正常同步将按当前设置核对。'
+                    : 'Plex 歌单的曲目或顺序已在外部修改；自动核对外部变化已关闭，可手动检查同步。') }
             : { kind: 'missing', message: 'Plex 目标歌单已被删除，请检查目标设置后同步。' })
           else notices.delete(source.id)
           if (previous?.kind !== notices.get(source.id)?.kind) publish('plex-library-change')

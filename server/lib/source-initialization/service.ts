@@ -63,11 +63,11 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
     if (!sectionKey) throw new Error('未找到 Plex 音乐库分区')
     const tracks = await getSectionTracks(sectionKey); controller.signal.throwIfAborted()
     const bindings = getInitializationIdentityBindings(playlist.songs.map(song => song.id))
-    let plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config })
+    let plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config, reevaluateAutomatic: initialization.reevaluateAutomatic })
     if (policy.config.enabled && policy.config.musicBrainzAliases && policy.config.useArtistAliases) {
       policy.musicBrainz = await resolveMusicBrainzAliases(plans, policy.config, controller.signal)
       controller.signal.throwIfAborted()
-      plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config, musicBrainz: policy.musicBrainz })
+      plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config, musicBrainz: policy.musicBrainz, reevaluateAutomatic: initialization.reevaluateAutomatic })
     }
     const knownIds = new Set(plans.map(plan => plan.neteaseSongId))
     playlist.trackIds.forEach((track, position) => {
@@ -195,7 +195,11 @@ async function applySourceInitialization(initializationId: string, allowDisabled
           const track = ratingKey ? trackByRatingKey.get(ratingKey) : null
           const filePath = track?.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [])[0]
           if (!track || !filePath || normalizePlexPath(filePath) !== normalizePlexPath(String(row.candidate_file_path || ''))) throw new BindingVersionConflictError()
-          rebindSongIdentity({ neteaseSongId: songId, sharedWithSongIds: sharedPermissions.get(songId), expectedBindingUpdatedAt: row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null, sourceId: source.id, binding: { plexSectionKey: sectionKey, plexSectionRoot: config.download.plexLibraryPathPrefix, plexFilePath: filePath, plexRatingKey: ratingKey, evidence: { selectedBy: 'user', source: 'first_media_adoption', initializationId: initialization.id, tier: row.tier, sharedMedia: sharedEvidence.sharedMedia ?? null, sharedMediaConfirmed: sharedEvidence.sharedMediaConfirmed ?? null, quickDecision: sharedEvidence.quickDecision ?? null } } })
+          const quickOrigin = sharedEvidence.quickDecision?.origin
+          const bindingOrigin = quickOrigin === 'rule_recommended' || quickOrigin === 'threshold_match'
+            ? (initialization.autoProcess ? 'auto' as const : 'confirmed' as const)
+            : 'manual' as const
+          rebindSongIdentity({ neteaseSongId: songId, bindingOrigin, sharedWithSongIds: sharedPermissions.get(songId), expectedBindingUpdatedAt: row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null, sourceId: source.id, binding: { plexSectionKey: sectionKey, plexSectionRoot: config.download.plexLibraryPathPrefix, plexFilePath: filePath, plexRatingKey: ratingKey, evidence: { selectedBy: bindingOrigin === 'manual' ? 'user' : bindingOrigin, source: 'first_media_adoption', initializationId: initialization.id, tier: row.tier, sharedMedia: sharedEvidence.sharedMedia ?? null, sharedMediaConfirmed: sharedEvidence.sharedMediaConfirmed ?? null, quickDecision: sharedEvidence.quickDecision ?? null } } })
           db.prepare('DELETE FROM source_media_decisions WHERE source_id=? AND netease_song_id=?').run(source.id, songId)
           db.prepare("UPDATE source_initialization_items SET decision_status='applied', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
           applied++

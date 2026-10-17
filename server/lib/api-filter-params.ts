@@ -16,6 +16,10 @@ const FAILURE_KINDS = new Set([
   'failed_tags',
   'failed_plex_match',
   'failed_plex_insert',
+  'source_unavailable',
+  'source_missing',
+  'invalid_audio',
+  'unsupported_format',
   'copyright_restricted',
   'ignored_failure',
   'authentication_failed',
@@ -29,7 +33,7 @@ const FAILURE_KINDS = new Set([
   'validation_failed',
   'unknown_error',
 ])
-const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatus>(['open', 'ignored', 'resolved'])
+const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatus>(['open', 'paused', 'ignored', 'resolved'])
 
 function firstValue(value: unknown): QueryValue {
   if (Array.isArray(value)) return firstValue(value[0])

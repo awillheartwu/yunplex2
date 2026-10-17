@@ -47,7 +47,7 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
     const reason = sanitizeDiagnosticMessage(row.failure_reason) || ''
     const definition = resolveDomainErrorDefinition(row.failure_kind, reason)
     return {
-      id: row.id, key: failureReasonGroupKey(row.failure_kind, row.failure_reason), failureKind: row.failure_kind,
+      id: row.id, key: failureReasonGroupKey(row.failure_kind, row.failure_reason), failureKind: definition.code,
       failureReason: row.failure_kind === 'copyright_restricted' ? definition.userMessage : reason || definition.userMessage,
       label: definition.label, total: row.total, songCount: row.song_count, sourceCount: row.source_count,
       occurrenceCount: row.occurrence_count, retryableCount: definition.retryable ? row.linked_count : 0,

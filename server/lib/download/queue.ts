@@ -9,7 +9,7 @@ import { recordFailure, resolveFailures } from '../tasks/failure-records'
 import { getRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
 import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
-import { classifyDomainErrorCode } from '../../../shared/domain-errors'
+import { classifyDomainErrorCode, isDomainErrorCode, type DomainErrorCode } from '../../../shared/domain-errors'
 import { ELIGIBLE_DOWNLOAD_CALLERS_SQL, getDownloadQueueControl } from './queue-control'
 import type { DownloadAudioCache } from './audio-cache'
 
@@ -27,6 +27,7 @@ export interface DownloadTask {
   fileType?: string
   quality?: string
   error?: string
+  errorCode?: DomainErrorCode
   retryCount: number
   autoRetryCount?: number
   nextAttemptAt?: string
@@ -102,7 +103,7 @@ interface TaskRow {
   source_name?: string | null
   artist: string; album: string; status: string; progress: number
   file_path: string | null; file_type: string | null; quality: string | null
-  error: string | null; retry_count: number; job_id: string | null; run_id: string | null
+  error: string | null; error_code: string | null; retry_count: number; job_id: string | null; run_id: string | null
   auto_retry_count: number; next_attempt_at: string | null
   idempotency_key: string | null; lease_owner: string | null; lease_expires_at: string | null; attempt_started_at: string | null
   operation: string; target_path: string | null; execution_intent_json: string | null
@@ -118,6 +119,7 @@ function rowToTask(r: TaskRow): DownloadTask {
     status: r.status as DownloadTask['status'], progress: r.progress,
     filePath: r.file_path ?? undefined, fileType: r.file_type ?? undefined,
     quality: r.quality ?? undefined, error: r.error ?? undefined,
+    errorCode: isDomainErrorCode(r.error_code) ? r.error_code : undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
     autoRetryCount: r.auto_retry_count ?? 0, nextAttemptAt: r.next_attempt_at ?? undefined,
     idempotencyKey: r.idempotency_key ?? undefined,
@@ -272,9 +274,10 @@ export function getNextDownloadWakeDelay(): number | null {
 
 export function updateTaskState(id: string, updates: Partial<{
   status: string; progress: number; filePath: string; fileType: string
-  quality: string; error: string | null; retryCount: number; leaseOwner: string | null
+  quality: string; error: string | null; errorCode: DomainErrorCode | null; retryCount: number; leaseOwner: string | null
   leaseExpiresAt: string | null; attemptStartedAt: string | null
 }>, guard?: { leaseOwner: string }): boolean {
+  createFileTaskSchema(getDb())
   const sets: string[] = []
   const vals: unknown[] = []
 
@@ -284,6 +287,7 @@ export function updateTaskState(id: string, updates: Partial<{
   if (updates.fileType !== undefined) { sets.push('file_type = ?'); vals.push(updates.fileType) }
   if (updates.quality !== undefined) { sets.push('quality = ?'); vals.push(updates.quality) }
   if (updates.error !== undefined) { sets.push('error = ?'); vals.push(updates.error) }
+  if (updates.errorCode !== undefined) { sets.push('error_code = ?'); vals.push(updates.errorCode) }
   if (updates.retryCount !== undefined) { sets.push('retry_count = ?'); vals.push(updates.retryCount) }
   if (updates.leaseOwner !== undefined) { sets.push('lease_owner = ?'); vals.push(updates.leaseOwner) }
   if (updates.leaseExpiresAt !== undefined) { sets.push('lease_expires_at = ?'); vals.push(updates.leaseExpiresAt) }
@@ -338,7 +342,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
         sourceName: task.sourceName || (common.sourceId ? '' : '手动下载'),
         runId: caller.runId || null,
         runType: 'manual_download',
-        failureKind: classifyDomainErrorCode(reason, 'failed_download'),
+        failureKind: task.errorCode ?? classifyDomainErrorCode(reason, 'failed_download'),
         failureReason: reason,
         downloadTaskId: task.id,
       })
@@ -361,6 +365,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
 
 export function recoverExpiredDownloadTasks(now = new Date().toISOString()): number {
   const db = getDb()
+  createFileTaskSchema(db)
   const expired = db.prepare(`
     SELECT id
     FROM download_tasks
@@ -376,6 +381,7 @@ export function recoverExpiredDownloadTasks(now = new Date().toISOString()): num
     SET status = 'failed',
       progress = 0,
       error = ?,
+      error_code = 'scheduler_interrupted',
       lease_owner = NULL,
       lease_expires_at = NULL,
       attempt_started_at = NULL,
@@ -461,6 +467,7 @@ export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
   const uniqueIds = [...new Set(ids.filter(Boolean))]
   if (uniqueIds.length === 0) return []
   const db = getDb()
+  createFileTaskSchema(db)
   const now = new Date().toISOString()
   const requeuedIds = db.transaction(() => {
     const changed: string[] = []
@@ -469,6 +476,7 @@ export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
       SET status = 'pending',
         progress = 0,
         error = NULL,
+        error_code = NULL,
         auto_retry_count = 0,
         next_attempt_at = NULL,
         retry_count = retry_count + 1,

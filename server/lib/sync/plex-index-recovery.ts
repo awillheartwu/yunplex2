@@ -35,12 +35,12 @@ export async function findIndexedRecoverySources(config: AppConfig, sectionKey: 
     JOIN local_media_assets a ON a.netease_song_id=f.song_id AND a.ownership='managed' AND a.status='active'
     LEFT JOIN song_identity_bindings b ON b.netease_song_id=f.song_id
     WHERE f.status='open' AND f.failure_kind='failed_plex_match'
-      AND NOT EXISTS (SELECT 1 FROM failure_records other WHERE other.source_id=s.id AND other.status='open' AND other.failure_kind!='failed_plex_match')
+      AND NOT EXISTS (SELECT 1 FROM failure_records other WHERE other.source_id=s.id AND other.status IN ('open','paused') AND other.failure_kind!='failed_plex_match')
       AND NOT EXISTS (SELECT 1 FROM playlist_source_track_occurrences other WHERE other.source_id=s.id
         AND other.membership_status='current' AND other.last_song_status IN ('failed_download','failed_tags','failed_plex_insert','copyright_restricted','ignored_failure'))
       AND NOT EXISTS (SELECT 1 FROM failure_records ignored JOIN playlist_source_track_occurrences target
         ON target.source_id=ignored.source_id AND target.netease_song_id=ignored.song_id AND target.membership_status='current'
-        WHERE ignored.source_id=s.id AND ignored.status='ignored')
+        WHERE ignored.source_id=s.id AND ignored.status IN ('ignored','paused'))
       AND (b.binding_method IS NULL OR b.binding_method!='manual')
       AND (b.status IS NULL OR b.status!='unbound')`).all() as PendingFile[]
   const ready = new Map<string, string[]>()

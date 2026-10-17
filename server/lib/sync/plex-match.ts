@@ -112,7 +112,7 @@ export function inferPlexMatchFailureCause(result: PlexMatchResult): PlexMatchFa
 export function describePlexMatchFailure(cause: PlexMatchFailureCause, cfg: AppConfig): string {
   if (cause === 'scan_timeout') return '等待 Plex 扫描与索引超过上限，托管音频已保留；请查看 Plex 扫描状态，稍后同步将复用文件并继续核对。'
   if (cause === 'library_visibility') {
-    return `Plex 在等待扫描与索引后仍没有返回托管文件的精确路径。当前下载目录是 ${cfg.download.dir}，Plex 媒体库路径前缀为 ${cfg.download.plexLibraryPathPrefix || '(未配置)'}。请核对扫描结果、共享目录和路径映射。`
+    return `Plex 已扫描，但主库曲目列表没有返回该文件的精确路径。常见原因是同专辑、同轨号的旧文件使 Plex 把新文件归入重复专辑，或目录不在媒体库路径内；单纯重新扫描不一定能修复。当前下载目录是 ${cfg.download.dir}，Plex 媒体库路径前缀为 ${cfg.download.plexLibraryPathPrefix || '(未配置)'}。请处理 Plex 重复专辑/路径后重试，或忽略本次失败。`
   }
   return 'Plex 在重试窗口内没有返回托管文件的精确路径，请检查媒体库扫描与路径映射。'
 }

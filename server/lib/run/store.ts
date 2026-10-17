@@ -631,6 +631,7 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
         title: diagnosis?.title ?? '下载失败',
         message: row.error,
         stage: diagnosis?.phase ?? 'download',
+        code: diagnosis?.errorCode,
         songName: row.song_name,
         artist: row.artist,
       } : undefined,

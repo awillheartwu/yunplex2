@@ -19,7 +19,10 @@ import {
 } from './identity-coordinator'
 import { getActiveSongIdentityBindings } from './identity-store'
 import { resolvePlexIdentityPath } from './identity-normalization'
-import { buildPlexPlaylistFingerprint } from './playlist-fingerprint'
+import {
+  buildPlexPathSnapshot,
+  buildPlexPlaylistFingerprint,
+} from './playlist-fingerprint'
 import { applyFullReorder } from './plex-reconciler'
 import { PlexReorderError, validatePlaylistOrder } from './reorder'
 import { validateCachedTargetOrder } from './reorder-cache'
@@ -150,6 +153,8 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     recordAppliedPlexPlaylistFingerprint(
       source.id,
       buildPlexPlaylistFingerprint(postPlaylistTracks),
+      undefined,
+      buildPlexPathSnapshot(postPlaylistTracks),
     )
     job.finishStep(reorderStep, 'success', 'Plex 歌单重排完成')
   } catch (error) {

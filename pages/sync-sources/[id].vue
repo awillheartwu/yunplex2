@@ -28,7 +28,7 @@
           <article class="section-card"><span><AppIcon name="source" :size="16" />Plex 目标</span><strong :title="source.plexPlaylistName || source.neteasePlaylistName">{{ source.plexPlaylistName || source.neteasePlaylistName }}</strong><small>{{ source.plexPlaylistRatingKey ? '已连接 Plex 歌单' : '尚未连接' }}</small></article>
           <article class="section-card"><span><AppIcon name="calendar" :size="16" />下次同步</span><strong>{{ source.nextSyncAt ? new Date(source.nextSyncAt).toLocaleString() : '未排期' }}</strong><small>{{ source.syncIntervalMinutes ? `每 ${source.syncIntervalMinutes} 分钟` : '使用全局同步间隔' }}</small></article>
         </div>
-        <details class="source-maintenance" open><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新检查整张歌单，并按当前设置补齐歌曲、移除多余条目和调整顺序。"><button aria-label="完整比较" class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />检查同步</button></ActionHint><ActionHint text="重新查找这份收藏中自动匹配的歌曲，再同步 Plex 歌单；你手动选过的歌曲会保留。"><button aria-label="重建托管关联" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重新匹配</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载由应用保存的音乐；新文件检查通过后替换旧文件，下载失败则保留旧文件。"><button aria-label="重新下载托管媒体" class="btn btn-warning btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="查找并下载缺失的音乐文件；这一步不会调整 Plex 歌单。"><button aria-label="补全媒体" class="btn btn-info btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补齐文件</button></ActionHint><ActionHint text="移除这份收藏和未提交的方案，停止自动同步；音乐文件会保留。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
+        <details class="source-maintenance" open><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新检查整张歌单，并按当前设置补齐歌曲、移除多余条目和调整顺序。"><button aria-label="完整比较" class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />检查同步</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新按标题、艺人、时长等规则评估系统自动选择的歌曲，生成一份新方案；你确认过或手动选择的关联会保留，审核确认后才会应用。"><button aria-label="重新分析自动匹配" class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalyze=true"><AppIcon name="refresh" :size="16" />重新分析匹配</button></ActionHint><ActionHint text="只按精确路径重新核对 YunPlex 托管文件与 Plex 的关联，再更新歌单；不会重新按标题/艺人评分，也不会覆盖手动选择。"><button aria-label="重建托管关联" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重建托管关联</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载由应用保存的音乐；新文件检查通过后替换旧文件，下载失败则保留旧文件。"><button aria-label="重新下载托管媒体" class="btn btn-warning btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="查找并下载缺失的音乐文件；这一步不会调整 Plex 歌单。"><button aria-label="补全媒体" class="btn btn-info btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补齐文件</button></ActionHint><ActionHint text="移除这份收藏和未提交的方案，停止自动同步；音乐文件会保留。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
         <section v-if="recentRuns.length" class="section-card source-detail__section"><header><div><h2>最近运行</h2><p>该来源最近的任务记录。</p></div><button class="btn btn-ghost btn-xs" @click="openTab('runs')"><AppIcon name="activity" :size="14" />全部记录</button></header><div class="source-detail__runs"><RunCard v-for="run in recentRuns.slice(0,3)" :key="run.id" :run="run" /></div></section>
       </section>
       <SourceInitializationPanel v-else-if="activeTab==='initialization'" :key="source.id" :source-id="source.id" :source-type="source.type" @changed="refresh" @submitted="onInitializationSubmitted" @pending-change="initializationPending = $event" @media="openTab('media')" />
@@ -37,7 +37,7 @@
       <SourceSettingsPanel v-if="settingsVisited" v-show="activeTab === 'settings'" :key="source.id" :source="source" @saved="onSaved" />
       <p v-if="notice" class="source-detail__notice" role="status">{{ notice }}</p><p v-if="error" class="source-detail__error" role="alert">{{ error }}</p>
       <ConfirmDialog :visible="confirmDelete" title="删除同步源" message="删除后将停止这份收藏的自动同步，并清除未提交的方案。音乐文件和 Plex 歌单会保留。确定继续？" confirm-label="删除来源" variant="danger" :busy="deleting" @confirm="remove" @cancel="confirmDelete=false"><p class="text-sm text-muted">删除后将停止这份收藏的自动同步，并清除未提交的方案。音乐文件和 Plex 歌单会保留。确定继续？</p><p v-if="deleteError" class="text-sm text-danger mt-3" role="alert">{{ deleteError }}</p></ConfirmDialog>
-      <ConfirmDialog :visible="confirmRebuild" title="重新评估自动匹配并同步" message="重新查找自动匹配的歌曲，再更新这份 Plex 歌单。你手动选过的歌曲会保留。确定继续？" confirm-label="确认重新评估" @confirm="confirmRebuild=false; sync('rebuild_matching')" @cancel="confirmRebuild=false" />
+      <ConfirmDialog :visible="confirmRebuild" title="重建托管关联并同步" message="按精确路径重新核对托管文件关联，再更新 Plex 歌单；不重新评估标题、艺人、时长，也不会覆盖手动选择。确定继续？" confirm-label="确认重建" @confirm="confirmRebuild=false; sync('rebuild_matching')" @cancel="confirmRebuild=false" /><ConfirmDialog :visible="confirmReanalyze" title="重新分析自动匹配" message="只重评自动选择、未人工确认的歌曲；confirmed 和 manual 关联会保留。分析完成后会生成新方案，不会直接改 Plex。确定继续？" confirm-label="开始重新分析" :busy="acting" @confirm="reanalyzeMatching" @cancel="confirmReanalyze=false" />
       <ConfirmDialog :visible="confirmRedownload" title="重新下载音乐并同步" message="" confirm-label="确认重新下载" variant="danger" :busy="acting" :confirm-disabled="redownloadLoading || !!redownloadError || !redownloadPreview?.snapshotAvailable" @confirm="runRedownload" @cancel="closeRedownload">
         <div class="source-detail__redownload"><p>新文件下载并检查成功后才替换旧文件。失败的歌曲会继续使用旧文件。</p><p v-if="redownloadLoading">正在检查哪些文件可以重新下载…</p><p v-else-if="redownloadError" class="text-danger">{{ redownloadError }}</p><dl v-else-if="redownloadPreview"><div><dt>当前范围</dt><dd>{{ redownloadPreview.total }} 首</dd></div><div><dt>默认处理</dt><dd>{{ redownloadPreview.eligible }} 首</dd></div><div><dt>保护外部文件</dt><dd>{{ redownloadPreview.protectedExternal }} 首</dd></div><div><dt>保护人工绑定</dt><dd>{{ redownloadPreview.protectedManual }} 首</dd></div></dl><label v-if="redownloadPreview?.protectedExternal"><input v-model="takeOverExternal" type="checkbox" /><span><strong>也替换原来就有的文件</strong>（你手动选过的文件仍会保留）</span></label><p class="text-danger">此操作会产生大量网络流量和磁盘写入。</p></div>
       </ConfirmDialog>
@@ -53,7 +53,7 @@ const loadError = ref(''), runsError = ref(''), runsLoading = ref(false), deleti
 let sourceGeneration = 0, runsGeneration = 0
 interface RedownloadPreview { total:number; eligible:number; protectedExternal:number; protectedManual:number; snapshotAvailable:boolean }
 const { error: sourceRequestError, requestState, trackRequest, syncSource: requestSourceSync } = useSourceSync()
-const route=useRoute();const router=useRouter();const api=useApi();const source=ref<PlaylistSource|null>(null);const loading=ref(true);const acting=ref(false);const notice=ref('');const error=ref('');const confirmDelete=ref(false);const confirmRebuild=ref(false);const confirmRedownload=ref(false);const redownloadLoading=ref(false);const redownloadError=ref('');const redownloadPreview=ref<RedownloadPreview|null>(null);const takeOverExternal=ref(false);const recentRuns=ref<TaskRunSummary[]>([])
+const route=useRoute();const router=useRouter();const api=useApi();const source=ref<PlaylistSource|null>(null);const loading=ref(true);const acting=ref(false);const notice=ref('');const error=ref('');const confirmDelete=ref(false);const confirmRebuild=ref(false);const confirmReanalyze=ref(false);const confirmRedownload=ref(false);const redownloadLoading=ref(false);const redownloadError=ref('');const redownloadPreview=ref<RedownloadPreview|null>(null);const takeOverExternal=ref(false);const recentRuns=ref<TaskRunSummary[]>([])
 const allowedTabs=['overview','initialization','media','runs','settings'];const activeTab=ref(allowedTabs.includes(String(route.query.tab))?String(route.query.tab):'overview');const tabs=[{key:'overview',label:'概览'},{key:'initialization',label:'首次媒体接管'},{key:'media',label:'歌曲与媒体'},{key:'runs',label:'运行记录'},{key:'settings',label:'设置'}]
 const requestPresentation = computed(() => requestState.value ? sourceRequestProgress(requestState.value) : null)
 const settingsVisited = ref(activeTab.value === 'settings')
@@ -99,6 +99,21 @@ async function loadRuns() {
     if (generation === runsGeneration && source.value?.id === id) recentRuns.value = data.items
   } catch (value) { if (generation === runsGeneration) runsError.value = value instanceof Error ? value.message : '运行记录读取失败' }
   finally { if (generation === runsGeneration) runsLoading.value = false }
+}
+async function reanalyzeMatching() {
+  if (!source.value) return
+  acting.value = true
+  error.value = ''
+  try {
+    await api.post(`/playlist-sources/${source.value.id}/reanalyze-matching`, {})
+    confirmReanalyze.value = false
+    notice.value = '已开始重新分析自动匹配'
+    activeTab.value = 'initialization'
+    await nextTick()
+    syncTabQuery()
+    await refresh()
+  } catch (value) { error.value = value instanceof Error ? value.message : '重新分析匹配失败' }
+  finally { acting.value = false }
 }
 async function sync(mode: SyncMode) {
   if (!source.value) return

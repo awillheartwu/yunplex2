@@ -16,6 +16,7 @@ type BindingRow = {
   plex_relative_path: string
   plex_rating_key: string | null
   binding_method: SongIdentityBinding['bindingMethod']
+  binding_origin: SongIdentityBinding['bindingOrigin']
   status: SongIdentityBinding['status']
   evidence_json: string
   created_at: string
@@ -31,6 +32,7 @@ export interface BindingInput {
   plexRelativePath?: string
   plexRatingKey: string | null
   bindingMethod: 'path' | 'manual'
+  bindingOrigin?: SongIdentityBinding['bindingOrigin']
   status: SongIdentityBinding['status']
   evidence: Record<string, unknown>
   lastVerifiedAt?: string | null
@@ -58,6 +60,7 @@ function fromRow(row: BindingRow): SongIdentityBinding {
     plexRelativePath: row.plex_relative_path,
     plexRatingKey: row.plex_rating_key,
     bindingMethod: row.binding_method,
+    bindingOrigin: row.binding_origin ?? (row.binding_method === 'path' ? 'auto' : 'manual'),
     status: row.status,
     evidence: parseJsonObject(row.evidence_json),
     createdAt: row.created_at,
@@ -139,19 +142,23 @@ export function upsertSongIdentityBinding(input: BindingInput): SongIdentityBind
   const lastVerifiedAt = Object.prototype.hasOwnProperty.call(input, 'lastVerifiedAt')
     ? input.lastVerifiedAt ?? null
     : now
+  const bindingOrigin = input.bindingOrigin
+    ?? previous?.bindingOrigin
+    ?? (input.bindingMethod === 'path' ? 'auto' : 'manual')
 
   getDb().prepare(`
     INSERT INTO song_identity_bindings (
       netease_song_id, plex_section_key, plex_file_path, plex_relative_path,
-      plex_rating_key, binding_method, status, evidence_json,
+      plex_rating_key, binding_method, binding_origin, status, evidence_json,
       created_at, updated_at, last_verified_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(netease_song_id) DO UPDATE SET
       plex_section_key = excluded.plex_section_key,
       plex_file_path = excluded.plex_file_path,
       plex_relative_path = excluded.plex_relative_path,
       plex_rating_key = excluded.plex_rating_key,
       binding_method = excluded.binding_method,
+      binding_origin = excluded.binding_origin,
       status = excluded.status,
       evidence_json = excluded.evidence_json,
       updated_at = excluded.updated_at,
@@ -163,6 +170,7 @@ export function upsertSongIdentityBinding(input: BindingInput): SongIdentityBind
     plexRelativePath,
     input.plexRatingKey,
     input.bindingMethod,
+    bindingOrigin,
     input.status,
     JSON.stringify(input.evidence),
     previous?.createdAt ?? now,
@@ -179,6 +187,7 @@ export function upsertVerifiedSongIdentityBinding(input: BindingInput): SongIden
   const sameIdentity = previous
     && previous.status === next.status
     && previous.bindingMethod === next.bindingMethod
+    && previous.bindingOrigin === next.bindingOrigin
     && previous.plexRelativePath === next.plexRelativePath
   if (sameIdentity) {
     getDb().prepare('UPDATE song_identity_bindings SET updated_at = ? WHERE netease_song_id = ?')
@@ -214,6 +223,19 @@ export function markAutomaticSongIdentityBindingsStale(
     .filter(binding => binding.bindingMethod === 'path')
   for (const binding of bindings) {
     markSongIdentityBindingStale(binding.neteaseSongId, { ...evidence, reason: 'rebuild_managed_links' })
+  }
+  return bindings.length
+}
+
+/** Re-evaluate automatic bindings while preserving manually confirmed choices. */
+export function markReevaluableAutomaticBindingsStale(
+  songIds: number[],
+  evidence: Record<string, unknown> = {},
+): number {
+  const bindings = [...getActiveSongIdentityBindings(songIds).values()]
+    .filter(binding => binding.bindingOrigin === 'auto')
+  for (const binding of bindings) {
+    markSongIdentityBindingStale(binding.neteaseSongId, { ...evidence, reason: 'reevaluate_automatic_matching' })
   }
   return bindings.length
 }
@@ -262,6 +284,7 @@ export function rebindSongIdentity(input: {
   /** Only supplied after explicit group confirmation and version validation under the mutation lock. */
   sharedWithSongIds?: number[]
   binding: Omit<BindingInput, 'neteaseSongId' | 'bindingMethod' | 'status'>
+  bindingOrigin?: SongIdentityBinding['bindingOrigin']
 }): { binding: SongIdentityBinding; affectedSources: Array<{ id: string; name: string }> } {
   const db = getDb()
   return db.transaction(() => {
@@ -277,6 +300,7 @@ export function rebindSongIdentity(input: {
       ...input.binding,
       neteaseSongId: input.neteaseSongId,
       bindingMethod: 'manual',
+      bindingOrigin: input.bindingOrigin ?? 'manual',
       status: 'active',
       evidence: { ...input.binding.evidence, source: 'explicit_adoption', sourceId: input.sourceId ?? null },
     })

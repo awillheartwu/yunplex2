@@ -183,6 +183,9 @@ export function updateSource(id: string, partial: Partial<{
   lastFullCompareAt: string | null
   plexUpdatedAt: number | null
   trackIdSnapshot: string | null
+  observedNeteaseIds: string | null
+  observedPlexPaths: string | null
+  appliedPlexPaths: string | null
   lastObservedPlexFingerprint: string | null
   lastAppliedPlexFingerprint: string | null
   lastObservedNeteaseCursor: string | null
@@ -225,6 +228,9 @@ export function updateSource(id: string, partial: Partial<{
   if (partial.lastFullCompareAt !== undefined) { sets.push('last_full_compare_at = ?'); vals.push(partial.lastFullCompareAt) }
   if (partial.plexUpdatedAt !== undefined) { sets.push('plex_updated_at = ?'); vals.push(partial.plexUpdatedAt) }
   if (partial.trackIdSnapshot !== undefined) { sets.push('track_id_snapshot = ?'); vals.push(partial.trackIdSnapshot) }
+  if (partial.observedNeteaseIds !== undefined) { sets.push('observed_netease_ids = ?'); vals.push(partial.observedNeteaseIds) }
+  if (partial.observedPlexPaths !== undefined) { sets.push('observed_plex_paths = ?'); vals.push(partial.observedPlexPaths) }
+  if (partial.appliedPlexPaths !== undefined) { sets.push('applied_plex_paths = ?'); vals.push(partial.appliedPlexPaths) }
   if (partial.lastObservedPlexFingerprint !== undefined) { sets.push('last_observed_plex_fingerprint = ?'); vals.push(partial.lastObservedPlexFingerprint) }
   if (partial.lastAppliedPlexFingerprint !== undefined) { sets.push('last_applied_plex_fingerprint = ?'); vals.push(partial.lastAppliedPlexFingerprint) }
   if (partial.lastObservedNeteaseCursor !== undefined) { sets.push('last_observed_netease_cursor = ?'); vals.push(partial.lastObservedNeteaseCursor) }
@@ -251,6 +257,8 @@ function toNullableBoolean(value: boolean | null): number | null {
 export interface SourceSyncObservation {
   neteaseCursor?: string | null
   plexFingerprint?: string | null
+  neteaseIds?: string | null
+  plexPaths?: string | null
   observedAt?: string
 }
 
@@ -263,6 +271,12 @@ export function recordSourceObservation(id: string, observation: SourceSyncObser
       : {}),
     ...(observation.plexFingerprint !== undefined
       ? { lastObservedPlexFingerprint: observation.plexFingerprint }
+      : {}),
+    ...(observation.neteaseIds !== undefined
+      ? { observedNeteaseIds: observation.neteaseIds }
+      : {}),
+    ...(observation.plexPaths !== undefined
+      ? { observedPlexPaths: observation.plexPaths }
       : {}),
     lastObservedAt: observedAt,
   })
@@ -301,10 +315,12 @@ export function recordAppliedPlexPlaylistFingerprint(
   id: string,
   fingerprint: string,
   appliedAt = new Date().toISOString(),
+  paths?: string | null,
 ): PlaylistSource | null {
   return updateSource(id, {
     lastObservedPlexFingerprint: fingerprint,
     lastAppliedPlexFingerprint: fingerprint,
+    ...(paths !== undefined ? { observedPlexPaths: paths, appliedPlexPaths: paths } : {}),
     lastObservedAt: appliedAt,
   })
 }

@@ -11,6 +11,7 @@ import {
 import { deferFailedDownloadTask } from './retry-store'
 import { withExternalRequestSignal } from '../external-request-context'
 import { clearAudioCache } from './audio-cache'
+import { classifyDownloadError } from '../sync/download-diagnostics'
 
 export async function executeDownloadTasks(
   processor: DownloadProcessor,
@@ -120,6 +121,7 @@ export async function executeDownloadTasks(
           const updated = updateTaskState(task.id, {
             status: 'failed',
             error: msg,
+            errorCode: 'failed_tags',
             progress: 0,
             filePath: result.filePath,
             fileType: result.fileType,
@@ -152,6 +154,7 @@ export async function executeDownloadTasks(
             status: 'done', progress: 100,
             filePath: result.filePath, fileType: result.fileType,
             error: null,
+            errorCode: null,
             leaseOwner: null,
             leaseExpiresAt: null,
           }, { leaseOwner })
@@ -187,6 +190,7 @@ export async function executeDownloadTasks(
         const updated = updateTaskState(task.id, {
           status: 'failed',
           error: msg,
+          errorCode: tagError ? 'failed_tags' : classifyDownloadError(err),
           progress: 0,
           ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
           ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),

@@ -14,7 +14,7 @@ import { sanitizeDiagnosticMessage } from '../domain-error'
 
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
-export type FailureRecordStatus = 'open' | 'ignored' | 'resolved'
+export type FailureRecordStatus = 'open' | 'paused' | 'ignored' | 'resolved'
 
 export interface FailureRecord {
   id: string
@@ -64,6 +64,7 @@ export interface FailureRecordFilter {
 export interface SourceFailurePolicyEntry {
   failureKind: string
   occurrenceCount: number
+  status: 'open' | 'ignored' | 'paused'
   phase: 'download' | 'tags' | 'plex_match' | 'plex_insert'
 }
 
@@ -83,6 +84,14 @@ const FAILURE_STATUSES = new Set<SongStatus>([
   'failed_plex_match',
   'failed_plex_insert',
   'copyright_restricted',
+])
+
+const LEGACY_FAILURE_KINDS: DomainErrorCode[] = ['failed_download', 'filesystem_failed', 'validation_failed']
+const SPECIFIC_FAILURE_KINDS = new Set<DomainErrorCode>([
+  'source_unavailable',
+  'source_missing',
+  'invalid_audio',
+  'unsupported_format',
 ])
 
 function rowToRecord(row: Record<string, unknown>): FailureRecord {
@@ -151,6 +160,18 @@ export function recordFailure(input: {
   const runType = run?.type || input.runType
   const occurredAt = input.occurredAt || new Date().toISOString()
   const definition = resolveDomainErrorDefinition(input.failureKind, input.failureReason)
+  if (SPECIFIC_FAILURE_KINDS.has(definition.code)) {
+    // Reclassifying a legacy failure must not leave a second open record for
+    // the same song. Older generic kinds are superseded by the specific cause.
+    resolveFailures({
+      songId: input.songId,
+      songName: input.songName,
+      artist: input.artist,
+      sourceId: input.sourceId,
+      failureKinds: LEGACY_FAILURE_KINDS,
+      resolvedAt: occurredAt,
+    })
+  }
   // Timing stays in the run diagnostic; it must not split one cause into many groups.
   const failureReason = (sanitizeDiagnosticMessage(input.failureReason) || '').replace(/，耗时 \d+ ms/g, '')
   const normalizedInput = { ...input, failureKind: definition.code }
@@ -174,6 +195,8 @@ export function recordFailure(input: {
     if (input.downloadTaskId) taskIds.add(input.downloadTaskId)
     const status = current.status === 'ignored'
       ? 'ignored'
+      : current.status === 'paused'
+        ? 'paused'
       : current.status === 'resolved' && !isNewOccurrence
         ? 'resolved'
         : 'open'
@@ -252,7 +275,7 @@ export function resolveFailures(input: {
   const result = getDb().prepare(`
     UPDATE failure_records
     SET status = 'resolved', resolved_at = ?, ignored_at = NULL
-    WHERE subject_key = ? AND status = 'open' AND last_seen_at <= ?${kindClause}
+    WHERE subject_key = ? AND status IN ('open','paused') AND last_seen_at <= ?${kindClause}
   `).run(...params)
   return result.changes
 }
@@ -278,7 +301,7 @@ export function reconcileRunFailures(run: TaskRun): void {
         sourceName,
         runId: run.id,
         runType: run.type,
-        failureKind: song.status,
+        failureKind: song.error?.code ?? song.status,
         failureReason: song.error?.message || song.error?.title || song.status,
         occurredAt: run.finishedAt || new Date().toISOString(),
       })
@@ -303,10 +326,10 @@ function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['pha
 
 export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   const rows = getDb().prepare(`
-    SELECT song_id, failure_kind, occurrence_count, last_seen_at
+    SELECT song_id, failure_kind, occurrence_count, last_seen_at, status
     FROM failure_records
     WHERE source_id = ?
-      AND status IN ('open', 'ignored')
+      AND status IN ('open', 'ignored', 'paused')
       AND song_id IS NOT NULL
       AND failure_kind != 'ignored_failure'
     ORDER BY last_seen_at DESC
@@ -315,6 +338,7 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
     failure_kind: string
     occurrence_count: number
     last_seen_at: string
+    status: 'open' | 'ignored' | 'paused'
   }>
   const copyrightSongIds = new Set<number>()
   const failuresBySongId: Record<number, SourceFailurePolicyEntry> = {}
@@ -328,6 +352,7 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
     failuresBySongId[row.song_id] = {
       failureKind: row.failure_kind,
       occurrenceCount: row.occurrence_count,
+      status: row.status,
       phase: phaseForFailureKind(row.failure_kind),
     }
   }
@@ -343,6 +368,43 @@ export function shouldPauseSourceFailure(
   return entry.phase === 'download' || entry.phase === 'tags'
 }
 
+const NON_RETRYABLE_FAILURE_KINDS = new Set<DomainErrorCode>([
+  'source_unavailable',
+  'invalid_audio',
+  'unsupported_format',
+  'copyright_restricted',
+])
+
+/** Whether this failure is known/terminal and must not force another full pass. */
+export function isTerminalFailure(
+  entry: SourceFailurePolicyEntry | undefined,
+  maxFailures: number,
+): boolean {
+  if (!entry) return false
+  if (entry.status === 'ignored' || entry.status === 'paused') return true
+  if (NON_RETRYABLE_FAILURE_KINDS.has(entry.failureKind as DomainErrorCode)) return true
+  return shouldPauseSourceFailure(entry, maxFailures)
+}
+
+/** Move exhausted automatic failures to the paused state without hiding them. */
+export function pauseExhaustedFailures(sourceId: string, maxFailures: number): number {
+  const rows = getDb().prepare(`
+    SELECT id, failure_kind, occurrence_count
+    FROM failure_records
+    WHERE source_id = ? AND status = 'open'
+  `).all(sourceId) as Array<{ id: string; failure_kind: string; occurrence_count: number }>
+  const update = getDb().prepare("UPDATE failure_records SET status = 'paused', ignored_at = NULL WHERE id = ? AND status = 'open'")
+  let paused = 0
+  for (const row of rows) {
+    const phase = phaseForFailureKind(row.failure_kind)
+    const exhausted = NON_RETRYABLE_FAILURE_KINDS.has(row.failure_kind as DomainErrorCode)
+      || (maxFailures > 0 && row.occurrence_count >= maxFailures
+        && (phase === 'download' || phase === 'tags' || phase === 'plex_match'))
+    if (exhausted && update.run(row.id).changes > 0) paused++
+  }
+  return paused
+}
+
 export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
   const row = getDb().prepare(`
     SELECT
@@ -352,7 +414,7 @@ export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
         ELSE 0
       END) AS actionable
     FROM failure_records
-    WHERE source_id = ? AND status = 'open'
+    WHERE source_id = ? AND status IN ('open', 'paused')
   `).get(sourceId) as { actionable: number | null; copyright_restricted: number | null }
   return {
     actionable: Number(row.actionable || 0),

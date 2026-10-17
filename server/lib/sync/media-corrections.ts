@@ -12,6 +12,21 @@ export interface MediaCorrection {id:string;song_id:number;expected_version:stri
 export function getMediaCorrection(songId:number):MediaCorrection|null {
   return getDb().prepare("SELECT * FROM media_corrections WHERE song_id=? AND status IN ('pending','ready') ORDER BY created_at DESC LIMIT 1").get(songId) as MediaCorrection??null
 }
+
+/** A correction must keep requesting reconciliation until its staged media is applied. */
+export function hasActiveMediaCorrectionsForSource(sourceId: string): boolean {
+  const row = getDb().prepare(`
+    SELECT 1
+    FROM media_corrections correction
+    JOIN playlist_source_track_occurrences occurrence
+      ON occurrence.netease_song_id = correction.song_id
+      AND occurrence.source_id = ?
+      AND occurrence.membership_status = 'current'
+    WHERE correction.status IN ('pending', 'ready')
+    LIMIT 1
+  `).get(sourceId)
+  return Boolean(row)
+}
 export function queueIdentityRealignment(songId:number,changeId:string) {
   const affected=markSongSourcesPendingAlignment(songId)
   const requests=affected.filter(source=>getSource(source.id)?.enabled).map(source=>persistSourceRequest({sourceId:source.id,kind:'convergence',trigger:'user',followUpOf:`identity:${changeId}:${source.id}`}))

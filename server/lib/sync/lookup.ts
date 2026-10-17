@@ -1,6 +1,6 @@
 import { getMediaCorrection } from './media-corrections'
 import type { AppConfig } from '../config/types'
-import { findTracksByFilePath, getPlaylistTracks, getTrackByRatingKey, type PlexTrack } from '../plex-client'
+import { findTracksByFilePath, getPlaylistTracks, getTrackByRatingKey, getTracksByRatingKeys, type PlexTrack } from '../plex-client'
 import type { NeteaseSong } from '../netease'
 import { validateLocalAudioFile } from '../media-validation'
 import type { MatchTrace, TrackResolution } from './types'
@@ -8,6 +8,7 @@ import { findExistingLocalSongPath } from './local-file-discovery'
 import {
   inspectLocalMediaAssets,
   getLocalMediaAsset,
+  getLocalMediaAssets,
   persistLocalMediaInspection,
   resolveLocalMediaAsset,
   upsertLocalMediaAsset,
@@ -22,7 +23,6 @@ import {
   type UnverifiedMediaDecision,
 } from './missing-media-policy'
 import {
-  getSongIdentityBinding,
   getSongIdentityBindings,
   markSongIdentityBindingStale,
   upsertVerifiedSongIdentityBinding,
@@ -33,6 +33,7 @@ import {
   resolvePlexIdentityPath,
 } from './identity-normalization'
 import { bindResolvedIdentity } from './lookup-identity'
+import type { SongIdentityBinding } from './identity-store'
 import { getActiveMediaDecisions, resolveMediaDecision } from '../source-initialization/store'
 
 type IdentityContext = { sourceId?: string; runId?: string }
@@ -64,7 +65,7 @@ export async function resolveTracks(
   cfg: AppConfig,
   dryRun = false,
   identityContext: IdentityContext = {},
-  options: { automaticMediaFallback?: boolean } = {},
+  options: { automaticMediaFallback?: boolean; trustedSongIds?: ReadonlySet<number> } = {},
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: ExtraTrack[] }> {
   const playlistTracks = plexPlaylistRatingKey
     ? await getPlaylistTracks(plexPlaylistRatingKey, 99999)
@@ -81,24 +82,48 @@ export async function resolveTracks(
   const usedRatingKeys = new Set<string>()
   const targetBindings = [...getSongIdentityBindings(yunSongs.map(song => song.id)).values()]
     .filter(binding => binding.status !== 'unbound')
+  const bindingsById = new Map(targetBindings.map(binding => [binding.neteaseSongId, binding]))
+  const assetsById = getLocalMediaAssets(yunSongs.map(song => song.id))
+  const playlistByRatingKey = new Map(playlistTracks.map(track => [track.ratingKey, track]))
+  const trustedBindingIds = new Set<number>()
+  if (options.trustedSongIds) {
+    for (const binding of targetBindings) {
+      if (!options.trustedSongIds.has(binding.neteaseSongId)) continue
+      if (binding.status !== 'active' || !binding.plexRatingKey) continue
+      const asset = assetsById.get(binding.neteaseSongId)
+      if (asset && asset.status !== 'active') continue
+      trustedBindingIds.add(binding.neteaseSongId)
+    }
+  }
+  const directTracks = await getTracksByRatingKeys(targetBindings.flatMap(binding =>
+    binding.plexRatingKey && !trustedBindingIds.has(binding.neteaseSongId) ? [binding.plexRatingKey] : [],
+  ))
   const initializationDecisions = identityContext.sourceId
     ? getActiveMediaDecisions(identityContext.sourceId)
     : new Map<number, 'defer' | 'download'>()
 
   for (const [index, song] of yunSongs.entries()) {
     const mediaPlan = mediaPlans.get(song.id)
-    const resolution = await resolveOne({
-      song,
-      index,
-      playlistTracks,
-      sectionKey,
-      cfg,
-      dryRun,
-      identityContext,
-      mediaPlan,
-      initializationDecision: initializationDecisions.get(song.id),
-      previewInspection: previewInspections.get(song.id),
-    })
+    const trustedBinding = trustedBindingIds.has(song.id) ? bindingsById.get(song.id) : undefined
+    const trustedAsset = trustedBinding ? assetsById.get(song.id) ?? null : null
+    const resolution = trustedBinding?.status === 'active' && trustedBinding.plexRatingKey
+      && (!trustedAsset || trustedAsset.status === 'active')
+      ? cachedBindingResolution(song, index, trustedBinding, trustedAsset, playlistByRatingKey)
+      : await resolveOne({
+        song,
+        index,
+        playlistTracks,
+        playlistByRatingKey,
+        sectionKey,
+        cfg,
+        dryRun,
+        identityContext,
+        mediaPlan,
+        initializationDecision: initializationDecisions.get(song.id),
+        previewInspection: previewInspections.get(song.id),
+        directTracks,
+        bindingsById,
+      })
     if (mediaPlan && !resolution.mediaPolicy) annotateMediaPolicy(resolution, mediaPlan)
 
     const ratingKey = resolution.plexRatingKey
@@ -148,10 +173,40 @@ export async function resolveTracks(
   return { resolutions, extraTracks }
 }
 
+function cachedBindingResolution(
+  song: NeteaseSong,
+  index: number,
+  binding: SongIdentityBinding,
+  asset: LocalMediaAsset | null,
+  playlistByRatingKey: ReadonlyMap<string, PlexTrack>,
+): TrackResolution {
+  const playlistItem = playlistByRatingKey.get(binding.plexRatingKey!)
+  return {
+    neteaseIndex: index,
+    song,
+    resolution: playlistItem ? 'matched_plex_playlist' : 'found_in_plex_library',
+    plexRatingKey: binding.plexRatingKey!,
+    ...(playlistItem?.playlistItemID ? { playlistItemId: playlistItem.playlistItemID } : {}),
+    ...(asset?.filePath ? { filePath: asset.filePath } : {}),
+    matchTrace: trace('identity_binding', {
+      ratingKey: binding.plexRatingKey!,
+      filePath: asset?.filePath ?? binding.plexFilePath,
+      decision: 'bound',
+      identity: {
+        method: binding.bindingMethod,
+        plexFilePath: normalizePlexPath(binding.plexFilePath),
+        bindingStatus: binding.status,
+      },
+      evidence: { kind: 'cached_snapshot' },
+    }),
+  }
+}
+
 async function resolveOne(input: {
   song: NeteaseSong
   index: number
   playlistTracks: PlexTrack[]
+  playlistByRatingKey: ReadonlyMap<string, PlexTrack>
   sectionKey: string
   cfg: AppConfig
   dryRun: boolean
@@ -159,8 +214,10 @@ async function resolveOne(input: {
   mediaPlan?: MissingMediaPlan
   initializationDecision?: 'defer' | 'download'
   previewInspection?: LocalMediaInspection
+  directTracks: ReadonlyMap<string, PlexTrack>
+  bindingsById: ReadonlyMap<number, SongIdentityBinding>
 }): Promise<TrackResolution> {
-  const { song, index, playlistTracks, sectionKey, cfg, dryRun, identityContext, mediaPlan } = input
+  const { song, index, playlistTracks, playlistByRatingKey, sectionKey, cfg, dryRun, identityContext, mediaPlan, directTracks, bindingsById } = input
   const base = { neteaseIndex: index, song }
   const correction = getMediaCorrection(song.id)
   const localAsset = correction ? getLocalMediaAsset(song.id) : mediaPlan
@@ -170,10 +227,13 @@ async function resolveOne(input: {
     : input.previewInspection
       ? inspectionAsset(input.previewInspection)
       : resolveLocalMediaAsset(song, cfg)
-  const expectedLocalPath = localAsset?.filePath ?? findExistingLocalSongPath(song, cfg)
+  const expectedLocalPath = localAsset?.filePath
+    ?? mediaPlan?.filePath
+    ?? input.previewInspection?.filePath
+    ?? (correction ? findExistingLocalSongPath(song, cfg) : null)
   const expectedPlexPath = mapLocalPathToPlex(expectedLocalPath, cfg)
   const managed = localAsset?.ownership === 'managed' && localAsset.status === 'active'
-  const bound = getSongIdentityBinding(song.id)
+  const bound = bindingsById.get(song.id) ?? null
 
   if (correction) {
     if ((bound?.updatedAt ?? null) !== correction.expected_version) return awaitingManualResolution(base, expectedLocalPath, localAsset, '纠错期间关联已变化，请重新选择处理方式')
@@ -186,13 +246,15 @@ async function resolveOne(input: {
 
   // Explicit adoption is the only external-media identity. Verify by ratingKey
   // plus exact path, then recover by exact path if Plex changes the ratingKey.
-  if (bound && bound.status !== 'unbound' && bound.bindingMethod === 'manual') {
+  if (bound?.status === 'active' && bound.bindingMethod === 'manual') {
     const boundPlexPath = resolvePlexIdentityPath({
       relativePath: bound.plexRelativePath,
       currentSectionRoot: cfg.download.plexLibraryPathPrefix,
       lastObservedPath: bound.plexFilePath,
     })
-    const directTrack = bound.plexRatingKey ? await getTrackByRatingKey(bound.plexRatingKey) : null
+    const directTrack = bound.plexRatingKey
+      ? directTracks.get(bound.plexRatingKey) ?? await getTrackByRatingKey(bound.plexRatingKey)
+      : null
     const directPath = matchingTrackPath(directTrack, boundPlexPath)
     const recovered = directTrack && directPath
       ? [{ track: directTrack, path: directPath }]
@@ -226,7 +288,7 @@ async function resolveOne(input: {
         }
         if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
-      const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
+      const playlistItemId = playlistByRatingKey.get(track.ratingKey)?.playlistItemID
       return {
         ...base,
         resolution: playlistItemId ? 'matched_plex_playlist' : 'found_in_plex_library',
@@ -277,7 +339,9 @@ async function resolveOne(input: {
       currentSectionRoot: cfg.download.plexLibraryPathPrefix,
       lastObservedPath: bound.plexFilePath,
     })
-    const directTrack = bound.plexRatingKey ? await getTrackByRatingKey(bound.plexRatingKey) : null
+    const directTrack = bound.plexRatingKey
+      ? directTracks.get(bound.plexRatingKey) ?? await getTrackByRatingKey(bound.plexRatingKey)
+      : null
     const directPath = matchingTrackPath(directTrack, boundPlexPath)
     const recovered = directTrack && directPath
       ? [{ track: directTrack, path: directPath }]
@@ -319,7 +383,7 @@ async function resolveOne(input: {
         }
         if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
-      const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
+      const playlistItemId = playlistByRatingKey.get(track.ratingKey)?.playlistItemID
       return {
         ...base,
         resolution: playlistItemId ? 'matched_plex_playlist' : 'found_in_plex_library',
@@ -393,7 +457,7 @@ async function resolveOne(input: {
         })
         if (identityContext.sourceId) resolveMediaDecision(identityContext.sourceId, song.id)
       }
-      const playlistItemId = playlistTracks.find(item => item.ratingKey === track.ratingKey)?.playlistItemID
+      const playlistItemId = playlistByRatingKey.get(track.ratingKey)?.playlistItemID
       return {
         ...base,
         resolution: playlistItemId ? 'matched_plex_playlist' : 'found_in_plex_library',

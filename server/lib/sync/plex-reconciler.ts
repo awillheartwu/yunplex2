@@ -46,7 +46,7 @@ export async function reconcileSource(
   _cancelRequested: () => boolean,
   skipPlexPlaylist = false,
   dryRun = false,
-  options: { automaticMediaFallback?: boolean; requireExistingPlaylist?: boolean } = {},
+  options: { automaticMediaFallback?: boolean; requireExistingPlaylist?: boolean; trustedSongIds?: ReadonlySet<number> } = {},
 ): Promise<ReconcileResult> {
   await initPlexClient(cfg.plex)
 

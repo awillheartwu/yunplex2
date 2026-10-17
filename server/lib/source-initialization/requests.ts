@@ -74,3 +74,19 @@ export function restartSourceInitialization(sourceId: string, expectedInitializa
     return requestSourceInitialization(sourceId)
   })()
 }
+
+/** Create a new review plan that re-scores only automatic, unconfirmed quick adoptions. */
+export function requestMatchingReanalysis(sourceId: string) {
+  return getDb().transaction(() => {
+    const source = getSource(sourceId)
+    if (!source || source.type !== 'playlist') throw new Error('重新分析匹配仅支持歌单来源')
+    const latest = getLatestInitialization(sourceId)
+    if (latest && ['pending', 'analyzing', 'awaiting_review', 'applying'].includes(latest.status)) {
+      throw new InitializationConflictError('当前有未完成的接管方案，请先取消或完成后再重新分析匹配')
+    }
+    const initialization = ensurePendingInitialization(sourceId, 'user')
+    getDb().prepare('UPDATE source_initializations SET reevaluate_automatic = 1, auto_process = 0, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), initialization.id)
+    return requestSourceInitialization(sourceId, 'user')
+  })()
+}

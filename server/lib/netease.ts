@@ -134,27 +134,30 @@ export async function checkCookie(cookie: string): Promise<CookieCheckResult> {
   }
 }
 
-export async function fetchPlaylistSongs(
-  playlistId: number,
-  limit: number | undefined,
-  cookie: string,
-  options: { preserveArtistNames?: boolean } = {},
-): Promise<{
-  songs: NeteaseSong[]
+export interface NeteasePlaylistInfo {
+  name: string
+  coverUrl: string
+  creatorName: string
+  description: string
+  trackCount: number
+  updateTime: number | null
+}
+
+export interface NeteasePlaylistSummary {
   trackUpdateTime: number | null
   trackIds: { id: number }[]
   /** Complete playlist membership before syncLimit is applied. */
   allTrackIds: { id: number }[]
   playlistName: string | null
-  playlist: {
-    name: string
-    coverUrl: string
-    creatorName: string
-    description: string
-    trackCount: number
-    updateTime: number | null
-  } | null
-}> {
+  playlist: NeteasePlaylistInfo | null
+}
+
+/** Fetch only the ordered playlist membership and metadata. */
+export async function fetchPlaylistSummary(
+  playlistId: number,
+  limit: number | undefined,
+  cookie: string,
+): Promise<NeteasePlaylistSummary> {
   const response = await controlledNeteaseRequest(() => playlist_detail({ id: playlistId, cookie }), 'playlist_detail')
   const body = (response as {
     status?: number
@@ -207,17 +210,32 @@ export async function fetchPlaylistSongs(
     : null
   const slicedIds = limit && limit > 0 ? allIds.slice(0, limit) : allIds
 
-  if (slicedIds.length === 0) {
-    return { songs: [], trackUpdateTime, trackIds: slicedIds, allTrackIds: allIds, playlistName, playlist }
-  }
+  return { trackUpdateTime, trackIds: slicedIds, allTrackIds: allIds, playlistName, playlist }
+}
+
+export interface FetchedNeteaseSongDetails {
+  songs: NeteaseSong[]
+  /** Valid raw rows retained so later syncs can remap aliases without refetching. */
+  rawSongs: RawSong[]
+}
+
+/** Fetch song details only for the requested IDs, deduplicated and batched. */
+export async function fetchNeteaseSongDetails(
+  songIds: readonly number[],
+  cookie: string,
+  options: { preserveArtistNames?: boolean } = {},
+): Promise<FetchedNeteaseSongDetails> {
+  const uniqueIds = [...new Set(songIds.filter(id => Number.isInteger(id) && id > 0))]
+  if (uniqueIds.length === 0) return { songs: [], rawSongs: [] }
 
   // Batch song_detail — API rejects too many IDs at once (safe limit: ~500)
   const BATCH_SIZE = 400
   const songsById = new Map<number, NeteaseSong>()
+  const rawById = new Map<number, RawSong>()
 
-  for (let offset = 0; offset < slicedIds.length; offset += BATCH_SIZE) {
-    const batch = slicedIds.slice(offset, offset + BATCH_SIZE)
-    const ids = batch.map((t) => String(t.id)).join(',')
+  for (let offset = 0; offset < uniqueIds.length; offset += BATCH_SIZE) {
+    const batch = uniqueIds.slice(offset, offset + BATCH_SIZE)
+    const ids = batch.join(',')
 
     const [v3Res, oldRes] = await Promise.all([
       controlledNeteaseRequest(() => song_detail({ ids, cookie }), 'song_detail'),
@@ -242,28 +260,48 @@ export async function fetchPlaylistSongs(
         // Source Convergence applies deletion protection instead of inventing
         // a path such as "null/未知专辑" or crashing alias normalization.
         if (findInvalidRawSongField(s)) continue
-        const song = mapRawSong(s, options)
         // Fallback: old API often has publishTime when v3 doesn't
-        if (!song.album.publishTime && oldData?.songs) {
+        const publishTime = s.publishTime ?? s.al?.publishTime ?? 0
+        if (!publishTime && oldData?.songs) {
           const match = oldData.songs.find(os => os.id === s.id)
-          if (match?.album?.publishTime) song.album.publishTime = match.album.publishTime
+          if (match?.album?.publishTime) s.publishTime = match.album.publishTime
         }
-        songsById.set(song.id, song)
+        songsById.set(s.id, mapRawSong(s, options))
+        rawById.set(s.id, s)
       }
     }
   }
 
+  return { songs: [...songsById.values()], rawSongs: [...rawById.values()] }
+}
+
+export async function fetchPlaylistSongs(
+  playlistId: number,
+  limit: number | undefined,
+  cookie: string,
+  options: { preserveArtistNames?: boolean } = {},
+): Promise<NeteasePlaylistSummary & { songs: NeteaseSong[] }> {
+  const summary = await fetchPlaylistSummary(playlistId, limit, cookie)
+  if (summary.trackIds.length === 0) return { ...summary, songs: [] }
+
+  const { songs } = await fetchNeteaseSongDetails(
+    summary.trackIds.map(track => track.id),
+    cookie,
+    options,
+  )
+  const songsById = new Map(songs.map(song => [song.id, song]))
+
   // The detail endpoint may reorder or omit rows. Reconstruct the authoritative
   // playlist order from trackIds and preserve duplicate occurrences. Missing
   // IDs remain visible to the sync service through trackIds for deletion safety.
-  const orderedSongs = slicedIds.flatMap(track => {
+  const orderedSongs = summary.trackIds.flatMap(track => {
     const song = songsById.get(track.id)
     return song ? [song] : []
   })
-  return { songs: orderedSongs, trackUpdateTime, trackIds: slicedIds, allTrackIds: allIds, playlistName, playlist }
+  return { ...summary, songs: orderedSongs }
 }
 
-interface RawSong {
+export interface RawSong {
   id: number
   name: string
   no?: number
@@ -280,7 +318,7 @@ interface RawSong {
   }
 }
 
-function findInvalidRawSongField(raw: RawSong): string | null {
+export function findInvalidRawSongField(raw: RawSong): string | null {
   const candidate = raw as unknown as {
     name?: unknown
     ar?: unknown
@@ -479,19 +517,21 @@ export async function getSongUrl(
 ): Promise<{ url: string; type: string }> {
   type AudioResponse = { body?: { data?: Array<{ url?: string; type?: string; freeTrialInfo?: unknown; code?: number }> } }
   const level = QUALITY_LEVELS[quality] || 'jymaster'
+  const requestedLevel = level
 
   let res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }), 'song_url_v1')
   let data = (res as AudioResponse).body?.data?.[0]
 
   let attemptedLevel = level
-  if (!data || !['flac', 'mp3'].includes(data.type?.toLowerCase() ?? '')) {
+  if ((!data || !['flac', 'mp3'].includes(data.type?.toLowerCase() ?? '')) && level !== 'hires') {
     attemptedLevel = 'hires'
     res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie }), 'song_url_v1')
     data = (res as AudioResponse).body?.data?.[0]
   }
 
   if (!data?.url) {
-    throw Object.assign(new Error(`网易云未提供可用音源（接口 song_url_v1，音质 ${attemptedLevel}，音源状态 ${data?.code ?? '未返回'}）；请核对歌曲可用性和账号权限`), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId, providerCode: data?.code })
+    const qualityLabel = attemptedLevel === requestedLevel ? requestedLevel : `${requestedLevel}（回退 ${attemptedLevel}）`
+    throw Object.assign(new Error(`网易云未提供可用音源（接口 song_url_v1，音质 ${qualityLabel}，音源状态 ${data?.code ?? '未返回'}）；请核对歌曲可用性和账号权限`), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId, providerCode: data?.code })
   }
   if (data.freeTrialInfo && data.freeTrialInfo !== 'null') {
     throw Object.assign(new Error('网易云仅提供试听音源（接口 song_url_v1）；请核对账号权限'), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId })

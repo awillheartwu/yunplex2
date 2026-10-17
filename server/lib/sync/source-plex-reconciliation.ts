@@ -56,7 +56,10 @@ import {
   type PlexMatchResult,
 } from './plex-match'
 import { matchTracksInPlexWithRetry } from './plex-batch-match'
-import { buildPlexPlaylistFingerprint } from './playlist-fingerprint'
+import {
+  buildPlexPathSnapshot,
+  buildPlexPlaylistFingerprint,
+} from './playlist-fingerprint'
 import type { TrackResolution } from './types'
 
 interface PlexPlaylistIdentity {
@@ -80,6 +83,8 @@ interface ReconcilePlexPlaylistInput {
   skipRemoveExtra: boolean
   retryUnresolvedSnapshot: boolean
   needsPlexRefresh: boolean
+  ignoredPlexMatchSongIds?: ReadonlySet<number>
+  forcePlexRetry?: boolean
   expectedPlexFingerprint?: string
   assertRecoveryContextUnchanged?: () => void
   splitArtists: (artists: { name: string }[]) => [string, string]
@@ -114,6 +119,8 @@ export async function reconcilePlexPlaylist(
     skipRemoveExtra,
     retryUnresolvedSnapshot,
     needsPlexRefresh,
+    ignoredPlexMatchSongIds,
+    forcePlexRetry = false,
     splitArtists,
     isCancellationRequested,
     throwIfCancelled,
@@ -136,6 +143,9 @@ export async function reconcilePlexPlaylist(
   const pendingVerifiedBindings: BindingInput[] = []
 
   const retryRequests = resolutions.flatMap((resolution, index) => {
+    if (!forcePlexRetry && retryUnresolvedSnapshot && ignoredPlexMatchSongIds?.has(resolution.song.id)) {
+      return []
+    }
     const currentSong = getResolutionTask(job, source.id, resolution)
     const filePath = currentSong?.filePath ?? resolution.filePath
     return shouldAttemptPlexRetryForResolution(resolution.resolution, currentSong?.status, filePath)
@@ -467,6 +477,8 @@ export async function reconcilePlexPlaylist(
     recordAppliedPlexPlaylistFingerprint(
       source.id,
       buildPlexPlaylistFingerprint(postPlaylistTracks),
+      undefined,
+      buildPlexPathSnapshot(postPlaylistTracks),
     )
   } catch (error) {
     if (error instanceof PlexReorderError) {
@@ -500,6 +512,7 @@ export async function reconcilePlexPlaylist(
       const partialTracks = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
       recordSourceObservation(source.id, {
         plexFingerprint: buildPlexPlaylistFingerprint(partialTracks),
+        plexPaths: buildPlexPathSnapshot(partialTracks),
       })
     } catch {
       // Preserve and report the original mutation failure.

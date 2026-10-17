@@ -1,5 +1,6 @@
 export type BindingMethod = 'path' | 'manual'
 export type BindingStatus = 'active' | 'stale' | 'unbound'
+export type BindingOrigin = 'auto' | 'confirmed' | 'manual'
 
 export interface SongIdentityBinding {
   neteaseSongId: number
@@ -10,6 +11,8 @@ export interface SongIdentityBinding {
   plexRelativePath: string
   plexRatingKey: string | null
   bindingMethod: BindingMethod
+  /** Why this identity exists: automatic evaluation, user-confirmed quick plan, or explicit manual choice. */
+  bindingOrigin?: BindingOrigin
   status: BindingStatus
   evidence: Record<string, unknown>
   createdAt: string

@@ -4,6 +4,7 @@ import { updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
 import { isAwaitingManualSongStatus } from '../../../lib/media-status-projection'
+import { hasActiveMediaCorrectionsForSource } from './media-corrections'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -114,6 +115,11 @@ export async function finalizeSourceConvergence(
     if (sourceStatus === 'success') {
       sourceUpdate.lastTrackUpdateTime = trackUpdateTime
       sourceUpdate.trackIdSnapshot = JSON.stringify(currentIdOrder)
+    }
+    // A completed pass resolves the pending match work even when known
+    // download failures keep the source partial. Active corrections still
+    // need another pass, so their flag remains until they are applied.
+    if (!hasActiveMediaCorrectionsForSource(source.id)) {
       sourceUpdate.requiresMatchReconcile = false
     }
     updateSource(source.id, sourceUpdate)

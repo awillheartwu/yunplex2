@@ -6,8 +6,14 @@ export interface DownloadFailurePolicy {
   cooldownMs?: number
 }
 
-/** Only transient failures retry automatically; policy failures need a decision. */
-export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
+export interface ErrorSignals {
+  chain: Array<Record<string, unknown>>
+  code: string
+  message: string
+  status: number
+}
+
+export function errorSignals(error: unknown): ErrorSignals {
   const chain: Array<Record<string, unknown>> = []
   let current = error
   while (current && typeof current === 'object' && chain.length < 5) {
@@ -19,6 +25,12 @@ export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
   const failedRequest = chain.find(item => item.httpStatus || item.providerCode || item.status)
   const httpStatus = Number(failedRequest?.httpStatus || 0)
   const status = httpStatus >= 400 ? httpStatus : Number(failedRequest?.providerCode || failedRequest?.status || httpStatus)
+  return { chain, code, message, status }
+}
+
+/** Only transient failures retry automatically; policy failures need a decision. */
+export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
+  const { chain, code, message, status } = errorSignals(error)
   if (/ENOSPC|EACCES|EPERM|EROFS/.test(code) || /磁盘.*(?:满|空间)|空间不足|只读文件系统/.test(message)) {
     return { retryable: false, pauseReason: 'filesystem' }
   }

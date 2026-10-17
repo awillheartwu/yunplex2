@@ -3,7 +3,7 @@ import type { SyncStage } from '../server/lib/log/types'
 
 const stages: Partial<Record<SyncStage, string>> = {
   fetching_playlist: '读取歌单', comparing: '分析差异', downloading: '下载歌曲',
-  processing_tags: '写入标签', refreshing_plex: '等待 Plex 识别',
+  processing_tags: '处理下载与标签', refreshing_plex: '等待 Plex 识别',
   updating_plex_playlist: '更新 Plex 歌单', reorder: '校准歌单顺序', repair: '补全资源',
 }
 export function liveStageLabel(stage: SyncStage): string { return stages[stage] || '等待进度更新' }

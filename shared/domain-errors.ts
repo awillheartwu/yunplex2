@@ -16,6 +16,10 @@ export type DomainErrorCode =
   | 'failed_plex_match'
   | 'failed_plex_insert'
   | 'ignored_failure'
+  | 'source_unavailable'
+  | 'source_missing'
+  | 'invalid_audio'
+  | 'unsupported_format'
   | 'validation_failed'
   | 'unknown_error'
 
@@ -43,9 +47,24 @@ export const DOMAIN_ERROR_CATALOG: Record<DomainErrorCode, DomainErrorDefinition
   failed_plex_match: { code: 'failed_plex_match', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 匹配失败', userMessage: 'Plex 未在重试窗口内识别到媒体文件。' },
   failed_plex_insert: { code: 'failed_plex_insert', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 更新失败', userMessage: 'Plex 已识别媒体，但未能完成歌单更新。' },
   ignored_failure: { code: 'ignored_failure', category: 'operation', severity: 'info', retryable: false, label: '连续失败', userMessage: '连续失败达到阈值，系统已暂停自动重试。' },
+  source_unavailable: { code: 'source_unavailable', category: 'netease', severity: 'warning', retryable: false, label: '音源不可用', userMessage: '网易云未提供可用音源，可能是版权、地区或账号权限限制；本轮保留目标，不自动重试。' },
+  source_missing: { code: 'source_missing', category: 'netease', severity: 'warning', retryable: false, label: '歌曲详情缺失', userMessage: '网易云未返回歌曲详情，可能是歌曲已下架；本轮保留 Plex 歌单，不自动删除。' },
+  invalid_audio: { code: 'invalid_audio', category: 'media', severity: 'error', retryable: false, label: '音频文件损坏', userMessage: '网易云返回的音频文件未通过校验，未保存不完整文件；请稍后重试或忽略。' },
+  unsupported_format: { code: 'unsupported_format', category: 'media', severity: 'warning', retryable: false, label: '音频格式不支持', userMessage: '网易云只返回 APE/WMA 等不支持的格式，未保存不完整音频。' },
   validation_failed: { code: 'validation_failed', category: 'operation', severity: 'info', retryable: false, label: '请求无效', userMessage: '请求内容无效，请检查输入后重试。' },
   unknown_error: { code: 'unknown_error', category: 'unknown', severity: 'error', retryable: false, label: '未知错误', userMessage: '操作失败，请查看日志获取诊断信息。' },
 }
+
+const SPECIFIC_MESSAGE_CODES = new Set<DomainErrorCode>([
+  'copyright_restricted',
+  'authentication_failed',
+  'rate_limited',
+  'plex_unavailable',
+  'source_unavailable',
+  'source_missing',
+  'invalid_audio',
+  'unsupported_format',
+])
 
 const LEGACY_CODES = new Set<DomainErrorCode>(Object.keys(DOMAIN_ERROR_CATALOG) as DomainErrorCode[])
 
@@ -65,10 +84,14 @@ export function classifyDomainErrorCode(message: string | null | undefined, fall
   if (/限流|频繁|rate.?limit|too many requests|\b429\b/.test(text)) return 'rate_limited'
   if (/服务重启|租约|lease|interrupted|中断/.test(text)) return 'scheduler_interrupted'
   if (/已有.*(?:任务|同步)|正在运行|占用|concurrent|busy/.test(text)) return 'concurrent_operation'
+  if (/无法获取目标歌曲信息|歌曲详情.*未返回|详情未返回|song_detail.*未返回/.test(text)) return 'source_missing'
+  if (/未提供.*可用音源|音源状态\s*404|song_url_unavailable|试听音源|账号权限/.test(text)) return 'source_unavailable'
+  if (/尚不支持|download_format_unsupported|不支持的音频格式/.test(text)) return 'unsupported_format'
+  if (/文件头无效|音频文件无效|invalid_audio|下载的音频文件无效/.test(text)) return 'invalid_audio'
   if (/缺少|必须|无效|不存在|请提供|只支持|需要提供|格式错误|不符合|只有.*可以/.test(text)) return 'validation_failed'
   if (/plex/.test(text) && /连接|不可用|超时|timeout|refused|unreachable|\b50[234]\b/.test(text)) return 'plex_unavailable'
   if (/网易云/.test(text) && /连接失败|请求超时|\b50[234]\b/.test(text)) return 'netease_unavailable'
-  if (/eacces|eperm|enospc|enoent|只读|权限|磁盘|空间|挂载|文件系统/.test(text)) return 'filesystem_failed'
+  if (/eacces|eperm|enospc|enoent|只读|磁盘|空间|挂载|文件系统|(?:文件|目录|下载目录|媒体目录).{0,8}权限|写权限/.test(text)) return 'filesystem_failed'
   if (/身份冲突|关联失效|歧义|ambiguous|identity conflict/.test(text)) return 'media_identity_conflict'
   if (/音频文件超过大小上限/.test(text)) return 'validation_failed'
   if (/标签|metadata|tag/.test(text)) return 'failed_tags'
@@ -76,6 +99,11 @@ export function classifyDomainErrorCode(message: string | null | undefined, fall
 }
 
 export function resolveDomainErrorDefinition(code: string | null | undefined, message?: string | null): DomainErrorDefinition {
-  const fallback = isDomainErrorCode(code) ? code : 'unknown_error'
-  return getDomainErrorDefinition(classifyDomainErrorCode(message, fallback))
+  const explicit = isDomainErrorCode(code) ? code : 'unknown_error'
+  const messageCode = classifyDomainErrorCode(message, explicit)
+  if (explicit === 'unknown_error' || explicit === 'failed_download') return getDomainErrorDefinition(messageCode)
+  // Older records were classified from user-facing text. Upgrade those legacy
+  // generic kinds when the message now has a specific, stable cause.
+  if (messageCode !== explicit && SPECIFIC_MESSAGE_CODES.has(messageCode)) return getDomainErrorDefinition(messageCode)
+  return getDomainErrorDefinition(explicit)
 }

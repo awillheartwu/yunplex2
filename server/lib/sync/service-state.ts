@@ -12,7 +12,7 @@ export const STAGE_LABELS: Record<string, string> = {
   fetching_playlist: '获取源曲目',
   comparing: '对比歌曲',
   downloading: '下载歌曲',
-  processing_tags: '写入元数据',
+  processing_tags: '处理下载与标签',
   refreshing_plex: '等待 Plex 扫描与索引',
   updating_plex_playlist: '更新 Plex 歌单',
   reorder: '重排歌单',

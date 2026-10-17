@@ -73,6 +73,7 @@ download/file-task-command.ts 保存文件任务
 | 表                                     | 保存的内容                     |
 | -------------------------------------- | ------------------------------ |
 | `playlist_sources` 及歌曲条目表        | 来源设置、歌曲快照和顺序       |
+| `netease_song_details`                 | 网易云歌曲详情原文，按歌曲 ID 复用 |
 | `source_sync_queue`                    | 等待或正在执行的分析与同步请求 |
 | `song_identity_bindings`               | 当前歌曲与 Plex 媒体的关联     |
 | `local_media_assets`                   | 本地文件路径、归属与状态       |
