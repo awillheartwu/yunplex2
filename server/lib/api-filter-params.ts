@@ -1,7 +1,8 @@
 import type { JobStatus, TaskRunFilter, TaskRunType } from './job/types'
 import type { PlaylistSource } from './playlist/types'
 import type { PlaylistSourceFilter } from './playlist/store'
-import type { FailureRecordFilter, FailureRecordStatus } from './tasks/failure-records'
+import type { FailureRecordFilter, FailureRecordStatusFilter } from './tasks/failure-records'
+import { DOMAIN_ERROR_CATALOG } from '../../shared/domain-errors'
 import { isValidDateFilter, isValidTimeZone } from './date-range'
 
 type QueryValue = string | string[] | number | boolean | null | undefined
@@ -11,29 +12,8 @@ const RUN_TYPES = new Set<TaskRunType>(['sync', 'repair', 'manual_download', 'so
 const JOB_STATUSES = new Set<JobStatus>(['running', 'awaiting_action', 'success', 'partial', 'failed', 'cancelled'])
 const SOURCE_TYPES = new Set<NonNullable<PlaylistSourceFilter['type']>>(['playlist', 'album'])
 const SOURCE_STATUSES = new Set<PlaylistSource['lastStatus']>(['idle', 'success', 'partial', 'failed'])
-const FAILURE_KINDS = new Set([
-  'failed_download',
-  'failed_tags',
-  'failed_plex_match',
-  'failed_plex_insert',
-  'source_unavailable',
-  'source_missing',
-  'invalid_audio',
-  'unsupported_format',
-  'copyright_restricted',
-  'ignored_failure',
-  'authentication_failed',
-  'rate_limited',
-  'netease_unavailable',
-  'plex_unavailable',
-  'filesystem_failed',
-  'media_identity_conflict',
-  'scheduler_interrupted',
-  'concurrent_operation',
-  'validation_failed',
-  'unknown_error',
-])
-const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatus>(['open', 'paused', 'ignored', 'resolved'])
+const FAILURE_KINDS = new Set([...Object.keys(DOMAIN_ERROR_CATALOG), 'ignored_failure'])
+const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatusFilter>(['all', 'open', 'paused', 'ignored', 'resolved'])
 
 function firstValue(value: unknown): QueryValue {
   if (Array.isArray(value)) return firstValue(value[0])

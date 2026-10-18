@@ -1,6 +1,6 @@
 import type {
   FailureRecord,
-  FailureRecordStatus,
+  FailureRecordStatusFilter,
 } from '~~/server/lib/tasks/failure-records'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import type { FailureGroup, FailureMutationSelection } from '~~/server/lib/tasks/failure-groups'
@@ -8,7 +8,7 @@ import { computed, ref } from 'vue'
 import { createLatestAsyncGuard } from '~~/composables/useTiming'
 
 export interface FailureFilter {
-  status?: FailureRecordStatus
+  status?: FailureRecordStatusFilter
   type?: TaskRunType | ''
   failureKind?: string
   sourceId?: string
@@ -29,6 +29,7 @@ export function useFailures() {
   const groupTotal = ref(0)
   const total = ref(0)
   const retryableTotal = ref(0)
+  const ignorableTotal = ref(0)
   const loading = ref(false)
   const mutating = ref(false)
   const error = ref('')
@@ -41,14 +42,22 @@ export function useFailures() {
   const excluded = ref(new Set<string>())
   const allMatchingSelected = ref(false)
   const knownRetryable = reactive(new Map<string, boolean>())
+  const knownIgnorable = reactive(new Map<string, boolean>())
   const selectionBusy = computed(() => loading.value || mutating.value || Boolean(error.value))
   const selectionCount = computed(() => allMatchingSelected.value ? Math.max(0, total.value - excluded.value.size) : selected.value.size)
   const selectionRetryableCount = computed(() => allMatchingSelected.value
     ? Math.max(0, retryableTotal.value - [...excluded.value].filter(id => knownRetryable.get(id)).length)
     : [...selected.value].filter(id => knownRetryable.get(id)).length)
+  const selectionIgnorableCount = computed(() => allMatchingSelected.value
+    ? Math.max(0, ignorableTotal.value - [...excluded.value].filter(id => knownIgnorable.get(id)).length)
+    : [...selected.value].filter(id => knownIgnorable.get(id)).length)
   const allPageSelected = computed(() => items.value.length > 0 && items.value.every(item => isSelected(item.id)))
   const somePageSelected = computed(() => !allPageSelected.value && items.value.some(item => isSelected(item.id)))
-  watch(() => JSON.stringify([view.value, filter.value]), () => { clearSelection(); knownRetryable.clear() }, { flush: 'sync' })
+  watch(() => JSON.stringify([view.value, filter.value]), () => {
+    clearSelection()
+    knownRetryable.clear()
+    knownIgnorable.clear()
+  }, { flush: 'sync' })
   const paginationTotal = computed(() => view.value === 'groups' ? groupTotal.value : total.value)
   const pageCount = computed(() => Math.max(1, Math.ceil(paginationTotal.value / limit)))
   const visibleCount = computed(() => view.value === 'groups' ? groups.value.length : items.value.length)
@@ -84,7 +93,7 @@ export function useFailures() {
         const params = toParams((requested - 1) * limit)
         const response = grouped
           ? await api.get<{ items: FailureGroup[]; total: number; recordTotal: number }>('/tasks/failure-groups', params)
-          : await api.get<{ items: FailureRecord[]; total: number; retryableTotal: number }>('/tasks/failures', params)
+          : await api.get<{ items: FailureRecord[]; total: number; retryableTotal: number; ignorableTotal: number }>('/tasks/failures', params)
         if (!fetchGuard.isLatest(token)) return
         const last = Math.max(1, Math.ceil(response.total / limit))
         if (requested > last) { requested = last; continue }
@@ -96,7 +105,11 @@ export function useFailures() {
           items.value = response.items
           total.value = response.total
           retryableTotal.value = response.retryableTotal
-          for (const item of response.items) knownRetryable.set(item.id, item.retryable)
+          ignorableTotal.value = response.ignorableTotal
+          for (const item of response.items) {
+            knownRetryable.set(item.id, item.retryable)
+            knownIgnorable.set(item.id, item.status === 'open' || item.status === 'paused')
+          }
         }
         page.value = requested
         loadedFilter = signature
@@ -197,6 +210,7 @@ export function useFailures() {
     selectionBusy,
     selectionCount,
     selectionRetryableCount,
+    selectionIgnorableCount,
     allMatchingSelected,
     allPageSelected,
     somePageSelected,

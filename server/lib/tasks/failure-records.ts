@@ -16,6 +16,7 @@ import { canRetryFailure } from '../../../shared/failure-handling'
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
 export type FailureRecordStatus = 'open' | 'paused' | 'ignored' | 'resolved'
+export type FailureRecordStatusFilter = FailureRecordStatus | 'all'
 
 export const RETRYABLE_FAILURE_SQL = `fr.status != 'resolved' AND (
   (fr.source_id IS NOT NULL AND fr.song_id IS NOT NULL)
@@ -51,7 +52,7 @@ export interface FailureRecord {
 }
 
 export interface FailureRecordFilter {
-  status?: FailureRecordStatus
+  status?: FailureRecordStatusFilter
   type?: TaskRunType
   failureKind?: string
   excludeFailureKinds?: string[]
@@ -434,8 +435,12 @@ export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
 export function buildFailureRecordQuery(filter: FailureRecordFilter = {}) {
   const conditions: string[] = []
   const params: unknown[] = []
-  conditions.push('status = ?')
-  params.push(filter.status || 'open')
+  if (filter.status === 'all') {
+    conditions.push("fr.status IN ('open','paused','ignored','resolved')")
+  } else {
+    conditions.push('fr.status = ?')
+    params.push(filter.status || 'open')
+  }
   if (filter.type) {
     conditions.push('run_type = ?')
     params.push(filter.type)
@@ -500,12 +505,16 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   items: FailureRecord[]
   total: number
   retryableTotal: number
+  ignorableTotal: number
 } {
   const { where, from, params } = buildFailureRecordQuery(filter)
   const db = getDb()
-  const total = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where}`).get(...params) as { count: number }).count
-  const retryableTotal = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where} AND (${RETRYABLE_FAILURE_SQL})`)
-    .get(...params) as { count: number }).count
+  const counts = db.prepare(`
+    SELECT COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END), 0) AS retryable_total,
+      COALESCE(SUM(CASE WHEN fr.status IN ('open', 'paused') THEN 1 ELSE 0 END), 0) AS ignorable_total
+    ${from} ${where}
+  `).get(...params) as { total: number; retryable_total: number; ignorable_total: number }
   const rows = db.prepare(`
     SELECT fr.*,
       CASE
@@ -518,7 +527,12 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
     ORDER BY fr.last_seen_at DESC
     LIMIT ? OFFSET ?
   `).all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<Record<string, unknown>>
-  return { items: rows.map(rowToRecord), total, retryableTotal }
+  return {
+    items: rows.map(rowToRecord),
+    total: counts.total,
+    retryableTotal: counts.retryable_total,
+    ignorableTotal: counts.ignorable_total,
+  }
 }
 
 export function getFailureRecords(ids: string[]): FailureRecord[] {

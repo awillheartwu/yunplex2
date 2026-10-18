@@ -101,10 +101,10 @@
             <button v-if="failures.total.value > failures.items.value.length" class="btn btn-soft btn-sm" type="button" :disabled="failures.selectionBusy.value || (failures.allMatchingSelected.value && failures.selectionCount.value === failures.total.value)" @click="failures.selectAllMatching()">全选全部 {{ failures.total.value }} 项</button>
             <button v-if="failures.selectionCount.value" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value" @click="failures.clearSelection()">清空选择</button>
           </div>
-          <span class="failure-batch-bar__count" role="status">{{ failures.allMatchingSelected.value ? `已选 ${failures.selectionCount.value} / ${failures.total.value} 项 · 全部筛选结果` : failures.selectionCount.value ? `已选 ${failures.selectionCount.value} 项 · 跨页保留` : '可跨页选择' }}<small v-if="failures.selectionCount.value && failureCanProcess">可重试 {{ failures.selectionRetryableCount.value }} 项</small></span>
+          <span class="failure-batch-bar__count" role="status">{{ failures.allMatchingSelected.value ? `已选 ${failures.selectionCount.value} / ${failures.total.value} 项 · 全部筛选结果` : failures.selectionCount.value ? `已选 ${failures.selectionCount.value} 项 · 跨页保留` : '可跨页选择' }}<small v-if="failures.selectionCount.value && failureCanProcess">可重试 {{ failures.selectionRetryableCount.value }} 项</small><small v-if="failures.selectionCount.value && failureCanIgnore">可忽略 {{ failures.selectionIgnorableCount.value }} 项</small></span>
           <div v-if="failures.selectionCount.value" class="failure-batch-bar__actions">
             <button v-if="failureCanProcess" class="btn btn-primary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionRetryableCount.value" :title="failures.selectionRetryableCount.value ? '重新处理所选歌曲，复用已有音频和 Plex 媒体' : '当前选择没有可重新处理的歌曲或文件任务'" @click="batchRetry">批量重试</button>
-            <button v-if="failureCanIgnore" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value" @click="batchIgnore">批量忽略</button>
+            <button v-if="failureCanIgnore" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionIgnorableCount.value" @click="batchIgnore">批量忽略</button>
           </div>
         </div>
 
@@ -124,7 +124,7 @@
               <div class="failure-group__actions">
                 <button class="btn btn-ghost btn-sm" type="button" :disabled="failures.loading.value || failures.mutating.value" @click="openFailureGroup(group)">查看歌曲<AppIcon name="chevronRight" :size="14" /></button>
                 <button v-if="failureCanProcess && group.retryableCount" class="btn btn-secondary btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'retry')">重试 {{ group.retryableCount }} 项</button>
-                <button v-if="failureCanIgnore" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'ignore')">忽略本组 {{ group.total }} 项</button>
+                <button v-if="failureCanIgnore && group.ignorableCount" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'ignore')">忽略本组 {{ group.ignorableCount }} 项</button>
               </div>
             </footer>
           </article>
@@ -138,6 +138,7 @@
               <div class="failure-row__title">
                 <strong>{{ record.songName }}</strong>
                 <span>{{ record.artist }}</span>
+                <StatusBadge :status="record.status === 'resolved' ? 'ok' : record.status === 'open' ? 'error' : record.status === 'paused' ? 'warning' : 'idle'" :label="failureStatusTabs.find(item => item.value === record.status)?.label" size="sm" />
                 <span class="failure-kind" :class="semanticToneClass(failureKindTone(record.errorCode || record.failureKind))">
                   <AppIcon :name="failureKindIcon(record.errorCode || record.failureKind)" :size="11" />
                   {{ failureKindLabel(record.errorCode || record.failureKind) }}

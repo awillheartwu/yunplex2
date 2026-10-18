@@ -1,5 +1,5 @@
 import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
-import type { FailureRecord, FailureRecordStatus } from '~~/server/lib/tasks/failure-records'
+import type { FailureRecord, FailureRecordStatusFilter } from '~~/server/lib/tasks/failure-records'
 import type { FailureGroup } from '~~/server/lib/tasks/failure-groups'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import {
@@ -13,7 +13,7 @@ import { useDebounceFn } from '~~/composables/useTiming'
 import { sseSubscribe } from '~~/composables/sse'
 import { runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
-import { getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
+import { DOMAIN_ERROR_CATALOG, getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
 
 export function useTaskCenterPage() {
   type TaskCenterTab = 'overview' | 'failures' | 'runs'
@@ -48,14 +48,22 @@ export function useTaskCenterPage() {
     count: tab.key === 'failures' && openFailureTotal.value > 0 ? openFailureTotal.value : undefined,
     badgeTone: tab.key === 'failures' ? 'danger' as const : 'neutral' as const,
   })))
-  watch(() => [route.query.failureView, route.query.failureGroup, route.query.failureGroupKey, route.query.failureRun], () => {
+  const failureStatusTabs: Array<{ label: string; value: FailureRecordStatusFilter }> = [
+    { label: '全部', value: 'all' },
+    { label: '待处理', value: 'open' },
+    { label: '已暂停', value: 'paused' },
+    { label: '已忽略', value: 'ignored' },
+    { label: '已解决', value: 'resolved' },
+  ]
+  watch(() => [route.query.failureStatus, route.query.failureView, route.query.failureGroup, route.query.failureGroupKey, route.query.failureRun], () => {
     const groupId = typeof route.query.failureGroup === 'string' ? route.query.failureGroup : undefined
     const groupKey = typeof route.query.failureGroupKey === 'string' ? route.query.failureGroupKey : undefined
     const runId = typeof route.query.failureRun === 'string' ? route.query.failureRun : undefined
+    const status = parseAllowedQueryValue(route.query.failureStatus, failureStatusTabs.map(item => item.value)) || (runId ? 'all' : 'open')
     const view = route.query.failureView === 'songs' || groupId ? 'songs' : 'groups'
-    if (view === failures.view.value && groupId === failures.filter.value.groupId && groupKey === failures.filter.value.groupKey && runId === failures.filter.value.runId) return
+    if (status === failures.filter.value.status && view === failures.view.value && groupId === failures.filter.value.groupId && groupKey === failures.filter.value.groupKey && runId === failures.filter.value.runId) return
     failures.view.value = view
-    Object.assign(failures.filter.value, { groupId, groupKey, runId })
+    Object.assign(failures.filter.value, { status, groupId, groupKey, runId })
     failures.activeGroup.value = null
     failures.clearSelection()
     void failures.fetch()
@@ -68,34 +76,11 @@ export function useTaskCenterPage() {
     { label: '补全', value: 'repair' },
     { label: '手动下载', value: 'manual_download' },
   ]
-  const failureStatusTabs: Array<{ label: string; value: FailureRecordStatus }> = [
-    { label: '待处理', value: 'open' },
-    { label: '已暂停', value: 'paused' },
-    { label: '已忽略', value: 'ignored' },
-    { label: '已解决', value: 'resolved' },
-  ]
-  const failureCanProcess = computed(() => ['open', 'paused', 'ignored'].includes(failures.filter.value.status ?? 'open'))
-  const failureCanIgnore = computed(() => ['open', 'paused'].includes(failures.filter.value.status ?? 'open'))
+  const failureCanProcess = computed(() => ['all', 'open', 'paused', 'ignored'].includes(failures.filter.value.status ?? 'open'))
+  const failureCanIgnore = computed(() => ['all', 'open', 'paused'].includes(failures.filter.value.status ?? 'open'))
   const failureKindFilters = [
     { label: '全部原因', value: '' },
-    { label: '下载失败', value: 'failed_download' },
-    { label: '音源不可用', value: 'source_unavailable' },
-    { label: '歌曲详情缺失', value: 'source_missing' },
-    { label: '音频文件损坏', value: 'invalid_audio' },
-    { label: '音频格式不支持', value: 'unsupported_format' },
-    { label: '元数据失败', value: 'failed_tags' },
-    { label: 'Plex 匹配失败', value: 'failed_plex_match' },
-    { label: 'Plex 更新失败', value: 'failed_plex_insert' },
-    { label: '版权受限', value: 'copyright_restricted' },
-    { label: '认证失效', value: 'authentication_failed' },
-    { label: '请求受限', value: 'rate_limited' },
-    { label: '网易云不可用', value: 'netease_unavailable' },
-    { label: 'Plex 不可用', value: 'plex_unavailable' },
-    { label: '文件写入失败', value: 'filesystem_failed' },
-    { label: '媒体身份冲突', value: 'media_identity_conflict' },
-    { label: '任务被中断', value: 'scheduler_interrupted' },
-    { label: '任务占用中', value: 'concurrent_operation' },
-    { label: '未知错误', value: 'unknown_error' },
+    ...Object.values(DOMAIN_ERROR_CATALOG).map(item => ({ label: item.label, value: item.code })),
   ]
   type FailureFilterChipKey = 'search' | 'type' | 'kind' | 'source' | 'date' | 'run'
   const draftFailureType = ref<TaskRunType | ''>('')
@@ -125,13 +110,13 @@ export function useTaskCenterPage() {
     const chips: Array<{ key: FailureFilterChipKey; label: string }> = []
     if (failures.filter.value.search) chips.push({ key: 'search', label: `搜索：${failures.filter.value.search}` })
     if (failures.filter.value.type) chips.push({ key: 'type', label: `类型：${failureTypeFilters.find(item => item.value === failures.filter.value.type)?.label || failures.filter.value.type}` })
-    if (failures.filter.value.failureKind) chips.push({ key: 'kind', label: `阶段：${failureKindFilters.find(item => item.value === failures.filter.value.failureKind)?.label || failures.filter.value.failureKind}` })
+    if (failures.filter.value.failureKind) chips.push({ key: 'kind', label: `原因：${failureKindFilters.find(item => item.value === failures.filter.value.failureKind)?.label || failures.filter.value.failureKind}` })
     if (failures.filter.value.sourceId) chips.push({ key: 'source', label: `来源：${sourceLabel(failures.filter.value.sourceId)}` })
     if (failures.filter.value.runId) chips.push({ key: 'run', label: '范围：本次运行' })
     if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(failures.filter.value.from, failures.filter.value.to) })
     return chips
   })
-  const failureEmptyTitle = computed(() => failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : failures.filter.value.status === 'paused' ? '暂无已暂停问题' : '没有待处理问题')
+  const failureEmptyTitle = computed(() => failures.filter.value.status === 'all' ? '暂无匹配问题' : failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : failures.filter.value.status === 'paused' ? '暂无已暂停问题' : '没有待处理问题')
   const failureEmptyDescription = computed(() => failures.filter.value.status === 'open' ? '失败项重试成功后会自动从这里消失。' : '当前状态下没有匹配记录。')
 
   function switchTab(tab: TaskCenterTab) {
@@ -146,7 +131,7 @@ export function useTaskCenterPage() {
     void router.replace({ query: {
       ...route.query,
       tab: 'failures',
-      failureStatus: failures.filter.value.status === 'open' ? undefined : failures.filter.value.status,
+      failureStatus: failures.filter.value.status === 'open' && !failures.filter.value.runId ? undefined : failures.filter.value.status,
       failureSearch: failures.filter.value.search || undefined,
       failureType: failures.filter.value.type || undefined,
       failureKind: failures.filter.value.failureKind || undefined,
@@ -162,7 +147,7 @@ export function useTaskCenterPage() {
   function applyFailureFilters() { failureSearchDebounce.cancel(); failures.clearSelection(); if (!failures.filter.value.groupId) failures.activeGroup.value = null; syncFailureQuery(); void failures.fetch() }
   const failureSearchDebounce = useDebounceFn(applyFailureFilters, 350)
   function onFailureSearch(value: string) { failures.filter.value.search = value || undefined; failureSearchDebounce.run() }
-  function setFailureStatus(value: FailureRecordStatus) {
+  function setFailureStatus(value: FailureRecordStatusFilter) {
     failures.filter.value.status = value
     if (failures.filter.value.groupId) { failures.filter.value.groupId = undefined; failures.filter.value.groupKey = undefined; failures.view.value = 'groups' }
     applyFailureFilters()
@@ -295,14 +280,15 @@ export function useTaskCenterPage() {
     const runTypes = failureTypeFilters.map(item => item.value).filter((value): value is TaskRunType => value !== '')
     const failureKinds = failureKindFilters.map(item => item.value).filter((value): value is string => value !== '')
     const failureStatuses = failureStatusTabs.map(item => item.value)
+    const runId = typeof route.query.failureRun === 'string' ? route.query.failureRun : undefined
     failures.view.value = route.query.failureView === 'songs' || typeof route.query.failureGroup === 'string' ? 'songs' : 'groups'
     failures.filter.value = {
-      status: parseAllowedQueryValue(route.query.failureStatus, failureStatuses) || 'open',
+      status: parseAllowedQueryValue(route.query.failureStatus, failureStatuses) || (runId ? 'all' : 'open'),
       search: typeof route.query.failureSearch === 'string' ? route.query.failureSearch : undefined,
       type: parseAllowedQueryValue(route.query.failureType, runTypes),
       failureKind: parseAllowedQueryValue(route.query.failureKind, failureKinds),
       sourceId: typeof route.query.failureSource === 'string' ? route.query.failureSource : undefined,
-      runId: typeof route.query.failureRun === 'string' ? route.query.failureRun : undefined,
+      runId,
       groupId: typeof route.query.failureGroup === 'string' ? route.query.failureGroup : undefined,
       groupKey: typeof route.query.failureGroupKey === 'string' ? route.query.failureGroupKey : undefined,
       from: parseDateQueryValue(route.query.failureFrom),
@@ -311,7 +297,7 @@ export function useTaskCenterPage() {
     void router.replace({ query: {
       ...route.query,
       tab: activeTab.value === 'overview' ? undefined : activeTab.value,
-      failureStatus: failures.filter.value.status === 'open' ? undefined : failures.filter.value.status,
+      failureStatus: failures.filter.value.status === 'open' && !failures.filter.value.runId ? undefined : failures.filter.value.status,
       failureType: failures.filter.value.type || undefined,
       failureKind: failures.filter.value.failureKind || undefined,
       failureFrom: failures.filter.value.from || undefined,

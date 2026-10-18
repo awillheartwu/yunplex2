@@ -17,6 +17,7 @@ export interface FailureGroup {
   sourceCount: number
   occurrenceCount: number
   retryableCount: number
+  ignorableCount: number
   retryUnavailableReason: string
   firstSeenAt: string
   lastSeenAt: string
@@ -35,13 +36,14 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
       COUNT(DISTINCT COALESCE(fr.source_id, 'manual')) AS source_count,
       SUM(fr.occurrence_count) AS occurrence_count,
       SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END) AS linked_count,
+      SUM(CASE WHEN fr.status IN ('open','paused') THEN 1 ELSE 0 END) AS ignorable_count,
       MIN(fr.first_seen_at) AS first_seen_at, MAX(fr.last_seen_at) AS last_seen_at
     ${grouped}
     ORDER BY MAX(fr.last_seen_at) DESC, MIN(fr.id)
     LIMIT ? OFFSET ?
   `).all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<{
     id: string; failure_kind: string; failure_reason: string; total: number; song_count: number;
-    source_count: number; occurrence_count: number; linked_count: number; first_seen_at: string; last_seen_at: string;
+    source_count: number; occurrence_count: number; linked_count: number; ignorable_count: number; first_seen_at: string; last_seen_at: string;
   }>
   const items: FailureGroup[] = rows.map(row => {
     const reason = sanitizeDiagnosticMessage(row.failure_reason) || ''
@@ -51,6 +53,7 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
       failureReason: row.failure_kind === 'copyright_restricted' ? definition.userMessage : reason || definition.userMessage,
       label: definition.label, total: row.total, songCount: row.song_count, sourceCount: row.source_count,
       occurrenceCount: row.occurrence_count, retryableCount: row.linked_count,
+      ignorableCount: row.ignorable_count,
       retryUnavailableReason: '缺少可重新处理的歌曲或文件任务，请查看关联运行',
       firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at,
     }
@@ -81,11 +84,12 @@ export function resolveFailureMutationIds(body: FailureMutationSelection | null 
   if (body?.allMatching && (!body.filter || typeof body.filter !== 'object' || Array.isArray(body.filter))) return []
   if (body?.excludeIds !== undefined && !Array.isArray(body.excludeIds)) return []
   const selectedStatus = body?.filter?.status ?? allowedStatuses[0]
-  if (!allowedStatuses.some(value => value === selectedStatus)) return []
+  if (selectedStatus !== 'all' && !allowedStatuses.some(value => value === selectedStatus)) return []
   const filter = parseFailureRecordFilters({ ...body?.filter, status: selectedStatus, ...(hasGroup ? { groupId: body?.groupId, groupKey: body?.groupKey } : {}) })
   if (filter.groupId && !filter.groupKey) return []
   const { where, from, params } = buildFailureRecordQuery(filter)
-  const rows = getDb().prepare(`SELECT fr.id ${from} ${where}`).all(...params) as { id: string }[]
+  const rows = getDb().prepare(`SELECT fr.id ${from} ${where}
+    AND fr.status IN (${allowedStatuses.map(() => '?').join(',')})`).all(...params, ...allowedStatuses) as { id: string }[]
   const excluded = new Set(body?.excludeIds || [])
   return rows.map(row => row.id).filter(id => !excluded.has(id))
 }

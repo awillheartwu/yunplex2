@@ -42,7 +42,7 @@
         <p v-else class="run-detail__error-note">运行结果保留本次失败；异常处理显示这些歌曲目前的处理状态。</p>
       </div>
       <div class="run-detail__error-actions">
-        <NuxtLink :to="{ path: '/task-center', query: { tab: 'failures', failureRun: job.id } }" class="btn btn-soft btn-sm">查看异常处理<AppIcon name="arrowRight" :size="14" /></NuxtLink>
+        <NuxtLink :to="{ path: '/task-center', query: { tab: 'failures', failureRun: job.id, failureStatus: 'all' } }" class="btn btn-soft btn-sm">查看异常处理<AppIcon name="arrowRight" :size="14" /></NuxtLink>
         <button class="btn btn-ghost btn-sm" type="button" @click="showFailedSongs">查看本次失败</button>
       </div>
     </section>
