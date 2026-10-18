@@ -2,7 +2,7 @@
 // Composables subscribe to typed events; the singleton handles connection lifecycle.
 import { ref } from 'vue'
 
-export type SseEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'song-retry-progress' | 'repair-progress' | 'plex-scan-progress' | 'plex-library-change' | 'resync'
+export type SseEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'repair-progress' | 'plex-scan-progress' | 'plex-library-change' | 'resync'
 
 type SseHandler = (data: Record<string, unknown>) => void
 
@@ -63,9 +63,7 @@ function ensureConnection() {
   instance.addEventListener('queue-update', (e: MessageEvent) => {
     try { dispatch('queue-update', JSON.parse(e.data)) } catch { /* ignore */ }
   })
-  instance.addEventListener('song-retry-progress', (e: MessageEvent) => {
-    try { dispatch('song-retry-progress', JSON.parse(e.data)) } catch { /* ignore */ }
-  })
+
   instance.addEventListener('repair-progress', (e: MessageEvent) => {
     try { dispatch('repair-progress', JSON.parse(e.data)) } catch { /* ignore */ }
   })

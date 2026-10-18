@@ -28,7 +28,7 @@ describe('failure records', () => {
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
   })
 
-  it('projects a shared structured error policy without migrating the table', () => {
+  it('projects the error cause without inventing a manual retry target', () => {
     setup()
     const record = recordFailure({
       songId: 42,
@@ -43,7 +43,7 @@ describe('failure records', () => {
       errorCode: 'rate_limited',
       errorCategory: 'netease',
       errorSeverity: 'warning',
-      retryable: true,
+      retryable: false,
     })
   })
 
@@ -320,7 +320,7 @@ describe('failure records', () => {
     expect(policy.copyrightSongIds).toEqual([43])
     expect(policy.failuresBySongId[42]).toMatchObject({ occurrenceCount: 3, phase: 'download' })
     expect(shouldPauseSourceFailure(policy.failuresBySongId[42], 3)).toBe(true)
-    expect(shouldPauseSourceFailure(policy.failuresBySongId[44], 1)).toBe(false)
+    expect(shouldPauseSourceFailure(policy.failuresBySongId[44], 1)).toBe(true)
     expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 2, copyrightRestricted: 1 })
   })
 })

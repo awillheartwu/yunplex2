@@ -11,10 +11,16 @@ import {
 import type { DomainErrorCategory, DomainErrorCode, DomainErrorSeverity } from '../../../shared/domain-errors'
 import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
 import { sanitizeDiagnosticMessage } from '../domain-error'
+import { canRetryFailure } from '../../../shared/failure-handling'
 
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
 export type FailureRecordStatus = 'open' | 'paused' | 'ignored' | 'resolved'
+
+export const RETRYABLE_FAILURE_SQL = `fr.status != 'resolved' AND (
+  (fr.source_id IS NOT NULL AND fr.song_id IS NOT NULL)
+  OR TRIM(COALESCE(fr.download_task_ids, '')) <> ''
+)`
 
 export interface FailureRecord {
   id: string
@@ -103,14 +109,18 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
   const failureKind = String(row.failure_kind)
   const failureReason = sanitizeDiagnosticMessage(row.failure_reason) || ''
   const definition = resolveDomainErrorDefinition(failureKind, failureReason)
+  const status = String(row.status) as FailureRecordStatus
+  const sourceId = row.source_id === null ? null : String(row.source_id)
+  const songId = row.song_id === null ? null : Number(row.song_id)
+  const downloadTaskIds = String(row.download_task_ids || '').split(',').filter(Boolean)
   return {
     id: String(row.id),
     fingerprint: String(row.fingerprint),
     subjectKey: String(row.subject_key),
-    songId: row.song_id === null ? null : Number(row.song_id),
+    songId,
     songName: String(row.song_name),
     artist: String(row.artist || ''),
-    sourceId: row.source_id === null ? null : String(row.source_id),
+    sourceId,
     sourceName: String(row.source_name || ''),
     runId: row.run_id === null ? null : String(row.run_id),
     runType: String(row.run_type) as TaskRunType,
@@ -119,16 +129,16 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
     errorCode: definition.code,
     errorCategory: definition.category,
     errorSeverity: definition.severity,
-    retryable: definition.retryable,
+    retryable: canRetryFailure({ status, sourceId, songId, downloadTaskIds }),
     userMessage: definition.userMessage,
-    status: String(row.status) as FailureRecordStatus,
+    status,
     firstSeenAt,
     lastSeenAt,
     ignoredAt: row.ignored_at === null ? null : String(row.ignored_at),
     resolvedAt: row.resolved_at === null ? null : String(row.resolved_at),
     occurrenceCount: Number(row.occurrence_count),
     retryCount: Number(row.retry_count),
-    downloadTaskIds: String(row.download_task_ids || '').split(',').filter(Boolean),
+    downloadTaskIds,
   }
 }
 
@@ -325,6 +335,7 @@ function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['pha
 }
 
 export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
+  // A newly approved replacement can proceed without deleting older failure history.
   const rows = getDb().prepare(`
     SELECT song_id, failure_kind, occurrence_count, last_seen_at, status
     FROM failure_records
@@ -332,6 +343,12 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
       AND status IN ('open', 'ignored', 'paused')
       AND song_id IS NOT NULL
       AND failure_kind != 'ignored_failure'
+      AND NOT EXISTS (
+        SELECT 1 FROM media_corrections correction
+        WHERE correction.song_id = failure_records.song_id
+          AND correction.status IN ('pending', 'ready')
+          AND correction.updated_at > failure_records.last_seen_at
+      )
     ORDER BY last_seen_at DESC
   `).all(sourceId) as Array<{
     song_id: number
@@ -346,7 +363,6 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   for (const row of rows) {
     if (row.failure_kind === 'copyright_restricted') {
       copyrightSongIds.add(row.song_id)
-      continue
     }
     if (failuresBySongId[row.song_id]) continue
     failuresBySongId[row.song_id] = {
@@ -364,16 +380,10 @@ export function shouldPauseSourceFailure(
   entry: SourceFailurePolicyEntry | undefined,
   maxFailures: number,
 ): boolean {
-  if (!entry || !maxFailures || maxFailures <= 0 || entry.occurrenceCount < maxFailures) return false
-  return entry.phase === 'download' || entry.phase === 'tags'
+  if (!entry) return false
+  return !resolveDomainErrorDefinition(entry.failureKind).retryable
+    || (maxFailures > 0 && entry.occurrenceCount >= maxFailures)
 }
-
-const NON_RETRYABLE_FAILURE_KINDS = new Set<DomainErrorCode>([
-  'source_unavailable',
-  'invalid_audio',
-  'unsupported_format',
-  'copyright_restricted',
-])
 
 /** Whether this failure is known/terminal and must not force another full pass. */
 export function isTerminalFailure(
@@ -382,7 +392,6 @@ export function isTerminalFailure(
 ): boolean {
   if (!entry) return false
   if (entry.status === 'ignored' || entry.status === 'paused') return true
-  if (NON_RETRYABLE_FAILURE_KINDS.has(entry.failureKind as DomainErrorCode)) return true
   return shouldPauseSourceFailure(entry, maxFailures)
 }
 
@@ -397,9 +406,9 @@ export function pauseExhaustedFailures(sourceId: string, maxFailures: number): n
   let paused = 0
   for (const row of rows) {
     const phase = phaseForFailureKind(row.failure_kind)
-    const exhausted = NON_RETRYABLE_FAILURE_KINDS.has(row.failure_kind as DomainErrorCode)
-      || (maxFailures > 0 && row.occurrence_count >= maxFailures
-        && (phase === 'download' || phase === 'tags' || phase === 'plex_match'))
+    const exhausted = shouldPauseSourceFailure({
+      failureKind: row.failure_kind, phase, occurrenceCount: row.occurrence_count, status: 'open',
+    }, maxFailures)
     if (exhausted && update.run(row.id).changes > 0) paused++
   }
   return paused
@@ -495,12 +504,8 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   const { where, from, params } = buildFailureRecordQuery(filter)
   const db = getDb()
   const total = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where}`).get(...params) as { count: number }).count
-  const linkedGroups = db.prepare(`SELECT fr.failure_kind, fr.failure_reason, COUNT(*) AS count
-    ${from} ${where} AND TRIM(fr.download_task_ids) <> ''
-    GROUP BY fr.failure_kind, fr.failure_reason
-  `).all(...params) as Array<{ failure_kind: string; failure_reason: string; count: number }>
-  const retryableTotal = linkedGroups.reduce((count, group) =>
-    resolveDomainErrorDefinition(group.failure_kind, sanitizeDiagnosticMessage(group.failure_reason)).retryable ? count + group.count : count, 0)
+  const retryableTotal = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where} AND (${RETRYABLE_FAILURE_SQL})`)
+    .get(...params) as { count: number }).count
   const rows = db.prepare(`
     SELECT fr.*,
       CASE

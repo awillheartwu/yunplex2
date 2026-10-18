@@ -13,7 +13,7 @@ export function getMediaCorrection(songId:number):MediaCorrection|null {
   return getDb().prepare("SELECT * FROM media_corrections WHERE song_id=? AND status IN ('pending','ready') ORDER BY created_at DESC LIMIT 1").get(songId) as MediaCorrection??null
 }
 
-/** A correction must keep requesting reconciliation until its staged media is applied. */
+/** Only actionable corrections keep requesting reconciliation. */
 export function hasActiveMediaCorrectionsForSource(sourceId: string): boolean {
   const row = getDb().prepare(`
     SELECT 1
@@ -23,6 +23,18 @@ export function hasActiveMediaCorrectionsForSource(sourceId: string): boolean {
       AND occurrence.source_id = ?
       AND occurrence.membership_status = 'current'
     WHERE correction.status IN ('pending', 'ready')
+      AND NOT EXISTS (
+        SELECT 1 FROM source_media_decisions decision
+        WHERE decision.source_id = occurrence.source_id
+          AND decision.netease_song_id = correction.song_id
+          AND decision.disposition = 'defer' AND decision.resolved_at IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM failure_records failure
+        WHERE failure.source_id = occurrence.source_id AND failure.song_id = correction.song_id
+          AND failure.status IN ('paused', 'ignored')
+          AND failure.last_seen_at >= correction.updated_at
+      )
     LIMIT 1
   `).get(sourceId)
   return Boolean(row)
@@ -32,14 +44,27 @@ export function queueIdentityRealignment(songId:number,changeId:string) {
   const requests=affected.filter(source=>getSource(source.id)?.enabled).map(source=>persistSourceRequest({sourceId:source.id,kind:'convergence',trigger:'user',followUpOf:`identity:${changeId}:${source.id}`}))
   return {affectedSources:affected,requestIds:requests}
 }
-export function requestMediaCorrection(songId:number,expectedVersion:string|null) {
+/** Prepare a protected replacement inside a caller-owned source transaction. */
+export function prepareMediaCorrection(songId:number,expectedVersion:string|null):string {
   return getDb().transaction(()=>{
     const binding=getSongIdentityBinding(songId)
     if((binding?.updatedAt??null)!==expectedVersion)throw new BindingVersionConflictError()
     const existing=getMediaCorrection(songId)
-    if(existing){if(existing.expected_version!==expectedVersion)throw new BindingVersionConflictError();return {correctionId:existing.id,...queueIdentityRealignment(songId,existing.id)}}
+    if(existing){
+      if(existing.expected_version!==expectedVersion)throw new BindingVersionConflictError()
+      getDb().prepare('UPDATE media_corrections SET updated_at=? WHERE id=?').run(new Date().toISOString(),existing.id)
+      markSongSourcesPendingAlignment(songId)
+      return existing.id
+    }
     const id=randomUUID(),now=new Date().toISOString()
     getDb().prepare("INSERT INTO media_corrections(id,song_id,expected_version,old_binding_json,old_asset_json,status,created_at,updated_at) VALUES (?,?,?,?,?,'pending',?,?)").run(id,songId,expectedVersion,JSON.stringify(binding),JSON.stringify(getLocalMediaAsset(songId)),now,now)
+    markSongSourcesPendingAlignment(songId)
+    return id
+  })()
+}
+export function requestMediaCorrection(songId:number,expectedVersion:string|null) {
+  return getDb().transaction(()=>{
+    const id=prepareMediaCorrection(songId,expectedVersion)
     return {correctionId:id,...queueIdentityRealignment(songId,id)}
   })()
 }
@@ -68,6 +93,7 @@ export function finalizeCorrectionBinding(binding:BindingInput):boolean {
   getDb().transaction(()=>{
     upsertLocalMediaAsset(asset)
     upsertVerifiedSongIdentityBinding({...binding,evidence:{...binding.evidence,previousBinding:JSON.parse(correction.old_binding_json),correctionId:correction.id}})
+    getDb().prepare("UPDATE source_media_decisions SET resolved_at=?,updated_at=? WHERE netease_song_id=? AND disposition='download' AND resolved_at IS NULL").run(new Date().toISOString(),new Date().toISOString(),binding.neteaseSongId)
     getDb().prepare("UPDATE media_corrections SET status='applied',updated_at=? WHERE id=?").run(new Date().toISOString(),correction.id)
   })()
   return true

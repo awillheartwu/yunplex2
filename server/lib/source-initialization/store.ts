@@ -225,6 +225,7 @@ export function upsertMediaDecision(sourceId: string, songId: number, dispositio
   getDb().prepare(`INSERT INTO source_media_decisions (source_id, netease_song_id, disposition, initialization_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(source_id, netease_song_id) DO UPDATE SET disposition=excluded.disposition, initialization_id=excluded.initialization_id, resolved_at=NULL, updated_at=excluded.updated_at`)
     .run(sourceId, songId, disposition, initializationId, now, now)
+  getDb().prepare('UPDATE playlist_sources SET requires_match_reconcile=1, updated_at=? WHERE id=?').run(now, sourceId)
 }
 
 export function getActiveMediaDecisions(sourceId: string): Map<number, 'defer' | 'download'> {

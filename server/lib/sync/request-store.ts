@@ -9,6 +9,7 @@ export interface SourceRequestInput {
   sourceId: string
   kind: SourceRequestKind
   plexRecoverySnapshot?: PlexRecoverySnapshot
+  retrySongIds?: number[]
   trigger: TaskRunTrigger
   mode?: SyncMode
   batchId?: string
@@ -33,12 +34,13 @@ export function persistSourceRequest(input: SourceRequestInput): string {
   const now = (input.now ?? new Date()).toISOString()
   db.prepare(`INSERT INTO source_sync_queue (
     id,source_id,schedule_window,status,available_at,attempts,created_at,updated_at,
-    request_kind,mode,trigger,batch_id,batch_position,initialization_id,follow_up_of,allow_disabled,take_over_external,run_id,plex_recovery_json
-  ) VALUES (?,?,?,'pending',?,0,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    request_kind,mode,trigger,batch_id,batch_position,initialization_id,follow_up_of,allow_disabled,take_over_external,run_id,plex_recovery_json,retry_song_ids_json
+  ) VALUES (?,?,?,'pending',?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,input.sourceId,input.scheduleWindow ?? `${input.trigger === 'schedule' ? 'schedule' : 'manual'}:${now}:${id}`,now,now,now,
     input.kind,input.mode ?? 'normal',input.trigger,input.batchId ?? null,input.position ?? 0,
     input.initializationId ?? null,input.followUpOf ?? null,Number(input.allowDisabled ?? false),Number(input.takeOverExternal ?? false),input.runId ?? null,
     input.plexRecoverySnapshot ? JSON.stringify(input.plexRecoverySnapshot) : null,
+    input.retrySongIds ? JSON.stringify(input.retrySongIds) : null,
   )
   db.prepare("UPDATE playlist_sources SET last_schedule_status='queued', last_scheduled_at=?, last_schedule_error=NULL WHERE id=?").run(now, input.sourceId)
   return id

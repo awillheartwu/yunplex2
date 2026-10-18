@@ -39,8 +39,8 @@
               <FilterSegmentGroup v-model="draftFailureType" aria-label="运行类型" :options="failureTypeFilters" />
             </div>
             <div class="filter-sheet-group">
-              <p class="filter-sheet-group__label">失败阶段</p>
-              <ListSelect v-model="draftFailureKind" class="list-select--block" aria-label="失败阶段" :options="failureKindFilters" />
+              <p class="filter-sheet-group__label">异常原因</p>
+              <ListSelect v-model="draftFailureKind" class="list-select--block" aria-label="异常原因" :options="failureKindFilters" />
             </div>
             <div class="filter-sheet-group">
               <ListSelect v-model="draftFailureSource" class="list-select--block" label="来源" aria-label="来源" :options="[{ value: '', label: '全部来源' }, ...sourceOptions.map(source => ({ value: source.id, label: sourceOptionLabel(source) }))]" />
@@ -101,11 +101,10 @@
             <button v-if="failures.total.value > failures.items.value.length" class="btn btn-soft btn-sm" type="button" :disabled="failures.selectionBusy.value || (failures.allMatchingSelected.value && failures.selectionCount.value === failures.total.value)" @click="failures.selectAllMatching()">全选全部 {{ failures.total.value }} 项</button>
             <button v-if="failures.selectionCount.value" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value" @click="failures.clearSelection()">清空选择</button>
           </div>
-          <span class="failure-batch-bar__count" role="status">{{ failures.allMatchingSelected.value ? `已选 ${failures.selectionCount.value} / ${failures.total.value} 项 · 全部筛选结果` : failures.selectionCount.value ? `已选 ${failures.selectionCount.value} 项 · 跨页保留` : '可跨页选择' }}<small v-if="failures.selectionCount.value && failures.filter.value.status === 'open'">可直接重试 {{ failures.selectionRetryableCount.value }} 项</small></span>
+          <span class="failure-batch-bar__count" role="status">{{ failures.allMatchingSelected.value ? `已选 ${failures.selectionCount.value} / ${failures.total.value} 项 · 全部筛选结果` : failures.selectionCount.value ? `已选 ${failures.selectionCount.value} 项 · 跨页保留` : '可跨页选择' }}<small v-if="failures.selectionCount.value && failureCanProcess">可重试 {{ failures.selectionRetryableCount.value }} 项</small></span>
           <div v-if="failures.selectionCount.value" class="failure-batch-bar__actions">
-            <button v-if="failures.filter.value.status === 'open'" class="btn btn-primary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionRetryableCount.value" :title="failures.selectionRetryableCount.value ? '只重试所选问题中可直接重试的文件任务' : '当前选择没有可直接重试的文件任务，请从对应运行或来源重新执行'" @click="batchRetry">批量重试</button>
-            <button v-if="failures.filter.value.status === 'open'" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value" @click="batchIgnore">批量忽略</button>
-            <button v-if="failures.filter.value.status === 'ignored'" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value" @click="batchReopen">批量恢复提醒</button>
+            <button v-if="failureCanProcess" class="btn btn-primary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionRetryableCount.value" :title="failures.selectionRetryableCount.value ? '重新处理所选歌曲，复用已有音频和 Plex 媒体' : '当前选择没有可重新处理的歌曲或文件任务'" @click="batchRetry">批量重试</button>
+            <button v-if="failureCanIgnore" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value" @click="batchIgnore">批量忽略</button>
           </div>
         </div>
 
@@ -121,12 +120,11 @@
             <p class="failure-group__reason">{{ group.failureReason }}</p>
             <div class="failure-row__meta"><span>首次 {{ formatTime(group.firstSeenAt) }}</span><span>最近 {{ formatTime(group.lastSeenAt) }}</span><span>累计出现 {{ group.occurrenceCount }} 次</span></div>
             <footer class="failure-group__footer">
-              <span>{{ failures.filter.value.status === 'open' ? group.retryableCount ? `${group.retryableCount} 项可直接重试` : group.retryUnavailableReason : '保留歌曲明细与关联运行' }}</span>
+              <span>{{ failureCanProcess ? group.retryableCount ? `${group.retryableCount} 项可重试` : group.retryUnavailableReason : '保留歌曲明细与关联运行' }}</span>
               <div class="failure-group__actions">
                 <button class="btn btn-ghost btn-sm" type="button" :disabled="failures.loading.value || failures.mutating.value" @click="openFailureGroup(group)">查看歌曲<AppIcon name="chevronRight" :size="14" /></button>
-                <button v-if="failures.filter.value.status === 'open' && group.retryableCount" class="btn btn-secondary btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'retry')">重试 {{ group.retryableCount }} 项</button>
-                <button v-if="failures.filter.value.status === 'open'" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'ignore')">忽略本组 {{ group.total }} 项</button>
-                <button v-if="failures.filter.value.status === 'ignored'" class="btn btn-secondary btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'reopen')">恢复本组提醒</button>
+                <button v-if="failureCanProcess && group.retryableCount" class="btn btn-secondary btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'retry')">重试 {{ group.retryableCount }} 项</button>
+                <button v-if="failureCanIgnore" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'ignore')">忽略本组 {{ group.total }} 项</button>
               </div>
             </footer>
           </article>
@@ -156,9 +154,9 @@
             </div>
             <div class="failure-row__actions">
               <NuxtLink v-if="record.runId" :to="`/task-center/runs/${record.runId}`" class="btn btn-ghost btn-xs">查看运行</NuxtLink>
-              <button v-if="record.status === 'open' && isRetryable(record)" class="btn btn-secondary btn-xs failure-row__retry-button" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="retryFailure(record.id)">重试</button>
+              <button v-if="['open', 'paused', 'ignored'].includes(record.status) && isRetryable(record)" class="btn btn-secondary btn-xs failure-row__retry-button" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="retryFailure(record.id)">重试</button>
               <span
-                v-else-if="record.status === 'open'"
+                v-else-if="['open', 'paused', 'ignored'].includes(record.status)"
                 class="failure-row__retry-tooltip"
                 tabindex="0"
                 :aria-label="`重试不可用：${failureRetryUnavailableReason(record)}`"
@@ -171,8 +169,8 @@
                 >重试</button>
                 <span class="failure-row__tooltip" role="tooltip">{{ failureRetryUnavailableReason(record) }}</span>
               </span>
-              <button v-if="record.status === 'open'" class="btn btn-ghost btn-xs" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="ignoreFailure(record.id)">忽略</button>
-              <button v-if="record.status === 'ignored'" class="btn btn-secondary btn-xs" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="reopenFailure(record.id)">恢复提醒</button>
+              <NuxtLink v-if="record.sourceId && ['open', 'paused', 'ignored'].includes(record.status) && !isRetryable(record)" :to="`/sync-sources/${record.sourceId}`" class="btn btn-ghost btn-xs">查看收藏</NuxtLink>
+              <button v-if="['open', 'paused'].includes(record.status)" class="btn btn-ghost btn-xs" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="ignoreFailure(record.id)">忽略</button>
             </div>
           </article>
           <PageNavigator :page="failures.page.value" :page-size="failures.pageSize" :total="failures.total.value" label="异常记录" :loading="failures.loading.value" @change="failures.goToPage" />
@@ -190,13 +188,14 @@ import { useTaskCenterPage } from '~~/composables/useTaskCenterPage'
 import type { FailureGroup } from '~~/server/lib/tasks/failure-groups'
 
 const {
-  activeTab, applyFailureDraftFilters, batchIgnore, batchReopen, batchRetry, clearFailureFilters,
+  activeTab, applyFailureDraftFilters, batchIgnore, batchRetry, clearFailureFilters,
   draftFailureDateFilter, draftFailureKind, draftFailureSource, draftFailureType,
-  failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
+  failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureCanProcess, failureCanIgnore,
+  failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures,
   failureStatusTabs, failureTypeFilters, formatTime, ignoreFailure, isRetryable,
   mutateFailureGroup, onFailureSearch, onTaskCenterTabChange, openFailureGroup: loadFailureGroup, prepareFailureDraftFilters,
-  removeFailureFilter, reopenFailure, resetFailureDraftFilters, retryFailure,
+  removeFailureFilter, resetFailureDraftFilters, retryFailure,
   runTypeLabel, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions,
   setFailureView, taskCenterTabs,
 } = useTaskCenterPage()

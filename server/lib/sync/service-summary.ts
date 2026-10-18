@@ -31,6 +31,7 @@ export function buildSyncRunSummary(params: {
     job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
     job.warnings > 0 ? `${job.warnings} 首需关注` : '',
   ].filter(Boolean)
-  const detail = counts.length > 0 ? counts.join('，') : `无需变更（目标 ${job.totalSongs} 首）`
+  const unchanged = job.steps.filter(step => step.type === 'unchanged').map(step => step.message)
+  const detail = [...counts, ...unchanged].join('；') || `无需变更（目标 ${job.totalSongs} 首）`
   return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，${detail}`
 }

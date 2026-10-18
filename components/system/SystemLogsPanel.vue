@@ -29,7 +29,7 @@
           <div class="system-log-row__summary">
             <p class="system-log-row__message">{{ log.message }}</p>
             <span v-if="log.errorCode" class="system-log-row__error-code">
-              {{ errorLabel(log.errorCode) }} · {{ log.retryable ? '可重试' : '不可自动重试' }}
+              {{ errorLabel(log.errorCode) }} · {{ log.retryable ? '可自动重试' : '不可自动重试' }}
             </span>
           </div>
           <details v-if="log.detail" class="system-log-row__detail">

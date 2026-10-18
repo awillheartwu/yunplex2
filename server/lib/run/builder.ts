@@ -16,6 +16,7 @@ export class RunBuilder {
   private sourceRemovedItemMap: Map<string, string> = new Map()
   private flatSteps: JobStep[] = []
   private stepGroups: Map<string, JobStep[]> = new Map()
+  private unchangedWarnings = 0
 
   constructor(dryRun: boolean) {
     const id = uid()
@@ -50,6 +51,13 @@ export class RunBuilder {
 
   setSourceIds(sourceIds: string[]): void {
     this.job.sourceIds = [...new Set(sourceIds.filter(Boolean))]
+  }
+
+  recordUnchangedSource(context: JobStepContext, targetCount: number, unresolvedCount: number, lastError: string | null): void {
+    this.job.totalSongs += targetCount
+    this.unchangedWarnings += unresolvedCount
+    const step = this.startStep('unchanged', '来源未变化，本轮跳过', { context })
+    this.finishStep(step, 'skipped', `${context.sourceName || '来源'}未变化，本轮跳过（目标 ${targetCount} 首）${lastError ? `；保留上次未解决结果：${lastError}` : ''}`)
   }
 
   addSongs(sourceId: string, songs: { songName: string; artist: string; album: string; status: SongStatus; neteaseSongId?: number; neteaseIndex?: number }[]): string[] {
@@ -258,7 +266,7 @@ export class RunBuilder {
     ).length
     this.job.skippedSongs = this.job.songs.filter((s) => s.status === 'skipped_existing').length
     this.job.removedSongs = this.job.songs.filter((s) => s.status === 'removed').length
-    this.job.warnings = countDistinctWarningIssues(this.job.songs)
+    this.job.warnings = this.unchangedWarnings + countDistinctWarningIssues(this.job.songs)
   }
 
   private isDescendantOf(step: JobStep, ancestorId: string): boolean {

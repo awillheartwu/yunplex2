@@ -10,7 +10,6 @@ import {
 import { loadNeteaseRawSongs, saveNeteaseRawSongs } from '../netease-song-cache'
 import {
   isTerminalFailure,
-  shouldPauseSourceFailure,
   type SourceFailurePolicy,
 } from '../tasks/failure-records'
 import type { TrackResolution } from './types'
@@ -98,11 +97,14 @@ export function resolveSourceSkipState(input: {
 /** Plex matches the user ignored or the retry policy already paused. */
 export function resolveIgnoredPlexMatchSongIds(
   failurePolicy: SourceFailurePolicy,
+  retryPaused = false,
+  retrySongIds: ReadonlySet<number> = new Set(),
 ): Set<number> {
   const result = new Set<number>()
   for (const [songId, entry] of Object.entries(failurePolicy.failuresBySongId)) {
     if (entry.failureKind === 'failed_plex_match'
-      && (entry.status === 'ignored' || entry.status === 'paused')) {
+      && !retrySongIds.has(Number(songId))
+      && (entry.status === 'ignored' || (entry.status === 'paused' && !retryPaused))) {
       result.add(Number(songId))
     }
   }
@@ -114,21 +116,30 @@ export function applySourceFailureMemory(input: {
   resolutions: TrackResolution[]
   failurePolicy: SourceFailurePolicy
   maxFailures: number
-  retrySourceFailures: boolean
+  retrySongIds?: ReadonlySet<number>
   redownloadAll: boolean
+  ignoredPlexMatchSongIds?: ReadonlySet<number>
 }): void {
   const restricted = new Set(input.failurePolicy.copyrightSongIds)
   for (const resolution of input.resolutions) {
-    if (resolution.plexRatingKey || !['needs_download', 'unavailable'].includes(resolution.resolution)) continue
-    if (input.redownloadAll || input.retrySourceFailures) continue
+    if (resolution.plexRatingKey) continue
+    const retryThisSong = input.retrySongIds?.has(resolution.song.id) === true
+    if (resolution.resolution === 'found_on_disk' && input.ignoredPlexMatchSongIds?.has(resolution.song.id)) {
+      resolution.resolution = 'ignored_failure'
+      continue
+    }
+    if (!['needs_download', 'unavailable'].includes(resolution.resolution)) continue
+    const entry = input.failurePolicy.failuresBySongId[resolution.song.id]
+    if (entry?.status === 'ignored' && !retryThisSong) {
+      resolution.resolution = 'ignored_failure'
+      continue
+    }
+    if (input.redownloadAll || retryThisSong) continue
     if (restricted.has(resolution.song.id)) {
       resolution.resolution = 'copyright_restricted'
       continue
     }
-    if (shouldPauseSourceFailure(
-      input.failurePolicy.failuresBySongId[resolution.song.id],
-      input.maxFailures,
-    )) {
+    if (isTerminalFailure(entry, input.maxFailures)) {
       resolution.resolution = 'ignored_failure'
     }
   }

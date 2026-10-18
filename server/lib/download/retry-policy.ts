@@ -1,3 +1,5 @@
+import { classifyDomainErrorCode, getDomainErrorDefinition } from '../../../shared/domain-errors'
+
 export const MAX_AUTOMATIC_DOWNLOAD_RETRIES = 3
 
 export interface DownloadFailurePolicy {
@@ -42,10 +44,8 @@ export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
     const retryAfter = Number(chain.find(item => item.retryAfterMs)?.retryAfterMs ?? 0)
     return { retryable: true, cooldownMs: Math.max(30_000, Number.isFinite(retryAfter) ? retryAfter : 0) }
   }
-  if (/DOWNLOAD_TOO_LARGE|DOWNLOAD_FORMAT_UNSUPPORTED|INVALID_AUDIO|COPYRIGHT_RESTRICTED|SONG_URL_UNAVAILABLE/.test(code)
-    || /版权|未提供.*可用音源|文件头无效|音频文件无效|歌曲不可用/.test(message)) {
-    return { retryable: false }
-  }
+  const errorCode = classifyDomainErrorCode(`${code} ${message}`, 'failed_download')
+  if (!getDomainErrorDefinition(errorCode).retryable) return { retryable: false }
   if (status === 403 && /NETEASE_REQUEST_FAILED/.test(code)) return { retryable: false }
   // A signed audio URL may expire. A retry obtains a fresh URL, unlike a Cookie
   // authentication error which is annotated by the metadata transport.

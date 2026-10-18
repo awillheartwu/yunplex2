@@ -26,6 +26,7 @@ export interface SyncRunOptions {
   plexRecoverySnapshot?: PlexRecoverySnapshot
   mode?: SyncMode
   sourceIds?: string[]
+  retrySongIds?: number[]
   takeOverExternal?: boolean
   trigger?: 'user' | 'schedule' | 'system' | 'retry'
 }

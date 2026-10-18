@@ -78,31 +78,41 @@ export function diffOrderedSnapshot(
   return { added, removed, reordered }
 }
 
-export function buildPlexPathMap(tracks: readonly PlexPathTrack[]): Record<string, string> {
-  const paths: Record<string, string> = {}
+function normalizedPaths(paths: readonly string[]): string[] {
+  return [...new Set(paths.map(normalizePlexPath).filter(Boolean))].sort()
+}
+
+export function buildPlexPathMap(tracks: readonly PlexPathTrack[]): Record<string, string[]> {
+  const paths: Record<string, string[]> = {}
   for (const track of tracks) {
-    const path = (track.Media ?? [])
+    const files = (track.Media ?? [])
       .flatMap(media => media.Part ?? [])
-      .find(part => part.file)?.file
-    const normalized = path ? normalizePlexPath(path) : ''
-    if (normalized) paths[String(track.ratingKey)] = normalized
+      .flatMap(part => part.file ? [part.file] : [])
+    const normalized = normalizedPaths(files)
+    if (normalized.length > 0) paths[String(track.ratingKey)] = normalized
   }
   return paths
 }
 
-/** Keep the file path each Plex playlist occurrence resolved to at write time. */
+/** Keep every file path represented by each Plex media identity at write time. */
 export function buildPlexPathSnapshot(tracks: readonly PlexPathTrack[]): string {
   return JSON.stringify(buildPlexPathMap(tracks))
 }
 
-export function parsePlexPathSnapshot(value: string | null | undefined): Record<string, string> {
+export function parsePlexPathSnapshot(value: string | null | undefined): Record<string, string[]> {
   if (!value) return {}
   try {
     const parsed = JSON.parse(value) as unknown
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    )
+    const result: Record<string, string[]> = {}
+    for (const [ratingKey, paths] of Object.entries(parsed)) {
+      // Existing deployments stored one path per rating key.
+      const files = typeof paths === 'string' ? [paths] : paths
+      if (!Array.isArray(files) || !files.every(path => typeof path === 'string')) continue
+      const normalized = normalizedPaths(files)
+      if (normalized.length > 0) result[ratingKey] = normalized
+    }
+    return result
   } catch {
     return {}
   }
@@ -114,11 +124,11 @@ export function parsePlexPathSnapshot(value: string | null | undefined): Record<
  * old key is still the one a song binding points at, so both must be checked.
  */
 export function findChangedPlexRatingKeys(
-  applied: Readonly<Record<string, string>>,
-  observed: Readonly<Record<string, string>>,
+  applied: Readonly<Record<string, readonly string[]>>,
+  observed: Readonly<Record<string, readonly string[]>>,
 ): string[] {
   return Object.entries(applied)
-    .filter(([ratingKey, path]) => observed[ratingKey] !== path)
+    .filter(([ratingKey, paths]) => JSON.stringify(observed[ratingKey]) !== JSON.stringify(paths))
     .map(([ratingKey]) => ratingKey)
 }
 

@@ -20,6 +20,7 @@ interface FinalizeSourceConvergenceInput {
   source: PlaylistSource
   job: RunBuilder
   dryRun: boolean
+  fullVerification: boolean
   skipRemoveExtra: boolean
   authoritativeTrackCount: number
   currentIdOrder: number[]
@@ -41,6 +42,7 @@ export async function finalizeSourceConvergence(
     source,
     job,
     dryRun,
+    fullVerification,
     skipRemoveExtra,
     authoritativeTrackCount,
     currentIdOrder,
@@ -110,8 +112,8 @@ export async function finalizeSourceConvergence(
       plexPlaylistRatingKey: plexPlaylist?.ratingKey || '',
       plexUpdatedAt: finalPlexUpdatedAt,
       consecutiveSkips: 0,
-      lastFullCompareAt: new Date().toISOString(),
     }
+    if (fullVerification) sourceUpdate.lastFullCompareAt = new Date().toISOString()
     if (sourceStatus === 'success') {
       sourceUpdate.lastTrackUpdateTime = trackUpdateTime
       sourceUpdate.trackIdSnapshot = JSON.stringify(currentIdOrder)

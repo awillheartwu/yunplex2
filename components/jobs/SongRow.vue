@@ -29,16 +29,6 @@
     <!-- Expanded detail -->
     <div v-if="expanded" class="song-row__expanded">
       <div class="song-row__detail-card">
-        <!-- Download progress -->
-        <div v-if="retrying && retryProgress !== undefined && retryProgress > 0" class="space-y-1">
-          <div class="flex justify-between text-2xs">
-            <span class="text-muted-deep">下载进度</span>
-            <span class="text-accent font-mono">{{ retryProgress }}%</span>
-          </div>
-          <div class="w-full h-1 rounded-full bg-[var(--border-primary)] overflow-hidden">
-            <div class="h-full rounded-full bg-accent transition-all duration-300" :style="{ width: retryProgress + '%' }" />
-          </div>
-        </div>
         <!-- Skipped existing -->
         <template v-if="song.status === 'skipped_existing'">
           <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
@@ -47,7 +37,7 @@
 
         <!-- Ignored failure -->
         <template v-else-if="song.status === 'ignored_failure'">
-          <p class="text-2xs text-muted-deep">此歌曲已达到连续失败阈值，系统已暂停自动重试。</p>
+          <p class="text-2xs text-muted-deep">系统已暂停自动处理这首歌曲，可以手动重试。</p>
           <button
             v-if="showRetry"
             class="btn btn-secondary btn-sm mt-2"
@@ -147,19 +137,17 @@
 
 <script setup lang="ts">
 import type { SongTask } from '~~/server/lib/job/types'
+import { canRetrySong } from '~~/shared/failure-handling'
 import {
-  isFailedSongStatus,
-  isIgnoredSongStatus,
   semanticToneClass,
   songStatusPresentation,
 } from '~~/lib/task-status'
 
-const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean; retryProgress?: number }>()
+const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean }>()
 defineEmits<{ toggle: []; retry: [] }>()
 
 const showRetry = computed(() => {
-  return (isFailedSongStatus(props.song.status) || isIgnoredSongStatus(props.song.status))
-    && !!props.song.neteaseSongId
+  return canRetrySong(props.song.status) && !!props.song.neteaseSongId
 })
 
 const statusPresentation = computed(() => songStatusPresentation(props.song.status))

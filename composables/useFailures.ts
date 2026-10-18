@@ -96,7 +96,7 @@ export function useFailures() {
           items.value = response.items
           total.value = response.total
           retryableTotal.value = response.retryableTotal
-          for (const item of response.items) knownRetryable.set(item.id, item.retryable && item.downloadTaskIds.length > 0)
+          for (const item of response.items) knownRetryable.set(item.id, item.retryable)
         }
         page.value = requested
         loadedFilter = signature
@@ -209,12 +209,11 @@ export function useFailures() {
     goToPage,
     setView,
     openGroup,
-    mutateSelected: (action: 'retry' | 'ignore' | 'reopen') => mutate(`/tasks/failures/batch-${action}`, allMatchingSelected.value
+    mutateSelected: (action: 'retry' | 'ignore') => mutate(`/tasks/failures/batch-${action}`, allMatchingSelected.value
       ? { allMatching: true, excludeIds: [...excluded.value], filter: toParams() }
       : { ids: [...selected.value] }),
-    mutateGroup: (group: FailureGroup, action: 'retry' | 'ignore' | 'reopen') => mutate(`/tasks/failures/batch-${action}`, { groupId: group.id, groupKey: group.key, filter: toParams() }),
+    mutateGroup: (group: FailureGroup, action: 'retry' | 'ignore') => mutate(`/tasks/failures/batch-${action}`, { groupId: group.id, groupKey: group.key, filter: toParams() }),
     batchRetry: (ids: string[]) => mutate('/tasks/failures/batch-retry', { ids }),
     batchIgnore: (ids: string[]) => mutate('/tasks/failures/batch-ignore', { ids }),
-    batchReopen: (ids: string[]) => mutate('/tasks/failures/batch-reopen', { ids }),
   }
 }

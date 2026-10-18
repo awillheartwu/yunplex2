@@ -15,7 +15,7 @@ interface FailureRow {
   last_seen_at: string
   occurrence_count: number
   retry_count: number
-  download_task_ids: string
+  download_task_ids: string | null
 }
 
 function legacyKind(row: FailureRow): string | null {
@@ -59,7 +59,7 @@ export function migrateLegacyFailureKinds(db: Database.Database): number {
         const status = (STATUS_PRIORITY[row.status] ?? 0) >= (STATUS_PRIORITY[existing.status] ?? 0)
           ? row.status
           : existing.status
-        const taskIds = new Set([...existing.download_task_ids.split(','), ...row.download_task_ids.split(',')].filter(Boolean))
+        const taskIds = new Set([...(existing.download_task_ids ?? '').split(','), ...(row.download_task_ids ?? '').split(',')].filter(Boolean))
         db.prepare(`
           UPDATE failure_records SET status = ?, first_seen_at = ?, last_seen_at = ?,
             occurrence_count = ?, retry_count = ?, download_task_ids = ?

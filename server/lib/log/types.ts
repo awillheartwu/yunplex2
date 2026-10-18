@@ -29,6 +29,7 @@ export type SyncStage =
   | 'cancelled'
   | 'error'
   | 'repair'
+  | 'maintenance'
 
 export interface SyncState {
   currentRunId?: string | null

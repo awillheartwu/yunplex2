@@ -25,6 +25,7 @@ interface ApplySourceDownloadsInput {
   stepContext: JobStepContext
   dryRun: boolean
   redownloadManagedMedia: boolean
+  retrySongIds?: ReadonlySet<number>
   takeOverExternal: boolean
   splitArtists: (artists: { name: string }[]) => [string, string]
   throwIfCancelled: () => void
@@ -134,6 +135,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         album: resolution.song.album.name,
         quality: config.netease.quality,
         jobId: job.getId(),
+        retryFailed: input.retrySongIds?.has(resolution.song.id),
         operation,
         ...(targetPath ? { targetPath } : {}),
         executionIntent: {

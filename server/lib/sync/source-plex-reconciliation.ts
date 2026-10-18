@@ -83,8 +83,6 @@ interface ReconcilePlexPlaylistInput {
   skipRemoveExtra: boolean
   retryUnresolvedSnapshot: boolean
   needsPlexRefresh: boolean
-  ignoredPlexMatchSongIds?: ReadonlySet<number>
-  forcePlexRetry?: boolean
   expectedPlexFingerprint?: string
   assertRecoveryContextUnchanged?: () => void
   splitArtists: (artists: { name: string }[]) => [string, string]
@@ -119,8 +117,6 @@ export async function reconcilePlexPlaylist(
     skipRemoveExtra,
     retryUnresolvedSnapshot,
     needsPlexRefresh,
-    ignoredPlexMatchSongIds,
-    forcePlexRetry = false,
     splitArtists,
     isCancellationRequested,
     throwIfCancelled,
@@ -143,9 +139,6 @@ export async function reconcilePlexPlaylist(
   const pendingVerifiedBindings: BindingInput[] = []
 
   const retryRequests = resolutions.flatMap((resolution, index) => {
-    if (!forcePlexRetry && retryUnresolvedSnapshot && ignoredPlexMatchSongIds?.has(resolution.song.id)) {
-      return []
-    }
     const currentSong = getResolutionTask(job, source.id, resolution)
     const filePath = currentSong?.filePath ?? resolution.filePath
     return shouldAttemptPlexRetryForResolution(resolution.resolution, currentSong?.status, filePath)

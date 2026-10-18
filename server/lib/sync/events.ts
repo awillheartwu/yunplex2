@@ -1,4 +1,4 @@
-export type SyncEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'song-retry-progress' | 'repair-progress' | 'plex-scan-progress' | 'plex-library-change'
+export type SyncEventType = 'stage-change' | 'song-progress' | 'log' | 'queue-update' | 'repair-progress' | 'plex-scan-progress' | 'plex-library-change'
 
 export interface SyncEvent {
   type: SyncEventType

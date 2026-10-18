@@ -111,6 +111,7 @@ export function getSyncService(getConfig: () => AppConfig) {
     const rebuildMatch = modePolicy.rebuildAutomaticBindings
     const redownloadAll = modePolicy.redownloadManagedMedia
     const retrySourceFailures = options?.trigger === 'retry'
+    const retrySongIds = new Set(retrySourceFailures ? options?.retrySongIds ?? [] : [])
     const takeOverExternal = options?.takeOverExternal ?? false
     const plexRecoveryOnly = options?.plexRecoveryOnly === true
     cancelRequested = false
@@ -413,6 +414,8 @@ export function getSyncService(getConfig: () => AppConfig) {
             && !(authoritativeTrackCount === 0 && source.lastStatus !== 'success')
           ) {
             const unchangedStatus = source.lastStatus === 'idle' ? 'success' : source.lastStatus
+            job.recordUnchangedSource(stepContext, authoritativeTrackCount,
+              new Set(currentIdOrder.filter(id => failurePolicy.failuresBySongId[id])).size, source.lastError)
             updateSource(source.id, {
               lastSyncedAt: new Date().toISOString(), lastStatus: unchangedStatus, lastError: source.lastError,
               lastJobId: job.getId(), trackCount: authoritativeTrackCount,
@@ -447,14 +450,16 @@ export function getSyncService(getConfig: () => AppConfig) {
                   neteaseCursor,
                 })
               }
-              if (!dryRun) updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null, lastJobId: job.getId(), trackCount: authoritativeTrackCount, lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt, consecutiveSkips: 0, lastFullCompareAt: new Date().toISOString(), trackIdSnapshot: JSON.stringify(currentIdOrder), requiresMatchReconcile: false })
+              if (!dryRun) updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastStatus: 'success', lastError: null, lastJobId: job.getId(), trackCount: authoritativeTrackCount, lastTrackUpdateTime: trackUpdateTime, plexUpdatedAt, consecutiveSkips: 0, trackIdSnapshot: JSON.stringify(currentIdOrder), requiresMatchReconcile: false })
               successfulSources++
               continue
             }
           }
 
           // ── Step 2a: Load Plex retry state without removing target identities ──
-          const ignoredPlexMatchSongIds = resolveIgnoredPlexMatchSongIds(failurePolicy)
+          const ignoredPlexMatchSongIds = resolveIgnoredPlexMatchSongIds(failurePolicy,
+            !retrySourceFailures && (modePolicy.forceFullCompare || effectiveSettings.forceFullCompare || det.autoForce || plexRecoveryOnly),
+            retrySongIds)
 
           // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
           setStage('comparing')
@@ -515,8 +520,9 @@ export function getSyncService(getConfig: () => AppConfig) {
             resolutions,
             failurePolicy,
             maxFailures: cfg.sync.maxFailureAttempts,
-            retrySourceFailures,
+            retrySongIds,
             redownloadAll,
+            ignoredPlexMatchSongIds,
           })
 
           // Update job song statuses from TrackResolution results
@@ -578,6 +584,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             stepContext,
             dryRun,
             redownloadManagedMedia: redownloadAll,
+            retrySongIds,
             takeOverExternal,
             splitArtists,
             throwIfCancelled,
@@ -603,8 +610,6 @@ export function getSyncService(getConfig: () => AppConfig) {
               skipRemoveExtra,
               retryUnresolvedSnapshot: plexRecoveryOnly || retryUnresolvedSnapshot,
               needsPlexRefresh,
-              ignoredPlexMatchSongIds,
-              forcePlexRetry: det.needFullCompare || retrySourceFailures || plexRecoveryOnly,
               ...(plexRecoveryOnly ? {
                 expectedPlexFingerprint: observedPlexFingerprint!,
                 assertRecoveryContextUnchanged: () => {
@@ -631,6 +636,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             source,
             job,
             dryRun,
+            fullVerification: trustedSongIds.size === 0,
             skipRemoveExtra,
             authoritativeTrackCount,
             currentIdOrder,

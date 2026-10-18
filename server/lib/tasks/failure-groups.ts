@@ -2,7 +2,7 @@ import { getDb } from '../db'
 import { sanitizeDiagnosticMessage } from '../domain-error'
 import { parseFailureRecordFilters } from '../api-filter-params'
 import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
-import { buildFailureRecordQuery, type FailureRecordFilter, type FailureRecordStatus } from './failure-records'
+import { buildFailureRecordQuery, RETRYABLE_FAILURE_SQL, type FailureRecordFilter, type FailureRecordStatus } from './failure-records'
 import { failureReasonGroupKey } from './failure-identity'
 
 export interface FailureGroup {
@@ -34,7 +34,7 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
       COUNT(DISTINCT COALESCE(CAST(fr.song_id AS TEXT), fr.song_name || ':' || fr.artist)) AS song_count,
       COUNT(DISTINCT COALESCE(fr.source_id, 'manual')) AS source_count,
       SUM(fr.occurrence_count) AS occurrence_count,
-      SUM(CASE WHEN TRIM(fr.download_task_ids) <> '' THEN 1 ELSE 0 END) AS linked_count,
+      SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END) AS linked_count,
       MIN(fr.first_seen_at) AS first_seen_at, MAX(fr.last_seen_at) AS last_seen_at
     ${grouped}
     ORDER BY MAX(fr.last_seen_at) DESC, MIN(fr.id)
@@ -50,8 +50,8 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
       id: row.id, key: failureReasonGroupKey(row.failure_kind, row.failure_reason), failureKind: definition.code,
       failureReason: row.failure_kind === 'copyright_restricted' ? definition.userMessage : reason || definition.userMessage,
       label: definition.label, total: row.total, songCount: row.song_count, sourceCount: row.source_count,
-      occurrenceCount: row.occurrence_count, retryableCount: definition.retryable ? row.linked_count : 0,
-      retryUnavailableReason: definition.retryable ? '请从对应运行或来源重新执行' : definition.userMessage,
+      occurrenceCount: row.occurrence_count, retryableCount: row.linked_count,
+      retryUnavailableReason: '缺少可重新处理的歌曲或文件任务，请查看关联运行',
       firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at,
     }
   })
@@ -67,13 +67,22 @@ export interface FailureMutationSelection {
   filter?: Record<string, unknown>
 }
 
-export function resolveFailureMutationIds(body: FailureMutationSelection | null | undefined, status: FailureRecordStatus): string[] {
-  if (Array.isArray(body?.ids)) return body.ids.filter(id => typeof id === 'string' && id.length > 0)
+export function resolveFailureMutationIds(body: FailureMutationSelection | null | undefined, status: FailureRecordStatus | readonly FailureRecordStatus[]): string[] {
+  const allowedStatuses = typeof status === 'string' ? [status] : status
+  if (Array.isArray(body?.ids)) {
+    const ids = [...new Set(body.ids.filter(id => typeof id === 'string' && id.length > 0))]
+    if (ids.length === 0) return []
+    const rows = getDb().prepare(`SELECT id FROM failure_records WHERE id IN (${ids.map(() => '?').join(',')})
+      AND status IN (${allowedStatuses.map(() => '?').join(',')})`).all(...ids, ...allowedStatuses) as { id: string }[]
+    return rows.map(row => row.id)
+  }
   const hasGroup = typeof body?.groupId === 'string' && body.groupId && typeof body.groupKey === 'string' && body.groupKey
   if (!hasGroup && body?.allMatching !== true) return []
   if (body?.allMatching && (!body.filter || typeof body.filter !== 'object' || Array.isArray(body.filter))) return []
   if (body?.excludeIds !== undefined && !Array.isArray(body.excludeIds)) return []
-  const filter = parseFailureRecordFilters({ ...body?.filter, status, ...(hasGroup ? { groupId: body?.groupId, groupKey: body?.groupKey } : {}) })
+  const selectedStatus = body?.filter?.status ?? allowedStatuses[0]
+  if (!allowedStatuses.some(value => value === selectedStatus)) return []
+  const filter = parseFailureRecordFilters({ ...body?.filter, status: selectedStatus, ...(hasGroup ? { groupId: body?.groupId, groupKey: body?.groupKey } : {}) })
   if (filter.groupId && !filter.groupKey) return []
   const { where, from, params } = buildFailureRecordQuery(filter)
   const rows = getDb().prepare(`SELECT fr.id ${from} ${where}`).all(...params) as { id: string }[]

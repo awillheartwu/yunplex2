@@ -15,7 +15,6 @@ export type DomainErrorCode =
   | 'failed_tags'
   | 'failed_plex_match'
   | 'failed_plex_insert'
-  | 'ignored_failure'
   | 'source_unavailable'
   | 'source_missing'
   | 'invalid_audio'
@@ -27,6 +26,7 @@ export interface DomainErrorDefinition {
   code: DomainErrorCode
   category: DomainErrorCategory
   severity: DomainErrorSeverity
+  /** Automatic recovery policy. Explicit user retries are admitted by their target. */
   retryable: boolean
   label: string
   userMessage: string
@@ -46,7 +46,6 @@ export const DOMAIN_ERROR_CATALOG: Record<DomainErrorCode, DomainErrorDefinition
   failed_tags: { code: 'failed_tags', category: 'media', severity: 'error', retryable: true, label: '元数据失败', userMessage: '音频已下载，但元数据或标签写入未完成。' },
   failed_plex_match: { code: 'failed_plex_match', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 匹配失败', userMessage: 'Plex 未在重试窗口内识别到媒体文件。' },
   failed_plex_insert: { code: 'failed_plex_insert', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 更新失败', userMessage: 'Plex 已识别媒体，但未能完成歌单更新。' },
-  ignored_failure: { code: 'ignored_failure', category: 'operation', severity: 'info', retryable: false, label: '连续失败', userMessage: '连续失败达到阈值，系统已暂停自动重试。' },
   source_unavailable: { code: 'source_unavailable', category: 'netease', severity: 'warning', retryable: false, label: '音源不可用', userMessage: '网易云未提供可用音源，可能是版权、地区或账号权限限制；本轮保留目标，不自动重试。' },
   source_missing: { code: 'source_missing', category: 'netease', severity: 'warning', retryable: false, label: '歌曲详情缺失', userMessage: '网易云未返回歌曲详情，可能是歌曲已下架；本轮保留 Plex 歌单，不自动删除。' },
   invalid_audio: { code: 'invalid_audio', category: 'media', severity: 'error', retryable: false, label: '音频文件损坏', userMessage: '网易云返回的音频文件未通过校验，未保存不完整文件；请稍后重试或忽略。' },
@@ -93,7 +92,7 @@ export function classifyDomainErrorCode(message: string | null | undefined, fall
   if (/网易云/.test(text) && /连接失败|请求超时|\b50[234]\b/.test(text)) return 'netease_unavailable'
   if (/eacces|eperm|enospc|enoent|只读|磁盘|空间|挂载|文件系统|(?:文件|目录|下载目录|媒体目录).{0,8}权限|写权限/.test(text)) return 'filesystem_failed'
   if (/身份冲突|关联失效|歧义|ambiguous|identity conflict/.test(text)) return 'media_identity_conflict'
-  if (/音频文件超过大小上限/.test(text)) return 'validation_failed'
+  if (/音频文件超过大小上限|download_too_large/.test(text)) return 'validation_failed'
   if (/标签|metadata|tag/.test(text)) return 'failed_tags'
   return fallback
 }

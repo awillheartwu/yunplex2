@@ -26,7 +26,7 @@ export interface SourceRequestsResult {
 }
 
 /** Accept a batch atomically. The consumer owns every subsequent execution. */
-export function requestSources(input: SyncRunOptions & { sourceIds: string[] }, busy?: () => boolean): SourceRequestsResult {
+export function requestSources(input: SyncRunOptions & { sourceIds: string[]; retrySongIdsBySource?: Record<string, number[]> }, busy?: () => boolean): SourceRequestsResult {
   const batchId = randomUUID()
   const sourceIds = [...new Set(input.sourceIds)]
   if (!sourceIds.length) throw new Error('没有可同步的歌单源')
@@ -50,6 +50,7 @@ export function requestSources(input: SyncRunOptions & { sourceIds: string[] }, 
     const ordered = [...plans.filter(p => p.gate.action === 'sync'), ...plans.filter(p => p.gate.action !== 'sync')]
     const results = ordered.map(({ source }, position) => ({ ...acceptSourceRequest(source, config, {
       ...input, sourceId: source.id, trigger: input.trigger ?? 'user', batchId, position, now,
+      retrySongIds: input.retrySongIdsBySource?.[source.id] ?? input.retrySongIds,
     }), sourceName: source.name }))
     return { triggered: results.some(item => item.status === 'accepted'), batchId, results }
   })()

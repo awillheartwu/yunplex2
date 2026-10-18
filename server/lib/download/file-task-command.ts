@@ -1,5 +1,6 @@
 import {
   enqueueTask,
+  requeueFailedDownloadTasks,
   getDownloadTask,
   waitForDownloadTasks,
   type DownloadExecutionIntent,
@@ -22,6 +23,7 @@ export interface FileTaskIntent {
   operation?: DownloadTaskOperation
   targetPath?: string
   executionIntent?: DownloadExecutionIntent
+  retryFailed?: boolean
 }
 
 export interface FileTaskSubmission {
@@ -56,7 +58,15 @@ export function submitFileTasks(intents: readonly FileTaskIntent[]): FileTaskSub
   // keeps command transactions atomic when they are the first caller.
   createFileTaskSchema(getDb())
   const submissions = intents.map((intent) => {
-    const task = enqueueTask(intent)
+    const previous = intent.retryFailed
+      ? getDb().prepare("SELECT id FROM download_tasks WHERE idempotency_key = ? AND status = 'failed' ORDER BY updated_at DESC, rowid DESC LIMIT 1")
+        .get(intent.idempotencyKey) as { id: string } | undefined
+      : undefined
+    const previousTask = previous ? getDownloadTask(previous.id) : null
+    const sameIntent = previousTask && previousTask.operation === (intent.operation ?? 'download')
+      && previousTask.targetPath === intent.targetPath
+      && JSON.stringify(previousTask.executionIntent) === JSON.stringify(intent.executionIntent)
+    const task = (sameIntent && requeueFailedDownloadTasks([previousTask.id])[0]) || enqueueTask(intent)
     linkRunFileTask(getDb(), {
       runId: intent.jobId,
       taskId: task.id,

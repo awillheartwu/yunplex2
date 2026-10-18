@@ -129,6 +129,7 @@ export function startWorker(
         const prepared = syncService.prepareSyncForSource(request.sourceId, {
           mode: request.mode,
           trigger: request.trigger,
+          retrySongIds: request.retrySongIds,
           plexRecoveryOnly: request.kind === 'plex_recovery',
           ...(request.plexRecoverySnapshot ? { plexRecoverySnapshot: request.plexRecoverySnapshot } : {}),
           ...(request.takeOverExternal ? { takeOverExternal: true } : {}),

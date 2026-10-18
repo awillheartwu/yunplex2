@@ -85,11 +85,15 @@ export async function resolveTracks(
   const bindingsById = new Map(targetBindings.map(binding => [binding.neteaseSongId, binding]))
   const assetsById = getLocalMediaAssets(yunSongs.map(song => song.id))
   const playlistByRatingKey = new Map(playlistTracks.map(track => [track.ratingKey, track]))
+  const initializationDecisions = identityContext.sourceId
+    ? getActiveMediaDecisions(identityContext.sourceId)
+    : new Map<number, 'defer' | 'download'>()
   const trustedBindingIds = new Set<number>()
   if (options.trustedSongIds) {
     for (const binding of targetBindings) {
       if (!options.trustedSongIds.has(binding.neteaseSongId)) continue
       if (binding.status !== 'active' || !binding.plexRatingKey) continue
+      if (initializationDecisions.has(binding.neteaseSongId) || getMediaCorrection(binding.neteaseSongId)) continue
       const asset = assetsById.get(binding.neteaseSongId)
       if (asset && asset.status !== 'active') continue
       trustedBindingIds.add(binding.neteaseSongId)
@@ -98,10 +102,6 @@ export async function resolveTracks(
   const directTracks = await getTracksByRatingKeys(targetBindings.flatMap(binding =>
     binding.plexRatingKey && !trustedBindingIds.has(binding.neteaseSongId) ? [binding.plexRatingKey] : [],
   ))
-  const initializationDecisions = identityContext.sourceId
-    ? getActiveMediaDecisions(identityContext.sourceId)
-    : new Map<number, 'defer' | 'download'>()
-
   for (const [index, song] of yunSongs.entries()) {
     const mediaPlan = mediaPlans.get(song.id)
     const trustedBinding = trustedBindingIds.has(song.id) ? bindingsById.get(song.id) : undefined
@@ -235,6 +235,10 @@ async function resolveOne(input: {
   const managed = localAsset?.ownership === 'managed' && localAsset.status === 'active'
   const bound = bindingsById.get(song.id) ?? null
 
+  if (input.initializationDecision === 'defer') {
+    return awaitingManualResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确暂缓，等待手动选择')
+  }
+
   if (correction) {
     if ((bound?.updatedAt ?? null) !== correction.expected_version) return awaitingManualResolution(base, expectedLocalPath, localAsset, '纠错期间关联已变化，请重新选择处理方式')
     if (correction.staged_asset_json) {
@@ -246,7 +250,7 @@ async function resolveOne(input: {
 
   // Explicit adoption is the only external-media identity. Verify by ratingKey
   // plus exact path, then recover by exact path if Plex changes the ratingKey.
-  if (bound?.status === 'active' && bound.bindingMethod === 'manual') {
+  if (bound && bound.bindingMethod === 'manual') {
     const boundPlexPath = resolvePlexIdentityPath({
       relativePath: bound.plexRelativePath,
       currentSectionRoot: cfg.download.plexLibraryPathPrefix,
@@ -420,10 +424,6 @@ async function resolveOne(input: {
         plexFilePath: boundPlexPath,
       })
     }
-  }
-
-  if (input.initializationDecision === 'defer') {
-    return awaitingManualResolution(base, mediaPlan?.filePath ?? expectedLocalPath, localAsset, '首次媒体接管中已明确暂缓，等待手动选择')
   }
 
   const completedManagedDownload = managed && expectedLocalPath && validateLocalAudioFile(expectedLocalPath).valid

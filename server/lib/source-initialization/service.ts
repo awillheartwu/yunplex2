@@ -9,7 +9,8 @@ import { getSectionKey, getSectionTracks, initPlexClient } from '../plex-client'
 import { getSource } from '../playlist/store'
 import { getRun, saveRun } from '../run/store'
 import { acquireIdentityMutationLock } from '../sync/identity-coordinator'
-import { getInitializationIdentityBindings, normalizePlexPath, rebindSongIdentity, BindingIdentityConflictError, BindingVersionConflictError } from '../sync/identity-store'
+import { getInitializationIdentityBindings, getSongIdentityBinding, normalizePlexPath, rebindSongIdentity, BindingIdentityConflictError, BindingVersionConflictError } from '../sync/identity-store'
+import { prepareMediaCorrection } from '../sync/media-corrections'
 import type { TaskRun, TaskRunTrigger } from '../job/types'
 import { INITIALIZATION_RULE_VERSION, type InitializationCommitResult } from './types'
 import { requestSourceInitialization } from './requests'
@@ -178,6 +179,13 @@ async function applySourceInitialization(initializationId: string, allowDisabled
       }
       for (const row of rows) {
         const songId = Number(row.netease_song_id); const decision = String(row.decision)
+        if (initialization.reevaluateAutomatic && (decision === 'defer' || decision === 'download')) {
+          const binding = getSongIdentityBinding(songId)
+          const expectedVersion = row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null
+          if ((binding?.updatedAt ?? null) !== expectedVersion) throw new BindingVersionConflictError()
+          if (binding && binding.bindingOrigin !== 'auto') throw new BindingVersionConflictError()
+          if (decision === 'download' && binding) prepareMediaCorrection(songId, expectedVersion)
+        }
         if (decision === 'defer') {
           upsertMediaDecision(source.id, songId, 'defer', initialization.id); deferred++
           db.prepare("UPDATE source_initialization_items SET decision_status='deferred', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)

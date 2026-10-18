@@ -18,6 +18,7 @@ export interface SourceConvergenceRequest {
   trigger: SourceRequestInput['trigger']
   kind: SourceRequestKind
   plexRecoverySnapshot: SourceRequestInput['plexRecoverySnapshot'] | null
+  retrySongIds?: number[]
   mode: NonNullable<SourceRequestInput['mode']>
   initializationId: string | null
   followUpOf: string | null
@@ -40,6 +41,7 @@ interface QueueRow {
   attempts: number
   request_kind: SourceRequestKind
   plex_recovery_json: string | null
+  retry_song_ids_json: string | null
   mode: NonNullable<SourceRequestInput['mode']>
   trigger: SourceRequestInput['trigger']
   initialization_id: string | null
@@ -327,6 +329,7 @@ export function claimNextSourceRequest(
       leaseOwner,
       trigger: row.trigger, kind: row.request_kind, mode: row.mode,
       plexRecoverySnapshot: parseJsonOr<SourceRequestInput['plexRecoverySnapshot'] | null>(row.plex_recovery_json, null),
+      retrySongIds: parseJsonOr<number[] | undefined>(row.retry_song_ids_json, undefined),
       initializationId: row.initialization_id, followUpOf: row.follow_up_of, runId: row.run_id, takeOverExternal: Boolean(row.take_over_external),
     }
   })()

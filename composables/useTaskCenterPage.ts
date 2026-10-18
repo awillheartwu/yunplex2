@@ -74,8 +74,10 @@ export function useTaskCenterPage() {
     { label: '已忽略', value: 'ignored' },
     { label: '已解决', value: 'resolved' },
   ]
+  const failureCanProcess = computed(() => ['open', 'paused', 'ignored'].includes(failures.filter.value.status ?? 'open'))
+  const failureCanIgnore = computed(() => ['open', 'paused'].includes(failures.filter.value.status ?? 'open'))
   const failureKindFilters = [
-    { label: '全部阶段', value: '' },
+    { label: '全部原因', value: '' },
     { label: '下载失败', value: 'failed_download' },
     { label: '音源不可用', value: 'source_unavailable' },
     { label: '歌曲详情缺失', value: 'source_missing' },
@@ -85,7 +87,6 @@ export function useTaskCenterPage() {
     { label: 'Plex 匹配失败', value: 'failed_plex_match' },
     { label: 'Plex 更新失败', value: 'failed_plex_insert' },
     { label: '版权受限', value: 'copyright_restricted' },
-    { label: '连续失败', value: 'ignored_failure' },
     { label: '认证失效', value: 'authentication_failed' },
     { label: '请求受限', value: 'rate_limited' },
     { label: '网易云不可用', value: 'netease_unavailable' },
@@ -178,7 +179,7 @@ export function useTaskCenterPage() {
     syncFailureQuery()
     await loaded
   }
-  async function mutateFailureGroup(group: FailureGroup, action: 'retry' | 'ignore' | 'reopen') {
+  async function mutateFailureGroup(group: FailureGroup, action: 'retry' | 'ignore') {
     showMutationResult(await failures.mutateGroup(group, action))
     void refreshOverview().catch(() => {})
   }
@@ -226,16 +227,13 @@ export function useTaskCenterPage() {
     }
     applyFailureFilters()
   }
-  function isRetryable(record: FailureRecord) { return record.downloadTaskIds.length > 0 && record.retryable }
-  function failureRetryUnavailableReason(record: FailureRecord): string {
-    if (!record.retryable) return `${record.userMessage} 当前错误策略不允许直接重试。`
-    if (record.downloadTaskIds.length === 0) return '这条异常没有可直接重试的下载任务，请从运行或同步源重新执行。'
-    return '请从运行或同步源重新执行。'
+  function isRetryable(record: FailureRecord) { return record.retryable }
+  function failureRetryUnavailableReason(_record: FailureRecord): string {
+    return '这条异常没有可重新处理的歌曲或文件任务，请查看关联运行。'
   }
   async function retryFailure(id: string) { showMutationResult(await failures.batchRetry([id])); void refreshOverview().catch(() => {}) }
   async function ignoreFailure(id: string) { showMutationResult(await failures.batchIgnore([id])); void refreshOverview().catch(() => {}) }
-  async function reopenFailure(id: string) { showMutationResult(await failures.batchReopen([id])); void refreshOverview().catch(() => {}) }
-  async function mutateSelectedFailures(action: 'retry' | 'ignore' | 'reopen') {
+  async function mutateSelectedFailures(action: 'retry' | 'ignore') {
     const result = await failures.mutateSelected(action)
     showMutationResult(result)
     if (!result.failed && result.count > 0) failures.clearSelection()
@@ -243,7 +241,6 @@ export function useTaskCenterPage() {
   }
   const batchRetry = () => mutateSelectedFailures('retry')
   const batchIgnore = () => mutateSelectedFailures('ignore')
-  const batchReopen = () => mutateSelectedFailures('reopen')
   function showMutationResult(result: { count: number; msg: string; failed?: boolean }) {
     if (result.failed) feedback.error('处理失败', result.msg)
     else if (result.count > 0) feedback.success(result.msg || '操作已完成')
@@ -341,16 +338,16 @@ export function useTaskCenterPage() {
 
 
   return {
-    activeTab, applyFailureDraftFilters, applyFailureFilters, batchIgnore, batchReopen,
+    activeTab, applyFailureDraftFilters, applyFailureFilters, batchIgnore,
     batchRetry, clearFailureFilters, draftFailureDateFilter, draftFailureFrom, draftFailureKind, draftFailureSource,
     draftFailureTo, draftFailureType,
-    failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
+    failureActiveFilterCount, failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureCanProcess, failureCanIgnore, failureEmptyDescription, failureEmptyTitle, failureFilterChips,
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
     formatTime, ignoreFailure,
     isRetryable, mutateFailureGroup, onFailureSearch, openFailureGroup,
     onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, refreshOverview, removeFailureFilter,
-    reopenFailure, resetFailureDraftFilters, retryFailure, runTypeLabel,
+    resetFailureDraftFilters, retryFailure, runTypeLabel,
     semanticToneClass, setDraftFailureDate, setFailureStatus, setFailureView, showMutationResult, sourceOptionLabel, sourceOptions,
     switchTab, taskCenterTabs,
   }

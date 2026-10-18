@@ -1,6 +1,6 @@
 import { success, fail } from '../../../../lib/response'
-import { getDownloadTask, requeueFailedDownloadTasks } from '../../../../lib/download/queue'
-import { requestDownloadProcessing } from '../../../../lib/download/worker'
+import { getDownloadTask } from '../../../../lib/download/queue'
+import { retryTargets } from '../../../../lib/tasks/retry'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -10,9 +10,10 @@ export default defineEventHandler(async (event) => {
   if (!task) return fail('下载任务不存在')
   if (task.status !== 'failed') return fail('只能重试失败的任务')
 
-  const [requeued] = requeueFailedDownloadTasks([id])
-  if (!requeued) return fail('任务已被其他活跃下载取代，请稍后再试')
-  void requestDownloadProcessing().catch(() => undefined)
-
-  return success({ retried: true }, '重试已启动')
+  try {
+    const result = retryTargets([{ sourceId: task.sourceId, songId: task.songId, downloadTaskIds: [id] }])
+    return success(result, '已提交歌曲重新处理')
+  } catch (error) {
+    return fail(error, 1, 'validation_failed')
+  }
 })

@@ -18,6 +18,7 @@ export function upgradeSourceRequests(db: Database.Database): void {
       cancel_requested_at: 'TEXT',
       allow_disabled: 'INTEGER NOT NULL DEFAULT 0', take_over_external: 'INTEGER NOT NULL DEFAULT 0',
       plex_recovery_json: 'TEXT',
+      retry_song_ids_json: 'TEXT',
     })
     add('source_initializations', { rule_version: 'INTEGER NOT NULL DEFAULT 0', commit_result_json: 'TEXT', matching_config_json: 'TEXT', matching_config_fingerprint: 'TEXT', matching_data_fingerprint: 'TEXT', auto_process: 'INTEGER NOT NULL DEFAULT 0', reevaluate_automatic: 'INTEGER NOT NULL DEFAULT 0' })
     upgradeQuickInitialization(db)
