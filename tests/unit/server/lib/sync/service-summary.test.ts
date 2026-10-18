@@ -4,12 +4,27 @@ import { buildSyncRunSummary } from '~~/server/lib/sync/service-summary'
 
 function job(overrides: Partial<SyncJob> = {}): SyncJob {
   return {
+    id: 'summary-run',
+    type: 'sync',
+    startedAt: '2026-10-18T00:00:00.000Z',
+    finishedAt: null,
+    status: 'running',
+    durationMs: 0,
+    summary: '',
+    source: 'test-source',
+    target: 'Plex',
     successSongs: 1,
     failedSongs: 0,
+    skippedSongs: 0,
+    removedSongs: 0,
     warnings: 0,
     totalSongs: 1,
+    dryRun: false,
+    steps: [],
+    songs: [],
+    config: {},
     ...overrides,
-  } as SyncJob
+  }
 }
 
 describe('sync service summary copy', () => {
