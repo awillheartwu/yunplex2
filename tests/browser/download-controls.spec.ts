@@ -16,7 +16,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         running: [{ id: 'large-batch', type: 'manual_download', trigger: 'user', startedAt: now, finishedAt: null, status: 'running', durationMs: 0,
           summary: '千首歌单下载', source: '千首歌单下载', sourceIds: [], sourceNames: [], totalSongs: 1500, successSongs: 0, failedSongs: 0, skippedSongs: 0, removedSongs: 0, warnings: 0, dryRun: false, live: null,
           files: { paused, counts: { total: 1500, pending: 1499, downloading: 1, tagging: 0, done: 0, failed: 0 }, total: 1500,
-            items: [task, { ...task, id: 'audio-two', songId: 2, songName: '等待重试的歌曲', status: 'pending', progress: 0, nextAttemptAt: now, autoRetryCount: 1 }] },
+            items: [task, { ...task, id: 'audio-two', songId: 2, songName: '等待下载的歌曲', status: 'pending', progress: 0 }] },
         }], waiting: [], runningTotal: 1, waitingTotal: 0, unlistedLive: null, updatedAt: now,
       } } }))
       await page.route('**/api/runs/large-batch/downloads-control', async route => {
@@ -35,7 +35,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       await page.getByRole('button', { name: '继续下载队列', exact: true }).click()
       await expect(page.getByRole('button', { name: '继续下载队列', exact: true })).toHaveCount(0)
       await expect(page.getByText('传输中', { exact: true })).toBeVisible()
-      await expect(page.getByText('等待重试', { exact: true })).toBeVisible()
+      await expect(page.getByText('等待下载', { exact: true })).toBeVisible()
       await expect(page.locator('.activity-song progress')).not.toHaveAttribute('value')
       await page.getByRole('button', { name: '暂停下载', exact: true }).click()
       await expect(page.getByRole('button', { name: '继续下载', exact: true })).toBeVisible()

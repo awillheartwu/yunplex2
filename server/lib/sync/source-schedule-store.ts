@@ -1,11 +1,12 @@
 import type { AppConfig } from '../config/types'
-import { getDb } from '../db'
+import { getDb, readConfigFromDb } from '../db'
 import { getSource, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { getLatestInitialization } from '../source-initialization/store'
 import { acceptSourceRequest } from './source-requests'
 import { persistSourceRequest, type SourceRequestInput, type SourceRequestKind } from './request-store'
 import { parseJsonOr } from '../json'
+import { recordFailure } from '../tasks/failure-records'
 
 export type SourceConvergenceRequestStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -89,40 +90,50 @@ function pruneFinishedRequests(now: Date): void {
 }
 
 function recoverExpiredSourceRequests(now: Date): number {
-  const db = getDb()
-  const nowIso = now.toISOString()
-  const rows = db.prepare(`
-    SELECT id, source_id
+  const rows = getDb().prepare(`
+    SELECT id, source_id, request_kind, run_id
     FROM source_sync_queue
     WHERE status = 'running'
       AND lease_expires_at IS NOT NULL
       AND lease_expires_at <= ?
-  `).all(nowIso) as Array<{ id: string; source_id: string }>
-  if (rows.length === 0) return 0
+  `).all(now.toISOString()) as InterruptedSourceRequest[]
+  return settleInterruptedSourceRequests(rows, '来源执行租约过期', now)
+}
 
-  const recover = db.prepare(`
-    UPDATE source_sync_queue
-    SET status = 'pending', available_at = ?, updated_at = ?,
-        lease_owner = NULL, lease_expires_at = NULL,
-        last_error = '执行租约过期，已重新排队'
-    WHERE id = ? AND status = 'running'
-      AND lease_expires_at IS NOT NULL
-      AND lease_expires_at <= ?
-  `)
-  let recovered = 0
-  const sourceIds = new Set<string>()
-  for (const row of rows) {
-    if (recover.run(nowIso, nowIso, row.id, nowIso).changes === 0) continue
-    recovered++
-    sourceIds.add(row.source_id)
-  }
-  for (const sourceId of sourceIds) {
-    updateSource(sourceId, {
-      lastScheduleStatus: 'queued',
-      lastScheduleError: '上次执行中断，已重新排队',
-    })
-  }
-  return recovered
+type InterruptedSourceRequest = Pick<QueueRow, 'id' | 'source_id' | 'request_kind' | 'run_id'>
+
+/** Failed sync attempts use the normal next schedule; preparation retains its durable continuation. */
+function settleInterruptedSourceRequests(rows: InterruptedSourceRequest[], message: string, now: Date): number {
+  if (!rows.length) return 0
+  const db = getDb()
+  const config = readConfigFromDb()
+  const nowIso = now.toISOString()
+  return db.transaction(() => {
+    let settled = 0
+    for (const row of rows) {
+      const failed = row.request_kind === 'convergence' || row.request_kind === 'plex_recovery'
+      const result = db.prepare(`UPDATE source_sync_queue
+        SET status = ?, available_at = ?, finished_at = ?, updated_at = ?,
+          lease_owner = NULL, lease_expires_at = NULL, last_error = ?
+        WHERE id = ? AND status = 'running'`)
+        .run(failed ? 'failed' : 'pending', nowIso, failed ? nowIso : null, nowIso, message, row.id)
+      if (!result.changes) continue
+      settled++
+      const source = getSource(row.source_id)
+      if (!source) continue
+      if (failed) {
+        recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
+          runId: row.run_id, runType: 'sync', failureKind: 'scheduler_interrupted', failureReason: message,
+          occurredAt: nowIso })
+      }
+      updateSource(source.id, {
+        lastScheduleStatus: failed ? 'failed' : 'queued', lastScheduleError: message,
+        ...(failed ? { nextSyncAt: new Date(now.getTime() + effectiveSourceIntervalMinutes(source, config) * 60_000).toISOString(),
+          lastScheduledAt: nowIso, lastStatus: 'failed' as const, lastError: message } : {}),
+      })
+    }
+    return settled
+  })()
 }
 
 /** Persist one idempotent Source Convergence Request for every due Playlist Source. */
@@ -246,34 +257,16 @@ export function enqueueManualSourceSync(sourceId: string, now = new Date()): str
   return id
 }
 
-/** Return interrupted requests to the queue after process restart. */
+/** Record interrupted sync attempts; only unfinished preparation is immediately resumed. */
 export function recoverInterruptedSourceRequests(now = new Date()): number {
   const db = getDb()
-  const nowIso = now.toISOString()
   const currentOwnerPrefix = `source-scheduler:${process.pid}:%`
-  return db.transaction(() => {
-    const rows = db.prepare(`
-      SELECT id, source_id FROM source_sync_queue
+  const rows = db.prepare(`
+      SELECT id, source_id, request_kind, run_id FROM source_sync_queue
       WHERE status = 'running'
         AND (lease_owner IS NULL OR lease_owner NOT LIKE ?)
-    `).all(currentOwnerPrefix) as Array<{ id: string; source_id: string }>
-    if (rows.length === 0) return 0
-    db.prepare(`
-      UPDATE source_sync_queue
-      SET status = 'pending', available_at = ?, updated_at = ?,
-          lease_owner = NULL, lease_expires_at = NULL,
-          last_error = '服务重启后恢复等待'
-      WHERE status = 'running'
-        AND (lease_owner IS NULL OR lease_owner NOT LIKE ?)
-    `).run(nowIso, nowIso, currentOwnerPrefix)
-    for (const sourceId of new Set(rows.map(row => row.source_id))) {
-      updateSource(sourceId, {
-        lastScheduleStatus: 'queued',
-        lastScheduleError: '服务重启后恢复等待',
-      })
-    }
-    return rows.length
-  })()
+    `).all(currentOwnerPrefix) as InterruptedSourceRequest[]
+  return settleInterruptedSourceRequests(rows, '来源同步因服务重启中断', now)
 }
 
 /** Lease the oldest due request. Only this interface may transition pending -> running. */

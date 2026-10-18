@@ -51,7 +51,6 @@ export function useTaskCenterPage() {
   const failureStatusTabs: Array<{ label: string; value: FailureRecordStatusFilter }> = [
     { label: '全部', value: 'all' },
     { label: '待处理', value: 'open' },
-    { label: '已暂停', value: 'paused' },
     { label: '已忽略', value: 'ignored' },
     { label: '已解决', value: 'resolved' },
   ]
@@ -76,8 +75,8 @@ export function useTaskCenterPage() {
     { label: '补全', value: 'repair' },
     { label: '手动下载', value: 'manual_download' },
   ]
-  const failureCanProcess = computed(() => ['all', 'open', 'paused', 'ignored'].includes(failures.filter.value.status ?? 'open'))
-  const failureCanIgnore = computed(() => ['all', 'open', 'paused'].includes(failures.filter.value.status ?? 'open'))
+  const failureCanProcess = computed(() => ['all', 'open', 'ignored'].includes(failures.filter.value.status ?? 'open'))
+  const failureCanIgnore = computed(() => ['all', 'open'].includes(failures.filter.value.status ?? 'open'))
   const failureKindFilters = [
     { label: '全部原因', value: '' },
     ...Object.values(DOMAIN_ERROR_CATALOG).map(item => ({ label: item.label, value: item.code })),
@@ -116,7 +115,7 @@ export function useTaskCenterPage() {
     if (failures.filter.value.from || failures.filter.value.to) chips.push({ key: 'date', label: formatDateFilterLabel(failures.filter.value.from, failures.filter.value.to) })
     return chips
   })
-  const failureEmptyTitle = computed(() => failures.filter.value.status === 'all' ? '暂无匹配问题' : failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : failures.filter.value.status === 'paused' ? '暂无已暂停问题' : '没有待处理问题')
+  const failureEmptyTitle = computed(() => failures.filter.value.status === 'all' ? '暂无匹配问题' : failures.filter.value.status === 'resolved' ? '暂无已解决问题' : failures.filter.value.status === 'ignored' ? '暂无已忽略问题' : '没有待处理问题')
   const failureEmptyDescription = computed(() => failures.filter.value.status === 'open' ? '失败项重试成功后会自动从这里消失。' : '当前状态下没有匹配记录。')
 
   function switchTab(tab: TaskCenterTab) {
@@ -235,6 +234,16 @@ export function useTaskCenterPage() {
   function failureKindLabel(kind: string) {
     return isDomainErrorCode(kind) ? getDomainErrorDefinition(kind).label : failureKindFilters.find(item => item.value === kind)?.label || kind
   }
+  function failureAttemptLabel(record: FailureRecord): string {
+    if (record.status === 'resolved') return ''
+    if (record.status === 'ignored') {
+      if (record.ignoreReason !== 'automatic') return '已手动忽略'
+      return getDomainErrorDefinition(record.errorCode).retryable
+        ? `失败 ${record.attemptCount}/${record.attemptLimit} 次，已自动忽略`
+        : '此类问题不自动重试，已自动忽略'
+    }
+    return `失败 ${record.attemptCount}/${record.attemptLimit} 次${record.runType === 'sync' ? '，下次同步再试' : '，等待手动重试'}`
+  }
   function failureKindTone(kind: string): TaskSemanticTone {
     const definition = getDomainErrorDefinition(kind)
     if (definition.severity === 'info') return 'ignored'
@@ -331,7 +340,7 @@ export function useTaskCenterPage() {
     failureKindFilters, failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures, failureSearchDebounce,
     failureStatusTabs, failureTypeFilters,
     formatTime, ignoreFailure,
-    isRetryable, mutateFailureGroup, onFailureSearch, openFailureGroup,
+    isRetryable, failureAttemptLabel, mutateFailureGroup, onFailureSearch, openFailureGroup,
     onTaskCenterTabChange, openFailureTotal, prepareFailureDraftFilters, refreshOverview, removeFailureFilter,
     resetFailureDraftFilters, retryFailure, runTypeLabel,
     semanticToneClass, setDraftFailureDate, setFailureStatus, setFailureView, showMutationResult, sourceOptionLabel, sourceOptions,

@@ -57,7 +57,6 @@ export function createDownloadWorker(input: {
           // One task per slot lets wakeups fill spare capacity during a long task.
           void processAll(input.execute, undefined, 1, [id], {
             shouldStop: () => stopping,
-            automaticRetries: true,
           }).then(() => {
             activeTasks.delete(id)
             pump()

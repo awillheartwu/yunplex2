@@ -150,16 +150,16 @@
       <ConfigSection v-if="activeTab === 'sync'" section-key="sync" title="同步策略" description="对比、重试和删除保护等低频行为" search-tab="sync" :collapsed="!!collapsed.sync" @toggle="toggle('sync')">
         <template #icon><SidebarIcon name="sync" :active="true" /></template>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField setting="sync.plexScanRetries" label="Plex 扫描重试次数" search-keywords="索引 刷新" hint="下载完成后查 Plex 是否索引的重试次数"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
-          <FormField setting="sync.plexScanRetryDelaySec" label="Plex 扫描重试间隔（秒）" search-keywords="等待 延迟" hint="每次重试的等待时间，默认 15s × 5 次 = 最长 75s"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
+          <FormField setting="sync.plexScanRetries" label="Plex 索引核对次数" search-keywords="索引 刷新" hint="本轮等待索引稳定时读取文件路径的次数，不重新下载，不计入失败尝试上限"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
+          <FormField setting="sync.plexScanRetryDelaySec" label="Plex 索引核对间隔（秒）" search-keywords="等待 延迟" hint="扫描完成后每次路径核对的间隔；扫描仍在进行时会继续等待扫描窗口"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
+        <FormField setting="sync.maxFailureAttempts" label="失败次数上限（次）" search-keywords="重试 忽略 失败次数" hint="包含首次；每轮失败记录一次，下一次同步再试。达到上限后自动忽略，需到异常处理手动重试。版权、音源或格式等不可自动恢复的问题首次即忽略"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
         <ToggleField v-model="form.sync.forceFullCompare" setting="sync.forceFullCompare" label="始终全量对比" search-keywords="增量 完整" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
         <ToggleField v-model="form.sync.reconcileOnPlexDrift" setting="sync.reconcileOnPlexDrift" label="自动修复 Plex 歌单改动" search-keywords="漂移 手动修改" hint="网易云没有变化、但 Plex 歌单被手动改动时，自动触发一次全量对比" />
         <template v-if="!form.sync.forceFullCompare">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <FormField setting="sync.fullCompareAfterSkips" label="连续跳过上限（次）" search-fallback="sync.forceFullCompare" search-hidden-hint="先关闭" hint="连续跳过 N 次增量对比后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterSkips" type="number" min="0" max="100" class="form-input" /></FormField>
             <FormField setting="sync.fullCompareAfterDays" label="全量对比间隔（天）" search-fallback="sync.forceFullCompare" search-hidden-hint="先关闭" hint="距上次全量超过 N 天后自动触发全量。0=不限；单个歌单源可覆盖"><input v-model.number="form.sync.fullCompareAfterDays" type="number" min="0" max="365" class="form-input" /></FormField>
-            <FormField setting="sync.maxFailureAttempts" label="连续失败阈值（次）" search-keywords="重试 暂停" search-fallback="sync.forceFullCompare" search-hidden-hint="先关闭" hint="下载或标签连续失败 N 次后暂停自动重试；可从异常处理或同步源主动重试"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
           </div>
         </template>
         <PlexExtraTracksPolicy v-model="form.sync.skipRemoveExtraTracks" v-model:policy="form.sync.extraTrackRemovalPolicy" />

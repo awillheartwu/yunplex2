@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const source = getSource(id)
   if (!source) return fail('歌单源不存在')
 
-  const rows = getDb().prepare("SELECT id FROM failure_records WHERE source_id = ? AND status IN ('open','paused')")
+  const rows = getDb().prepare("SELECT id FROM failure_records WHERE source_id = ? AND status = 'open'")
     .all(source.id) as { id: string }[]
   if (!rows.length) return fail('该同步源没有可重新尝试的异常')
   try {

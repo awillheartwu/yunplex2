@@ -29,8 +29,6 @@ export interface DownloadTask {
   error?: string
   errorCode?: DomainErrorCode
   retryCount: number
-  autoRetryCount?: number
-  nextAttemptAt?: string
   jobId?: string
   idempotencyKey?: string
   operation?: DownloadTaskOperation
@@ -73,7 +71,6 @@ export const DOWNLOAD_TASK_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000
 export const DOWNLOAD_TASK_LEASE_MS = 10 * 60 * 1000
 
 export interface ProcessDownloadQueueOptions {
-  automaticRetries?: boolean
   inactivityTimeoutMs?: number
   leaseDurationMs?: number
   shouldStop?: () => boolean
@@ -104,7 +101,6 @@ interface TaskRow {
   artist: string; album: string; status: string; progress: number
   file_path: string | null; file_type: string | null; quality: string | null
   error: string | null; error_code: string | null; retry_count: number; job_id: string | null; run_id: string | null
-  auto_retry_count: number; next_attempt_at: string | null
   idempotency_key: string | null; lease_owner: string | null; lease_expires_at: string | null; attempt_started_at: string | null
   operation: string; target_path: string | null; execution_intent_json: string | null
   awaiting_source_sync?: number | null
@@ -121,7 +117,6 @@ function rowToTask(r: TaskRow): DownloadTask {
     quality: r.quality ?? undefined, error: r.error ?? undefined,
     errorCode: isDomainErrorCode(r.error_code) ? r.error_code : undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
-    autoRetryCount: r.auto_retry_count ?? 0, nextAttemptAt: r.next_attempt_at ?? undefined,
     idempotencyKey: r.idempotency_key ?? undefined,
     operation: DOWNLOAD_TASK_OPERATIONS.has(r.operation as DownloadTaskOperation)
       ? r.operation as DownloadTaskOperation
@@ -255,21 +250,20 @@ export function listPendingDownloadTaskIds(limit = 1000): string[] {
   return (getDb().prepare(`
     SELECT id
     FROM download_tasks
-    WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+    WHERE status = 'pending'
       AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL}
     ORDER BY created_at ASC, rowid ASC
     LIMIT ?
-  `).all(new Date().toISOString(), Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
+  `).all(Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
 }
 
 export function getNextDownloadWakeDelay(): number | null {
   const control = getDownloadQueueControl()
   if (control.paused) return null
-  const row = getDb().prepare(`SELECT MIN(COALESCE(next_attempt_at,'')) AS next FROM download_tasks
-    WHERE status='pending' AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL}`).get() as { next: string | null }
-  if (row.next === null) return null
-  return Math.max(0, row.next ? Date.parse(row.next) - Date.now() : 0,
-    control.cooldownUntil ? Date.parse(control.cooldownUntil) - Date.now() : 0)
+  const row = getDb().prepare(`SELECT 1 FROM download_tasks
+    WHERE status='pending' AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL} LIMIT 1`).get()
+  if (!row) return null
+  return Math.max(0, control.cooldownUntil ? Date.parse(control.cooldownUntil) - Date.now() : 0)
 }
 
 export function updateTaskState(id: string, updates: Partial<{
@@ -314,20 +308,15 @@ export function updateTaskState(id: string, updates: Partial<{
 function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: string | null) {
   const task = getDownloadTask(id)
   if (!task) return
-  // Queue writes legacy failures; associations project every caller without changing owner.
+  // Every caller sees the same attempt immediately; final run projection deduplicates it.
   const associations = listFileTaskRuns(getDb(), task.id)
-  const manualCallers = associations.filter((association) => {
-    const associatedRun = getRun(association.runId)
-    return associatedRun?.type === 'manual_download'
-  })
-  // A reused sync/repair owner still projects manual caller failures.
-  const failureCallers = manualCallers.length > 0
-    ? manualCallers
-    : (!task.sourceId || getRun(task.jobId || '')?.type === 'manual_download')
-      ? [{ runId: task.jobId || '', sourceId: task.sourceId }]
-      : []
+  const activeCallers = associations.filter(caller => getRun(caller.runId)?.status === 'running')
+  const failureCallers = activeCallers.length > 0 ? activeCallers
+    : associations.length > 0 ? associations.slice(-1) : [{ runId: task.jobId || '', sourceId: task.sourceId }]
   const reason = error || task.error || '下载失败'
   for (const caller of failureCallers) {
+    const run = getRun(caller.runId)
+    const runType = run?.type ?? 'manual_download'
     const common = {
       songId: task.songId,
       songName: task.songName,
@@ -335,13 +324,13 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
       sourceId: associations.length > 0 ? caller.sourceId : caller.sourceId ?? task.sourceId,
     }
     if (status === 'done') {
-      resolveFailures(common)
+      if (runType !== 'sync') resolveFailures(common)
     } else {
       recordFailure({
         ...common,
         sourceName: task.sourceName || (common.sourceId ? '' : '手动下载'),
         runId: caller.runId || null,
-        runType: 'manual_download',
+        runType,
         failureKind: task.errorCode ?? classifyDomainErrorCode(reason, 'failed_download'),
         failureReason: reason,
         downloadTaskId: task.id,
@@ -364,18 +353,27 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
 }
 
 export function recoverExpiredDownloadTasks(now = new Date().toISOString()): number {
+  return recoverActiveDownloadTasks(now, false)
+}
+
+export function recoverInterruptedDownloadTasks(now = new Date().toISOString()): number {
+  return recoverActiveDownloadTasks(now, true)
+}
+
+function recoverActiveDownloadTasks(now: string, interrupted: boolean): number {
   const db = getDb()
   createFileTaskSchema(db)
+  const leaseFilter = interrupted ? '' : 'AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?'
+  const leaseParams = interrupted ? [] : [now]
   const expired = db.prepare(`
     SELECT id
     FROM download_tasks
     WHERE status IN ('downloading','tagging')
-      AND lease_expires_at IS NOT NULL
-      AND lease_expires_at <= ?
-  `).all(now) as Array<{ id: string }>
+      ${leaseFilter}
+  `).all(...leaseParams) as Array<{ id: string }>
   if (expired.length === 0) return 0
 
-  const error = '任务租约过期（长时间无进展），已释放下载队列槽位'
+  const error = interrupted ? '任务因服务重启中断' : '任务租约过期（长时间无进展），已释放下载队列槽位'
   const recover = db.prepare(`
     UPDATE download_tasks
     SET status = 'failed',
@@ -388,12 +386,11 @@ export function recoverExpiredDownloadTasks(now = new Date().toISOString()): num
       updated_at = ?
     WHERE id = ?
       AND status IN ('downloading','tagging')
-      AND lease_expires_at IS NOT NULL
-      AND lease_expires_at <= ?
+      ${leaseFilter}
   `)
   let recovered = 0
   for (const task of expired) {
-    const result = recover.run(error, now, task.id, now)
+    const result = recover.run(error, now, task.id, ...leaseParams)
     if (result.changes === 0) continue
     recovered++
     recordTerminalTaskState(task.id, 'failed', error)
@@ -477,8 +474,6 @@ export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
         progress = 0,
         error = NULL,
         error_code = NULL,
-        auto_retry_count = 0,
-        next_attempt_at = NULL,
         retry_count = retry_count + 1,
         lease_owner = NULL,
         lease_expires_at = NULL,
@@ -542,7 +537,6 @@ export function claimDownloadTask(id: string, leaseOwner: string, leaseDurationM
     UPDATE download_tasks
     SET status = 'downloading',
       progress = 0,
-      next_attempt_at = NULL,
       lease_owner = ?,
       lease_expires_at = ?,
       attempt_started_at = ?,

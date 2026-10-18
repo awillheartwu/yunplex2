@@ -11,7 +11,7 @@ import {
   recordFailure,
   resolveFailures,
   setFailureRecordStatus,
-  shouldPauseSourceFailure,
+  shouldIgnoreSourceFailure,
 } from '../../server/lib/tasks/failure-records'
 import { saveRun } from '../../server/lib/run/store'
 import type { TaskRun } from '../../server/lib/job/types'
@@ -317,10 +317,10 @@ describe('failure records', () => {
     })
 
     const policy = getSourceFailurePolicy('source-one')
-    expect(policy.copyrightSongIds).toEqual([43])
+    expect(policy.failuresBySongId[43]).toMatchObject({ failureKind: 'copyright_restricted', status: 'ignored' })
     expect(policy.failuresBySongId[42]).toMatchObject({ occurrenceCount: 3, phase: 'download' })
-    expect(shouldPauseSourceFailure(policy.failuresBySongId[42], 3)).toBe(true)
-    expect(shouldPauseSourceFailure(policy.failuresBySongId[44], 1)).toBe(true)
-    expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 2, copyrightRestricted: 1 })
+    expect(shouldIgnoreSourceFailure(policy.failuresBySongId[42], 3)).toBe(true)
+    expect(shouldIgnoreSourceFailure(policy.failuresBySongId[44], 1)).toBe(true)
+    expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 1, copyrightRestricted: 0 })
   })
 })

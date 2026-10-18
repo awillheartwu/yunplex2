@@ -122,7 +122,7 @@
             <footer class="failure-group__footer">
               <span>{{ failureCanProcess ? group.retryableCount ? `${group.retryableCount} 项可重试` : group.retryUnavailableReason : '保留歌曲明细与关联运行' }}</span>
               <div class="failure-group__actions">
-                <button class="btn btn-ghost btn-sm" type="button" :disabled="failures.loading.value || failures.mutating.value" @click="openFailureGroup(group)">查看歌曲<AppIcon name="chevronRight" :size="14" /></button>
+                <button class="btn btn-ghost btn-sm" type="button" :disabled="failures.loading.value || failures.mutating.value" @click="openFailureGroup(group)">查看明细<AppIcon name="chevronRight" :size="14" /></button>
                 <button v-if="failureCanProcess && group.retryableCount" class="btn btn-secondary btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'retry')">重试 {{ group.retryableCount }} 项</button>
                 <button v-if="failureCanIgnore && group.ignorableCount" class="btn btn-ghost btn-sm" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="mutateFailureGroup(group, 'ignore')">忽略本组 {{ group.ignorableCount }} 项</button>
               </div>
@@ -138,7 +138,7 @@
               <div class="failure-row__title">
                 <strong>{{ record.songName }}</strong>
                 <span>{{ record.artist }}</span>
-                <StatusBadge :status="record.status === 'resolved' ? 'ok' : record.status === 'open' ? 'error' : record.status === 'paused' ? 'warning' : 'idle'" :label="failureStatusTabs.find(item => item.value === record.status)?.label" size="sm" />
+                <StatusBadge :status="record.status === 'resolved' ? 'ok' : record.status === 'open' ? 'error' : 'idle'" :label="failureStatusTabs.find(item => item.value === record.status)?.label" size="sm" />
                 <span class="failure-kind" :class="semanticToneClass(failureKindTone(record.errorCode || record.failureKind))">
                   <AppIcon :name="failureKindIcon(record.errorCode || record.failureKind)" :size="11" />
                   {{ failureKindLabel(record.errorCode || record.failureKind) }}
@@ -146,18 +146,19 @@
               </div>
               <p>{{ failureReasonLabel(record) }}</p>
               <div class="failure-row__meta">
+                <span v-if="failureAttemptLabel(record)">{{ failureAttemptLabel(record) }}</span>
                 <span>{{ record.sourceName || runTypeLabel(record.runType) }}</span>
                 <span>首次 {{ formatTime(record.firstSeenAt) }}</span>
                 <span>最近 {{ formatTime(record.lastSeenAt) }}</span>
-                <span>{{ record.occurrenceCount }} 次</span>
-                <span v-if="record.retryCount > 0">已重试 {{ record.retryCount }} 次</span>
+                <span>累计失败 {{ record.occurrenceCount }} 次</span>
+                <span v-if="record.retryCount > 0">手动重试 {{ record.retryCount }} 次</span>
               </div>
             </div>
             <div class="failure-row__actions">
               <NuxtLink v-if="record.runId" :to="`/task-center/runs/${record.runId}`" class="btn btn-ghost btn-xs">查看运行</NuxtLink>
-              <button v-if="['open', 'paused', 'ignored'].includes(record.status) && isRetryable(record)" class="btn btn-secondary btn-xs failure-row__retry-button" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="retryFailure(record.id)">重试</button>
+              <button v-if="['open', 'ignored'].includes(record.status) && isRetryable(record)" class="btn btn-secondary btn-xs failure-row__retry-button" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="retryFailure(record.id)">重试</button>
               <span
-                v-else-if="['open', 'paused', 'ignored'].includes(record.status)"
+                v-else-if="['open', 'ignored'].includes(record.status)"
                 class="failure-row__retry-tooltip"
                 tabindex="0"
                 :aria-label="`重试不可用：${failureRetryUnavailableReason(record)}`"
@@ -170,8 +171,8 @@
                 >重试</button>
                 <span class="failure-row__tooltip" role="tooltip">{{ failureRetryUnavailableReason(record) }}</span>
               </span>
-              <NuxtLink v-if="record.sourceId && ['open', 'paused', 'ignored'].includes(record.status) && !isRetryable(record)" :to="`/sync-sources/${record.sourceId}`" class="btn btn-ghost btn-xs">查看收藏</NuxtLink>
-              <button v-if="['open', 'paused'].includes(record.status)" class="btn btn-ghost btn-xs" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="ignoreFailure(record.id)">忽略</button>
+              <NuxtLink v-if="record.sourceId && ['open', 'ignored'].includes(record.status) && !isRetryable(record)" :to="`/sync-sources/${record.sourceId}`" class="btn btn-ghost btn-xs">查看收藏</NuxtLink>
+              <button v-if="record.status === 'open'" class="btn btn-ghost btn-xs" type="button" :disabled="failures.mutating.value || failures.loading.value" @click="ignoreFailure(record.id)">忽略</button>
             </div>
           </article>
           <PageNavigator :page="failures.page.value" :page-size="failures.pageSize" :total="failures.total.value" label="异常记录" :loading="failures.loading.value" @change="failures.goToPage" />
@@ -194,7 +195,7 @@ const {
   failureAdvancedFilterCount, failureAdvancedFilterLabel, failureCanClear, failureCanProcess, failureCanIgnore,
   failureEmptyDescription, failureEmptyTitle, failureFilterChips, failureKindFilters,
   failureKindIcon, failureKindLabel, failureKindTone, failureReasonLabel, failureRetryUnavailableReason, failures,
-  failureStatusTabs, failureTypeFilters, formatTime, ignoreFailure, isRetryable,
+  failureStatusTabs, failureTypeFilters, failureAttemptLabel, formatTime, ignoreFailure, isRetryable,
   mutateFailureGroup, onFailureSearch, onTaskCenterTabChange, openFailureGroup: loadFailureGroup, prepareFailureDraftFilters,
   removeFailureFilter, resetFailureDraftFilters, retryFailure,
   runTypeLabel, semanticToneClass, setDraftFailureDate, setFailureStatus, sourceOptionLabel, sourceOptions,

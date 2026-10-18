@@ -65,7 +65,7 @@ export async function resolveTracks(
   cfg: AppConfig,
   dryRun = false,
   identityContext: IdentityContext = {},
-  options: { automaticMediaFallback?: boolean; trustedSongIds?: ReadonlySet<number> } = {},
+  options: { automaticMediaFallback?: boolean; trustedSongIds?: ReadonlySet<number>; ignoredSongIds?: ReadonlySet<number> } = {},
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: ExtraTrack[] }> {
   const playlistTracks = plexPlaylistRatingKey
     ? await getPlaylistTracks(plexPlaylistRatingKey, 99999)
@@ -100,9 +100,23 @@ export async function resolveTracks(
     }
   }
   const directTracks = await getTracksByRatingKeys(targetBindings.flatMap(binding =>
-    binding.plexRatingKey && !trustedBindingIds.has(binding.neteaseSongId) ? [binding.plexRatingKey] : [],
+    binding.plexRatingKey && !trustedBindingIds.has(binding.neteaseSongId) && !options.ignoredSongIds?.has(binding.neteaseSongId) ? [binding.plexRatingKey] : [],
   ))
   for (const [index, song] of yunSongs.entries()) {
+    if (options.ignoredSongIds?.has(song.id)) {
+      const binding = bindingsById.get(song.id)
+      const existing = binding?.status === 'active' && binding.plexRatingKey
+        ? playlistByRatingKey.get(binding.plexRatingKey) : undefined
+      const resolution: TrackResolution = existing && binding
+        ? { ...cachedBindingResolution(song, index, binding, assetsById.get(song.id) ?? null, playlistByRatingKey), resolution: 'ignored_failure' }
+        : { song, neteaseIndex: index, resolution: 'ignored_failure' }
+      if (existing && binding) {
+        usedRatingKeys.add(existing.ratingKey)
+        claimedRatingKeys.set(existing.ratingKey, song.id)
+      }
+      resolutions.push(resolution)
+      continue
+    }
     const mediaPlan = mediaPlans.get(song.id)
     const trustedBinding = trustedBindingIds.has(song.id) ? bindingsById.get(song.id) : undefined
     const trustedAsset = trustedBinding ? assetsById.get(song.id) ?? null : null

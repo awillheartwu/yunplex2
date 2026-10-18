@@ -44,14 +44,14 @@ export const DOMAIN_ERROR_CATALOG: Record<DomainErrorCode, DomainErrorDefinition
   concurrent_operation: { code: 'concurrent_operation', category: 'operation', severity: 'info', retryable: true, label: '任务占用中', userMessage: '已有互斥任务正在运行，请等待完成后重试。' },
   failed_download: { code: 'failed_download', category: 'netease', severity: 'error', retryable: true, label: '下载失败', userMessage: '歌曲下载失败，请重试或查看关联运行获取详情。' },
   failed_tags: { code: 'failed_tags', category: 'media', severity: 'error', retryable: true, label: '元数据失败', userMessage: '音频已下载，但元数据或标签写入未完成。' },
-  failed_plex_match: { code: 'failed_plex_match', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 匹配失败', userMessage: 'Plex 未在重试窗口内识别到媒体文件。' },
+  failed_plex_match: { code: 'failed_plex_match', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 匹配失败', userMessage: 'Plex 未在索引核对窗口内识别到媒体文件。' },
   failed_plex_insert: { code: 'failed_plex_insert', category: 'plex', severity: 'warning', retryable: true, label: 'Plex 更新失败', userMessage: 'Plex 已识别媒体，但未能完成歌单更新。' },
   source_unavailable: { code: 'source_unavailable', category: 'netease', severity: 'warning', retryable: false, label: '音源不可用', userMessage: '网易云未提供可用音源，可能是版权、地区或账号权限限制；本轮保留目标，不自动重试。' },
-  source_missing: { code: 'source_missing', category: 'netease', severity: 'warning', retryable: false, label: '歌曲详情缺失', userMessage: '网易云未返回歌曲详情，可能是歌曲已下架；本轮保留 Plex 歌单，不自动删除。' },
-  invalid_audio: { code: 'invalid_audio', category: 'media', severity: 'error', retryable: false, label: '音频文件损坏', userMessage: '网易云返回的音频文件未通过校验，未保存不完整文件；请稍后重试或忽略。' },
+  source_missing: { code: 'source_missing', category: 'netease', severity: 'warning', retryable: true, label: '歌曲详情缺失', userMessage: '网易云未返回歌曲详情，可能是歌曲已下架；本轮保留 Plex 歌单，不自动删除。' },
+  invalid_audio: { code: 'invalid_audio', category: 'media', severity: 'error', retryable: true, label: '音频文件损坏', userMessage: '网易云返回的音频文件未通过校验，未保存不完整文件；请稍后重试或忽略。' },
   unsupported_format: { code: 'unsupported_format', category: 'media', severity: 'warning', retryable: false, label: '音频格式不支持', userMessage: '网易云只返回 APE/WMA 等不支持的格式，未保存不完整音频。' },
   validation_failed: { code: 'validation_failed', category: 'operation', severity: 'info', retryable: false, label: '请求无效', userMessage: '请求内容无效，请检查输入后重试。' },
-  unknown_error: { code: 'unknown_error', category: 'unknown', severity: 'error', retryable: false, label: '未知错误', userMessage: '操作失败，请查看日志获取诊断信息。' },
+  unknown_error: { code: 'unknown_error', category: 'unknown', severity: 'error', retryable: true, label: '未知错误', userMessage: '操作失败，请查看日志获取诊断信息。' },
 }
 
 const SPECIFIC_MESSAGE_CODES = new Set<DomainErrorCode>([

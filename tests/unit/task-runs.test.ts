@@ -145,7 +145,7 @@ describe('task run store', () => {
     })
   })
 
-  it('returns interrupted manual downloads to pending for the persistent worker', () => {
+  it('records interrupted manual downloads as failures without requeueing them', () => {
     setup()
     createManualDownloadRun({ id: 'batch-interrupted', total: 2, sourceLabel: '两首单曲' })
     const now = new Date().toISOString()
@@ -167,11 +167,11 @@ describe('task run store', () => {
       error: string | null
     }>
     expect(rows).toEqual([
-      { id: 'downloading-one', status: 'pending', progress: 0, error: null },
-      { id: 'tagging-two', status: 'pending', progress: 0, error: null },
+      { id: 'downloading-one', status: 'failed', progress: 0, error: '任务因服务重启中断' },
+      { id: 'tagging-two', status: 'failed', progress: 0, error: '任务因服务重启中断' },
     ])
-    expect(getRun('batch-interrupted')).toMatchObject({ status: 'running' })
-    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(0)
+    expect(getRun('batch-interrupted')).toMatchObject({ status: 'failed' })
+    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(2)
   })
 
   it('keeps source-aware manual download recovery classified as manual_download', () => {
@@ -199,11 +199,11 @@ describe('task run store', () => {
 
     expect(getDb().prepare(`
       SELECT source_id, status FROM download_tasks WHERE song_id = 31
-    `).get()).toEqual({ source_id: 'source-one', status: 'pending' })
-    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(0)
+    `).get()).toEqual({ source_id: 'source-one', status: 'failed' })
+    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(1)
   })
 
-  it('returns interrupted Media Repair Commands to pending without recording a failure', () => {
+  it('records interrupted Media Repair files as failures and keeps post-processing recoverable', () => {
     setup()
     const now = new Date().toISOString()
     createRepairRun({
@@ -230,17 +230,17 @@ describe('task run store', () => {
       SELECT status, progress, error, lease_owner, lease_expires_at
       FROM download_tasks WHERE id = 'repair-task'
     `).get()).toEqual({
-      status: 'pending',
+      status: 'failed',
       progress: 0,
-      error: null,
+      error: '任务因服务重启中断',
       lease_owner: null,
       lease_expires_at: null,
     })
     expect(getRun('repair-interrupted')).toMatchObject({
       status: 'running',
-      summary: '补全资源进行中：成功 0 首，待处理 1 首',
+      summary: '补全资源文件处理完成：成功 0 首，失败 1 首，等待 Plex 刷新',
     })
-    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(0)
+    expect((getDb().prepare('SELECT COUNT(*) AS count FROM failure_records').get() as { count: number }).count).toBe(1)
   })
 
   it('leaves terminal repair downloads recoverable until post-processing runs', () => {
@@ -269,7 +269,7 @@ describe('task run store', () => {
     expect(getRun('repair-postprocess')).toMatchObject({ status: 'running' })
   })
 
-  it('marks an interrupted scheduled convergence as cancelled rather than failed', () => {
+  it('marks an interrupted scheduled convergence as failed', () => {
     setup()
     const startedAt = new Date(Date.now() - 1000).toISOString()
     saveRun({
@@ -299,8 +299,8 @@ describe('task run store', () => {
     recoverInterruptedRuns()
 
     expect(getRun('scheduled-interrupted')).toMatchObject({
-      status: 'cancelled',
-      summary: '服务重启，已交由自动调度重新执行',
+      status: 'failed',
+      summary: '任务因服务重启中断',
     })
   })
 

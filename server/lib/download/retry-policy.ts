@@ -1,9 +1,4 @@
-import { classifyDomainErrorCode, getDomainErrorDefinition } from '../../../shared/domain-errors'
-
-export const MAX_AUTOMATIC_DOWNLOAD_RETRIES = 3
-
 export interface DownloadFailurePolicy {
-  retryable: boolean
   pauseReason?: 'authentication' | 'filesystem'
   cooldownMs?: number
 }
@@ -30,35 +25,19 @@ export function errorSignals(error: unknown): ErrorSignals {
   return { chain, code, message, status }
 }
 
-/** Only transient failures retry automatically; policy failures need a decision. */
+/** Backpressure stops other pending requests; failed tasks wait for the next source sync. */
 export function downloadFailurePolicy(error: unknown): DownloadFailurePolicy {
   const { chain, code, message, status } = errorSignals(error)
   if (/ENOSPC|EACCES|EPERM|EROFS/.test(code) || /磁盘.*(?:满|空间)|空间不足|只读文件系统/.test(message)) {
-    return { retryable: false, pauseReason: 'filesystem' }
+    return { pauseReason: 'filesystem' }
   }
   if (status === 401 || /AUTHENTICATION_FAILED/.test(code)
     || /登录状态|登录.*(?:失效|过期)|未登录|认证失效|cookie.*(?:失效|过期)|unauthori[sz]ed/.test(message)) {
-    return { retryable: false, pauseReason: 'authentication' }
+    return { pauseReason: 'authentication' }
   }
   if (status === 429 || /限流|请求.*频繁|rate.?limit|too many requests/.test(message)) {
     const retryAfter = Number(chain.find(item => item.retryAfterMs)?.retryAfterMs ?? 0)
-    return { retryable: true, cooldownMs: Math.max(30_000, Number.isFinite(retryAfter) ? retryAfter : 0) }
+    return { cooldownMs: Math.max(30_000, Number.isFinite(retryAfter) ? retryAfter : 0) }
   }
-  const errorCode = classifyDomainErrorCode(`${code} ${message}`, 'failed_download')
-  if (!getDomainErrorDefinition(errorCode).retryable) return { retryable: false }
-  if (status === 403 && /NETEASE_REQUEST_FAILED/.test(code)) return { retryable: false }
-  // A signed audio URL may expire. A retry obtains a fresh URL, unlike a Cookie
-  // authentication error which is annotated by the metadata transport.
-  if ([403, 408, 425].includes(status) || (status >= 500 && status < 600)) return { retryable: true }
-  if (status >= 400) return { retryable: false }
-  if (/ECONN|ETIMEDOUT|ENET|EHOST|EAI_AGAIN|UND_ERR|EIO|EAGAIN|EBUSY|EMFILE/.test(code)
-    || /network|fetch failed|socket|连接|超时|timeout|长度不完整|任务租约过期|\beio\b/.test(message)) {
-    return { retryable: true }
-  }
-  return { retryable: false }
-}
-
-export function downloadRetryDelayMs(retry: number, random = Math.random): number {
-  const base = Math.min(60_000, 2_000 * 2 ** Math.max(0, retry - 1))
-  return Math.round(base * (0.8 + random() * 0.4))
+  return {}
 }

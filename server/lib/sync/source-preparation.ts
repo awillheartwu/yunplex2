@@ -9,10 +9,10 @@ import {
 } from '../netease'
 import { loadNeteaseRawSongs, saveNeteaseRawSongs } from '../netease-song-cache'
 import {
+  getSourceFailurePolicy,
   isTerminalFailure,
   type SourceFailurePolicy,
 } from '../tasks/failure-records'
-import type { TrackResolution } from './types'
 
 export interface SourceSongSnapshot {
   songs: NeteaseSong[]
@@ -43,7 +43,9 @@ export async function loadSourceSongSnapshot(input: {
   const summary = await fetchPlaylistSummary(input.playlistId, input.limit, input.cookie)
   const requestedIds = summary.trackIds.map(track => track.id)
   const cachedRaw = loadNeteaseRawSongs(requestedIds)
-  const missingIds = [...new Set(requestedIds.filter(id => !cachedRaw.has(id)))]
+  const failures = getSourceFailurePolicy(input.source.id).failuresBySongId
+  const missingIds = [...new Set(requestedIds.filter(id => !cachedRaw.has(id)
+    && failures[id]?.status !== 'ignored'))]
   const fetched = missingIds.length > 0
     ? await fetchNeteaseSongDetails(missingIds, input.cookie)
     : { songs: [], rawSongs: [] }
@@ -94,68 +96,18 @@ export function resolveSourceSkipState(input: {
   }
 }
 
-/** Plex matches the user ignored or the retry policy already paused. */
-export function resolveIgnoredPlexMatchSongIds(
-  failurePolicy: SourceFailurePolicy,
-  retryPaused = false,
-  retrySongIds: ReadonlySet<number> = new Set(),
-): Set<number> {
-  const result = new Set<number>()
-  for (const [songId, entry] of Object.entries(failurePolicy.failuresBySongId)) {
-    if (entry.failureKind === 'failed_plex_match'
-      && !retrySongIds.has(Number(songId))
-      && (entry.status === 'ignored' || (entry.status === 'paused' && !retryPaused))) {
-      result.add(Number(songId))
-    }
-  }
-  return result
-}
-
-/** Apply known failures only after Plex and local media have been checked. */
-export function applySourceFailureMemory(input: {
-  resolutions: TrackResolution[]
-  failurePolicy: SourceFailurePolicy
-  maxFailures: number
-  retrySongIds?: ReadonlySet<number>
-  redownloadAll: boolean
-  ignoredPlexMatchSongIds?: ReadonlySet<number>
-}): void {
-  const restricted = new Set(input.failurePolicy.copyrightSongIds)
-  for (const resolution of input.resolutions) {
-    if (resolution.plexRatingKey) continue
-    const retryThisSong = input.retrySongIds?.has(resolution.song.id) === true
-    if (resolution.resolution === 'found_on_disk' && input.ignoredPlexMatchSongIds?.has(resolution.song.id)) {
-      resolution.resolution = 'ignored_failure'
-      continue
-    }
-    if (!['needs_download', 'unavailable'].includes(resolution.resolution)) continue
-    const entry = input.failurePolicy.failuresBySongId[resolution.song.id]
-    if (entry?.status === 'ignored' && !retryThisSong) {
-      resolution.resolution = 'ignored_failure'
-      continue
-    }
-    if (input.redownloadAll || retryThisSong) continue
-    if (restricted.has(resolution.song.id)) {
-      resolution.resolution = 'copyright_restricted'
-      continue
-    }
-    if (isTerminalFailure(entry, input.maxFailures)) {
-      resolution.resolution = 'ignored_failure'
-    }
-  }
-}
-
 export function addMissingDetailSongs(
   job: RunBuilder,
   sourceId: string,
   missingSongDetailIds: readonly number[],
+  failurePolicy: SourceFailurePolicy,
 ): void {
   for (const missingSongId of missingSongDetailIds) {
     const [taskSongId] = job.addSongs(sourceId, [{
       songName: `网易云歌曲 #${missingSongId}`,
       artist: '详情未返回',
       album: '未知专辑',
-      status: 'failed_download',
+      status: failurePolicy.failuresBySongId[missingSongId]?.status === 'ignored' ? 'ignored_failure' : 'failed_download',
       neteaseSongId: missingSongId,
     }])
     if (!taskSongId) continue

@@ -32,7 +32,7 @@
             <li v-for="task in files.items.value" :key="task.id" class="activity-song">
               <AppIcon :name="task.status === 'pending' ? 'clock' : task.status === 'tagging' ? 'edit' : 'download'" :size="16" />
               <div class="activity-song__identity"><strong>{{ task.songName }}</strong><span>{{ task.artist || '未知艺人' }}</span></div>
-              <span class="activity-song__state">{{ task.status === 'pending' ? task.nextAttemptAt ? '等待重试' : run.files?.paused ? '已暂停' : '等待下载' : task.status === 'tagging' ? '写入标签' : '下载中' }}</span>
+              <span class="activity-song__state">{{ task.status === 'pending' ? run.files?.paused ? '已暂停' : '等待下载' : task.status === 'tagging' ? '写入标签' : '下载中' }}</span>
               <div v-if="task.status !== 'pending'" class="activity-song__progress"><progress :value="task.progress < 0 ? undefined : percent(task.progress)" max="100" :aria-label="`${task.songName} 文件处理进度`" /><span>{{ task.progress < 0 ? '传输中' : `${percent(task.progress)}%` }}</span></div>
             </li>
           </ul>

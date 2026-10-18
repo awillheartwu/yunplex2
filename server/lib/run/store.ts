@@ -14,6 +14,7 @@ import { getDb } from '../db'
 import { createFileTaskSchema } from '../db/file-task-schema'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { reconcileRunFailures } from '../tasks/failure-records'
+import { recoverInterruptedDownloadTasks } from '../download/queue'
 import { classifyDownloadFailure } from '../sync/download-diagnostics'
 import { projectTaskRunDynamicFields, projectTaskRunStatus, taskRunStatusFilterSql, taskRunsSupportsAwaitingAction } from './status-projection'
 
@@ -659,34 +660,7 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
 
 export function recoverInterruptedRuns(): number {
   const now = new Date().toISOString()
-  const interruptedDownloads = getDb().prepare(`
-    SELECT id, source_id, song_id, song_name, artist,
-      COALESCE(run_id, job_id) AS run_id, status, operation
-    FROM download_tasks
-    WHERE status IN ('downloading','tagging')
-  `).all() as Array<{
-    id: string
-    source_id: string | null
-    song_id: number
-    song_name: string
-    artist: string
-    run_id: string | null
-    status: string
-    operation: string
-  }>
-  if (interruptedDownloads.length > 0) {
-    getDb().prepare(`
-      UPDATE download_tasks
-      SET status = 'pending',
-        progress = 0,
-        error = NULL,
-        lease_owner = NULL,
-        lease_expires_at = NULL,
-        attempt_started_at = NULL,
-        updated_at = ?
-      WHERE status IN ('downloading','tagging')
-    `).run(now)
-  }
+  let changed = recoverInterruptedDownloadTasks(now)
 
   const db = getDb()
   createFileTaskSchema(db)
@@ -700,10 +674,10 @@ export function recoverInterruptedRuns(): number {
     title: '重试中断',
     message: '任务因服务重启中断',
     stage: 'download',
+    code: 'scheduler_interrupted',
   }))
 
   const rows = db.prepare("SELECT id FROM task_runs WHERE status = 'running'").all() as Array<{ id: string }>
-  let changed = interruptedDownloads.length
   for (const row of rows) {
     const run = getRun(row.id)
     if (!run) continue
@@ -748,13 +722,10 @@ export function recoverInterruptedRuns(): number {
       if (synced?.status !== 'running') changed += 1
       continue
     }
-    const automaticallyRetried = run.trigger === 'schedule'
-    run.status = automaticallyRetried ? 'cancelled' : 'failed'
+    run.status = 'failed'
     run.finishedAt = now
     run.durationMs = Math.max(0, Date.now() - new Date(run.startedAt).getTime())
-    run.summary = automaticallyRetried
-      ? '服务重启，已交由自动调度重新执行'
-      : run.summary ? `${run.summary}（服务重启后中断）` : '任务因服务重启中断'
+    run.summary = run.summary ? `${run.summary}（服务重启后中断）` : '任务因服务重启中断'
     for (const step of run.steps) {
       if (step.status === 'running' || step.status === 'pending') {
         step.status = 'cancelled'

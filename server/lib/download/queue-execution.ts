@@ -8,7 +8,7 @@ import {
   DOWNLOAD_TASK_INACTIVITY_TIMEOUT_MS, DOWNLOAD_TASK_LEASE_MS,
   type DownloadTask, type DownloadProcessor, type DownloadProcessorResult, type ProcessDownloadQueueOptions,
 } from './queue'
-import { deferFailedDownloadTask } from './retry-store'
+import { applyDownloadFailureBackpressure } from './retry-store'
 import { withExternalRequestSignal } from '../external-request-context'
 import { clearAudioCache } from './audio-cache'
 import { classifyDownloadError } from '../sync/download-diagnostics'
@@ -183,10 +183,7 @@ export async function executeDownloadTasks(
       } catch (err) {
         const tagError = isTagWriteError(err) ? err : null
         const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
-        if (options.automaticRetries && deferFailedDownloadTask(task, err, leaseOwner)) {
-          emitEvent({ type: 'queue-update', data: { taskId: task.id, status: 'pending', error: msg }, timestamp: new Date().toISOString() })
-          continue
-        }
+        applyDownloadFailureBackpressure(err)
         const updated = updateTaskState(task.id, {
           status: 'failed',
           error: msg,

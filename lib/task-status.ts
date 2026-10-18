@@ -28,7 +28,7 @@ const SONG_STATUS_PRESENTATION: Record<SongStatus, SongStatusPresentation> = {
   failed_plex_match: { label: 'Plex 匹配失败', tone: 'warning', icon: 'warn' },
   failed_plex_insert: { label: 'Plex 插入失败', tone: 'warning', icon: 'warn' },
   copyright_restricted: { label: '版权受限', tone: 'ignored', icon: 'ignored' },
-  ignored_failure: { label: '已暂停重试', tone: 'ignored', icon: 'ignored' },
+  ignored_failure: { label: '已忽略', tone: 'ignored', icon: 'ignored' },
   awaiting_manual_match: { label: '等待手动选择', tone: 'ignored', icon: 'search' },
 }
 

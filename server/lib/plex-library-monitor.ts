@@ -12,7 +12,6 @@ import {
   findChangedPlexRatingKeys,
   parsePlexPathSnapshot,
 } from './sync/playlist-fingerprint'
-import { enqueueIndexedRecovery, findIndexedRecoverySources } from './sync/plex-index-recovery'
 
 const POLL_MS = 60_000
 const PLAYLIST_POLL_MS = 5 * 60_000
@@ -38,7 +37,7 @@ export function getPlexSourceNotice(sourceId: string): PlexSourceNotice | null {
 export function updatePlexLibraryMonitor(): void { current?.update() }
 
 /** Events coalesce into authoritative reads; only the source consumer writes playlists. */
-export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => boolean, wakeWorker: () => void): PlexLibraryMonitor {
+export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => boolean): PlexLibraryMonitor {
   let snapshot = emptySnapshot()
   let configKey = ''
   let configured: AppConfig | null = null
@@ -60,7 +59,6 @@ export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => 
   let mediaHint = false
   let lastProgressEventAt = 0
   const notices = new Map<string, PlexSourceNotice>()
-  const attemptedRecovery = new Map<string, string>()
   const closing = new Set<Promise<void>>()
 
   function publish(type: 'plex-scan-progress' | 'plex-library-change') {
@@ -110,7 +108,7 @@ export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => 
     release()
     sectionKey = null; previousContentAt = null; previousScannedAt = null; previousRefreshing = false
     mediaHint = false; followUpPending = true; lastPlaylistPollAt = 0; nextPollAt = 0; requested++; checked = -1
-    notices.clear(); attemptedRecovery.clear()
+    notices.clear()
     snapshot = { ...emptySnapshot(), section: config.plex.section,
       configured: Boolean(config.plex.server && config.plex.token && config.plex.section) }
     if (snapshot.configured) {
@@ -192,20 +190,6 @@ export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => 
         lastPlaylistPollAt = Date.now()
         followUpPending = false
       }
-      if (config.sync.enabled && !busy()) {
-        const ready = await findIndexedRecoverySources(config, sectionKey, activeSignal)
-        if (busy()) { requested++; return }
-        let queued = false
-        for (const [id, signature] of ready) {
-          if (notices.has(id) || attemptedRecovery.get(id) === signature) continue
-          if (enqueueIndexedRecovery(id, getConfig())) {
-            attemptedRecovery.set(id, signature)
-            queued = true
-          }
-        }
-        for (const id of attemptedRecovery.keys()) if (!ready.has(id)) attemptedRecovery.delete(id)
-        if (queued) { publish('plex-library-change'); wakeWorker() }
-      }
       activeSignal.throwIfAborted()
       if (activeGeneration !== generation) return
       checked = revision
@@ -231,7 +215,7 @@ export function startPlexLibraryMonitor(getConfig: () => AppConfig, busy: () => 
   const timer = setInterval(tick, 5000)
   timer.unref()
   const handle = {
-    update() { update(); attemptedRecovery.clear(); requested++; tick() },
+    update() { update(); requested++; tick() },
     getSnapshot(): PlexLibraryMonitorSnapshot {
       return { ...snapshot, connected: lease?.stream.connected ?? false, scan: snapshot.scan ? { ...snapshot.scan } : null }
     },

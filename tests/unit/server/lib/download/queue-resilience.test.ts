@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { createManualDownloadRun, getRun, recoverInterruptedRuns } from '~~/server/lib/run/store'
-import { enqueueTask, getDownloadTask, getQueueStatus, listPendingDownloadTaskIds, waitForDownloadTasks } from '~~/server/lib/download/queue'
+import { enqueueTask, getDownloadTask, getQueueStatus, listPendingDownloadTaskIds, requeueFailedDownloadTasks, waitForDownloadTasks } from '~~/server/lib/download/queue'
 import { createDownloadWorker, type DownloadWorker } from '~~/server/lib/download/worker'
 import { submitFileTasks } from '~~/server/lib/download/file-task-command'
 import { getDownloadQueueControl, pauseDownloadQueue, resumeDownloadQueue, setRunDownloadPaused } from '~~/server/lib/download/queue-control'
-import { downloadFailurePolicy, MAX_AUTOMATIC_DOWNLOAD_RETRIES } from '~~/server/lib/download/retry-policy'
+import { downloadFailurePolicy } from '~~/server/lib/download/retry-policy'
 
 let directory = '', worker: DownloadWorker | null = null
 beforeEach(() => {
@@ -56,15 +56,15 @@ describe('large persistent download batches', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     await draining
     expect(maximumActive).toBe(3)
-    expect(getQueueStatus()).toMatchObject({ total: 1500, done: 1499, failed: 1, pending: 0 })
+    expect(getQueueStatus()).toMatchObject({ total: 1500, done: 1470, failed: 30, pending: 0 })
     expect(attempts.get(1500)).toBe(1)
-    expect(attempts.get(50)).toBe(2)
-    expect(getRun('batch')).toMatchObject({ status: 'partial', successSongs: 1499, failedSongs: 1 })
-    expect(getRun('second')).toMatchObject({ status: 'partial', successSongs: 1499, failedSongs: 1 })
-    expect(getDb().prepare('SELECT COUNT(*) AS count FROM failure_records WHERE song_id != 1500').get()).toEqual({ count: 0 })
+    expect(attempts.get(50)).toBe(1)
+    expect(getRun('batch')).toMatchObject({ status: 'partial', successSongs: 1470, failedSongs: 30 })
+    expect(getRun('second')).toMatchObject({ status: 'partial', successSongs: 1470, failedSongs: 30 })
+    expect(getDb().prepare('SELECT COUNT(*) AS count FROM failure_records WHERE song_id != 1500').get()).toEqual({ count: 29 })
   }, 120_000)
 
-  it('exhausts a finite retry budget without multiplying failure history', async () => {
+  it('records one failure without retrying inside the download worker', async () => {
     vi.useFakeTimers()
     createManualDownloadRun({ id: 'batch', total: 1, sourceLabel: 'Failing batch' })
     const { taskIds } = submitFileTasks([intent(1)])
@@ -73,29 +73,28 @@ describe('large persistent download batches', () => {
     const draining = worker.wake()
     await vi.advanceTimersByTimeAsync(60_000)
     await draining
-    expect(executions).toBe(1 + MAX_AUTOMATIC_DOWNLOAD_RETRIES)
-    expect(getDownloadTask(taskIds[0]!)).toMatchObject({ status: 'failed', retryCount: 3, autoRetryCount: 3 })
+    expect(executions).toBe(1)
+    expect(getDownloadTask(taskIds[0]!)).toMatchObject({ status: 'failed', retryCount: 0 })
     expect(getDb().prepare('SELECT occurrence_count AS count FROM failure_records').get()).toEqual({ count: 1 })
   })
 
-  it('persists retry delay and resumes it after database reopen', async () => {
+  it('keeps a failed task stopped after database reopen until explicitly requeued', async () => {
     vi.useFakeTimers()
     const task = enqueueTask(intent(1))
     worker = createDownloadWorker({ getConcurrency: () => 1, execute: async () => { throw new Error('network timeout') } })
     void worker.wake()
     await vi.advanceTimersByTimeAsync(1)
-    const pending = getDownloadTask(task.id)!
-    expect(pending).toMatchObject({ status: 'pending', autoRetryCount: 1 })
-    expect(pending.nextAttemptAt).toBeTruthy()
+    expect(getDownloadTask(task.id)).toMatchObject({ status: 'failed', retryCount: 0 })
     await worker.stop()
     closeDb(); initDb(directory); recoverInterruptedRuns()
-    expect(getDownloadTask(task.id)?.nextAttemptAt).toBe(pending.nextAttemptAt)
+    expect(getDownloadTask(task.id)?.status).toBe('failed')
     expect(listPendingDownloadTaskIds()).toEqual([])
+    requeueFailedDownloadTasks([task.id])
     worker = createDownloadWorker({ getConcurrency: () => 1, execute: async value => success(value.songId) })
     const draining = worker.wake()
     await vi.advanceTimersByTimeAsync(10_000)
     await draining
-    expect(getDownloadTask(task.id)).toMatchObject({ status: 'done', autoRetryCount: 1 })
+    expect(getDownloadTask(task.id)).toMatchObject({ status: 'done', retryCount: 1 })
   })
 
   it('shares a rate-limit cooldown and honors Retry-After', async () => {
@@ -112,7 +111,7 @@ describe('large persistent download batches', () => {
     expect(executed).toEqual([1])
     await vi.advanceTimersByTimeAsync(100)
     await draining
-    expect([getDownloadTask(first.id)?.status, getDownloadTask(second.id)?.status]).toEqual(['done', 'done'])
+    expect([getDownloadTask(first.id)?.status, getDownloadTask(second.id)?.status]).toEqual(['failed', 'done'])
   })
 
   it('pauses on authentication or disk failure and preserves pending work for explicit resume', async () => {
@@ -126,11 +125,11 @@ describe('large persistent download batches', () => {
     await worker.wake()
     expect(execute).toHaveBeenCalledTimes(1)
     expect(getDownloadQueueControl()).toMatchObject({ paused: true, reason: 'filesystem' })
-    expect(getDownloadTask(first.id)?.status).toBe('pending')
+    expect(getDownloadTask(first.id)?.status).toBe('failed')
     expect(getDownloadTask(second.id)?.status).toBe('pending')
     fixed = true; resumeDownloadQueue()
     await worker.wake()
-    expect(getQueueStatus()).toMatchObject({ done: 2, pending: 0, failed: 0 })
+    expect(getQueueStatus()).toMatchObject({ done: 1, pending: 0, failed: 1 })
     expect(downloadFailurePolicy(Object.assign(new Error('网易云登录已失效'), { httpStatus: 401 }))).toMatchObject({ pauseReason: 'authentication' })
   })
 

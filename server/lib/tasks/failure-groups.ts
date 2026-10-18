@@ -32,11 +32,12 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
   const recordTotal = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where}`).get(...params) as { count: number }).count
   const rows = db.prepare(`
     SELECT MIN(fr.id) AS id, fr.failure_kind, MIN(fr.failure_reason) AS failure_reason, COUNT(*) AS total,
-      COUNT(DISTINCT COALESCE(CAST(fr.song_id AS TEXT), fr.song_name || ':' || fr.artist)) AS song_count,
+      COUNT(DISTINCT CASE WHEN fr.source_id IS NOT NULL AND fr.song_id IS NULL THEN NULL
+        ELSE COALESCE(CAST(fr.song_id AS TEXT), fr.song_name || ':' || fr.artist) END) AS song_count,
       COUNT(DISTINCT COALESCE(fr.source_id, 'manual')) AS source_count,
       SUM(fr.occurrence_count) AS occurrence_count,
       SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END) AS linked_count,
-      SUM(CASE WHEN fr.status IN ('open','paused') THEN 1 ELSE 0 END) AS ignorable_count,
+      SUM(CASE WHEN fr.status = 'open' THEN 1 ELSE 0 END) AS ignorable_count,
       MIN(fr.first_seen_at) AS first_seen_at, MAX(fr.last_seen_at) AS last_seen_at
     ${grouped}
     ORDER BY MAX(fr.last_seen_at) DESC, MIN(fr.id)
@@ -54,7 +55,7 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
       label: definition.label, total: row.total, songCount: row.song_count, sourceCount: row.source_count,
       occurrenceCount: row.occurrence_count, retryableCount: row.linked_count,
       ignorableCount: row.ignorable_count,
-      retryUnavailableReason: '缺少可重新处理的歌曲或文件任务，请查看关联运行',
+      retryUnavailableReason: '缺少可重新处理的来源、歌曲或文件任务，请查看关联运行',
       firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at,
     }
   })

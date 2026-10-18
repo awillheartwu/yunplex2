@@ -195,7 +195,7 @@ const stateOptions: Array<{ value: MatchOverviewState; label: string }> = [
   { value: 'binding_stale', label: '关联失效' },
   { value: 'copyright_restricted', label: '版权受限' },
   { value: 'sync_failed', label: '同步失败' },
-  { value: 'retry_paused', label: '暂停重试' },
+  { value: 'retry_paused', label: '已忽略' },
 ]
 const mediaStateOptions = computed(() => [
   { value: '', label: '全部状态' },

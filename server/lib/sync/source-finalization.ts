@@ -7,6 +7,7 @@ import type { PlaylistSource } from '../playlist/types'
 import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
 import { isAwaitingManualSongStatus } from '../../../lib/media-status-projection'
 import { hasActiveMediaCorrectionsForSource } from './media-corrections'
+import { recordFailure, resolveFailures } from '../tasks/failure-records'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -21,9 +22,10 @@ export function recordSourceConvergenceFailure(input: {
   dryRun: boolean
 }): string {
   const { source, job, context, error, stage, dryRun } = input
-  const cause = describeDomainError(error)
-  const message = cause.diagnostic ?? '未知错误'
   const sourceSteps = job.getRun().steps.filter(step => step.context?.sourceId === source.id)
+  const stepCode = sourceSteps.filter(step => step.status === 'failed').at(-1)?.error?.code
+  const cause = describeDomainError(error, stepCode)
+  const message = cause.diagnostic ?? '未知错误'
   const activeStep = sourceSteps.find(step => step.status === 'running')
   if (activeStep || !sourceSteps.some(step => step.status === 'failed' && step.error?.message === message)) {
     const stepId = activeStep?.id ?? job.startStep('source_error', '来源同步失败', { context })
@@ -35,6 +37,8 @@ export function recordSourceConvergenceFailure(input: {
     })
   }
   if (!dryRun) {
+    recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
+      runId: job.getId(), runType: 'sync', failureKind: cause.code, failureReason: message })
     updateSource(source.id, {
       lastSyncedAt: new Date().toISOString(),
       lastStatus: 'failed',
@@ -130,6 +134,7 @@ export async function finalizeSourceConvergence(
   }
 
   if (!dryRun) {
+    resolveFailures({ sourceId: source.id, songName: '来源同步' })
     const sourceUpdate: Parameters<typeof updateSource>[1] = {
       lastSyncedAt: new Date().toISOString(),
       lastStatus: sourceStatus,
@@ -138,7 +143,7 @@ export async function finalizeSourceConvergence(
         : [
             failCount > 0 ? `${failCount} 首失败` : '',
             restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '',
-            ignoredCount > 0 ? `${ignoredCount} 首已暂停重试` : '',
+            ignoredCount > 0 ? `${ignoredCount} 首已忽略` : '',
             awaitingManualCount > 0 ? `${awaitingManualCount} 首暂未加入同步` : '',
             !skipRemoveExtra && preservedExtraCount > 0 ? `${preservedExtraCount} 首保留待确认` : '',
           ].filter(Boolean).join('，'),
@@ -165,7 +170,7 @@ export async function finalizeSourceConvergence(
   const parts = [`${succCount} 新增成功`, `${existingCount} 已存在`]
   if (failCount > 0) parts.push(`${failCount} 失败`)
   if (restrictedCount > 0) parts.push(`${restrictedCount} 版权受限`)
-  if (ignoredCount > 0) parts.push(`${ignoredCount} 已暂停重试`)
+  if (ignoredCount > 0) parts.push(`${ignoredCount} 已忽略`)
   if (awaitingManualCount > 0) parts.push(`${awaitingManualCount} 等待手动选择`)
   if (!skipRemoveExtra && preservedExtraCount > 0) parts.push(`${preservedExtraCount} 保留待确认`)
 

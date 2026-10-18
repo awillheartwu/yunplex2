@@ -25,7 +25,6 @@ interface ApplySourceDownloadsInput {
   stepContext: JobStepContext
   dryRun: boolean
   redownloadManagedMedia: boolean
-  retrySongIds?: ReadonlySet<number>
   takeOverExternal: boolean
   splitArtists: (artists: { name: string }[]) => [string, string]
   throwIfCancelled: () => void
@@ -88,6 +87,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
   if (redownloadManagedMedia) {
     const bindings = getActiveSongIdentityBindings(resolutions.map(item => item.song.id))
     for (const resolution of resolutions) {
+      if (resolution.resolution === 'ignored_failure') continue
       if (downloadPlans.get(resolution.song.id)?.mode === 'replace') continue
       const decision = decideRedownload({
         asset: getLocalMediaAsset(resolution.song.id),
@@ -135,7 +135,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         album: resolution.song.album.name,
         quality: config.netease.quality,
         jobId: job.getId(),
-        retryFailed: input.retrySongIds?.has(resolution.song.id),
+        retryFailed: true,
         operation,
         ...(targetPath ? { targetPath } : {}),
         executionIntent: {

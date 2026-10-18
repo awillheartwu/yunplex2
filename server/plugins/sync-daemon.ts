@@ -81,7 +81,6 @@ export default defineNitroPlugin((nitroApp) => {
   const plexMonitor = startPlexLibraryMonitor(
     () => readConfig(),
     () => svc.getState().isRunning || isRepairRunning() || sourceRequestsBusy(),
-    () => { void worker.runOnce() },
   )
 
   const leaseSweep = setInterval(() => {

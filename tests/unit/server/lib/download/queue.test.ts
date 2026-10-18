@@ -230,7 +230,7 @@ describe('download queue cleanup', () => {
     })
   })
 
-  it('writes manual terminal failures but leaves source failures to Source Convergence', async () => {
+  it('records manual and source file failures immediately', async () => {
     setupDb()
     const manualTask = enqueueTask({
       songId: 20,
@@ -257,6 +257,10 @@ describe('download queue cleanup', () => {
     `).all()).toEqual([{
       song_id: 20,
       source_id: null,
+      failure_kind: 'failed_download',
+    }, {
+      song_id: 21,
+      source_id: 'source-one',
       failure_kind: 'failed_download',
     }])
   })

@@ -16,5 +16,5 @@ export function canRetryFailure(input: {
   songId: number | null
   downloadTaskIds: readonly string[]
 }): boolean {
-  return input.status !== 'resolved' && Boolean((input.sourceId && input.songId) || input.downloadTaskIds.length)
+  return input.status !== 'resolved' && Boolean(input.sourceId || input.downloadTaskIds.length)
 }

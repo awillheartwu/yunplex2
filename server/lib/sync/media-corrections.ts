@@ -32,7 +32,7 @@ export function hasActiveMediaCorrectionsForSource(sourceId: string): boolean {
       AND NOT EXISTS (
         SELECT 1 FROM failure_records failure
         WHERE failure.source_id = occurrence.source_id AND failure.song_id = correction.song_id
-          AND failure.status IN ('paused', 'ignored')
+          AND failure.status = 'ignored'
           AND failure.last_seen_at >= correction.updated_at
       )
     LIMIT 1

@@ -81,8 +81,6 @@ describe('current database schema baseline', () => {
       'operation',
       'target_path',
       'execution_intent_json',
-      'auto_retry_count',
-      'next_attempt_at',
     ]))
     expect(downloadIndexes.map(index => index.name)).toEqual(expect.arrayContaining([
       'idx_download_tasks_active_idempotency',

@@ -61,13 +61,12 @@ export function createFileTaskSchema(db: Database.Database): void {
     `)
 
     const taskColumns = new Set((db.prepare('PRAGMA table_info(download_tasks)').all() as Array<{ name: string }>).map(row => row.name))
-    for (const [name, definition] of Object.entries({ auto_retry_count: 'INTEGER NOT NULL DEFAULT 0', next_attempt_at: 'TEXT', error_code: 'TEXT' })) {
-      if (!taskColumns.has(name)) db.exec(`ALTER TABLE download_tasks ADD COLUMN ${name} ${definition}`)
-    }
+    if (!taskColumns.has('error_code')) db.exec('ALTER TABLE download_tasks ADD COLUMN error_code TEXT')
     const linkColumns = db.prepare('PRAGMA table_info(run_file_tasks)').all() as Array<{ name: string }>
     if (!linkColumns.some(column => column.name === 'paused')) db.exec('ALTER TABLE run_file_tasks ADD COLUMN paused INTEGER NOT NULL DEFAULT 0')
     if (taskColumns.has('status') && taskColumns.has('created_at')) {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_download_tasks_ready ON download_tasks(status,next_attempt_at,created_at)')
+      db.exec('DROP INDEX IF EXISTS idx_download_tasks_ready')
+      db.exec('CREATE INDEX idx_download_tasks_ready ON download_tasks(status,created_at)')
     }
 
     if (existing && !hasLifecycleForeignKeys) {

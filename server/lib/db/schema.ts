@@ -123,8 +123,6 @@ export function createSchema(db: Database.Database): void {
       error           TEXT,
       error_code      TEXT,
       retry_count     INTEGER NOT NULL DEFAULT 0,
-      auto_retry_count INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
       job_id          TEXT,
       run_id          TEXT,
       idempotency_key TEXT,
@@ -485,6 +483,16 @@ export function createSchema(db: Database.Database): void {
       `)
     })()
   }
+  const failureColumns = new Set((db.prepare('PRAGMA table_info(failure_records)').all() as Array<{ name: string }>).map(column => column.name))
+  if (!failureColumns.has('attempt_count')) {
+    db.exec('ALTER TABLE failure_records ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0')
+    db.exec("UPDATE failure_records SET attempt_count = occurrence_count WHERE status != 'resolved'")
+  }
+  if (!failureColumns.has('ignore_reason')) {
+    db.exec('ALTER TABLE failure_records ADD COLUMN ignore_reason TEXT')
+    db.exec("UPDATE failure_records SET ignore_reason = 'manual' WHERE status = 'ignored'")
+  }
+  db.exec("UPDATE failure_records SET status = 'ignored', ignore_reason = 'automatic', ignored_at = COALESCE(ignored_at, last_seen_at) WHERE status = 'paused'")
   upgradeSourceRequests(db)
   const downloadTaskColumns = db.prepare("PRAGMA table_info('download_tasks')").all() as Array<{ name: string }>
   if (!downloadTaskColumns.some(column => column.name === 'operation')) {

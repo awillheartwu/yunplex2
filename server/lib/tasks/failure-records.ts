@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { SongStatus, TaskRun, TaskRunType } from '../job/types'
-import { getDb } from '../db'
+import { getDb, readConfigFromDb } from '../db'
 import { dateEndBoundary, dateStartBoundary } from '../date-range'
 import {
   failureFingerprint,
@@ -15,11 +15,11 @@ import { canRetryFailure } from '../../../shared/failure-handling'
 
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
-export type FailureRecordStatus = 'open' | 'paused' | 'ignored' | 'resolved'
+export type FailureRecordStatus = 'open' | 'ignored' | 'resolved'
 export type FailureRecordStatusFilter = FailureRecordStatus | 'all'
 
 export const RETRYABLE_FAILURE_SQL = `fr.status != 'resolved' AND (
-  (fr.source_id IS NOT NULL AND fr.song_id IS NOT NULL)
+  fr.source_id IS NOT NULL
   OR TRIM(COALESCE(fr.download_task_ids, '')) <> ''
 )`
 
@@ -47,6 +47,9 @@ export interface FailureRecord {
   ignoredAt: string | null
   resolvedAt: string | null
   occurrenceCount: number
+  attemptCount: number
+  attemptLimit: number
+  ignoreReason: 'automatic' | 'manual' | null
   retryCount: number
   downloadTaskIds: string[]
 }
@@ -71,12 +74,12 @@ export interface FailureRecordFilter {
 export interface SourceFailurePolicyEntry {
   failureKind: string
   occurrenceCount: number
-  status: 'open' | 'ignored' | 'paused'
+  attemptCount: number
+  status: 'open' | 'ignored'
   phase: 'download' | 'tags' | 'plex_match' | 'plex_insert'
 }
 
 export interface SourceFailurePolicy {
-  copyrightSongIds: number[]
   failuresBySongId: Record<number, SourceFailurePolicyEntry>
 }
 
@@ -138,6 +141,9 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
     ignoredAt: row.ignored_at === null ? null : String(row.ignored_at),
     resolvedAt: row.resolved_at === null ? null : String(row.resolved_at),
     occurrenceCount: Number(row.occurrence_count),
+    attemptCount: Number(row.attempt_count),
+    attemptLimit: readConfigFromDb().sync.maxFailureAttempts,
+    ignoreReason: row.ignore_reason === 'automatic' || row.ignore_reason === 'manual' ? row.ignore_reason : null,
     retryCount: Number(row.retry_count),
     downloadTaskIds,
   }
@@ -171,6 +177,7 @@ export function recordFailure(input: {
   const runType = run?.type || input.runType
   const occurredAt = input.occurredAt || new Date().toISOString()
   const definition = resolveDomainErrorDefinition(input.failureKind, input.failureReason)
+  const maxAttempts = readConfigFromDb().sync.maxFailureAttempts
   if (SPECIFIC_FAILURE_KINDS.has(definition.code)) {
     // Reclassifying a legacy failure must not leave a second open record for
     // the same song. Older generic kinds are superseded by the specific cause.
@@ -187,16 +194,25 @@ export function recordFailure(input: {
   const failureReason = (sanitizeDiagnosticMessage(input.failureReason) || '').replace(/，耗时 \d+ ms/g, '')
   const normalizedInput = { ...input, failureKind: definition.code }
   const fingerprint = failureFingerprint(normalizedInput)
-  const occurrenceKey = input.runId
-    ? `run:${input.runId}`
-    : input.downloadTaskId
-      ? `download:${input.downloadTaskId}`
-      : `event:${occurredAt}:${normalizeFailureIdentityPart(input.failureReason)}`
+  const downloadAttempt = input.downloadTaskId
+    ? db.prepare('SELECT retry_count FROM download_tasks WHERE id = ?').get(input.downloadTaskId) as { retry_count: number } | undefined
+    : undefined
+  const occurrenceKey = downloadAttempt
+    ? `download:${input.downloadTaskId}:${downloadAttempt.retry_count}`
+    : input.runId
+      ? `run:${input.runId}`
+      : input.downloadTaskId
+        ? `download:${input.downloadTaskId}`
+        : `event:${occurredAt}:${normalizeFailureIdentityPart(input.failureReason)}`
   const occurrenceResult = db.prepare(`
     INSERT OR IGNORE INTO failure_occurrences (fingerprint, occurrence_key, occurred_at)
     VALUES (?, ?, ?)
   `).run(fingerprint, occurrenceKey, occurredAt)
   const isNewOccurrence = occurrenceResult.changes > 0
+  if (downloadAttempt && input.runId) {
+    db.prepare('INSERT OR IGNORE INTO failure_occurrences (fingerprint, occurrence_key, occurred_at) VALUES (?, ?, ?)')
+      .run(fingerprint, `run:${input.runId}`, occurredAt)
+  }
   const existing = db.prepare('SELECT * FROM failure_records WHERE fingerprint = ?').get(fingerprint) as Record<string, unknown> | undefined
   if (existing) {
     const current = rowToRecord(existing)
@@ -204,10 +220,10 @@ export function recordFailure(input: {
     const lastSeenAt = occurredAt > current.lastSeenAt ? occurredAt : current.lastSeenAt
     const taskIds = new Set(current.downloadTaskIds)
     if (input.downloadTaskId) taskIds.add(input.downloadTaskId)
-    const status = current.status === 'ignored'
+    const attemptCount = current.attemptCount + (isNewOccurrence ? 1 : 0)
+    const autoIgnore = isNewOccurrence && (!definition.retryable || attemptCount >= maxAttempts)
+    const status = current.status === 'ignored' || autoIgnore
       ? 'ignored'
-      : current.status === 'paused'
-        ? 'paused'
       : current.status === 'resolved' && !isNewOccurrence
         ? 'resolved'
         : 'open'
@@ -218,7 +234,8 @@ export function recordFailure(input: {
         run_id = ?, run_type = ?, failure_reason = ?, status = ?,
         first_seen_at = ?, last_seen_at = ?,
         resolved_at = CASE WHEN ? THEN NULL ELSE resolved_at END,
-        occurrence_count = ?, download_task_ids = ?
+        occurrence_count = ?, download_task_ids = ?, attempt_count = ?,
+        ignore_reason = ?, ignored_at = CASE WHEN ? = 'ignored' THEN COALESCE(ignored_at, ?) ELSE NULL END
       WHERE fingerprint = ?
     `).run(
       input.songId ?? null,
@@ -235,6 +252,10 @@ export function recordFailure(input: {
       isNewOccurrence ? 1 : 0,
       current.occurrenceCount + (isNewOccurrence ? 1 : 0),
       [...taskIds].join(','),
+      attemptCount,
+      status === 'ignored' ? current.ignoreReason ?? 'automatic' : null,
+      status,
+      occurredAt,
       fingerprint,
     )
   } else {
@@ -243,8 +264,8 @@ export function recordFailure(input: {
         id, fingerprint, subject_key, song_id, song_name, artist, source_id,
         source_name, run_id, run_type, failure_kind, failure_reason, status,
         first_seen_at, last_seen_at, ignored_at, resolved_at,
-        occurrence_count, retry_count, download_task_ids
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, NULL, NULL, ?, 0, ?)
+        occurrence_count, retry_count, download_task_ids, attempt_count, ignore_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, ?, 1, ?)
     `).run(
       randomUUID(),
       fingerprint,
@@ -258,10 +279,13 @@ export function recordFailure(input: {
       runType,
       definition.code,
       failureReason,
+      !definition.retryable || maxAttempts <= 1 ? 'ignored' : 'open',
       occurredAt,
       occurredAt,
+      !definition.retryable || maxAttempts <= 1 ? occurredAt : null,
       1,
       input.downloadTaskId || null,
+      !definition.retryable || maxAttempts <= 1 ? 'automatic' : null,
     )
   }
   return rowToRecord(db.prepare('SELECT * FROM failure_records WHERE fingerprint = ?').get(fingerprint) as Record<string, unknown>)
@@ -285,8 +309,8 @@ export function resolveFailures(input: {
   }
   const result = getDb().prepare(`
     UPDATE failure_records
-    SET status = 'resolved', resolved_at = ?, ignored_at = NULL
-    WHERE subject_key = ? AND status IN ('open','paused') AND last_seen_at <= ?${kindClause}
+    SET status = 'resolved', resolved_at = ?, ignored_at = NULL, attempt_count = 0, ignore_reason = NULL
+    WHERE subject_key = ? AND status = 'open' AND last_seen_at <= ?${kindClause}
   `).run(...params)
   return result.changes
 }
@@ -304,6 +328,15 @@ export function reconcileRunFailures(run: TaskRun): void {
           resolvedAt: run.finishedAt || new Date().toISOString(),
         })
       }
+      const fileFailure = ['failed_download', 'failed_tags', 'copyright_restricted'].includes(song.status)
+        ? getDb().prepare(`SELECT task.id FROM download_tasks task
+            LEFT JOIN run_file_tasks caller ON caller.task_id = task.id AND caller.run_id = ?
+            WHERE task.song_id = ? AND task.status = 'failed'
+              AND (caller.run_id IS NOT NULL OR COALESCE(task.run_id, task.job_id) = ?)
+              AND COALESCE(caller.source_id, task.source_id, '') = ?
+            ORDER BY task.updated_at DESC LIMIT 1`)
+          .get(run.id, song.neteaseSongId ?? null, run.id, song.sourceId ?? '') as { id: string } | undefined
+        : undefined
       recordFailure({
         songId: song.neteaseSongId,
         songName: song.songName,
@@ -315,6 +348,7 @@ export function reconcileRunFailures(run: TaskRun): void {
         failureKind: song.error?.code ?? song.status,
         failureReason: song.error?.message || song.error?.title || song.status,
         occurredAt: run.finishedAt || new Date().toISOString(),
+        downloadTaskId: fileFailure?.id,
       })
     } else if (song.status === 'success' || song.status === 'skipped_existing') {
       resolveFailures({
@@ -328,6 +362,13 @@ export function reconcileRunFailures(run: TaskRun): void {
   }
 }
 
+export function getSourceFailureStatus(sourceId: string): 'open' | 'ignored' | null {
+  const row = getDb().prepare(`SELECT status FROM failure_records WHERE source_id = ? AND song_id IS NULL
+    AND status IN ('open', 'ignored') ORDER BY status = 'open' ASC LIMIT 1`)
+    .get(sourceId) as { status: 'open' | 'ignored' } | undefined
+  return row?.status ?? null
+}
+
 function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['phase'] {
   if (failureKind === 'failed_tags') return 'tags'
   if (failureKind === 'failed_plex_match') return 'plex_match'
@@ -338,10 +379,10 @@ function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['pha
 export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   // A newly approved replacement can proceed without deleting older failure history.
   const rows = getDb().prepare(`
-    SELECT song_id, failure_kind, occurrence_count, last_seen_at, status
+    SELECT song_id, failure_kind, occurrence_count, attempt_count, last_seen_at, status
     FROM failure_records
     WHERE source_id = ?
-      AND status IN ('open', 'ignored', 'paused')
+      AND status IN ('open', 'ignored')
       AND song_id IS NOT NULL
       AND failure_kind != 'ignored_failure'
       AND NOT EXISTS (
@@ -350,40 +391,38 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
           AND correction.status IN ('pending', 'ready')
           AND correction.updated_at > failure_records.last_seen_at
       )
-    ORDER BY last_seen_at DESC
+    ORDER BY status = 'ignored' DESC, last_seen_at DESC
   `).all(sourceId) as Array<{
     song_id: number
     failure_kind: string
     occurrence_count: number
+    attempt_count: number
     last_seen_at: string
-    status: 'open' | 'ignored' | 'paused'
+    status: 'open' | 'ignored'
   }>
-  const copyrightSongIds = new Set<number>()
   const failuresBySongId: Record<number, SourceFailurePolicyEntry> = {}
 
   for (const row of rows) {
-    if (row.failure_kind === 'copyright_restricted') {
-      copyrightSongIds.add(row.song_id)
-    }
     if (failuresBySongId[row.song_id]) continue
     failuresBySongId[row.song_id] = {
       failureKind: row.failure_kind,
       occurrenceCount: row.occurrence_count,
+      attemptCount: row.attempt_count,
       status: row.status,
       phase: phaseForFailureKind(row.failure_kind),
     }
   }
 
-  return { copyrightSongIds: [...copyrightSongIds], failuresBySongId }
+  return { failuresBySongId }
 }
 
-export function shouldPauseSourceFailure(
+export function shouldIgnoreSourceFailure(
   entry: SourceFailurePolicyEntry | undefined,
   maxFailures: number,
 ): boolean {
-  if (!entry) return false
+  if (!entry || entry.attemptCount === 0) return false
   return !resolveDomainErrorDefinition(entry.failureKind).retryable
-    || (maxFailures > 0 && entry.occurrenceCount >= maxFailures)
+    || (maxFailures > 0 && entry.attemptCount >= maxFailures)
 }
 
 /** Whether this failure is known/terminal and must not force another full pass. */
@@ -392,27 +431,27 @@ export function isTerminalFailure(
   maxFailures: number,
 ): boolean {
   if (!entry) return false
-  if (entry.status === 'ignored' || entry.status === 'paused') return true
-  return shouldPauseSourceFailure(entry, maxFailures)
+  if (entry.status === 'ignored') return true
+  return shouldIgnoreSourceFailure(entry, maxFailures)
 }
 
-/** Move exhausted automatic failures to the paused state without hiding them. */
-export function pauseExhaustedFailures(sourceId: string, maxFailures: number): number {
+/** Stop automatic processing at the configured limit; only an explicit retry reopens it. */
+export function ignoreExhaustedFailures(sourceId: string, maxFailures: number): number {
   const rows = getDb().prepare(`
-    SELECT id, failure_kind, occurrence_count
+    SELECT id, failure_kind, occurrence_count, attempt_count
     FROM failure_records
     WHERE source_id = ? AND status = 'open'
-  `).all(sourceId) as Array<{ id: string; failure_kind: string; occurrence_count: number }>
-  const update = getDb().prepare("UPDATE failure_records SET status = 'paused', ignored_at = NULL WHERE id = ? AND status = 'open'")
-  let paused = 0
+  `).all(sourceId) as Array<{ id: string; failure_kind: string; occurrence_count: number; attempt_count: number }>
+  const update = getDb().prepare("UPDATE failure_records SET status = 'ignored', ignore_reason = 'automatic', ignored_at = ? WHERE id = ? AND status = 'open'")
+  let ignored = 0
   for (const row of rows) {
     const phase = phaseForFailureKind(row.failure_kind)
-    const exhausted = shouldPauseSourceFailure({
-      failureKind: row.failure_kind, phase, occurrenceCount: row.occurrence_count, status: 'open',
+    const exhausted = shouldIgnoreSourceFailure({
+      failureKind: row.failure_kind, phase, occurrenceCount: row.occurrence_count, attemptCount: row.attempt_count, status: 'open',
     }, maxFailures)
-    if (exhausted && update.run(row.id).changes > 0) paused++
+    if (exhausted && update.run(new Date().toISOString(), row.id).changes > 0) ignored++
   }
-  return paused
+  return ignored
 }
 
 export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
@@ -424,7 +463,7 @@ export function getSourceFailureCounts(sourceId: string): SourceFailureCounts {
         ELSE 0
       END) AS actionable
     FROM failure_records
-    WHERE source_id = ? AND status IN ('open', 'paused')
+    WHERE source_id = ? AND status = 'open'
   `).get(sourceId) as { actionable: number | null; copyright_restricted: number | null }
   return {
     actionable: Number(row.actionable || 0),
@@ -436,7 +475,7 @@ export function buildFailureRecordQuery(filter: FailureRecordFilter = {}) {
   const conditions: string[] = []
   const params: unknown[] = []
   if (filter.status === 'all') {
-    conditions.push("fr.status IN ('open','paused','ignored','resolved')")
+    conditions.push("fr.status IN ('open','ignored','resolved')")
   } else {
     conditions.push('fr.status = ?')
     params.push(filter.status || 'open')
@@ -512,7 +551,7 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   const counts = db.prepare(`
     SELECT COUNT(*) AS total,
       COALESCE(SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END), 0) AS retryable_total,
-      COALESCE(SUM(CASE WHEN fr.status IN ('open', 'paused') THEN 1 ELSE 0 END), 0) AS ignorable_total
+      COALESCE(SUM(CASE WHEN fr.status = 'open' THEN 1 ELSE 0 END), 0) AS ignorable_total
     ${from} ${where}
   `).get(...params) as { total: number; retryable_total: number; ignorable_total: number }
   const rows = db.prepare(`
@@ -549,10 +588,12 @@ export function setFailureRecordStatus(ids: string[], status: FailureRecordStatu
   const result = getDb().prepare(`
     UPDATE failure_records
     SET status = ?,
+      attempt_count = CASE WHEN ? = 'open' OR ? = 'resolved' THEN 0 ELSE attempt_count END,
+      ignore_reason = CASE WHEN ? = 'ignored' THEN 'manual' ELSE NULL END,
       ignored_at = CASE WHEN ? = 'ignored' THEN ? ELSE NULL END,
       resolved_at = CASE WHEN ? = 'resolved' THEN ? WHEN ? = 'open' THEN NULL ELSE resolved_at END
     WHERE id IN (${ids.map(() => '?').join(',')})
-  `).run(status, status, now, status, now, status, ...ids)
+  `).run(status, status, status, status, status, now, status, now, status, ...ids)
   return result.changes
 }
 

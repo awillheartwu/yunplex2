@@ -108,7 +108,7 @@ export function useFailures() {
           ignorableTotal.value = response.ignorableTotal
           for (const item of response.items) {
             knownRetryable.set(item.id, item.retryable)
-            knownIgnorable.set(item.id, item.status === 'open' || item.status === 'paused')
+            knownIgnorable.set(item.id, item.status === 'open')
           }
         }
         page.value = requested

@@ -110,7 +110,7 @@ describe('source schedule store', () => {
     expect(getDb().prepare('SELECT status FROM source_sync_queue').get()).toEqual({ status: 'cancelled' })
   })
 
-  it('recovers interrupted work after restart and makes it claimable again', () => {
+  it('records interrupted sync work and waits for the next schedule after restart', () => {
     const now = new Date('2026-08-28T00:00:00.000Z')
     insertSource('source-1', now)
     reconcileSourceSchedules(config(), now)
@@ -119,10 +119,11 @@ describe('source schedule store', () => {
 
     const restartedAt = new Date(now.getTime() + 1000)
     expect(recoverInterruptedSourceRequests(restartedAt)).toBe(1)
-    expect(claimNextSourceRequest('new-worker', restartedAt)?.id).toBe(first?.id)
+    expect(claimNextSourceRequest('new-worker', restartedAt)).toBeNull()
+    expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id = ?').get(first!.id)).toEqual({ status: 'failed' })
   })
 
-  it('reclaims an expired lease created after the new worker startup check', () => {
+  it('records an expired sync lease without immediately retrying it', () => {
     const now = new Date('2026-08-28T00:00:00.000Z')
     insertSource('source-1', now)
     reconcileSourceSchedules(config(), now)
@@ -133,8 +134,8 @@ describe('source schedule store', () => {
     reconcileSourceSchedules(config(), afterExpiry)
 
     const recovered = claimNextSourceRequest('new-worker', afterExpiry)
-    expect(recovered?.id).toBe(stale?.id)
-    expect(recovered?.attempts).toBe(2)
+    expect(recovered).toBeNull()
+    expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id = ?').get(stale!.id)).toEqual({ status: 'failed' })
   })
 
   it('records failure without starving the next queued source', () => {

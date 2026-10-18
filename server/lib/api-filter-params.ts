@@ -13,7 +13,7 @@ const JOB_STATUSES = new Set<JobStatus>(['running', 'awaiting_action', 'success'
 const SOURCE_TYPES = new Set<NonNullable<PlaylistSourceFilter['type']>>(['playlist', 'album'])
 const SOURCE_STATUSES = new Set<PlaylistSource['lastStatus']>(['idle', 'success', 'partial', 'failed'])
 const FAILURE_KINDS = new Set([...Object.keys(DOMAIN_ERROR_CATALOG), 'ignored_failure'])
-const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatusFilter>(['all', 'open', 'paused', 'ignored', 'resolved'])
+const FAILURE_RECORD_STATUSES = new Set<FailureRecordStatusFilter>(['all', 'open', 'ignored', 'resolved'])
 
 function firstValue(value: unknown): QueryValue {
   if (Array.isArray(value)) return firstValue(value[0])

@@ -22,8 +22,9 @@ import { observePlaylistSourceTracks } from './match-management-store'
 import { captureBindingVersions } from './identity-coordinator'
 import {
   getSourceFailurePolicy,
+  getSourceFailureStatus,
   isTerminalFailure,
-  pauseExhaustedFailures,
+  ignoreExhaustedFailures,
 } from '../tasks/failure-records'
 import { CancellationError, createInitialState, STAGE_LABELS, type SyncRunOptions } from './service-state'
 import { buildSyncRunSummary } from './service-summary'
@@ -45,9 +46,7 @@ import { getMediaCorrection } from './media-corrections'
 import { plexRecoveryConfigFingerprint } from './plex-index-recovery'
 import {
   addMissingDetailSongs,
-  applySourceFailureMemory,
   loadSourceSongSnapshot,
-  resolveIgnoredPlexMatchSongIds,
   resolveSourceSkipState,
 } from './source-preparation'
 import { detectPlexPathDrift, resolveTrustedSongSnapshot } from './source-snapshot'
@@ -184,6 +183,15 @@ export function getSyncService(getConfig: () => AppConfig) {
         })
 
         try {
+          if (!dryRun) ignoreExhaustedFailures(source.id, cfg.sync.maxFailureAttempts)
+          const sourceFailureStatus = getSourceFailureStatus(source.id)
+          if (!dryRun && sourceFailureStatus === 'ignored') {
+            const ignoredStep = job.startStep('source_ignored', '来源同步错误已忽略', { context: stepContext })
+            job.finishStep(ignoredStep, 'skipped', '本轮未重新执行，请在异常处理中重试该来源错误。')
+            updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastJobId: job.getId() })
+            partialSources++
+            continue
+          }
           // ── Step 1: Fetch playlist ──
           const s1 = job.startStep('fetch_playlist', `获取${isAlbum ? '专辑' : '歌单'}: ${playlistName}`, {
             context: stepContext,
@@ -360,6 +368,9 @@ export function getSyncService(getConfig: () => AppConfig) {
             )
           const missingMediaPolicyEnabled = !plexRecoveryOnly && mode !== 'redownload_managed'
           const failurePolicy = getSourceFailurePolicy(source.id)
+          const ignoredSongIds = new Set(Object.entries(failurePolicy.failuresBySongId)
+            .filter(([id, failure]) => isTerminalFailure(failure, cfg.sync.maxFailureAttempts) && !retrySongIds.has(Number(id)))
+            .map(([id]) => Number(id)))
           const missingMediaWorkDetected = missingMediaPolicyEnabled
             && [...planMissingMedia(yunSongs, cfg, { validateAudio: false }).values()].some(plan =>
               !['manual_exempt', 'reuse_managed', 'wait_manual'].includes(plan.disposition)
@@ -392,7 +403,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           )
 
           if (rebuildMatch && !dryRun) {
-            markAutomaticSongIdentityBindingsStale(currentIdOrder, {
+            markAutomaticSongIdentityBindingsStale(currentIdOrder.filter(id => !ignoredSongIds.has(id)), {
               sourceId: source.id,
               runId: job.getId(),
             })
@@ -408,6 +419,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             })
           if (
             det.skipEntirely
+            && sourceFailureStatus !== 'open'
             && !hasActionableFailures
             && !unresolvedPartialState
             && unresolvedMissingDetailIds.length === 0
@@ -430,7 +442,8 @@ export function getSyncService(getConfig: () => AppConfig) {
           }
 
           // Pure reorder: skip download, just reorder Plex playlist
-          if (!plexRecoveryOnly && det.isPureReorder && !det.needFullCompare && missingSongDetailIds.length === 0) {
+          if (!plexRecoveryOnly && sourceFailureStatus !== 'open' && Object.keys(failurePolicy.failuresBySongId).length === 0
+            && det.isPureReorder && !det.needFullCompare && missingSongDetailIds.length === 0) {
             const reordered = await tryApplyPureSourceReorder({
               source,
               songs: yunSongs,
@@ -456,12 +469,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             }
           }
 
-          // ── Step 2a: Load Plex retry state without removing target identities ──
-          const ignoredPlexMatchSongIds = resolveIgnoredPlexMatchSongIds(failurePolicy,
-            !retrySourceFailures && (modePolicy.forceFullCompare || effectiveSettings.forceFullCompare || det.autoForce || plexRecoveryOnly),
-            retrySongIds)
-
-          // ── Step 2b: Reconcile (tiered lookup: DB → Plex → disk → download) ──
+          // ── Step 2: Reconcile (tiered lookup: DB → Plex → disk → download) ──
           setStage('comparing')
           const forceFullVerification = isAlbum || plexRecoveryOnly || modePolicy.forceFullCompare
             || effectiveSettings.forceFullCompare || source.requiresMatchReconcile
@@ -482,6 +490,7 @@ export function getSyncService(getConfig: () => AppConfig) {
               automaticMediaFallback: missingMediaPolicyEnabled,
               requireExistingPlaylist: plexRecoveryOnly,
               trustedSongIds,
+              ignoredSongIds,
             },
           )
           throwIfCancelled()
@@ -504,7 +513,7 @@ export function getSyncService(getConfig: () => AppConfig) {
             neteaseIndex,
           }))
           job.addSongs(source.id, allSongs)
-          addMissingDetailSongs(job, source.id, missingSongDetailIds)
+          addMissingDetailSongs(job, source.id, missingSongDetailIds, failurePolicy)
 
           if (!dryRun) {
             recordSourceComparison(source.id, {
@@ -512,18 +521,6 @@ export function getSyncService(getConfig: () => AppConfig) {
               plexFingerprint: observedPlexFingerprint,
             })
           }
-
-          // Failure memory is applied only after Plex/path/identity lookup. A
-          // song already present in Plex remains a normal target even when a
-          // past download attempt was restricted or exhausted.
-          applySourceFailureMemory({
-            resolutions,
-            failurePolicy,
-            maxFailures: cfg.sync.maxFailureAttempts,
-            retrySongIds,
-            redownloadAll,
-            ignoredPlexMatchSongIds,
-          })
 
           // Update job song statuses from TrackResolution results
           for (const r of resolutions) {
@@ -584,7 +581,6 @@ export function getSyncService(getConfig: () => AppConfig) {
             stepContext,
             dryRun,
             redownloadManagedMedia: redownloadAll,
-            retrySongIds,
             takeOverExternal,
             splitArtists,
             throwIfCancelled,
@@ -672,7 +668,7 @@ export function getSyncService(getConfig: () => AppConfig) {
   if (!dryRun) {
     saveSyncRun(finishedJob)
     for (const source of sources) {
-      pauseExhaustedFailures(source.id, globalConfig.sync.maxFailureAttempts)
+      ignoreExhaustedFailures(source.id, globalConfig.sync.maxFailureAttempts)
     }
   }
 

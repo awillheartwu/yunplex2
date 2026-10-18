@@ -34,7 +34,9 @@ export function buildSyncRunSummary(params: {
     return `${summaryPrefix}：${sourceCount} 个源，${counts.length > 0 ? counts.join('，') : '没有可处理歌曲'}`
   }
   const unchangedCount = job.steps.filter(step => step.type === 'unchanged').length
+  const ignoredSourceCount = job.steps.filter(step => step.type === 'source_ignored').length
   const counts = [
+    ignoredSourceCount > 0 ? (ignoredSourceCount === sourceCount ? '已忽略' : `${ignoredSourceCount} 个源已忽略`) : '',
     unchangedCount > 0 ? (unchangedCount === sourceCount ? '无需变更' : `${unchangedCount} 个源无需变更`) : '',
     job.successSongs > 0 ? `新增 ${job.successSongs} 首` : '',
     job.skippedSongs > 0 ? `已存在 ${job.skippedSongs} 首` : '',

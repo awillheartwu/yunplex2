@@ -14,12 +14,18 @@ export interface RetryTarget {
   downloadTaskIds?: readonly string[]
 }
 
-/** Retry means one new attempt for the selected songs, using their current media. */
+/** Explicit retries reopen only the selected targets and start a fresh attempt budget. */
 export function retryTargets(targets: readonly RetryTarget[]) {
   const result = getDb().transaction(() => {
     const sourceSongs = new Map<string, Set<number>>()
+    const sourceFailures = new Set<string>()
     const fileTaskIds = new Set<string>()
     for (const target of targets) {
+      if (target.sourceId && !target.songId) {
+        sourceFailures.add(target.sourceId)
+        if (!sourceSongs.has(target.sourceId)) sourceSongs.set(target.sourceId, new Set())
+        continue
+      }
       if (target.sourceId && target.songId) {
         const membership = getDb()
           .prepare(
@@ -62,10 +68,13 @@ export function retryTargets(targets: readonly RetryTarget[]) {
     const failureIds = new Set<string>()
     for (const [sourceId, songIds] of sourceSongs) {
       const ids = [...songIds]
+      // Source-level errors are prerequisites for retrying any selected song in that source.
+      const scope = ['song_id IS NULL',
+        ids.length ? `song_id IN (${ids.map(() => '?').join(',')})` : '0 = 1'].join(' OR ')
       const rows = getDb()
         .prepare(
           `SELECT id FROM failure_records WHERE source_id = ?
-        AND song_id IN (${ids.map(() => '?').join(',')}) AND status IN ('open','paused','ignored')`,
+        AND (${scope}) AND status IN ('open','ignored')`,
         )
         .all(sourceId, ...ids) as { id: string }[]
       for (const row of rows) failureIds.add(row.id)
@@ -73,13 +82,13 @@ export function retryTargets(targets: readonly RetryTarget[]) {
     for (const task of requeued) {
       const rows = getDb()
         .prepare(
-          `SELECT id FROM failure_records WHERE status IN ('open','paused','ignored')
+          `SELECT id FROM failure_records WHERE status IN ('open','ignored')
         AND INSTR(',' || COALESCE(download_task_ids, '') || ',', ',' || ? || ',') > 0`,
         )
         .all(task.id) as { id: string }[]
       for (const row of rows) failureIds.add(row.id)
     }
-    const count = [...sourceSongs.values()].reduce((sum, songs) => sum + songs.size, 0) + requeued.length
+    const count = [...sourceSongs.values()].reduce((sum, songs) => sum + songs.size, 0) + sourceFailures.size + requeued.length
     if (!count) throw new Error('所选问题没有可重新处理的当前歌曲或失败文件任务，请刷新后重试')
     setFailureRecordStatus([...failureIds], 'open')
     incrementFailureRetries([...failureIds])
