@@ -11,7 +11,7 @@
 
     <div class="activity-run__content">
       <p class="activity-run__stage" :aria-live="state === 'waiting' ? 'off' : 'polite'">{{ activityStage(run) }}</p>
-      <p v-if="state === 'waiting' || run.type === 'source_initialization'" class="activity-run__summary">{{ runSummaryLabel(run.summary) }}</p>
+      <p v-if="state === 'waiting' || run.type === 'source_initialization'" class="activity-run__summary">{{ runSummaryLabel(run.summary, '', run.status) }}</p>
       <template v-if="state !== 'waiting'">
         <ol v-if="phases.length" class="activity-run__phases" aria-label="当前同步阶段">
           <li v-for="(phase, index) in phases" :key="phase.label" :class="`activity-run__phase--${phase.status}`" :aria-current="phase.current ? 'step' : undefined">

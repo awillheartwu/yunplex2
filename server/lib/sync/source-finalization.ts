@@ -1,4 +1,6 @@
 import type { RunBuilder } from '../run/builder'
+import type { JobStepContext } from '../job/types'
+import { describeDomainError } from '../domain-error'
 import { getPlaylistUpdatedAt } from '../plex-client'
 import { updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
@@ -8,6 +10,39 @@ import { hasActiveMediaCorrectionsForSource } from './media-corrections'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
+}
+
+export function recordSourceConvergenceFailure(input: {
+  source: PlaylistSource
+  job: RunBuilder
+  context: JobStepContext
+  error: unknown
+  stage: string
+  dryRun: boolean
+}): string {
+  const { source, job, context, error, stage, dryRun } = input
+  const cause = describeDomainError(error)
+  const message = cause.diagnostic ?? '未知错误'
+  const sourceSteps = job.getRun().steps.filter(step => step.context?.sourceId === source.id)
+  const activeStep = sourceSteps.find(step => step.status === 'running')
+  if (activeStep || !sourceSteps.some(step => step.status === 'failed' && step.error?.message === message)) {
+    const stepId = activeStep?.id ?? job.startStep('source_error', '来源同步失败', { context })
+    job.failStep(stepId, cause.label, {
+      title: cause.label,
+      message,
+      stage,
+      code: cause.code,
+    })
+  }
+  if (!dryRun) {
+    updateSource(source.id, {
+      lastSyncedAt: new Date().toISOString(),
+      lastStatus: 'failed',
+      lastError: message,
+      lastJobId: job.getId(),
+    })
+  }
+  return message
 }
 
 export interface SourceConvergenceResult {

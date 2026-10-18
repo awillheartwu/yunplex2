@@ -76,7 +76,8 @@ export function runStatusLabel(status: JobStatus): string {
   return '已取消'
 }
 
-export function runSummaryLabel(summary: string, fallback = ''): string {
+export function runSummaryLabel(summary: string, fallback = '', status?: JobStatus): string {
+  if (status === 'failed' && summary.includes('无需变更')) return '同步失败，请查看详情'
   return presentRunSummary(summary || fallback)
 }
 

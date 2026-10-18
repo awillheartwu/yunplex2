@@ -306,7 +306,7 @@ const badgeStatus = computed(() => props.job.sourceRequestStatus === 'pending' ?
 const displayStatusLabel = computed(() => props.job.sourceRequestStatus === 'pending' ? '等待执行' : runStatusLabel(props.job.status))
 const displaySummary = computed(() => props.job.awaitingSourceSync
   ? '下载完成，待同步'
-  : runSummaryLabel(props.job.summary, typeIdentity.value.description))
+  : runSummaryLabel(props.job.summary, typeIdentity.value.description, props.job.status))
 const typeIdentity = computed(() => runTypeIdentity(props.job.type))
 const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))

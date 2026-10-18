@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="run-card__results" aria-label="运行结果">
-      <span class="run-card__total">共 {{ run.totalSongs }} 项</span>
+      <span class="run-card__total">{{ run.status === 'failed' && run.totalSongs === 0 ? '本轮未完成核对' : `共 ${run.totalSongs} 项` }}</span>
       <span
         v-for="item in visibleResults"
         :key="item.key"
@@ -55,7 +55,7 @@ const badgeStatus = computed(() => props.run.sourceRequestStatus === 'pending' ?
 const displayStatusLabel = computed(() => props.run.sourceRequestStatus === 'pending' ? '等待执行' : runStatusLabel(props.run.status))
 const displaySummary = computed(() => props.run.awaitingSourceSync
   ? '下载完成，待同步'
-  : runSummaryLabel(props.run.summary, `${runTypeLabel(props.run.type)}运行`).split('；', 1)[0])
+  : runSummaryLabel(props.run.summary, `${runTypeLabel(props.run.type)}运行`, props.run.status).split('；', 1)[0])
 const visibleResults = computed(() => runResultItems(props.run as TaskRunSummary & { warnings: number }).filter(item => item.count > 0))
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

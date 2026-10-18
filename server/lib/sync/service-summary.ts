@@ -1,5 +1,6 @@
 import type { SyncJob } from '../job/types'
 import type { SyncMode } from './service-state'
+import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
 
 export function buildSyncRunSummary(params: {
   job: SyncJob
@@ -15,6 +16,14 @@ export function buildSyncRunSummary(params: {
         ? '[预览]'
         : ''
   if (mode === 'preview') return `${summaryPrefix} ${sourceCount} 个歌单源`.trim()
+  if (job.status === 'failed' && job.totalSongs === 0) {
+    const failures = job.steps.flatMap(step => {
+      if (step.status !== 'failed' || !step.error) return []
+      const cause = resolveDomainErrorDefinition(step.error.code, step.error.message)
+      return [cause.code === 'unknown_error' ? '同步失败，请查看详情' : cause.label]
+    })
+    return `${sourceCount} 个源，${[...new Set(failures)].join('、') || '同步失败，请查看详情'}`
+  }
   if (mode === 'redownload_managed') {
     const counts = [
       job.successSongs > 0 ? `重新下载 ${job.successSongs} 首` : '',

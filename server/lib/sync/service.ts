@@ -5,7 +5,7 @@ import { checkCookie, clearAlbumCache, setArtistAliases } from '../netease'
 import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
 import { saveSyncRun } from '../run/store'
-import type { SongStatus } from '../job/types'
+import type { SongStatus, StepError } from '../job/types'
 import { projectStaticResolutionStatus } from '../../../lib/media-status-projection'
 import {
   getEnabledSources, getSource, listSources,
@@ -35,7 +35,7 @@ import {
   serializeOrderedSnapshot,
 } from './playlist-fingerprint'
 import { planMissingMedia } from './missing-media-policy'
-import { finalizeSourceConvergence } from './source-finalization'
+import { finalizeSourceConvergence, recordSourceConvergenceFailure } from './source-finalization'
 import { applySourceDownloads } from './source-downloads'
 import { reconcilePlexPlaylist } from './source-plex-reconciliation'
 import { tryApplyPureSourceReorder } from './source-pure-reorder'
@@ -193,7 +193,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           const cookieCheck = await checkCookie(cfg.netease.cookie)
           if (!cookieCheck.valid) {
             const title = cookieCheck.networkError ? '网易云连接失败' : 'Cookie 验证失败'
-            const err = { title, message: cookieCheck.networkError ? '网易云服务暂时不可用，请检查网络后重试' : '网易云 Cookie 已失效，请重新获取并更新配置', stage: 'fetch_playlist' }
+            const err: StepError = { title, message: cookieCheck.networkError ? '网易云服务暂时不可用，请检查网络后重试' : '网易云 Cookie 已失效，请重新获取并更新配置', stage: 'fetch_playlist', code: cookieCheck.networkError ? 'netease_unavailable' : 'authentication_failed' }
             job.failStep(s1, title, err)
             throw new Error(err.message)
           }
@@ -651,15 +651,8 @@ export function getSyncService(getConfig: () => AppConfig) {
     } catch (err) {
       if (err instanceof CancellationError) throw err
 
-      const message = err instanceof Error ? err.message : '未知错误'
+      const message = recordSourceConvergenceFailure({ source, job, context: stepContext, error: err, stage: state.currentStage, dryRun })
       log('error', `歌单「${source.name}」同步失败: ${message}`)
-      if (!dryRun) {
-        updateSource(source.id, {
-          lastSyncedAt: new Date().toISOString(),
-          lastStatus: 'failed',
-          lastError: message,
-        })
-      }
       totalFailed++
       failedSources++
     }
