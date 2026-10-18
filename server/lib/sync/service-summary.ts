@@ -24,14 +24,15 @@ export function buildSyncRunSummary(params: {
     ].filter(Boolean)
     return `${summaryPrefix}：${sourceCount} 个源，${counts.length > 0 ? counts.join('，') : '没有可处理歌曲'}`
   }
+  const unchangedCount = job.steps.filter(step => step.type === 'unchanged').length
   const counts = [
+    unchangedCount > 0 ? (unchangedCount === sourceCount ? '无需变更' : `${unchangedCount} 个源无需变更`) : '',
     job.successSongs > 0 ? `新增 ${job.successSongs} 首` : '',
     job.skippedSongs > 0 ? `已存在 ${job.skippedSongs} 首` : '',
     job.removedSongs > 0 ? `移除 ${job.removedSongs} 首` : '',
     job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
     job.warnings > 0 ? `${job.warnings} 首需关注` : '',
   ].filter(Boolean)
-  const unchanged = job.steps.filter(step => step.type === 'unchanged').map(step => step.message)
-  const detail = [counts.join('，'), ...unchanged].filter(Boolean).join('；') || `无需变更（目标 ${job.totalSongs} 首）`
+  const detail = counts.join('，') || `无需变更（目标 ${job.totalSongs} 首）`
   return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，${detail}`
 }

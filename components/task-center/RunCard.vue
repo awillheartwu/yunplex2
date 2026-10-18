@@ -55,7 +55,7 @@ const badgeStatus = computed(() => props.run.sourceRequestStatus === 'pending' ?
 const displayStatusLabel = computed(() => props.run.sourceRequestStatus === 'pending' ? '等待执行' : runStatusLabel(props.run.status))
 const displaySummary = computed(() => props.run.awaitingSourceSync
   ? '下载完成，待同步'
-  : runSummaryLabel(props.run.summary, `${runTypeLabel(props.run.type)}运行`))
+  : runSummaryLabel(props.run.summary, `${runTypeLabel(props.run.type)}运行`).split('；', 1)[0])
 const visibleResults = computed(() => runResultItems(props.run as TaskRunSummary & { warnings: number }).filter(item => item.count > 0))
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -95,8 +95,8 @@ function formatTime(value: string) {
 .run-card__icon--download { color: var(--run-download); }
 .run-card__icon--repair { color: var(--run-repair); }
 .run-card__body { min-width: 0; }
-.run-card__heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.run-card__heading h3 { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.run-card__heading { display: flex; align-items: center; gap: var(--space-2); }
+.run-card__heading h3 { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-card__heading > span { flex: none; }
 .run-card__meta {
   display: flex;
