@@ -28,10 +28,15 @@
       </div>
     </section>
 
-    <section v-if="failedSongs.length > 0" class="section-card run-detail__errors" role="alert">
+    <section v-if="failedSongs.length > 0 || job.currentFailures?.length" class="section-card run-detail__errors" :class="`run-detail__errors--${currentFailureStatus}`" :role="currentFailureStatus === 'open' ? 'alert' : 'status'">
       <span class="run-detail__error-icon"><AppIcon name="warn" :size="22" /></span>
       <div class="run-detail__error-copy">
-        <strong>{{ failedSongs.length }} 首歌曲需要处理</strong>
+        <strong>{{ currentFailureTitle }}</strong>
+        <div v-if="job.currentFailures?.length" class="run-detail__failure-states">
+          <StatusBadge v-if="currentFailureCounts.open" status="error" :label="`当前待处理 ${currentFailureCounts.open} 项`" />
+          <StatusBadge v-if="currentFailureCounts.ignored" status="warning" :label="`当前已忽略 ${currentFailureCounts.ignored} 项`" />
+          <StatusBadge v-if="currentFailureCounts.resolved" status="ok" :label="`当前已解决 ${currentFailureCounts.resolved} 项`" />
+        </div>
         <ul>
           <li v-for="item in failureSummaries.slice(0, 2)" :key="item.message">
             <p>{{ item.message }}</p>
@@ -39,11 +44,13 @@
           </li>
         </ul>
         <p v-if="job.status === 'running'" class="run-detail__error-note">任务仍在执行后续步骤，当前进度见下方时间线。</p>
-        <p v-else class="run-detail__error-note">运行结果保留本次失败；异常处理显示这些歌曲目前的处理状态。</p>
+        <p v-else-if="currentFailureStatus === 'ignored'" class="run-detail__error-note">已忽略的问题不再自动处理，可到异常处理手动重试；下方保留本次失败的历史原因。</p>
+        <p v-else-if="job.currentFailures?.length" class="run-detail__error-note">下方保留本次失败的历史原因，当前处理状态显示在上方。</p>
+        <p v-else class="run-detail__error-note">这里保留本次失败结果；当前处理状态见异常处理。</p>
       </div>
       <div class="run-detail__error-actions">
         <NuxtLink :to="{ path: '/task-center', query: { tab: 'failures', failureRun: job.id, failureStatus: 'all' } }" class="btn btn-soft btn-sm">查看异常处理<AppIcon name="arrowRight" :size="14" /></NuxtLink>
-        <button class="btn btn-ghost btn-sm" type="button" @click="showFailedSongs">查看本次失败</button>
+        <button v-if="failedSongs.length" class="btn btn-ghost btn-sm" type="button" @click="showFailedSongs">查看本次失败</button>
       </div>
     </section>
 
@@ -163,6 +170,7 @@
             v-for="song in filteredSongs"
             :key="song.id"
             :song="song"
+            :failure-state="failureStateForSong(song)"
             :expanded="expandedSong === song.id"
             :retrying="retryingSongs.has(song.id)"
             @toggle="expandedSong = expandedSong === song.id ? null : song.id"
@@ -204,6 +212,7 @@
               v-for="song in group.songs"
               :key="song.id"
               :song="song"
+              :failure-state="failureStateForSong(song)"
               :expanded="expandedSong === song.id"
               :retrying="retryingSongs.has(song.id)"
               @toggle="expandedSong = expandedSong === song.id ? null : song.id"
@@ -234,6 +243,7 @@
 
 <script setup lang="ts">
 import type { TaskRun, SongTask } from '~~/server/lib/job/types'
+import type { RunFailureHandlingState } from '~~/shared/failure-handling'
 import { sseSubscribe } from '~~/composables/sse'
 import {
   formatRunDuration,
@@ -257,7 +267,7 @@ import {
 } from '~~/lib/task-status'
 
 const props = defineProps<{ job: TaskRun }>()
-defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; refresh: [] }>()
 
 const api = useApi()
 const expandedSong = ref<string | null>(null)
@@ -311,6 +321,33 @@ const typeIdentity = computed(() => runTypeIdentity(props.job.type))
 const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))
 const failedSongs = computed(() => props.job.songs.filter(song => isFailedSongStatus(song.status)))
+const currentFailureCounts = computed(() => {
+  const counts = { open: 0, ignored: 0, resolved: 0 }
+  for (const failure of props.job.currentFailures ?? []) counts[failure.status]++
+  return counts
+})
+const currentFailureStatus = computed(() => currentFailureCounts.value.open ? 'open'
+  : currentFailureCounts.value.ignored ? 'ignored' : currentFailureCounts.value.resolved ? 'resolved' : 'open')
+const currentFailureTitle = computed(() => {
+  if (currentFailureCounts.value.open) return `${currentFailureCounts.value.open} 项异常待处理`
+  if (currentFailureCounts.value.ignored) return currentFailureCounts.value.resolved ? '当前无待处理异常' : '本次运行的异常已全部忽略'
+  if (currentFailureCounts.value.resolved) return '本次运行的异常已全部解决'
+  return `本次运行有 ${failedSongs.value.length} 首失败`
+})
+const currentFailureBySong = computed(() => {
+  const states = new Map<string, RunFailureHandlingState>()
+  const priority = { open: 0, ignored: 1, resolved: 2 }
+  for (const failure of props.job.currentFailures ?? []) {
+    if (failure.songId === null) continue
+    const key = `${failure.sourceId ?? ''}:${failure.songId}`
+    const previous = states.get(key)
+    if (!previous || priority[failure.status] < priority[previous.status]) states.set(key, failure)
+  }
+  return states
+})
+function failureStateForSong(song: SongTask) {
+  return currentFailureBySong.value.get(`${song.sourceId ?? ''}:${song.neteaseSongId}`)
+}
 const failureSummaries = computed(() => {
   const groups = new Map<string, { message: string; names: string[] }>()
   for (const song of failedSongs.value) {
@@ -449,6 +486,7 @@ async function handleRetry(song: SongTask) {
     } else {
       await api.post(`/runs/${props.job.id}/retry-song`, { songId: song.id })
     }
+    emit('refresh')
   } catch {
     // API feedback already reports the failure.
   } finally {
@@ -463,6 +501,7 @@ async function handleRetryAll(sourceId: string) {
   retryingSources.value = new Set(retryingSources.value)
   try {
     await api.post(`/playlist-sources/${sourceId}/retry-failed`)
+    emit('refresh')
   } catch {
     retryingSources.value.delete(sourceId)
     retryingSources.value = new Set(retryingSources.value)
@@ -478,6 +517,7 @@ onMounted(() => {
     const { stage } = data as Record<string, unknown>
     if (stage === 'idle') {
       retryingSources.value = new Set()
+      emit('refresh')
     }
   }))
 })
@@ -492,6 +532,11 @@ onUnmounted(() => {
 .run-detail__error-icon{display:flex;align-items:center;justify-content:center;flex:none;width:2.5rem;height:2.5rem;border-radius:var(--radius-md);background:var(--danger-soft);color:var(--danger)}
 .run-detail__error-copy{min-width:0;flex:1;color:var(--text-primary)}
 .run-detail__error-copy>strong{font-size:var(--text-md)}
+.run-detail__failure-states{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-2)}
+.run-detail__errors--ignored{border-left-color:var(--warning);background:linear-gradient(100deg,var(--warning-soft),transparent 65%),var(--bg-surface)}
+.run-detail__errors--ignored .run-detail__error-icon{background:var(--warning-soft);color:var(--warning)}
+.run-detail__errors--resolved{border-left-color:var(--success);background:linear-gradient(100deg,var(--success-soft),transparent 65%),var(--bg-surface)}
+.run-detail__errors--resolved .run-detail__error-icon{background:var(--success-soft);color:var(--success)}
 .run-detail__errors ul{display:grid;gap:var(--space-2_5);list-style:none;padding:0;margin:var(--space-2_5) 0}
 .run-detail__errors li p{color:var(--text-primary);font-size:var(--text-sm)}
 .run-detail__errors li span,.run-detail__error-note{color:var(--text-secondary);font-size:var(--text-xs)}

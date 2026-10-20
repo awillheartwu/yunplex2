@@ -37,7 +37,7 @@
           重试分析
         </button>
       </div>
-      <JobDetail :job="run" @back="navigateTo('/task-center?tab=runs')" />
+      <JobDetail :job="run" @back="navigateTo('/task-center?tab=runs')" @refresh="fetchRun" />
     </template>
   </div>
 </template>

@@ -6,7 +6,7 @@ interface ReorderFailureRunUpdater {
 }
 
 export interface ReorderFailureTargets {
-  ratingKeyToSongId?: Map<string, string>
+  ratingKeyToSongIds?: Map<string, string[]>
   playlistItemIdToRatingKey?: Map<number, string>
   playlistItemIdToRemovedSongId?: Map<number, string>
 }
@@ -33,44 +33,49 @@ export function markPlexReorderFailures(
   const markedSongIds = new Set<string>()
 
   for (const failure of failures) {
-    const songId = resolveFailureSongId(failure, targets)
-    if (!songId || markedSongIds.has(songId)) continue
-
-    job.updateSong(songId, {
-      status: 'failed_plex_insert',
-      phase: 'plex_insert',
-      error: {
-        title: describeFailureTitle(failure),
-        message: failure.message,
-        stage: 'plex_insert',
-        context: {
-          action: failure.action,
-          ratingKey: failure.ratingKey,
-          playlistItemId: failure.playlistItemId,
+    for (const songId of resolveFailureSongIds(failure, targets)) {
+      if (markedSongIds.has(songId)) continue
+      job.updateSong(songId, {
+        status: 'failed_plex_insert',
+        phase: 'plex_insert',
+        error: {
+          title: describeFailureTitle(failure),
+          message: failure.message,
+          stage: 'plex_insert',
+          context: {
+            action: failure.action,
+            ratingKey: failure.ratingKey,
+            playlistItemId: failure.playlistItemId,
+          },
         },
-      },
-    })
-    markedSongIds.add(songId)
+      })
+      markedSongIds.add(songId)
+    }
   }
 
   return markedSongIds.size
 }
 
-function resolveFailureSongId(failure: ReorderFailure, targets: ReorderFailureTargets): string | undefined {
+function resolveFailureSongIds(failure: ReorderFailure, targets: ReorderFailureTargets): string[] {
+  if (failure.action === 'remove' && failure.playlistItemId) {
+    const removedSongId = targets.playlistItemIdToRemovedSongId?.get(failure.playlistItemId)
+    if (removedSongId) return [removedSongId]
+  }
+
   if (failure.ratingKey) {
-    const songId = targets.ratingKeyToSongId?.get(failure.ratingKey)
-    if (songId) return songId
+    const songIds = targets.ratingKeyToSongIds?.get(failure.ratingKey)
+    if (songIds?.length) return songIds
   }
 
   if (failure.playlistItemId) {
     const removedSongId = targets.playlistItemIdToRemovedSongId?.get(failure.playlistItemId)
-    if (removedSongId) return removedSongId
+    if (removedSongId) return [removedSongId]
 
     const ratingKey = targets.playlistItemIdToRatingKey?.get(failure.playlistItemId)
-    if (ratingKey) return targets.ratingKeyToSongId?.get(ratingKey)
+    if (ratingKey) return targets.ratingKeyToSongIds?.get(ratingKey) ?? []
   }
 
-  return undefined
+  return []
 }
 
 function describeFailureTitle(failure: ReorderFailure): string {

@@ -89,7 +89,7 @@ describe('source initialization analysis hard gate', () => {
       ['found_in_plex_library', '100'], ['found_in_plex_library', '100'],
     ])
     const plan = buildReconciliationPlan({ targets: resolutions.map(item => ({ neteaseSongId: item.song.id, plexRatingKey: item.plexRatingKey, matchTrace: item.matchTrace })), currentItems: [] })
-    expect(plan.targetOrder).toEqual(['100', '100'])
+    expect(plan.targetOrder).toEqual(['100'])
     expect(plan.hasIncompleteTargetOrder).toBe(false)
   })
 

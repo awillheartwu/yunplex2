@@ -14,7 +14,7 @@ export function deferredInitializationGroups(initializationId: string): Deferred
     { key: 'needs_review', tiers: ['possible', 'ambiguous'], label: '需要核对的歌曲尚未安排', explanation: '采用当前排序的第一个候选，不因艺人或版本差异改成下载。' },
     { key: 'no_candidate', tiers: ['unmatched'], label: '未自动匹配的歌曲', explanation: '有候选就采用第一项，没有候选的才安排下载。' },
     { key: 'metadata_missing', tiers: ['metadata_missing'], label: '网易云歌曲信息不完整', explanation: '会尝试重新获取歌曲信息并下载，仍不可用的歌曲会明确列入待处理。' },
-    { key: 'conflict', tiers: ['conflict'], label: '媒体关联存在冲突', explanation: '按你的选择采用第一个候选；多首歌曲可以共用该文件，各自保留歌单位置。' },
+    { key: 'conflict', tiers: ['conflict'], label: '媒体关联存在冲突', explanation: '按你的选择采用第一个候选；多首歌曲可以共用文件，Plex 歌单按该媒体首次出现的位置保留一项。' },
   ]
   return groups.map(group => ({ key: group.key, label: group.label, explanation: group.explanation,
     count: rows.filter(row => group.tiers.includes(row.tier)).reduce((sum, row) => sum + row.count, 0),

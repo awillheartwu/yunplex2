@@ -17,10 +17,13 @@
       </div>
 
       <!-- Status badge -->
-      <span class="song-status-badge" :class="toneClass">
-        <AppIcon :name="statusPresentation.icon" :size="11" :class="{ 'animate-spin': song.status === 'downloading' }" />
-        {{ statusLabel }}
-      </span>
+      <div class="song-row__statuses">
+        <FailureStatusBadge v-if="failureState" :state="failureState" />
+        <span class="song-status-badge" :class="failureState ? 'song-status-badge--historical' : toneClass">
+          <AppIcon :name="statusPresentation.icon" :size="11" :class="{ 'animate-spin': song.status === 'downloading' }" />
+          {{ failureState ? `本次：${statusLabel}` : statusLabel }}
+        </span>
+      </div>
 
       <!-- Expand arrow -->
       <AppIcon name="chevronRight" :size="12" class="shrink-0 transition-transform" :class="expanded ? 'rotate-90' : ''" />
@@ -29,6 +32,7 @@
     <!-- Expanded detail -->
     <div v-if="expanded" class="song-row__expanded">
       <div class="song-row__detail-card">
+        <FailureStatusBadge v-if="failureState" :state="failureState" details />
         <!-- Skipped existing -->
         <template v-if="song.status === 'skipped_existing'">
           <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
@@ -37,7 +41,7 @@
 
         <!-- Ignored failure -->
         <template v-else-if="song.status === 'ignored_failure'">
-          <p class="text-2xs text-muted-deep">系统已暂停自动处理这首歌曲，可以手动重试。</p>
+          <p class="text-2xs text-muted-deep">本次运行跳过了已忽略的问题，未重新处理这首歌曲。</p>
           <button
             v-if="showRetry"
             class="btn btn-secondary btn-sm mt-2"
@@ -137,21 +141,23 @@
 
 <script setup lang="ts">
 import type { SongTask } from '~~/server/lib/job/types'
+import type { FailureHandlingState } from '~~/shared/failure-handling'
 import { canRetrySong } from '~~/shared/failure-handling'
+import { failureStatePresentation } from '~~/lib/failure-presentation'
 import {
   semanticToneClass,
   songStatusPresentation,
 } from '~~/lib/task-status'
 
-const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean }>()
+const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean; failureState?: FailureHandlingState }>()
 defineEmits<{ toggle: []; retry: [] }>()
 
 const showRetry = computed(() => {
-  return canRetrySong(props.song.status) && !!props.song.neteaseSongId
+  return props.failureState?.status !== 'resolved' && canRetrySong(props.song.status) && !!props.song.neteaseSongId
 })
 
 const statusPresentation = computed(() => songStatusPresentation(props.song.status))
-const toneClass = computed(() => semanticToneClass(statusPresentation.value.tone))
+const toneClass = computed(() => semanticToneClass(props.failureState ? failureStatePresentation(props.failureState).tone : statusPresentation.value.tone))
 const statusLabel = computed(() => statusPresentation.value.label)
 type Trace = {
   source?: string; message?: string; decision?: string; deletionProtectionReason?: string
@@ -184,6 +190,8 @@ function formatDuration(ms: number): string {
 .song-row__button:hover{background:color-mix(in srgb,currentColor 7%,var(--bg-surface))}
 .song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:var(--radius-full);background:currentColor}
 .song-status-badge{display:inline-flex;align-items:center;gap:var(--space-1);flex:none;padding:var(--space-0_5) var(--space-2);border:1px solid;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
+.song-row__statuses{display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-1);flex:none}
+.song-status-badge--historical{color:var(--text-secondary);border-color:var(--border-primary);font-weight:var(--font-weight-normal)}
 .song-row__expanded{padding:0 var(--space-5) var(--space-4) var(--space-12)}
 .song-row__detail-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app);text-align:left}
 .song-row__detail-card>.btn{align-self:flex-start}

@@ -156,16 +156,23 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
       undefined,
       buildPlexPathSnapshot(postPlaylistTracks),
     )
-    job.finishStep(reorderStep, 'success', 'Plex 歌单重排完成')
+    job.finishStep(reorderStep, 'success', songs.length > targetOrder.length
+      ? `Plex 歌单重排完成，${songs.length} 首来源歌曲对应 ${targetOrder.length} 个 Plex 媒体`
+      : 'Plex 歌单重排完成')
   } catch (error) {
     if (error instanceof PlexReorderError) {
-      const ratingKeyToSongId = new Map<string, string>()
-      for (const [neteaseSongId, ratingKey] of cacheKeys) {
-        const taskSongId = job.findSongId(source.id, neteaseSongId)
-        if (taskSongId) ratingKeyToSongId.set(ratingKey, taskSongId)
+      const ratingKeyToSongIds = new Map<string, string[]>()
+      for (const [index, song] of songs.entries()) {
+        const ratingKey = cacheKeys.get(song.id)!
+        const taskSongId = job.findSongIdByIndex(source.id, index)
+        if (taskSongId) {
+          const songIds = ratingKeyToSongIds.get(ratingKey) ?? []
+          songIds.push(taskSongId)
+          ratingKeyToSongIds.set(ratingKey, songIds)
+        }
       }
       markPlexReorderFailures(job, error.result.failures, {
-        ratingKeyToSongId,
+        ratingKeyToSongIds,
         playlistItemIdToRatingKey: new Map(
           currentItems.map(item => [item.playlistItemId, item.ratingKey]),
         ),

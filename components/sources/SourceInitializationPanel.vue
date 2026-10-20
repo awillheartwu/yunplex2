@@ -29,7 +29,7 @@
       </div>
       <aside v-if="initialization?.status === 'awaiting_review'" class="source-adoption__tools">
         <div class="source-adoption__tools-row"><AppIcon name="info" :size="17" /><strong>{{ initialization.quickStatus === 'queued' ? '已安排，后台将继续处理' : '可以直接开始，也可以自行调整' }}</strong><button v-if="isEditable" class="btn btn-primary" :disabled="acting" @click="requestCommit">开始下载并同步</button><button class="btn btn-ghost" :aria-expanded="reviewExpanded" @click="reviewExpanded = !reviewExpanded">{{ reviewExpanded ? '收起详细安排' : '查看和调整安排' }}</button><button v-if="isEditable" class="btn btn-ghost" :disabled="acting" @click="quickOpen = true">按分数线重新安排</button></div>
-        <p>系统默认采用最高分的可用候选，其余尝试下载。你的手动选择会保留；只有主动暂缓的歌曲不会加入本次同步。</p>
+        <p>{{ initialization.autoProcess ? '直接开始会采用当前排序的第一个候选，没有候选的才下载。' : '审批初始化按推荐规则准备草案，采用首候选可在下方批量操作栏统一选择。' }}你的手动选择会保留。</p>
         <button v-if="initialization.autoProcess && isEditable && (initialization.quickStatus === 'failed' || initialization.quickStatus === 'cancelled')" class="btn btn-secondary btn-sm" :disabled="acting" @click="retryAutomatic">重新准备并开始</button>
         <p v-if="initialization.quickStatus === 'queued'" role="status">歌曲安排已提交，页面会自动更新处理进度；取消后保留当前选择。</p>
       </aside>
@@ -91,7 +91,7 @@
         @adopt-first="adoptFirstSelected"
         @open-evidence="openDrawer"
         @change-page="changePage"
-      ><template #actions><button v-if="isEditable && ['needs_review', 'conflict'].includes(activeGroup)" class="btn btn-soft btn-sm" :disabled="acting" @click="arrange(activeGroup === 'conflict' ? 'conflict' : 'needs_review')">此分类采用第一个候选</button><button v-if="isEditable && initialization?.highConfidenceItems" class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmHighConfidence = true">采用推荐候选（{{ initialization.highConfidenceItems }} 首）</button></template></SourceInitializationReview>
+      ><template #actions><button v-if="isEditable && initialization?.highConfidenceItems" class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmHighConfidence = true">采用推荐候选（{{ initialization.highConfidenceItems }} 首）</button></template></SourceInitializationReview>
 
       <SourceInitializationSummary v-if="isCompatibleReview && initialization?.status === 'awaiting_review' && initialization" :initialization="initialization" :acting="acting" :can-commit="isEditable" @commit="requestCommit" />
       <SourceInitializationEvidence :error="error" :item="drawerItem" :search-results="searchResults" :acting="acting" @close="drawerItem = null" @search="searchPlex" @adopt="adoptCurrentCandidate" @choose="chooseCandidate" @confirm-shared="confirmSharedMedia" />

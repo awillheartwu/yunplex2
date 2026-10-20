@@ -12,6 +12,7 @@ import type { DomainErrorCategory, DomainErrorCode, DomainErrorSeverity } from '
 import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
 import { sanitizeDiagnosticMessage } from '../domain-error'
 import { canRetryFailure } from '../../../shared/failure-handling'
+import type { RunFailureHandlingState } from '../../../shared/failure-handling'
 
 export { failureFingerprint, failureSubjectKey } from './failure-identity'
 
@@ -350,6 +351,13 @@ export function reconcileRunFailures(run: TaskRun): void {
         occurredAt: run.finishedAt || new Date().toISOString(),
         downloadTaskId: fileFailure?.id,
       })
+    } else if (song.status === 'ignored_failure') {
+      // Observing an ignored problem links this run without recording another failure.
+      getDb().prepare(`INSERT OR IGNORE INTO failure_occurrences (fingerprint, occurrence_key, occurred_at)
+        SELECT fingerprint, ?, ? FROM failure_records WHERE subject_key = ? AND status = 'ignored'`)
+        .run(`run:${run.id}`, run.finishedAt || new Date().toISOString(), failureSubjectKey({
+          songId: song.neteaseSongId, songName: song.songName, artist: song.artist, sourceId: song.sourceId,
+        }))
     } else if (song.status === 'success' || song.status === 'skipped_existing') {
       resolveFailures({
         songId: song.neteaseSongId,
@@ -545,15 +553,17 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
   total: number
   retryableTotal: number
   ignorableTotal: number
+  ignoredTotal: number
 } {
   const { where, from, params } = buildFailureRecordQuery(filter)
   const db = getDb()
   const counts = db.prepare(`
     SELECT COUNT(*) AS total,
       COALESCE(SUM(CASE WHEN ${RETRYABLE_FAILURE_SQL} THEN 1 ELSE 0 END), 0) AS retryable_total,
-      COALESCE(SUM(CASE WHEN fr.status = 'open' THEN 1 ELSE 0 END), 0) AS ignorable_total
+      COALESCE(SUM(CASE WHEN fr.status = 'open' THEN 1 ELSE 0 END), 0) AS ignorable_total,
+      COALESCE(SUM(CASE WHEN fr.status = 'ignored' THEN 1 ELSE 0 END), 0) AS ignored_total
     ${from} ${where}
-  `).get(...params) as { total: number; retryable_total: number; ignorable_total: number }
+  `).get(...params) as { total: number; retryable_total: number; ignorable_total: number; ignored_total: number }
   const rows = db.prepare(`
     SELECT fr.*,
       CASE
@@ -571,6 +581,7 @@ export function queryFailureRecords(filter: FailureRecordFilter = {}): {
     total: counts.total,
     retryableTotal: counts.retryable_total,
     ignorableTotal: counts.ignorable_total,
+    ignoredTotal: counts.ignored_total,
   }
 }
 
@@ -580,6 +591,22 @@ export function getFailureRecords(ids: string[]): FailureRecord[] {
     `SELECT * FROM failure_records WHERE id IN (${ids.map(() => '?').join(',')})`,
   ).all(...ids) as Array<Record<string, unknown>>
   return rows.map(rowToRecord)
+}
+
+export function getRunFailureStates(runId: string): RunFailureHandlingState[] {
+  const { where, from, params } = buildFailureRecordQuery({ runId, status: 'all' })
+  const rows = getDb().prepare(`SELECT fr.source_id,fr.song_id,fr.status,fr.ignore_reason,
+    fr.attempt_count,fr.failure_kind,fr.failure_reason ${from} ${where}
+    ORDER BY fr.status='open' DESC,fr.status='ignored' DESC,fr.last_seen_at DESC`).all(...params) as Array<{
+      source_id: string | null; song_id: number | null; status: FailureRecordStatus;
+      ignore_reason: 'automatic' | 'manual' | null; attempt_count: number; failure_kind: string; failure_reason: string;
+    }>
+  const attemptLimit = Math.max(1, readConfigFromDb().sync.maxFailureAttempts)
+  return rows.map(row => ({
+    sourceId: row.source_id, songId: row.song_id, status: row.status, ignoreReason: row.ignore_reason,
+    attemptCount: row.attempt_count, attemptLimit,
+    errorCode: resolveDomainErrorDefinition(row.failure_kind, row.failure_reason).code,
+  }))
 }
 
 export function setFailureRecordStatus(ids: string[], status: FailureRecordStatus): number {

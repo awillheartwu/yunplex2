@@ -22,7 +22,7 @@ const detail = computed(() => {
   if (props.processing?.status === 'success') return '本次目标歌曲均已完成同步，可以到 Plex 播放。'
   if (props.processing) return '尚未同步的歌曲可以在处理结果中查看原因并重试；也可以在“歌曲与媒体”调整匹配。'
   if (props.initialization.status === 'completed') return '可在“歌曲与媒体”查看当前匹配和同步状态。'
-  return props.initialization.autoProcess ? '系统将自动采用最高分的可用候选，其余尝试下载，然后更新 Plex 歌单。' : '系统已按最高分安排可用候选，其余尝试下载。你可以直接开始，或展开列表调整。'
+  return props.initialization.autoProcess ? '系统将采用当前排序的第一个候选，没有候选的才下载，然后更新 Plex 歌单。' : '系统已按推荐规则准备草案。你可以确认开始，或在下方选择歌曲后批量采用第一个候选。'
 })
 const phases = ['分析现有音乐', '复用或下载', '等待 Plex 入库', '更新歌单']
 const phaseIndex = computed(() => {

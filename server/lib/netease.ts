@@ -3,6 +3,7 @@ import type { LyricOrder } from './config/types'
 import { controlledNeteaseRequest, DOWNLOAD_METADATA_TIMEOUT_MS } from './download/netease-request'
 import { createHash } from 'node:crypto'
 import { getExternalRequestSignal } from './external-request-context'
+import { AUDIO_QUALITY_OPTIONS, isAudioQuality } from '../../shared/audio-quality'
 
 function legacyRequestSignal(): AbortSignal {
   const parent = getExternalRequestSignal()
@@ -86,16 +87,6 @@ export interface AlbumDetail {
   type: string
   artistImgUrl: string
   info?: { comment?: { threadId?: string } }
-}
-
-const QUALITY_LEVELS: Record<string, string> = {
-  standard: 'standard',
-  higher: 'higher',
-  exhigh: 'exhigh',
-  lossless: 'lossless',
-  hires: 'hires',
-  jyeffect: 'jyeffect',
-  jymaster: 'jymaster',
 }
 
 export interface CookieCheckResult {
@@ -516,32 +507,25 @@ export async function getSongUrl(
   cookie: string,
 ): Promise<{ url: string; type: string }> {
   type AudioResponse = { body?: { data?: Array<{ url?: string; type?: string; freeTrialInfo?: unknown; code?: number }> } }
-  const level = QUALITY_LEVELS[quality] || 'jymaster'
-  const requestedLevel = level
-
-  let res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }), 'song_url_v1')
-  let data = (res as AudioResponse).body?.data?.[0]
-
-  let attemptedLevel = level
-  if ((!data || !['flac', 'mp3'].includes(data.type?.toLowerCase() ?? '')) && level !== 'hires') {
-    attemptedLevel = 'hires'
-    res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel('hires'), cookie }), 'song_url_v1')
-    data = (res as AudioResponse).body?.data?.[0]
+  const requestedLevel = isAudioQuality(quality) ? quality : 'jymaster'
+  const levels = AUDIO_QUALITY_OPTIONS.slice(0, AUDIO_QUALITY_OPTIONS.findIndex(option => option.value === requestedLevel) + 1).reverse()
+  let providerCode: number | undefined
+  let unsupportedType: string | undefined
+  for (const { value: level } of levels) {
+    const res = await controlledNeteaseRequest(() => song_url_v1({ id: songId, level: toNeteaseQualityLevel(level), cookie }), 'song_url_v1')
+    const data = (res as AudioResponse).body?.data?.[0]
+    providerCode = data?.code
+    const type = data?.type?.toLowerCase() ?? 'mp3'
+    const trial = data?.freeTrialInfo && data.freeTrialInfo !== 'null'
+    if (data?.url && !trial) {
+      if (['flac', 'mp3'].includes(type)) return { url: data.url, type }
+      unsupportedType = type
+    }
   }
-
-  if (!data?.url) {
-    const qualityLabel = attemptedLevel === requestedLevel ? requestedLevel : `${requestedLevel}（回退 ${attemptedLevel}）`
-    throw Object.assign(new Error(`网易云未提供可用音源（接口 song_url_v1，音质 ${qualityLabel}，音源状态 ${data?.code ?? '未返回'}）；请核对歌曲可用性和账号权限`), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId, providerCode: data?.code })
-  }
-  if (data.freeTrialInfo && data.freeTrialInfo !== 'null') {
-    throw Object.assign(new Error('网易云仅提供试听音源（接口 song_url_v1）；请核对账号权限'), { code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId })
-  }
-  const type = data.type?.toLowerCase() ?? 'mp3'
-  if (!['flac', 'mp3'].includes(type)) {
-    throw Object.assign(new Error(`网易云返回的音频格式 ${type} 尚不支持（接口 song_url_v1）`), { code: 'DOWNLOAD_FORMAT_UNSUPPORTED' })
-  }
-
-  return { url: data.url, type }
+  if (unsupportedType) throw Object.assign(new Error(`网易云逐级降低音质后仍只有不支持的音频格式 ${unsupportedType}（接口 song_url_v1）`), { code: 'DOWNLOAD_FORMAT_UNSUPPORTED' })
+  throw Object.assign(new Error(`网易云未提供可用音源（接口 song_url_v1，已从 ${requestedLevel} 逐级尝试至 standard，音源状态 ${providerCode ?? '未返回'}）；所有档位均无完整音源，请核对歌曲可用性和账号权限`), {
+    code: 'SONG_URL_UNAVAILABLE', endpoint: 'song_url_v1', songId, providerCode,
+  })
 }
 
 export interface LyricData {

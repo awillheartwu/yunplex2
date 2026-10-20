@@ -1,6 +1,7 @@
 import { fail, success } from '../../lib/response'
 import { getRun, syncManualDownloadRun, syncRepairRun } from '../../lib/run/store'
 import { getSyncServiceInstance } from '../../lib/sync/instance'
+import { getRunFailureStates } from '../../lib/tasks/failure-records'
 
 export default defineEventHandler((event) => {
   const id = getRouterParam(event, 'id')
@@ -9,12 +10,12 @@ export default defineEventHandler((event) => {
   if (!current) return fail('运行记录不存在')
   if (current.type === 'sync' && current.status === 'running') {
     const live = getSyncServiceInstance().getCurrentRun()
-    if (live?.id === id) return success({ ...current, ...live, trigger: current.trigger })
+    if (live?.id === id) return success({ ...current, ...live, trigger: current.trigger, currentFailures: getRunFailureStates(id) })
   }
   const run = current.type === 'manual_download'
     ? syncManualDownloadRun(id)
     : current.type === 'repair'
       ? syncRepairRun(id)
       : current
-  return success(run)
+  return success({ ...run, currentFailures: getRunFailureStates(id) })
 })

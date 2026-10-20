@@ -19,7 +19,7 @@ describe('reorder failure reporting', () => {
     const count = markPlexReorderFailures(job, [
       { action: 'insert', ratingKey: 'rating-1', message: 'insert failed' },
     ], {
-      ratingKeyToSongId: new Map([['rating-1', 'song-task-1']]),
+      ratingKeyToSongIds: new Map([['rating-1', ['song-task-1']]]),
     })
 
     expect(count).toBe(1)
@@ -51,7 +51,7 @@ describe('reorder failure reporting', () => {
       { action: 'move', playlistItemId: 42, message: 'move failed' },
     ], {
       playlistItemIdToRatingKey: new Map([[42, 'rating-2']]),
-      ratingKeyToSongId: new Map([['rating-2', 'song-task-2']]),
+      ratingKeyToSongIds: new Map([['rating-2', ['song-task-2']]]),
     })
 
     expect(count).toBe(1)

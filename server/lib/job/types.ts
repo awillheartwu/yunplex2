@@ -1,4 +1,5 @@
 import type { DomainErrorCode } from '../../../shared/domain-errors'
+import type { RunFailureHandlingState } from '../../../shared/failure-handling'
 
 // ── Status enums ──
 
@@ -136,6 +137,8 @@ export interface TaskRun extends Omit<SyncJob, 'type'> {
   trigger: TaskRunTrigger
   awaitingSourceSync?: boolean
   sourceRequestStatus?: SourceRequestStatus | null
+  /** Current exception handling state, read separately from the historical run result. */
+  currentFailures?: RunFailureHandlingState[]
 }
 
 // ── Query / filter types ──

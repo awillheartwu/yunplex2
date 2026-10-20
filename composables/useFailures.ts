@@ -4,6 +4,7 @@ import type {
 } from '~~/server/lib/tasks/failure-records'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import type { FailureGroup, FailureMutationSelection } from '~~/server/lib/tasks/failure-groups'
+import type { FailureHandlingStatus } from '~~/shared/failure-handling'
 import { computed, ref } from 'vue'
 import { createLatestAsyncGuard } from '~~/composables/useTiming'
 
@@ -30,6 +31,7 @@ export function useFailures() {
   const total = ref(0)
   const retryableTotal = ref(0)
   const ignorableTotal = ref(0)
+  const ignoredTotal = ref(0)
   const loading = ref(false)
   const mutating = ref(false)
   const error = ref('')
@@ -42,21 +44,30 @@ export function useFailures() {
   const excluded = ref(new Set<string>())
   const allMatchingSelected = ref(false)
   const knownRetryable = reactive(new Map<string, boolean>())
-  const knownIgnorable = reactive(new Map<string, boolean>())
+  const knownStatus = reactive(new Map<string, FailureHandlingStatus>())
   const selectionBusy = computed(() => loading.value || mutating.value || Boolean(error.value))
   const selectionCount = computed(() => allMatchingSelected.value ? Math.max(0, total.value - excluded.value.size) : selected.value.size)
   const selectionRetryableCount = computed(() => allMatchingSelected.value
     ? Math.max(0, retryableTotal.value - [...excluded.value].filter(id => knownRetryable.get(id)).length)
     : [...selected.value].filter(id => knownRetryable.get(id)).length)
   const selectionIgnorableCount = computed(() => allMatchingSelected.value
-    ? Math.max(0, ignorableTotal.value - [...excluded.value].filter(id => knownIgnorable.get(id)).length)
-    : [...selected.value].filter(id => knownIgnorable.get(id)).length)
+    ? Math.max(0, ignorableTotal.value - [...excluded.value].filter(id => knownStatus.get(id) === 'open').length)
+    : [...selected.value].filter(id => knownStatus.get(id) === 'open').length)
+  const selectionIgnoredCount = computed(() => allMatchingSelected.value
+    ? Math.max(0, ignoredTotal.value - [...excluded.value].filter(id => knownStatus.get(id) === 'ignored').length)
+    : [...selected.value].filter(id => knownStatus.get(id) === 'ignored').length)
+  const selectionInactiveMessage = computed(() => {
+    if (!selectionCount.value || selectionIgnorableCount.value || loading.value) return ''
+    if (selectionIgnoredCount.value === selectionCount.value) return '所选项已全部忽略，可通过重试重新处理'
+    if (selectionIgnoredCount.value === 0) return '所选项已全部解决，无需再次忽略'
+    return '所选项已忽略或已解决，没有待处理问题'
+  })
   const allPageSelected = computed(() => items.value.length > 0 && items.value.every(item => isSelected(item.id)))
   const somePageSelected = computed(() => !allPageSelected.value && items.value.some(item => isSelected(item.id)))
   watch(() => JSON.stringify([view.value, filter.value]), () => {
     clearSelection()
     knownRetryable.clear()
-    knownIgnorable.clear()
+    knownStatus.clear()
   }, { flush: 'sync' })
   const paginationTotal = computed(() => view.value === 'groups' ? groupTotal.value : total.value)
   const pageCount = computed(() => Math.max(1, Math.ceil(paginationTotal.value / limit)))
@@ -93,7 +104,7 @@ export function useFailures() {
         const params = toParams((requested - 1) * limit)
         const response = grouped
           ? await api.get<{ items: FailureGroup[]; total: number; recordTotal: number }>('/tasks/failure-groups', params)
-          : await api.get<{ items: FailureRecord[]; total: number; retryableTotal: number; ignorableTotal: number }>('/tasks/failures', params)
+          : await api.get<{ items: FailureRecord[]; total: number; retryableTotal: number; ignorableTotal: number; ignoredTotal: number }>('/tasks/failures', params)
         if (!fetchGuard.isLatest(token)) return
         const last = Math.max(1, Math.ceil(response.total / limit))
         if (requested > last) { requested = last; continue }
@@ -106,9 +117,10 @@ export function useFailures() {
           total.value = response.total
           retryableTotal.value = response.retryableTotal
           ignorableTotal.value = response.ignorableTotal
+          ignoredTotal.value = response.ignoredTotal
           for (const item of response.items) {
             knownRetryable.set(item.id, item.retryable)
-            knownIgnorable.set(item.id, item.status === 'open')
+            knownStatus.set(item.id, item.status)
           }
         }
         page.value = requested
@@ -211,6 +223,7 @@ export function useFailures() {
     selectionCount,
     selectionRetryableCount,
     selectionIgnorableCount,
+    selectionInactiveMessage,
     allMatchingSelected,
     allPageSelected,
     somePageSelected,

@@ -238,11 +238,11 @@ describe('buildReconciliationPlan', () => {
 })
 
 
-it('preserves shared-media occurrences and removes only a surplus playlist item', () => {
+it('represents shared songs with one Plex item and removes only a surplus playlist item', () => {
   const targets = [1,2].map(neteaseSongId=>({neteaseSongId,plexRatingKey:'shared',matchTrace:{...strongPathTrace,identity:{...strongPathTrace.identity,method:'manual' as const}}}))
   const currentItems = [{ratingKey:'shared',playlistItemId:10},{ratingKey:'shared',playlistItemId:11}]
-  expect(buildReconciliationPlan({targets,currentItems}).targetOrder).toEqual(['shared','shared'])
-  expect([...buildReconciliationPlan({targets,currentItems}).authorizedRemovalItemIds]).toEqual([])
+  expect(buildReconciliationPlan({targets,currentItems}).targetOrder).toEqual(['shared'])
+  expect([...buildReconciliationPlan({targets,currentItems}).authorizedRemovalItemIds]).toEqual([11])
   expect([...buildReconciliationPlan({targets:targets.slice(0,1),currentItems}).authorizedRemovalItemIds]).toEqual([11])
   expect([...buildReconciliationPlan({targets:targets.slice(0,1),currentItems,skipRemoveExtraTracks:true}).authorizedRemovalItemIds]).toEqual([])
 })

@@ -73,7 +73,7 @@ export function buildReconciliationPlan(input: {
   const targetOrder = buildStrongTargetOrder(input.targets)
   const expectedTargetSongIds = input.expectedTargetSongIds ?? input.targets.map(target => target.neteaseSongId)
   const targetSongIds = new Set(expectedTargetSongIds)
-  const hasIncompleteTargetOrder = targetOrder.length !== expectedTargetSongIds.length
+  const hasIncompleteTargetOrder = !hasCompleteTargetIdentities(input.targets, expectedTargetSongIds)
   const strongTargetKeys = new Set(input.targets.flatMap(target =>
     target.plexRatingKey && isStrongTargetIdentity(target.matchTrace)
       ? [target.plexRatingKey]
@@ -93,11 +93,13 @@ export function buildReconciliationPlan(input: {
   ))
   const targetCounts = countKeys(targetOrder)
   const seenCounts = new Map<string, number>()
-  const knownIdentityByRatingKey = new Map(
-    (input.knownCurrentIdentities ?? [])
-      .filter(identity => identity.plexRatingKey)
-      .map(identity => [identity.plexRatingKey!, identity] as const),
-  )
+  const knownIdentitiesByRatingKey = new Map<string, KnownOccurrenceIdentity[]>()
+  for (const identity of input.knownCurrentIdentities ?? []) {
+    if (!identity.plexRatingKey) continue
+    const identities = knownIdentitiesByRatingKey.get(identity.plexRatingKey) ?? []
+    identities.push(identity)
+    knownIdentitiesByRatingKey.set(identity.plexRatingKey, identities)
+  }
   const authorizedRemovalItemIds = new Set<number>()
   const removalDecisions: RemovalDecision[] = []
 
@@ -134,15 +136,14 @@ export function buildReconciliationPlan(input: {
       continue
     }
 
-    const knownIdentity = knownIdentityByRatingKey.get(item.ratingKey)
-    const replacementKeys = knownIdentity
-      ? strongTargetKeysBySongId.get(knownIdentity.neteaseSongId)
-      : undefined
+    const knownIdentities = knownIdentitiesByRatingKey.get(item.ratingKey) ?? []
+    const retainedIdentities = knownIdentities.filter(identity => targetSongIds.has(identity.neteaseSongId))
     if (
-      knownIdentity
-      && targetSongIds.has(knownIdentity.neteaseSongId)
-      && replacementKeys?.size === 1
-      && !replacementKeys.has(item.ratingKey)
+      retainedIdentities.length > 0
+      && retainedIdentities.every(identity => {
+        const replacementKeys = strongTargetKeysBySongId.get(identity.neteaseSongId)
+        return replacementKeys?.size === 1 && !replacementKeys.has(item.ratingKey)
+      })
     ) {
       authorizedRemovalItemIds.add(item.playlistItemId)
       removalDecisions.push({
@@ -150,18 +151,18 @@ export function buildReconciliationPlan(input: {
         playlistItemId: item.playlistItemId,
         ratingKey: item.ratingKey,
         reason: 'replaced_bound_occurrence',
-        neteaseSongId: knownIdentity.neteaseSongId,
+        neteaseSongId: retainedIdentities[0]!.neteaseSongId,
       })
       continue
     }
-    if (knownIdentity && !targetSongIds.has(knownIdentity.neteaseSongId)) {
+    if (knownIdentities.length > 0 && retainedIdentities.length === 0) {
       authorizedRemovalItemIds.add(item.playlistItemId)
       removalDecisions.push({
         action: 'remove',
         playlistItemId: item.playlistItemId,
         ratingKey: item.ratingKey,
         reason: 'bound_song_not_in_target',
-        neteaseSongId: knownIdentity.neteaseSongId,
+        neteaseSongId: knownIdentities[0]!.neteaseSongId,
       })
       continue
     }
@@ -224,11 +225,27 @@ export function buildReconciliationPlan(input: {
 }
 
 export function buildStrongTargetOrder(targets: readonly ReconciliationTarget[]): string[] {
-  return targets.flatMap(target =>
+  return [...new Set(targets.flatMap(target =>
     target.plexRatingKey && isStrongTargetIdentity(target.matchTrace)
       ? [target.plexRatingKey]
       : [],
-  )
+  ))]
+}
+
+/** Every source occurrence needs a binding, even when several share one Plex item. */
+export function hasCompleteTargetIdentities(targets: readonly ReconciliationTarget[], expectedSongIds: readonly number[]): boolean {
+  const remaining = new Map<number, number>()
+  for (const target of targets) {
+    if (target.plexRatingKey && isStrongTargetIdentity(target.matchTrace)) {
+      remaining.set(target.neteaseSongId, (remaining.get(target.neteaseSongId) ?? 0) + 1)
+    }
+  }
+  for (const songId of expectedSongIds) {
+    const count = remaining.get(songId) ?? 0
+    if (count === 0) return false
+    remaining.set(songId, count - 1)
+  }
+  return [...remaining.values()].every(count => count === 0)
 }
 
 export function findExtraPlaylistOccurrences(

@@ -25,7 +25,7 @@ import {
   type BindingVersionSnapshot,
 } from './identity-coordinator'
 import {
-  getSongIdentityBindingByRatingKey,
+  getSongIdentityBindingsByRatingKey,
   type BindingInput,
 } from './identity-store'
 import {
@@ -40,6 +40,7 @@ import {
   buildReconciliationPlan,
   buildStrongTargetOrder,
   findExtraPlaylistOccurrences,
+  hasCompleteTargetIdentities,
 } from './reconciliation-plan'
 import {
   PlexReorderError,
@@ -298,9 +299,9 @@ export async function reconcilePlexPlaylist(
   }
 
   const knownCurrentIdentities = currentItems.flatMap((item) => {
-    const binding = getSongIdentityBindingByRatingKey(item.ratingKey)
-    if (binding) {
-      return [{ neteaseSongId: binding.neteaseSongId, plexRatingKey: binding.plexRatingKey }]
+    const bindings = getSongIdentityBindingsByRatingKey(item.ratingKey)
+    if (bindings.length) {
+      return bindings.map(binding => ({ neteaseSongId: binding.neteaseSongId, plexRatingKey: binding.plexRatingKey }))
     }
 
     const previousCandidates = occurrencesByPreviousRatingKey.get(item.ratingKey) ?? []
@@ -324,7 +325,7 @@ export async function reconcilePlexPlaylist(
     matchTrace: resolution.matchTrace,
   }))
   const strongTargetOrder = buildStrongTargetOrder(reconciliationTargets)
-  const targetComplete = strongTargetOrder.length === currentIdOrder.length
+  const targetComplete = hasCompleteTargetIdentities(reconciliationTargets, currentIdOrder)
   const observedExtraItems = findExtraPlaylistOccurrences(strongTargetOrder, currentItems)
   const observationItems = observedExtraItems.map((item) => {
     const track = currentPlaylistTracks.find(candidate => candidate.playlistItemID === item.playlistItemId)
@@ -476,11 +477,15 @@ export async function reconcilePlexPlaylist(
   } catch (error) {
     if (error instanceof PlexReorderError) {
       applyConfirmedReorderMutations(error.result.mutations)
-      const ratingKeyToSongId = new Map<string, string>()
+      const ratingKeyToSongIds = new Map<string, string[]>()
       for (const resolution of resolutions) {
         if (!resolution.plexRatingKey) continue
         const taskSongId = findResolutionTaskId(job, source.id, resolution)
-        if (taskSongId) ratingKeyToSongId.set(resolution.plexRatingKey, taskSongId)
+        if (taskSongId) {
+          const songIds = ratingKeyToSongIds.get(resolution.plexRatingKey) ?? []
+          songIds.push(taskSongId)
+          ratingKeyToSongIds.set(resolution.plexRatingKey, songIds)
+        }
       }
 
       const playlistItemIdToRemovedSongId = new Map<number, string>()
@@ -492,7 +497,7 @@ export async function reconcilePlexPlaylist(
         }
       }
       markPlexReorderFailures(job, error.result.failures, {
-        ratingKeyToSongId,
+        ratingKeyToSongIds,
         playlistItemIdToRatingKey: new Map(
           currentItems.map(item => [item.playlistItemId, item.ratingKey]),
         ),
@@ -516,7 +521,13 @@ export async function reconcilePlexPlaylist(
   }
 
   throwIfCancelled()
-  job.finishStep(reorderStep, 'success', 'Plex 歌单重排完成')
+  const resolvedCount = reconciliationTargets.filter(target => target.plexRatingKey
+    && target.matchTrace?.identity?.bindingStatus === 'active'
+    && ['path', 'manual'].includes(target.matchTrace.identity.method)).length
+  const sharedCount = resolvedCount - strongTargetOrder.length
+  job.finishStep(reorderStep, 'success', sharedCount > 0
+    ? `Plex 歌单重排完成，${resolvedCount} 首来源歌曲对应 ${strongTargetOrder.length} 个 Plex 媒体，${sharedCount} 首共用已有媒体`
+    : 'Plex 歌单重排完成')
 }
 
 /**

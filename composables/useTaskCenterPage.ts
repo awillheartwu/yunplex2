@@ -14,6 +14,7 @@ import { sseSubscribe } from '~~/composables/sse'
 import { runTypeLabel } from '~~/lib/run-presentation'
 import { semanticToneClass, type TaskSemanticTone } from '~~/lib/task-status'
 import { DOMAIN_ERROR_CATALOG, getDomainErrorDefinition, isDomainErrorCode } from '~~/shared/domain-errors'
+import { failureStatePresentation } from '~~/lib/failure-presentation'
 
 export function useTaskCenterPage() {
   type TaskCenterTab = 'overview' | 'failures' | 'runs'
@@ -235,13 +236,7 @@ export function useTaskCenterPage() {
     return isDomainErrorCode(kind) ? getDomainErrorDefinition(kind).label : failureKindFilters.find(item => item.value === kind)?.label || kind
   }
   function failureAttemptLabel(record: FailureRecord): string {
-    if (record.status === 'resolved') return ''
-    if (record.status === 'ignored') {
-      if (record.ignoreReason !== 'automatic') return '已手动忽略'
-      return getDomainErrorDefinition(record.errorCode).retryable
-        ? `失败 ${record.attemptCount}/${record.attemptLimit} 次，已自动忽略`
-        : '此类问题不自动重试，已自动忽略'
-    }
+    if (record.status !== 'open') return failureStatePresentation(record).description
     return `失败 ${record.attemptCount}/${record.attemptLimit} 次${record.runType === 'sync' ? '，下次同步再试' : '，等待手动重试'}`
   }
   function failureKindTone(kind: string): TaskSemanticTone {

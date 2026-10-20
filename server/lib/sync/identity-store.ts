@@ -128,6 +128,13 @@ export function getSongIdentityBindingByRatingKey(ratingKey: string): SongIdenti
   return rows.length === 1 ? fromRow(rows[0]!) : null
 }
 
+export function getSongIdentityBindingsByRatingKey(ratingKey: string): SongIdentityBinding[] {
+  const rows = getDb().prepare(`SELECT * FROM song_identity_bindings
+    WHERE plex_rating_key=? AND status='active' AND binding_method IN ('path','manual')
+    ORDER BY netease_song_id`).all(ratingKey) as BindingRow[]
+  return rows.map(fromRow)
+}
+
 export function upsertSongIdentityBinding(input: BindingInput): SongIdentityBinding {
   const previous = getSongIdentityBinding(input.neteaseSongId)
   const now = nextTimestamp(previous?.updatedAt)

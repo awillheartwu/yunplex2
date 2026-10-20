@@ -1,3 +1,20 @@
+import type { DomainErrorCode } from './domain-errors'
+
+export type FailureHandlingStatus = 'open' | 'ignored' | 'resolved'
+
+export interface FailureHandlingState {
+  status: FailureHandlingStatus
+  ignoreReason: 'automatic' | 'manual' | null
+  attemptCount: number
+  attemptLimit: number
+  errorCode: DomainErrorCode
+}
+
+export interface RunFailureHandlingState extends FailureHandlingState {
+  sourceId: string | null
+  songId: number | null
+}
+
 /** These are run outcomes; the error code describes the underlying cause. */
 export function canRetrySong(status: string): boolean {
   return [

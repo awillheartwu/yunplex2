@@ -62,13 +62,10 @@ test('explicit first-candidate choices work for rejected candidates, categories 
   await expect.poll(() => arrangements[1]).toEqual({
     initializationId: 'init-first', scope: 'selected', filter: { tier: 'conflict', search: '', excludeSongIds: [] },
   })
-  await page.getByRole('button', { name: '此分类采用第一个候选', exact: true }).click()
-  await expect.poll(() => arrangements[2]).toEqual({ initializationId: 'init-first', scope: 'conflict' })
-
   await page.getByRole('button', { name: '开始下载并同步', exact: true }).first().click()
   const confirm = page.getByRole('dialog', { name: '还有 2 首不会加入 Plex', exact: true })
   await expect(confirm).toContainText('没有候选的安排下载')
   await confirm.getByRole('button', { name: '采用首个候选并开始', exact: true }).click()
-  await expect.poll(() => arrangements[3]).toEqual({ initializationId: 'init-first', scope: 'deferred' })
+  await expect.poll(() => arrangements[2]).toEqual({ initializationId: 'init-first', scope: 'deferred' })
   await expect.poll(() => commits).toEqual([{ initializationId: 'init-first', confirmDeferred: false }])
 })

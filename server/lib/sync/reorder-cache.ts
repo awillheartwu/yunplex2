@@ -51,7 +51,7 @@ export async function validateCachedTargetOrder(
   }
 
   return {
-    targetOrder: issues.length === 0 ? targetOrder : null,
+    targetOrder: issues.length === 0 ? [...new Set(targetOrder)] : null,
     issues,
   }
 }

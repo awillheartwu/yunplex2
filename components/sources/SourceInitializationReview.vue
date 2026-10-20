@@ -119,9 +119,9 @@ function canChoose(item: InitializationReviewItem): boolean {
     <span v-else-if="allMatchingSelected" class="source-adoption__selection-hint">已选当前筛选范围 {{ selectedCount }} 首，可取消个别歌曲</span>
     <span v-else class="source-adoption__selection-hint">已选 {{ selectedCount }} 首，翻页保留选择</span>
   </div>
-  <div v-if="selectedCount" class="section-card source-adoption__bulk">
+  <div v-if="editable" class="section-card source-adoption__bulk">
     <strong>已选 {{ selectedCount }} 首</strong>
-    <div><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable || !selectedCount" title="采用每首歌曲当前排序的第一个候选；没有候选的歌曲保留原安排" @click="emit('adoptFirst')">采用第一个候选</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'defer')">暂缓</button></div>
+    <div><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !selectedCount" title="采用每首歌曲当前排序的第一个候选；没有候选的歌曲保留原安排" @click="emit('adoptFirst')">采用第一个候选</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !selectedCount" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !selectedCount" @click="emit('decide', 0, 'defer')">暂缓</button></div>
     <p class="source-adoption__selection-hint">有候选就采用第一项；没有候选的保留原安排。</p>
   </div>
   <div class="section-card source-adoption__table-wrap">

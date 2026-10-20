@@ -104,8 +104,9 @@
           <span class="failure-batch-bar__count" role="status">{{ failures.allMatchingSelected.value ? `已选 ${failures.selectionCount.value} / ${failures.total.value} 项 · 全部筛选结果` : failures.selectionCount.value ? `已选 ${failures.selectionCount.value} 项 · 跨页保留` : '可跨页选择' }}<small v-if="failures.selectionCount.value && failureCanProcess">可重试 {{ failures.selectionRetryableCount.value }} 项</small><small v-if="failures.selectionCount.value && failureCanIgnore">可忽略 {{ failures.selectionIgnorableCount.value }} 项</small></span>
           <div v-if="failures.selectionCount.value" class="failure-batch-bar__actions">
             <button v-if="failureCanProcess" class="btn btn-primary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionRetryableCount.value" :title="failures.selectionRetryableCount.value ? '重新处理所选歌曲，复用已有音频和 Plex 媒体' : '当前选择没有可重新处理的歌曲或文件任务'" @click="batchRetry">批量重试</button>
-            <button v-if="failureCanIgnore" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionIgnorableCount.value" @click="batchIgnore">批量忽略</button>
+            <button v-if="failureCanIgnore" class="btn btn-secondary btn-sm" type="button" :disabled="failures.selectionBusy.value || !failures.selectionIgnorableCount.value" :title="failures.selectionInactiveMessage.value || undefined" @click="batchIgnore">批量忽略</button>
           </div>
+          <p v-if="failures.selectionInactiveMessage.value" class="failure-batch-bar__notice" role="status">{{ failures.selectionInactiveMessage.value }}</p>
         </div>
 
         <p v-if="failures.error.value" role="alert" class="text-danger">读取失败，保留上次结果：{{ failures.error.value }}</p>
@@ -132,13 +133,13 @@
           <PageNavigator :page="failures.page.value" :page-size="failures.pageSize" :total="failures.paginationTotal.value" label="异常原因" :loading="failures.loading.value" @change="failures.goToPage" />
         </div>
         <div v-else class="section-card failure-list">
-          <article v-for="record in failures.items.value" :key="record.id" class="failure-row" :class="{ 'is-selected': failures.isSelected(record.id) }">
+          <article v-for="record in failures.items.value" :key="record.id" class="failure-row" :class="[`failure-row--${record.status}`, { 'is-selected': failures.isSelected(record.id) }]">
             <input type="checkbox" :checked="failures.isSelected(record.id)" :disabled="failures.selectionBusy.value" :aria-label="`选择 ${record.songName}`" @change="failures.toggleSelection(record.id)" />
             <div class="failure-row__main">
               <div class="failure-row__title">
                 <strong>{{ record.songName }}</strong>
-                <span>{{ record.artist }}</span>
-                <StatusBadge :status="record.status === 'resolved' ? 'ok' : record.status === 'open' ? 'error' : 'idle'" :label="failureStatusTabs.find(item => item.value === record.status)?.label" size="sm" />
+                <span class="failure-row__artist">{{ record.artist }}</span>
+                <FailureStatusBadge :state="record" />
                 <span class="failure-kind" :class="semanticToneClass(failureKindTone(record.errorCode || record.failureKind))">
                   <AppIcon :name="failureKindIcon(record.errorCode || record.failureKind)" :size="11" />
                   {{ failureKindLabel(record.errorCode || record.failureKind) }}
