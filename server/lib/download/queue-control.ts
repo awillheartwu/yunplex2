@@ -2,6 +2,17 @@ import { getDb } from '../db'
 import { createFileTaskSchema } from '../db/file-task-schema'
 import { emitEvent } from '../sync/events'
 
+export class DownloadCancelledError extends Error {
+  constructor() { super('用户取消下载'); this.name = 'DownloadCancelledError' }
+}
+
+const activeDownloads = new Map<string, () => void>()
+
+export function registerActiveDownload(taskId: string, cancel: () => void): () => void {
+  activeDownloads.set(taskId, cancel)
+  return () => { activeDownloads.delete(taskId) }
+}
+
 export interface DownloadQueueControl {
   paused: boolean
   reason: 'manual' | 'authentication' | 'filesystem' | null
@@ -45,11 +56,26 @@ export function coolDownDownloadQueue(delayMs: number): void {
 }
 
 /** A paused caller cannot stop a file another caller still needs. */
-export const ELIGIBLE_DOWNLOAD_CALLERS_SQL = `(NOT EXISTS (
+export const ELIGIBLE_DOWNLOAD_CALLERS_SQL = `((NOT EXISTS (
   SELECT 1 FROM run_file_tasks caller WHERE caller.task_id=download_tasks.id
-) OR EXISTS (
-  SELECT 1 FROM run_file_tasks caller WHERE caller.task_id=download_tasks.id AND caller.paused=0
+) AND (COALESCE(download_tasks.run_id,download_tasks.job_id) IS NULL OR EXISTS (
+  SELECT 1 FROM task_runs owner WHERE owner.id=COALESCE(download_tasks.run_id,download_tasks.job_id) AND owner.status='running'
+))) OR EXISTS (
+  SELECT 1 FROM run_file_tasks caller JOIN task_runs run ON run.id=caller.run_id
+  WHERE caller.task_id=download_tasks.id AND caller.paused=0 AND run.status='running'
 ))`
+
+/** Distinct requests for one song run in order; different options never share a write. */
+export const READY_DOWNLOAD_TASK_SQL = `${ELIGIBLE_DOWNLOAD_CALLERS_SQL}
+  AND NOT EXISTS (
+    SELECT 1 FROM download_tasks active WHERE active.song_id=download_tasks.song_id
+      AND active.id!=download_tasks.id AND active.status IN ('downloading','tagging')
+  ) AND NOT EXISTS (
+    SELECT 1 FROM download_tasks earlier WHERE earlier.song_id=download_tasks.song_id
+      AND earlier.status='pending'
+      AND (earlier.created_at<download_tasks.created_at OR (earlier.created_at=download_tasks.created_at AND earlier.rowid<download_tasks.rowid))
+      AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL.replaceAll('download_tasks.', 'earlier.')}
+  )`
 
 export function isRunDownloadPaused(runId: string): boolean {
   const db = getDb()
@@ -70,6 +96,17 @@ export function setRunDownloadPaused(runId: string, paused: boolean): number {
   })()
   notify()
   return count
+}
+
+/** Withdraw this run's requests; another active caller may still need the file. */
+export function cancelRunDownloads(runId: string): void {
+  setRunDownloadPaused(runId, true)
+  const tasks = getDb().prepare(`SELECT DISTINCT task_id FROM run_file_tasks cancelled
+    WHERE cancelled.run_id=? AND NOT EXISTS (
+      SELECT 1 FROM run_file_tasks caller JOIN task_runs run ON run.id=caller.run_id
+      WHERE caller.task_id=cancelled.task_id AND caller.paused=0 AND run.status='running'
+    )`).all(runId) as Array<{ task_id: string }>
+  for (const task of tasks) activeDownloads.get(task.task_id)?.()
 }
 
 function notify() {

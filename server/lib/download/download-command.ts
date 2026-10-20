@@ -79,6 +79,8 @@ export function createDownloadCommand(input: {
           downloadLyrics: config.downloadLyrics,
           embedMetadata: config.embedMetadata,
           embedCover: config.embedCover,
+          saveAlbumCover: config.saveAlbumCover,
+          saveArtistImage: config.saveArtistImage,
         },
         idempotencyKey: buildDownloadTaskIdempotencyKey({
           songId: song.id,

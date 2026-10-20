@@ -119,6 +119,8 @@ function executionOverrides(task: DownloadTask): Parameters<typeof resolveSingle
       downloadLyrics: persisted.downloadLyrics,
       embedMetadata: persisted.embedMetadata,
       embedCover: persisted.embedCover,
+      saveAlbumCover: persisted.saveAlbumCover,
+      saveArtistImage: persisted.saveArtistImage,
     }
   }
   if (task.operation === 'repair_existing') {

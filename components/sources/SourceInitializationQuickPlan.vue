@@ -51,7 +51,7 @@ const metrics = computed(() => {
 const histogramLabel = computed(() => (preview.value?.histogram ?? []).map((count, index) => `${index * 10}-${index === 9 ? 100 : index * 10 + 9} 分：${count} 首`).join('；'))
 
 const decisionLabels: Record<QuickPlanItem['decision'], string> = { preserve: '继续使用已确认文件', adopt: '使用 Plex', download: '计划下载' }
-const originLabels: Record<QuickPlanItem['origin'], string> = { preserved: '已有绑定', rule_recommended: '系统推荐', threshold_match: '达到分数线', threshold_download: '未达到分数线' }
+const originLabels: Record<QuickPlanItem['origin'], string> = { preserved: '已有绑定', rule_recommended: '系统推荐', threshold_match: '达到分数线', threshold_download: '未达到分数线', first_candidate: '采用第一个候选' }
 
 function message(value: unknown, fallback: string): string {
   return value instanceof Error ? value.message : fallback

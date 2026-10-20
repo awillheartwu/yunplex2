@@ -11,10 +11,10 @@ export function deferredInitializationGroups(initializationId: string): Deferred
     .all(initializationId) as Array<{ tier: string; count: number }>
   const groups = [
     { key: 'recommended', tiers: ['strong_id', 'high_confidence'], label: '推荐候选尚未采用', explanation: '可以直接采用推荐候选，或交给系统自动安排。' },
-    { key: 'needs_review', tiers: ['possible', 'ambiguous'], label: '需要核对的歌曲尚未安排', explanation: '可以采用最高分的可用候选，不必逐首核对。' },
-    { key: 'no_candidate', tiers: ['unmatched'], label: '没有可用候选，也未安排下载', explanation: '自动安排会尝试下载这些歌曲。' },
+    { key: 'needs_review', tiers: ['possible', 'ambiguous'], label: '需要核对的歌曲尚未安排', explanation: '采用当前排序的第一个候选，不因艺人或版本差异改成下载。' },
+    { key: 'no_candidate', tiers: ['unmatched'], label: '未自动匹配的歌曲', explanation: '有候选就采用第一项，没有候选的才安排下载。' },
     { key: 'metadata_missing', tiers: ['metadata_missing'], label: '网易云歌曲信息不完整', explanation: '会尝试重新获取歌曲信息并下载，仍不可用的歌曲会明确列入待处理。' },
-    { key: 'conflict', tiers: ['conflict'], label: '媒体关联存在冲突', explanation: '文件已关联其他歌曲、被多首歌曲认领或对应多个媒体。自动安排会尝试下载独立文件。' },
+    { key: 'conflict', tiers: ['conflict'], label: '媒体关联存在冲突', explanation: '按你的选择采用第一个候选；多首歌曲可以共用该文件，各自保留歌单位置。' },
   ]
   return groups.map(group => ({ key: group.key, label: group.label, explanation: group.explanation,
     count: rows.filter(row => group.tiers.includes(row.tier)).reduce((sum, row) => sum + row.count, 0),

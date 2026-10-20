@@ -9,7 +9,7 @@
         <div class="source-adoption__actions">
           <StatusBadge class="source-adoption__status" :status="statusTone" :label="statusLabel" />
           <template v-if="canStart">
-            <ActionHint text="管他三七二十一，规则我懒得看，下载就完事了！"><button class="btn btn-secondary btn-sm" :disabled="acting" @click="start(true)">直接开始！</button></ActionHint>
+            <ActionHint text="采用当前排序的第一个候选，没有候选的再下载"><button class="btn btn-secondary btn-sm" :disabled="acting" @click="start(true)">直接开始！</button></ActionHint>
             <ActionHint text="仔细查阅匹配方案并微调，适合对歌单匹配要求高的人"><button class="btn btn-primary btn-sm" :disabled="acting" @click="start(false)">审批初始化</button></ActionHint>
           </template>
           <button v-if="initialization?.status === 'pending' && !isWaitingAnalysis" class="btn btn-warning btn-sm" :disabled="acting" @click="confirmSkip = true">跳过接管</button>
@@ -68,7 +68,6 @@
         :selected-count="selectedCount"
         :all-matching-selected="allMatchingSelected"
         :can-select-all-matching="canSelectAllMatching"
-        :can-adopt-selected="canAdoptSelected"
         :selection-category-label="selectionCategoryLabel"
         :is-selected="isSelected"
         :loading="loadingItems"
@@ -89,15 +88,16 @@
         @select-all-matching="selectAllMatching"
         @clear-selection="clearSelection"
         @decide="handleReviewDecision"
+        @adopt-first="adoptFirstSelected"
         @open-evidence="openDrawer"
         @change-page="changePage"
-      ><template #actions><button v-if="isEditable && activeGroup === 'needs_review'" class="btn btn-soft btn-sm" :disabled="acting" @click="arrange('needs_review')">按最高分自动安排此分类</button><button v-if="isEditable && initialization?.highConfidenceItems" class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmHighConfidence = true">采用推荐候选（{{ initialization.highConfidenceItems }} 首）</button></template></SourceInitializationReview>
+      ><template #actions><button v-if="isEditable && ['needs_review', 'conflict'].includes(activeGroup)" class="btn btn-soft btn-sm" :disabled="acting" @click="arrange(activeGroup === 'conflict' ? 'conflict' : 'needs_review')">此分类采用第一个候选</button><button v-if="isEditable && initialization?.highConfidenceItems" class="btn btn-ghost btn-sm" :disabled="acting" @click="confirmHighConfidence = true">采用推荐候选（{{ initialization.highConfidenceItems }} 首）</button></template></SourceInitializationReview>
 
       <SourceInitializationSummary v-if="isCompatibleReview && initialization?.status === 'awaiting_review' && initialization" :initialization="initialization" :acting="acting" :can-commit="isEditable" @commit="requestCommit" />
       <SourceInitializationEvidence :error="error" :item="drawerItem" :search-results="searchResults" :acting="acting" @close="drawerItem = null" @search="searchPlex" @adopt="adoptCurrentCandidate" @choose="chooseCandidate" @confirm-shared="confirmSharedMedia" />
 
-      <ConfirmDialog :visible="confirmCommit" :title="`还有 ${initialization?.deferredItems || 0} 首不会加入 Plex`" confirm-label="自动安排剩余歌曲并开始" cancel-label="返回调整" :busy="acting" @confirm="arrangeAndSubmit" @cancel="confirmCommit = false">
-        <p class="text-sm text-muted">这些歌曲当前被设为暂缓，本次同步不会下载或加入 Plex。可以交给系统自动安排，或明确跳过。</p>
+      <ConfirmDialog :visible="confirmCommit" :title="`还有 ${initialization?.deferredItems || 0} 首不会加入 Plex`" confirm-label="采用首个候选并开始" cancel-label="返回调整" :busy="acting" @confirm="arrangeAndSubmit" @cancel="confirmCommit = false">
+        <p class="text-sm text-muted">采用暂缓歌曲当前排序的第一个候选，没有候选的安排下载。艺人名称、版本或共享媒体的差异只作提示，不会阻止你采用；也可以继续暂缓。</p>
         <ul class="source-adoption__deferred"><li v-for="group in deferredGroups" :key="group.key"><strong>{{ group.label }} · {{ group.count }} 首</strong><p>{{ group.explanation }}</p></li></ul>
         <button class="btn btn-ghost btn-sm" :disabled="acting" @click="submitCommit(true)">仍跳过这 {{ initialization?.deferredItems || 0 }} 首，只同步其余歌曲</button>
       </ConfirmDialog>
@@ -131,7 +131,7 @@ async function retryAutomatic(): Promise<void> { if (await arrange('default') &&
 const confirmHighConfidence = ref(false)
 
 const state = useSourceInitialization({ sourceId: props.sourceId, onChanged: () => emit('changed') })
-const { initialization, processing, deferredGroups, libraryChanged, loading, loadingItems, acting, error, itemsError, result, tier, decision, search, selectedCount, allMatchingSelected, canSelectAllMatching, canAdoptSelected, selectionCategoryLabel, isSelected, selectAllMatching, clearSelection, drawerItem, searchResults, isAnalyzing, isWaitingAnalysis, isEditable, isQuickQueued, needsRestart, canReview, tierLabel, load, reloadItems, start, cancel, skip, restart, decideOne, decideSelected, adoptAllHighConfidence, toggle, togglePage, onSearch, clearFilters, changePage, openDrawer, searchPlex, chooseCandidate, confirmSharedMedia, commit, arrange } = state
+const { initialization, processing, deferredGroups, libraryChanged, loading, loadingItems, acting, error, itemsError, result, tier, decision, search, selectedCount, allMatchingSelected, canSelectAllMatching, selectionCategoryLabel, isSelected, selectAllMatching, clearSelection, drawerItem, searchResults, isAnalyzing, isWaitingAnalysis, isEditable, isQuickQueued, needsRestart, canReview, tierLabel, load, reloadItems, start, cancel, skip, restart, decideOne, decideSelected, adoptAllHighConfidence, toggle, togglePage, onSearch, clearFilters, changePage, openDrawer, searchPlex, chooseCandidate, confirmSharedMedia, commit, arrange, adoptFirstSelected } = state
 watch(() => initialization.value?.id, () => { reviewExpanded.value = true })
 watch(() => [initialization.value?.status, initialization.value?.autoProcess, isQuickQueued.value, processing.value?.active], () => {
   const automaticAnalysis = initialization.value?.autoProcess && (isAnalyzing.value || isWaitingAnalysis.value)

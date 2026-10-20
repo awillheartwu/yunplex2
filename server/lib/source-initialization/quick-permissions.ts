@@ -17,7 +17,7 @@ export function quickMediaPermissions(initializationId:string):Map<number,number
       const binding=getSongIdentityBinding(id)
       if((binding?.updatedAt??null)!==(versions.get(id)??null))return false
       const peer=byId.get(id)
-      if(peer?.tier!=='preserved'&&peer) return peer.decision==='adopt'&&JSON.parse(String(peer.evidence_json)).quickDecision?.operationId===decision.operationId&&peer.candidate_rating_key===row.candidate_rating_key&&normalizePlexPath(String(peer.candidate_file_path))===normalizePlexPath(String(row.candidate_file_path))
+      if(peer?.tier!=='preserved'&&peer) return peer.decision==='adopt'&&(decision.origin==='first_candidate'||JSON.parse(String(peer.evidence_json)).quickDecision?.operationId===decision.operationId)&&peer.candidate_rating_key===row.candidate_rating_key&&normalizePlexPath(String(peer.candidate_file_path))===normalizePlexPath(String(row.candidate_file_path))
       return binding?.status==='active'&&binding.plexRatingKey===row.candidate_rating_key&&normalizePlexPath(binding.plexFilePath)===normalizePlexPath(String(row.candidate_file_path))
     })
     if(valid)permissions.set(Number(row.netease_song_id),peers)

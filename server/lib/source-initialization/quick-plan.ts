@@ -11,7 +11,7 @@ import type { QuickPreview } from '../../../shared/quick-initialization'
 
 type Row = Record<string, unknown>
 type StoredPlan = InitializationPlan
-const rowsFor = (id:string) => getDb().prepare(`SELECT netease_song_id,title,tier,evidence_json,${mutableColumns.join(',')}
+const rowsFor = (id:string) => getDb().prepare(`SELECT netease_song_id,title,tier,evidence_json,candidates_json,${mutableColumns.join(',')}
   FROM source_initialization_items WHERE initialization_id=? ORDER BY position`).all(id) as Row[]
 function bindingsSnapshot(rows:Row[]) {
   return [...getInitializationIdentityBindings(rows.map(r=>Number(r.netease_song_id))).values()].map(b=>({songId:b.neteaseSongId,version:b.updatedAt,path:b.plexFilePath,key:b.plexRatingKey,status:b.status,section:b.plexSectionKey})).sort((a,b)=>a.songId-b.songId)
@@ -57,7 +57,7 @@ function writePlan(id:string,rows:Row[],plan:StoredPlan,operationId:string,thres
     if(item.decision==='preserve')continue
     const row=before.get(item.songId)!,evidence=JSON.parse(String(row.evidence_json)),candidate=item.candidate
     delete evidence.sharedMediaConfirmed
-    evidence.decisionOrigin=item.origin
+    evidence.decisionOrigin=plan.manualSelection?'manual':item.origin
     evidence.quickDecision={operationId,origin:item.origin,threshold,score:item.score,scoreVersion:1,sharedIds:item.sharedIds}
     update.run(candidate?.ratingKey??null,candidate?.filePath??null,candidate?.title??'',candidate?.artist??'',candidate?.album??'',candidate?.durationMs??null,item.decision,JSON.stringify(evidence),new Date().toISOString(),id,item.songId)
   }

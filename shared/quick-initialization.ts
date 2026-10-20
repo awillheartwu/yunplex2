@@ -1,6 +1,6 @@
 import type { InitializationCandidate } from '../server/lib/source-initialization/types'
 export interface QuickPlanItem {
-  songId: number; title: string; decision: 'preserve'|'adopt'|'download'; origin: 'preserved'|'rule_recommended'|'threshold_match'|'threshold_download'
+  songId: number; title: string; decision: 'preserve'|'adopt'|'download'; origin: 'preserved'|'rule_recommended'|'threshold_match'|'threshold_download'|'first_candidate'
   candidate: InitializationCandidate | null; score: number | null; risks: string[]; sharedIds: number[]
 }
 export interface QuickPreview {

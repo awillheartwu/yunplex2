@@ -198,13 +198,13 @@ async function applySourceInitialization(initializationId: string, allowDisabled
         }
         try {
           const sharedEvidence = JSON.parse(String(row.evidence_json || '{}'))
-          if ((sharedEvidence.sharedMedia || sharedEvidence.quickDecision?.origin === 'threshold_match' || sharedEvidence.quickDecision?.origin === 'rule_recommended') && !sharedPermissions.has(songId)) throw new BindingVersionConflictError()
+          if ((sharedEvidence.sharedMedia || ['threshold_match', 'rule_recommended', 'first_candidate'].includes(sharedEvidence.quickDecision?.origin)) && !sharedPermissions.has(songId)) throw new BindingVersionConflictError()
           const ratingKey = String(row.candidate_rating_key || '')
           const track = ratingKey ? trackByRatingKey.get(ratingKey) : null
           const filePath = track?.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? [])[0]
           if (!track || !filePath || normalizePlexPath(filePath) !== normalizePlexPath(String(row.candidate_file_path || ''))) throw new BindingVersionConflictError()
           const quickOrigin = sharedEvidence.quickDecision?.origin
-          const bindingOrigin = quickOrigin === 'rule_recommended' || quickOrigin === 'threshold_match'
+          const bindingOrigin = quickOrigin === 'first_candidate' ? (sharedEvidence.decisionOrigin === 'manual' ? 'confirmed' as const : 'auto' as const) : quickOrigin === 'rule_recommended' || quickOrigin === 'threshold_match'
             ? (initialization.autoProcess ? 'auto' as const : 'confirmed' as const)
             : 'manual' as const
           rebindSongIdentity({ neteaseSongId: songId, bindingOrigin, sharedWithSongIds: sharedPermissions.get(songId), expectedBindingUpdatedAt: row.expected_binding_updated_at ? String(row.expected_binding_updated_at) : null, sourceId: source.id, binding: { plexSectionKey: sectionKey, plexSectionRoot: config.download.plexLibraryPathPrefix, plexFilePath: filePath, plexRatingKey: ratingKey, evidence: { selectedBy: bindingOrigin === 'manual' ? 'user' : bindingOrigin, source: 'first_media_adoption', initializationId: initialization.id, tier: row.tier, sharedMedia: sharedEvidence.sharedMedia ?? null, sharedMediaConfirmed: sharedEvidence.sharedMediaConfirmed ?? null, quickDecision: sharedEvidence.quickDecision ?? null } } })
@@ -213,7 +213,7 @@ async function applySourceInitialization(initializationId: string, allowDisabled
           applied++
         } catch (error) {
           if (!(error instanceof BindingVersionConflictError) && !(error instanceof BindingIdentityConflictError)) throw error
-          if (initialization.autoProcess) {
+          if (initialization.autoProcess && JSON.parse(String(row.evidence_json || '{}')).quickDecision?.origin !== 'first_candidate') {
             upsertMediaDecision(source.id, songId, 'download', initialization.id)
             db.prepare("UPDATE source_initialization_items SET decision='download', decision_status='applied', updated_at=? WHERE initialization_id=? AND netease_song_id=?").run(new Date().toISOString(), initialization.id, songId)
             downloads++

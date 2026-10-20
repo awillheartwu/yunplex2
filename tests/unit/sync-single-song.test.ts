@@ -290,23 +290,14 @@ describe('downloadSingleSong', () => {
     )
   })
 
-  it('downloads beside a protected external path instead of overwriting it', async () => {
+  it('reports a protected template-path collision without renaming or overwriting the file', async () => {
     const protectedPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.flac'
 
-    await downloadSingleSong(123456, {
+    await expect(downloadSingleSong(123456, {
       ...mockConfig,
       target: { kind: 'computed', protectedPath },
-    })
-
-    expect(downloadSong).toHaveBeenCalledWith(
-      'https://example.com/song.flac',
-      expect.any(Object),
-      'flac',
-      '/tmp/music',
-      expect.any(Object),
-      'Artist A/Test Album (2023)/Test Song (YunPlex).flac',
-      undefined,
-    )
+    })).rejects.toThrow('未自动改名或覆盖')
+    expect(downloadSong).not.toHaveBeenCalled()
   })
 
   it('uses audioPath override for ancillary file location', async () => {

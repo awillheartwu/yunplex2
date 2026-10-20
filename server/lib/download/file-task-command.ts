@@ -10,6 +10,7 @@ import {
 import { getDb } from '../db'
 import { createFileTaskSchema, linkRunFileTask } from '../db/file-task-schema'
 import { requestDownloadProcessing } from './worker'
+import { createHash } from 'node:crypto'
 
 export interface FileTaskIntent {
   sourceId?: string | null
@@ -58,15 +59,27 @@ export function submitFileTasks(intents: readonly FileTaskIntent[]): FileTaskSub
   // keeps command transactions atomic when they are the first caller.
   createFileTaskSchema(getDb())
   const submissions = intents.map((intent) => {
+    const execution = intent.executionIntent
+    const target = execution?.target
+    const fingerprint = JSON.stringify([
+      intent.operation ?? 'download', intent.targetPath ?? null,
+      execution?.downloadMode ?? null,
+      target?.kind === 'existing' ? [target.kind, target.path]
+        : target ? [target.kind, target.protectedPath ?? null, target.requireManagedCopy ?? false] : null,
+      execution?.downloadLyrics ?? null, execution?.embedMetadata ?? null, execution?.embedCover ?? null,
+      execution?.saveAlbumCover ?? null, execution?.saveArtistImage ?? null,
+    ])
+    const idempotencyKey = execution
+      ? `intent:${createHash('sha256').update(fingerprint).digest('hex')}:${intent.idempotencyKey}` : intent.idempotencyKey
     const previous = intent.retryFailed
       ? getDb().prepare("SELECT id FROM download_tasks WHERE idempotency_key = ? AND status = 'failed' ORDER BY updated_at DESC, rowid DESC LIMIT 1")
-        .get(intent.idempotencyKey) as { id: string } | undefined
+        .get(idempotencyKey) as { id: string } | undefined
       : undefined
     const previousTask = previous ? getDownloadTask(previous.id) : null
     const sameIntent = previousTask && previousTask.operation === (intent.operation ?? 'download')
       && previousTask.targetPath === intent.targetPath
       && JSON.stringify(previousTask.executionIntent) === JSON.stringify(intent.executionIntent)
-    const task = (sameIntent && requeueFailedDownloadTasks([previousTask.id])[0]) || enqueueTask(intent)
+    const task = (sameIntent && requeueFailedDownloadTasks([previousTask.id])[0]) || enqueueTask({ ...intent, idempotencyKey })
     linkRunFileTask(getDb(), {
       runId: intent.jobId,
       taskId: task.id,

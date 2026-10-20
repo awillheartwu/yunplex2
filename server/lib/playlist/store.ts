@@ -345,7 +345,8 @@ export function deleteSource(id: string): boolean {
         .run(...fingerprints.map(row => row.fingerprint))
       db.prepare('DELETE FROM failure_records WHERE source_id = ?').run(id)
     }
-    db.prepare('DELETE FROM download_tasks WHERE source_id = ?').run(id)
+    db.prepare('UPDATE download_tasks SET source_id=NULL WHERE source_id=?').run(id)
+    db.prepare('UPDATE run_file_tasks SET source_id=NULL WHERE source_id=?').run(id)
     const result = db.prepare('DELETE FROM playlist_sources WHERE id = ?').run(id)
     return result.changes > 0
   })()

@@ -51,7 +51,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     downloadRomajiLyric: false,
     artistAliases: {},
     applyAliasToAlbum: false,
-    pathFormat: '{artist}/{album}/{title} [netease-{songId}]',
+    pathFormat: '{artist}/{album}/{title}',
     fontScale: 1.0,
   },
   initializationMatching: structuredClone(DEFAULT_INITIALIZATION_MATCHING),

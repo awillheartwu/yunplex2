@@ -1,10 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { buildFlacTagMap, checkAncillaryFiles } from '../../server/lib/tag-writer'
+import { buildDownloadPath, buildFlacTagMap, checkAncillaryFiles } from '../../server/lib/tag-writer'
 import { existsSync } from 'node:fs'
+import { DEFAULT_CONFIG } from '../../server/lib/config/defaults'
+import { PATH_PRESETS } from '../../server/lib/config/types'
 
 // Mock fs
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }))
 import type { SongMeta } from '../../server/lib/tag-writer'
+
+describe('configured download names', () => {
+  it('keeps slashes inside metadata values within one filename or directory name', () => {
+    const vars = { artist: 'AC/DC', album: 'Live/Studio', title: 'A/B', year: '' }
+    expect(buildDownloadPath('{artist}/{album} ({year})/{title}', vars, 'flac')).toBe('AC／DC/Live／Studio/A／B.flac')
+  })
+
+  it('keeps built-in naming presets free of unrequested ID suffixes', () => {
+    const vars = { artist: 'Artist', album: 'Album', title: 'Song', year: '2024', 'track:02d': '01', songId: '2147126861' }
+    expect(buildDownloadPath(DEFAULT_CONFIG.other.pathFormat, vars, 'flac')).toBe('Artist/Album/Song.flac')
+    for (const preset of PATH_PRESETS) expect(buildDownloadPath(preset.value, vars, 'flac')).not.toContain('2147126861')
+  })
+
+  it('uses only the configured filename tokens, including an ID only when explicitly requested', () => {
+    const vars = { artist: 'Artist', album: 'Album', title: '藍（2024ver.）', 'track:02d': '01', songId: '2147126861' }
+    expect(buildDownloadPath('{artist}/{album}/{track:02d} - {title}', vars, 'flac')).toBe('Artist/Album/01 - 藍（2024ver.）.flac')
+    expect(buildDownloadPath('{title} [{songId}]', vars, 'flac')).toBe('藍（2024ver.） [2147126861].flac')
+  })
+})
 
 function makeMeta(overrides: Partial<SongMeta> = {}): SongMeta {
   return {

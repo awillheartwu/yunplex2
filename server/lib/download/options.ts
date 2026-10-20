@@ -10,6 +10,8 @@ export type SingleSongConfigOverrides = Partial<
     | 'downloadLyrics'
     | 'embedMetadata'
     | 'embedCover'
+    | 'saveAlbumCover'
+    | 'saveArtistImage'
   >
 >
 
@@ -32,8 +34,8 @@ export function resolveSingleSongConfig(
     downloadLyrics: overrides.downloadLyrics ?? config.download.downloadLyrics,
     embedMetadata: overrides.embedMetadata ?? config.download.embedMetadata,
     embedCover: overrides.embedCover ?? config.download.embedCover,
-    saveAlbumCover: config.download.saveAlbumCover ?? false,
-    saveArtistImage: config.download.saveArtistImage ?? false,
+    saveAlbumCover: overrides.saveAlbumCover ?? config.download.saveAlbumCover ?? false,
+    saveArtistImage: overrides.saveArtistImage ?? config.download.saveArtistImage ?? false,
     lyricOrder: config.other?.lyricOrder ?? 'original_first',
     downloadTranslatedLyric: config.other?.downloadTranslatedLyric ?? true,
     downloadRomajiLyric: config.other?.downloadRomajiLyric ?? false,

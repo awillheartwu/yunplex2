@@ -144,6 +144,8 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
           downloadLyrics: config.download.downloadLyrics,
           embedMetadata: config.download.embedMetadata,
           embedCover: config.download.embedCover,
+          saveAlbumCover: config.download.saveAlbumCover,
+          saveArtistImage: config.download.saveArtistImage,
         },
         idempotencyKey: buildDownloadTaskIdempotencyKey({
           songId: resolution.song.id,

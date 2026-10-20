@@ -3,6 +3,13 @@ import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { resolveSingleSongConfig } from '~~/server/lib/download/options'
 
 describe('resolveSingleSongConfig', () => {
+  it('honors explicit image-file overrides over global settings', () => {
+    const config = structuredClone(DEFAULT_CONFIG)
+    config.download.saveAlbumCover = config.download.saveArtistImage = true
+    expect(resolveSingleSongConfig(config, { embedCover: false, saveAlbumCover: false, saveArtistImage: false }))
+      .toMatchObject({ embedCover: false, saveAlbumCover: false, saveArtistImage: false })
+  })
+
   it('concentrates application defaults into a complete download configuration', () => {
     const resolved = resolveSingleSongConfig(DEFAULT_CONFIG)
 

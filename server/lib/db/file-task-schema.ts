@@ -67,6 +67,7 @@ export function createFileTaskSchema(db: Database.Database): void {
     if (taskColumns.has('status') && taskColumns.has('created_at')) {
       db.exec('DROP INDEX IF EXISTS idx_download_tasks_ready')
       db.exec('CREATE INDEX idx_download_tasks_ready ON download_tasks(status,created_at)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_download_tasks_song_queue ON download_tasks(song_id,status,created_at)')
     }
 
     if (existing && !hasLifecycleForeignKeys) {

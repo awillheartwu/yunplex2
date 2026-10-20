@@ -466,7 +466,7 @@ export function createRepairRun(input: {
 export function syncRepairRun(runId: string, options: { finalize?: boolean } = {}): TaskRun | null {
   const finalize = options.finalize ?? true
   const run = getRun(runId)
-  if (!run || run.type !== 'repair') return run
+  if (!run || run.type !== 'repair' || run.status === 'cancelled') return run
   const db = getDb()
   createFileTaskSchema(db)
   const linkedRows = db.prepare(`
@@ -538,7 +538,7 @@ export function syncRepairRun(runId: string, options: { finalize?: boolean } = {
 
 export function syncManualDownloadRun(runId: string): TaskRun | null {
   const run = getRun(runId)
-  if (!run || run.type !== 'manual_download') return run
+  if (!run || run.type !== 'manual_download' || run.status === 'cancelled') return run
   const db = getDb()
   createFileTaskSchema(db)
   const linkedRows = db.prepare(`

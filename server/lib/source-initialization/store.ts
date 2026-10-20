@@ -128,6 +128,23 @@ function initializationItemFilter(input: { initializationId: string; tier?: stri
   return { conditions, params }
 }
 
+export function initializationSelectionIds(initializationId: string, selection: { songIds?: number[]; filter?: InitializationSelectionFilter }): number[] {
+  const { conditions, params } = initializationItemFilter({ ...selection.filter, initializationId })
+  conditions.push("tier != 'preserved'")
+  if (selection.filter) {
+    const filter = selection.filter
+    if (selection.songIds || !evidenceGroups.some(group => group.value === filter.tier || group.members.includes(filter.tier))) throw new Error('请选择有效的候选分类')
+    if (filter.excludeSongIds?.length) {
+      conditions.push(`netease_song_id NOT IN (${filter.excludeSongIds.map(() => '?').join(',')})`)
+      params.push(...filter.excludeSongIds)
+    }
+  } else if (selection.songIds?.length) {
+    conditions.push(`netease_song_id IN (${selection.songIds.map(() => '?').join(',')})`)
+    params.push(...selection.songIds)
+  } else throw new Error('请选择歌曲')
+  return (getDb().prepare(`SELECT netease_song_id FROM source_initialization_items WHERE ${conditions.join(' AND ')}`).all(...params) as Array<{ netease_song_id: number }>).map(row => row.netease_song_id)
+}
+
 export function queryInitializationItems(input: { initializationId: string; tier?: string; decision?: string; search?: string; page?: number; pageSize?: number }): InitializationItemsPage {
   const { conditions, params } = initializationItemFilter(input)
   const where = conditions.join(' AND '); const pageSize = Math.min(Math.max(Math.trunc(input.pageSize ?? 50), 1), 100); const page = Math.max(Math.trunc(input.page ?? 1), 1)

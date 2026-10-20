@@ -14,6 +14,7 @@ let directory = '', worker: DownloadWorker | null = null
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'reyunplex-download-resilience-'))
   initDb(directory)
+  createManualDownloadRun({ id: 'batch', total: 0, sourceLabel: 'Queue caller' })
 })
 afterEach(async () => {
   await worker?.stop()

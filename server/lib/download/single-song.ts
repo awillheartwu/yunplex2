@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { basename, dirname, extname, join, relative } from 'node:path'
+import { extname, join, relative } from 'node:path'
 import dayjs from 'dayjs'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../netease'
 import { downloadSong, buildDownloadPath, checkAncillaryFiles } from '../tag-writer'
@@ -153,23 +153,12 @@ async function executeSingleSong(
     && config.target.protectedPath
     && plexPathsExactlyEqual(targetPath, config.target.protectedPath)
   ) {
-    const extension = extname(targetPath)
-    const protectedName = `${basename(targetPath, extension)} (YunPlex)${extension}`
-    targetPath = join(dirname(targetPath), protectedName)
-    relativePath = relative(config.downloadDir, targetPath)
+    throw new Error('命名模板指向受保护的已有文件；请选择复用该文件或调整命名模板，未自动改名或覆盖')
   }
   const targetIsKnownManaged = previousAsset?.ownership === 'managed'
     && plexPathsExactlyEqual(previousAsset.filePath, targetPath)
   if (config.target?.kind === 'computed' && config.target.requireManagedCopy && !targetIsKnownManaged && existsSync(targetPath)) {
-    const extension = extname(targetPath)
-    const baseName = basename(targetPath, extension)
-    let suffix = 1
-    do {
-      const label = suffix === 1 ? 'YunPlex' : `YunPlex ${suffix}`
-      targetPath = join(dirname(targetPath), `${baseName} (${label})${extension}`)
-      suffix++
-    } while (existsSync(targetPath))
-    relativePath = relative(config.downloadDir, targetPath)
+    throw new Error('命名模板的目标文件已存在且未被接管；请选择复用该文件或调整命名模板，未自动改名或覆盖')
   }
   const audioExists = existsSync(targetPath) && validateLocalAudioFile(targetPath).valid
 

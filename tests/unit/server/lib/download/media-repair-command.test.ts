@@ -7,6 +7,7 @@ import { createRepairRun, getRun, syncRepairRun } from '~~/server/lib/run/store'
 import { getLocalMediaAsset } from '~~/server/lib/sync/local-media-store'
 import { persistSourceRequest } from '~~/server/lib/sync/request-store'
 import { readConfig } from '~~/server/lib/config/store'
+import { deleteSource } from '~~/server/lib/playlist/store'
 import { enqueueTask } from '~~/server/lib/download/queue'
 import { submitFileTasks } from '~~/server/lib/download/file-task-command'
 import { startDownloadWorker, stopDownloadWorker } from '~~/server/lib/download/worker'
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   setRepairRunning: vi.fn(),
   syncService: {
     getState: vi.fn(),
+    getCurrentRun: vi.fn(),
   },
 }))
 
@@ -66,10 +68,7 @@ beforeEach(() => {
     ) VALUES ('source-one', 1001, '来源一', 'playlist', ?, ?)
   `).run(now, now)
 
-  mocks.fetchPlaylistSongs.mockResolvedValue({
-    songs: [{ id: 101, name: 'Song' }],
-  })
-  mocks.fetchSongDetail.mockResolvedValue({
+  const song = {
     id: 101,
     name: 'Song',
     no: 1,
@@ -77,7 +76,9 @@ beforeEach(() => {
     disc: '1',
     artists: [{ name: 'Artist' }],
     album: { id: 9, name: 'Album', publishTime: 0, picUrl: '' },
-  })
+  }
+  mocks.fetchSongDetail.mockResolvedValue(song)
+  mocks.fetchPlaylistSongs.mockResolvedValue({ songs: [song] })
   mocks.findExistingLocalSongPath.mockReturnValue(audioPath)
   mocks.downloadSingleSong.mockResolvedValue({
     filePath: audioPath,
@@ -154,6 +155,8 @@ describe('Media Repair Command', () => {
         downloadLyrics: true,
         embedMetadata: true,
         embedCover: false,
+        saveAlbumCover: false,
+        saveArtistImage: false,
       }),
       status: 'done',
       run_id: result.jobId,
@@ -229,6 +232,51 @@ describe('Media Repair Command', () => {
       skippedSongs: 1,
     })
     expect(mocks.downloadSingleSong).not.toHaveBeenCalled()
+  })
+
+  it('reports a metadata error as a failed file task rather than a skipped song', async () => {
+    mocks.downloadSingleSong.mockRejectedValueOnce(new Error('网易云请求超时'))
+    const { startMediaRepairCommand, waitForMediaRepairCommands } = await import('~~/server/lib/download/media-repair-command')
+    const result = await startMediaRepairCommand('source-one')
+    await waitForMediaRepairCommands()
+    expect(getRun(result.jobId)).toMatchObject({ status: 'failed', failedSongs: 1, skippedSongs: 0 })
+    expect(getDb().prepare('SELECT song_id FROM failure_records').all()).toEqual([{ song_id: 101 }])
+  })
+
+  it('surfaces source metadata fetch failures without claiming a successful repair', async () => {
+    mocks.fetchPlaylistSongs.mockRejectedValueOnce(new Error('网易云网络异常'))
+    const { startMediaRepairCommand } = await import('~~/server/lib/download/media-repair-command')
+    await expect(startMediaRepairCommand('source-one')).rejects.toThrow('网易云网络异常')
+    expect(getDb().prepare('SELECT COUNT(*) count FROM download_tasks').get()).toEqual({ count: 0 })
+  })
+
+  it('does not enqueue files when the source is deleted during preparation', async () => {
+    let release!: (value: unknown) => void
+    const playlist = { songs: [await mocks.fetchSongDetail()] }
+    mocks.fetchPlaylistSongs.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const { startMediaRepairCommand } = await import('~~/server/lib/download/media-repair-command')
+    const preparing = startMediaRepairCommand('source-one')
+    deleteSource('source-one')
+    release(playlist)
+    await expect(preparing).rejects.toThrow('收藏已删除')
+    expect(getDb().prepare('SELECT COUNT(*) count FROM download_tasks').get()).toEqual({ count: 0 })
+  })
+
+  it('stops file processing and settles the repair when its source is deleted', async () => {
+    let began!: () => void
+    const started = new Promise<void>(resolve => { began = resolve })
+    mocks.downloadSingleSong.mockImplementationOnce(async (_song, _config, _progress, signal: AbortSignal) => {
+      began()
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+    })
+    const { startMediaRepairCommand, waitForMediaRepairCommands } = await import('~~/server/lib/download/media-repair-command')
+    const { deleteSourceAndStopWork } = await import('~~/server/lib/playlist/delete-source')
+    const result = await startMediaRepairCommand('source-one')
+    await started
+    await deleteSourceAndStopWork('source-one')
+    await waitForMediaRepairCommands()
+    expect(getRun(result.jobId)?.status).toBe('cancelled')
+    expect(mocks.refreshLibrary).not.toHaveBeenCalled()
   })
 
   it('resumes terminal downloads to finish repair projection and Plex refresh after restart', async () => {

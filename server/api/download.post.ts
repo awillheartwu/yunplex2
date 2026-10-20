@@ -40,6 +40,8 @@ export default defineEventHandler(async (event) => {
           downloadLyrics: body.downloadLyrics ?? cfg.download.downloadLyrics,
           embedMetadata: body.embedMetadata ?? cfg.download.embedMetadata,
           embedCover: body.downloadImages ?? cfg.download.embedCover,
+          saveAlbumCover: body.downloadImages === false ? false : undefined,
+          saveArtistImage: body.downloadImages === false ? false : undefined,
           downloadMode: 'full',
         }),
         artistAliases: cfg.other?.artistAliases ?? {},

@@ -3,16 +3,16 @@ import { getRun, saveRun } from '../run/store'
 import { cancelSourceInitialization } from '../source-initialization/service'
 import { setInitializationStatus } from '../source-initialization/store'
 
-/** Cancel this accepted batch; shared file tasks retain their own lifecycle. */
-export function cancelSourceRequests(cancelSync: () => boolean): boolean {
+/** Cancel this batch; cancelSync also withdraws its file requests. */
+export function cancelSourceRequests(cancelSync: () => boolean, sourceId?: string): boolean {
   const db = getDb()
   const current = db.prepare(`SELECT id,batch_id FROM source_sync_queue WHERE status IN ('pending','running')
     ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, created_at,batch_position,rowid LIMIT 1`)
     .get() as { id: string; batch_id: string | null } | undefined
   if (!current) return cancelSync()
   const rows = db.prepare(`SELECT id,source_id,initialization_id,run_id,status,request_kind FROM source_sync_queue
-    WHERE ${current.batch_id ? 'batch_id' : 'id'}=? AND status IN ('pending','running')`)
-    .all(current.batch_id ?? current.id) as Array<{ id: string; source_id: string; initialization_id: string | null; run_id: string | null; status: string; request_kind: string }>
+    WHERE ${sourceId ? 'source_id' : current.batch_id ? 'batch_id' : 'id'}=? AND status IN ('pending','running')`)
+    .all(sourceId ?? current.batch_id ?? current.id) as Array<{ id: string; source_id: string; initialization_id: string | null; run_id: string | null; status: string; request_kind: string }>
   const now = new Date().toISOString()
   db.transaction(() => {
     for (const row of rows) {

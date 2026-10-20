@@ -24,6 +24,7 @@ import {
 } from './missing-media-policy'
 import {
   getSongIdentityBindings,
+  getActiveSongIdentityBindings,
   markSongIdentityBindingStale,
   upsertVerifiedSongIdentityBinding,
 } from './identity-store'
@@ -142,7 +143,14 @@ export async function resolveTracks(
 
     const ratingKey = resolution.plexRatingKey
     const ownerSongId = ratingKey ? claimedRatingKeys.get(ratingKey) : undefined
-    if (ratingKey && ownerSongId !== undefined && ownerSongId !== song.id) {
+    const sharedBindings = ratingKey && ownerSongId !== undefined && ownerSongId !== song.id
+      ? getActiveSongIdentityBindings([ownerSongId, song.id]) : null
+    const owner = sharedBindings?.get(ownerSongId!), current = sharedBindings?.get(song.id)
+    const confirmedSharing = owner?.bindingMethod === 'manual' && current?.bindingMethod === 'manual'
+      && owner.plexRatingKey === ratingKey && current.plexRatingKey === ratingKey
+      && owner.plexSectionKey === current.plexSectionKey
+      && normalizePlexPath(owner.plexFilePath) === normalizePlexPath(current.plexFilePath)
+    if (ratingKey && ownerSongId !== undefined && ownerSongId !== song.id && !confirmedSharing) {
       const conflictReason = `Plex #${ratingKey} 已明确关联网易云歌曲 ${ownerSongId}`
       resolutions.push(unverifiedResolution(
         { neteaseIndex: index, song },

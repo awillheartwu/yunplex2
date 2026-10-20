@@ -11,7 +11,6 @@ const props = defineProps<{
   selectedCount: number
   allMatchingSelected: boolean
   canSelectAllMatching: boolean
-  canAdoptSelected: boolean
   selectionCategoryLabel: string
   isSelected: (item: InitializationReviewItem) => boolean
   loading: boolean
@@ -35,6 +34,7 @@ const emit = defineEmits<{
   selectAllMatching: []
   clearSelection: []
   decide: [songId: number, decision: InitializationDecision]
+  adoptFirst: []
   openEvidence: [item: InitializationReviewItem]
   changePage: [page: number]
 }>()
@@ -121,8 +121,8 @@ function canChoose(item: InitializationReviewItem): boolean {
   </div>
   <div v-if="selectedCount" class="section-card source-adoption__bulk">
     <strong>已选 {{ selectedCount }} 首</strong>
-    <div><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable || !canAdoptSelected" :title="canAdoptSelected ? undefined : '所选歌曲包含没有明确候选的项，请先逐首选择候选'" @click="emit('decide', 0, 'adopt')">使用 Plex</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'defer')">暂缓</button></div>
-    <p v-if="!canAdoptSelected" class="source-adoption__selection-hint">使用 Plex 前，请先为没有明确候选的歌曲逐首选择候选。</p>
+    <div><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable || !selectedCount" title="采用每首歌曲当前排序的第一个候选；没有候选的歌曲保留原安排" @click="emit('adoptFirst')">采用第一个候选</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'download')">下载并托管</button><button class="btn btn-secondary btn-sm" :disabled="acting || loading || !editable" @click="emit('decide', 0, 'defer')">暂缓</button></div>
+    <p class="source-adoption__selection-hint">有候选就采用第一项；没有候选的保留原安排。</p>
   </div>
   <div class="section-card source-adoption__table-wrap">
     <table class="source-adoption__table">

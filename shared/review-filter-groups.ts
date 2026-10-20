@@ -2,7 +2,7 @@
 export const evidenceGroups = [
   { value: 'recommended', label: '推荐候选', members: ['strong_id', 'high_confidence'] },
   { value: 'needs_review', label: '需要核对', members: ['possible', 'ambiguous'] },
-  { value: 'no_candidate', label: '无可用候选', members: ['unmatched', 'metadata_missing'] },
+  { value: 'no_candidate', label: '未自动匹配', members: ['unmatched', 'metadata_missing'] },
   { value: 'conflict', label: '存在冲突', members: ['conflict'] },
   { value: 'preserved', label: '已确认文件', members: ['preserved'] },
 ]

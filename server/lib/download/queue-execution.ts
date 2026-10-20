@@ -12,6 +12,7 @@ import { applyDownloadFailureBackpressure } from './retry-store'
 import { withExternalRequestSignal } from '../external-request-context'
 import { clearAudioCache } from './audio-cache'
 import { classifyDownloadError } from '../sync/download-diagnostics'
+import { DownloadCancelledError, registerActiveDownload } from './queue-control'
 
 export async function executeDownloadTasks(
   processor: DownloadProcessor,
@@ -62,6 +63,7 @@ export async function executeDownloadTasks(
         const abortController = new AbortController()
         let watchdog: ReturnType<typeof setTimeout> | undefined
         let watchdogActive = true
+        let unregisterDownload: (() => void) | undefined
         let lastPersistedAt = 0, lastProgress = -1, lastPhase = ''
         const resetWatchdog = (reject: (reason: Error) => void) => {
           if (!watchdogActive) return
@@ -76,6 +78,13 @@ export async function executeDownloadTasks(
         }
         const result = await new Promise<DownloadProcessorResult>((resolve, reject) => {
           resetWatchdog(reject)
+          unregisterDownload = registerActiveDownload(task.id, () => {
+            if (!watchdogActive) return
+            watchdogActive = false
+            const error = new DownloadCancelledError()
+            abortController.abort(error)
+            reject(error)
+          })
           void withExternalRequestSignal(abortController.signal, () => processor(task, (pct, phase) => {
             if (!watchdogActive) return
             resetWatchdog(reject)
@@ -110,6 +119,7 @@ export async function executeDownloadTasks(
             },
           )
         }).finally(() => {
+          unregisterDownload?.()
           watchdogActive = false
           if (watchdog) clearTimeout(watchdog)
         })
@@ -181,6 +191,14 @@ export async function executeDownloadTasks(
         })
         options.onTaskSettled?.(task, 'done', { completed, total: tasks.length })
       } catch (err) {
+        if (err instanceof DownloadCancelledError) {
+          updateTaskState(task.id, {
+            status: 'pending', progress: 0, error: null, errorCode: null,
+            leaseOwner: null, leaseExpiresAt: null,
+          }, { leaseOwner })
+          emitEvent({ type: 'queue-update', data: { taskId: task.id, status: 'pending' }, timestamp: new Date().toISOString() })
+          continue
+        }
         const tagError = isTagWriteError(err) ? err : null
         const msg = tagError ? tagError.message : err instanceof Error ? err.message : '下载失败'
         applyDownloadFailureBackpressure(err)

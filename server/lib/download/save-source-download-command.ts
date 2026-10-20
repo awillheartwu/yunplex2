@@ -65,6 +65,8 @@ export async function startSourceAttributedResourceDownload(input: {
           downloadLyrics: input.downloadLyrics ?? input.config.download.downloadLyrics,
           embedMetadata: input.embedMetadata ?? input.config.download.embedMetadata,
           embedCover: input.embedCover ?? input.config.download.embedCover,
+          saveAlbumCover: input.embedCover === false ? false : undefined,
+          saveArtistImage: input.embedCover === false ? false : undefined,
           downloadMode: 'full',
           target: { kind: 'computed', requireManagedCopy: true },
         }),

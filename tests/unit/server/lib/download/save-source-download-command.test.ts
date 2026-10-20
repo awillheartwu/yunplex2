@@ -63,6 +63,16 @@ describe('save source download command', () => {
     expect(result).toMatchObject({ sourceId: 'source-one', batchId: 'run-one', total: 1 })
   })
 
+  it('disables standalone images too when the current download opts out of images', async () => {
+    const { startSourceAttributedResourceDownload } = await import('~~/server/lib/download/save-source-download-command')
+    const config = fakeConfig()
+    config.download.saveAlbumCover = config.download.saveArtistImage = true
+    await startSourceAttributedResourceDownload({ type: 'playlist', neteaseId: 88, selectedSongIds: [1], embedCover: false, config })
+    expect(mocks.createDownloadCommand).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ embedCover: false, saveAlbumCover: false, saveArtistImage: false }),
+    }))
+  })
+
   it('rolls back the newly-created disabled source when task persistence fails', async () => {
     mocks.createDownloadCommand.mockImplementation(() => { throw new Error('queue unavailable') })
     const { startSourceAttributedResourceDownload } = await import('~~/server/lib/download/save-source-download-command')

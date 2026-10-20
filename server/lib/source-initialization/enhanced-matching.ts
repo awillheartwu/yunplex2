@@ -134,7 +134,7 @@ export function enhanceInitializationPlans(plans: InitializationItemPlan[], song
     return {
       ...plan, tier: strong ? 'strong_id' : tier,
       candidate: selected ? plexCandidate(selected.entry.track) : null,
-      candidates: visible.map(item => plexCandidate(item.entry.track)),
+      candidates: [...new Map([...visible.map(item => plexCandidate(item.entry.track)), ...scored.map(item => item.candidate)].map(candidate => [candidate.ratingKey, candidate])).values()].slice(0, 20),
       decision: strong ? 'adopt' : 'defer',
       evidence: {
         scoreVersion: 1, scoredCandidates: scored.slice(0,20), scoredCandidateCount: scored.length,

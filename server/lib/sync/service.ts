@@ -4,6 +4,7 @@ import { appendLog } from '../log/store'
 import { checkCookie, clearAlbumCache, setArtistAliases } from '../netease'
 import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
 import { RunBuilder } from '../run/builder'
+import { cancelRunDownloads } from '../download/queue-control'
 import { saveSyncRun } from '../run/store'
 import type { SongStatus, StepError } from '../job/types'
 import { projectStaticResolutionStatus } from '../../../lib/media-status-projection'
@@ -741,6 +742,7 @@ export function getSyncService(getConfig: () => AppConfig) {
   function cancelSync(): boolean {
     if (!state.isRunning) return false
     cancelRequested = true
+    if (currentRun) cancelRunDownloads(currentRun.getId())
     requestController?.abort(new CancellationError())
     return true
   }

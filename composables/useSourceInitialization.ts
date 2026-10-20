@@ -486,17 +486,25 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     finally { acting.value = false }
   }
 
-  async function arrange(scope: 'default' | 'deferred' | 'needs_review'): Promise<boolean> {
+  async function arrange(scope: 'default' | 'deferred' | 'needs_review' | 'conflict' | 'selected', selection: { songIds?: number[]; filter?: InitializationSelectionFilter } = {}): Promise<boolean> {
     if (!ensureEditable() || !initialization.value) return false
     acting.value = true
     error.value = ''
     try {
-      await api.post(`/playlist-sources/${options.sourceId}/initialization/arrange`, { initializationId: initialization.value.id, scope })
+      await api.post(`/playlist-sources/${options.sourceId}/initialization/arrange`, { initializationId: initialization.value.id, scope, ...selection })
+      clearSelection()
       await load()
       options.onChanged?.()
       return true
     } catch (value) { error.value = errorMessage(value, '自动安排失败'); return false }
     finally { acting.value = false }
+  }
+
+  async function adoptFirstSelected(): Promise<void> {
+    if (!selectedCount.value) return
+    await arrange('selected', allMatchingSelected.value
+      ? { filter: { tier: tier.value, decision: decision.value ? decision.value as InitializationDecision : undefined, search: search.value, excludeSongIds: [...excluded.value] } }
+      : { songIds: [...selected.value] })
   }
 
   async function commit(confirmDeferred = false): Promise<boolean> {
@@ -610,6 +618,7 @@ export function useSourceInitialization(options: UseSourceInitializationOptions)
     confirmSharedMedia,
     commit,
     arrange,
+    adoptFirstSelected,
     dispose,
   }
 }

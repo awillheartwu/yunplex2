@@ -391,6 +391,45 @@ describe('quick plan restore', () => {
     expect(quickMediaPermissions(id)).toEqual(new Map([[81, [81]], [82, [82]]]))
   })
 
+  it('honors choosing the first candidate despite metadata and shared-media conflicts', () => {
+    const first = candidate(81, { artist: 'English Artist' })
+    const id = createReview('source-1', [
+      { songId: 81, tier: 'ambiguous', candidate: null, scored: [scoreEntry(first, 55, { eligible: false })] },
+      { songId: 82, tier: 'conflict', candidate: null, scored: [scoreEntry(first, 50, { eligible: false })] },
+      { songId: 83, tier: 'unmatched', candidate: null },
+    ])
+    expect(arrangeInitializationPlan('source-1', id, 'deferred')).toMatchObject({ matched: 2, downloads: 1 })
+    expect(item(id, 81)).toMatchObject({ decision: 'adopt', candidate_rating_key: first.ratingKey })
+    expect(item(id, 82)).toMatchObject({ decision: 'adopt', candidate_rating_key: first.ratingKey })
+    expect(item(id, 83).decision).toBe('download')
+    expect(quickMediaPermissions(id)).toEqual(new Map([[81, [81, 82]], [82, [81, 82]]]))
+  })
+
+  it('applies the first-candidate action across pages while retaining exclusions and songs without candidates', () => {
+    const id = createReview('source-1', Array.from({ length: 61 }, (_, index) => ({
+      songId: index + 1, tier: 'ambiguous', candidate: null,
+      scored: index === 60 ? undefined : [scoreEntry(candidate(index + 1), 45, { eligible: false })],
+    })))
+    expect(arrangeInitializationPlan('source-1', id, 'selected', {
+      filter: { tier: 'needs_review', excludeSongIds: [1] },
+    })).toMatchObject({ matched: 59, downloads: 0, changed: 59 })
+    expect(item(id, 1).decision).toBe('defer')
+    expect(item(id, 60).decision).toBe('adopt')
+    expect(item(id, 61).decision).toBe('defer')
+  })
+
+  it('allows a newly selected song to share an unchanged adopted candidate', () => {
+    const first = candidate(81)
+    const id = createReview('source-1', [
+      { songId: 81, scored: [scoreEntry(first, 95)] },
+      { songId: 82, tier: 'conflict', candidate: null, scored: [scoreEntry(first, 90)] },
+    ])
+    arrangeInitializationPlan('source-1', id)
+    expect(item(id, 81).decision).toBe('adopt')
+    arrangeInitializationPlan('source-1', id, 'selected', { songIds: [82] })
+    expect(quickMediaPermissions(id).get(82)).toEqual([81, 82])
+  })
+
   it('compacts ended undo payloads without deleting authorization or active undo', () => {
     const id = createReview('source-1', [{ songId: 81, scored: [scoreEntry(candidate(81), 95)] }])
     const ended = previewQuickPlan('source-1', id, revisionOf(id), 85)

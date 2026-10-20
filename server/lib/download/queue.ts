@@ -10,7 +10,7 @@ import { getRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
 import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { classifyDomainErrorCode, isDomainErrorCode, type DomainErrorCode } from '../../../shared/domain-errors'
-import { ELIGIBLE_DOWNLOAD_CALLERS_SQL, getDownloadQueueControl } from './queue-control'
+import { READY_DOWNLOAD_TASK_SQL, getDownloadQueueControl } from './queue-control'
 import type { DownloadAudioCache } from './audio-cache'
 
 export interface DownloadTask {
@@ -49,6 +49,8 @@ export interface DownloadExecutionIntent {
   downloadLyrics?: boolean
   embedMetadata?: boolean
   embedCover?: boolean
+  saveAlbumCover?: boolean
+  saveArtistImage?: boolean
 }
 const DOWNLOAD_TASK_OPERATIONS = new Set<DownloadTaskOperation>([
   'download',
@@ -251,7 +253,7 @@ export function listPendingDownloadTaskIds(limit = 1000): string[] {
     SELECT id
     FROM download_tasks
     WHERE status = 'pending'
-      AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL}
+      AND ${READY_DOWNLOAD_TASK_SQL}
     ORDER BY created_at ASC, rowid ASC
     LIMIT ?
   `).all(Math.max(1, Math.trunc(limit))) as Array<{ id: string }>).map(row => row.id)
@@ -261,7 +263,7 @@ export function getNextDownloadWakeDelay(): number | null {
   const control = getDownloadQueueControl()
   if (control.paused) return null
   const row = getDb().prepare(`SELECT 1 FROM download_tasks
-    WHERE status='pending' AND ${ELIGIBLE_DOWNLOAD_CALLERS_SQL} LIMIT 1`).get()
+    WHERE status='pending' AND ${READY_DOWNLOAD_TASK_SQL} LIMIT 1`).get()
   if (!row) return null
   return Math.max(0, control.cooldownUntil ? Date.parse(control.cooldownUntil) - Date.now() : 0)
 }
@@ -544,16 +546,12 @@ export function claimDownloadTask(id: string, leaseOwner: string, leaseDurationM
       updated_at = ?
     WHERE id = ?
       AND status IN ('pending','failed')
-      AND (
-        idempotency_key IS NULL
-        OR NOT EXISTS (
-          SELECT 1
-          FROM download_tasks active_task
-          WHERE active_task.id != download_tasks.id
-            AND active_task.idempotency_key = download_tasks.idempotency_key
-            AND active_task.status IN ('pending','downloading','tagging')
-        )
-      )
+      AND ${READY_DOWNLOAD_TASK_SQL}
+      AND (idempotency_key IS NULL OR NOT EXISTS (
+        SELECT 1 FROM download_tasks same_request
+        WHERE same_request.id!=download_tasks.id AND same_request.idempotency_key=download_tasks.idempotency_key
+          AND same_request.status IN ('pending','downloading','tagging')
+      ))
   `).run(leaseOwner, leaseExpiresAt, now, now, id)
   if (result.changes === 0) return null
   return getDownloadTask(id)

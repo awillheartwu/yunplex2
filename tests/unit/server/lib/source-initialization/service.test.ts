@@ -5,28 +5,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { getRun } from '~~/server/lib/run/store'
 
-const fetchPlaylistSongs = vi.fn(async () => ({
-  name: 'Production-sized source',
-  trackIds: [{ id: 42 }],
-  songs: [{
-    id: 42,
-    name: 'Signal',
-    no: 1,
-    dt: 180_000,
-    disc: '1',
-    artists: [{ name: 'Alpha' }],
-    album: { id: 1, name: 'Night Drive', picUrl: '', publishTime: 0 },
-  }],
+const { fetchPlaylistSongs, getSectionTracks } = vi.hoisted(() => ({
+  fetchPlaylistSongs: vi.fn(async () => ({
+    name: 'Production-sized source',
+    trackIds: [{ id: 42 }],
+    songs: [{
+      id: 42,
+      name: 'Signal',
+      no: 1,
+      dt: 180_000,
+      disc: '1',
+      artists: [{ name: 'Alpha' }],
+      album: { id: 1, name: 'Night Drive', picUrl: '', publishTime: 0 },
+    }],
+  })),
+  getSectionTracks: vi.fn(async () => [{
+    ratingKey: '100',
+    title: 'Signal',
+    grandparentTitle: 'Alpha',
+    parentTitle: 'Night Drive',
+    index: 1,
+    duration: 180_000,
+    Media: [{ Part: [{ file: '/music/Signal.flac' }] }],
+  }]),
 }))
-const getSectionTracks = vi.fn(async () => [{
-  ratingKey: '100',
-  title: 'Signal',
-  grandparentTitle: 'Alpha',
-  parentTitle: 'Night Drive',
-  index: 1,
-  duration: 180_000,
-  Media: [{ Part: [{ file: '/music/Signal.flac' }] }],
-}])
 
 vi.mock('~~/server/lib/netease', () => ({ fetchPlaylistSongs }))
 vi.mock('~~/server/lib/plex-client', () => ({
@@ -34,6 +36,9 @@ vi.mock('~~/server/lib/plex-client', () => ({
   getSectionKey: vi.fn(async () => '1'),
   getSectionTracks,
   getTrackByRatingKey: vi.fn(),
+  getPlaylistTracks: vi.fn(async () => []),
+  getTracksByRatingKeys: vi.fn(async () => new Map((await getSectionTracks()).map(track => [track.ratingKey, track]))),
+  findTracksByFilePath: vi.fn(async () => []),
 }))
 
 let directory = ''
@@ -55,6 +60,39 @@ afterEach(() => {
 })
 
 describe('source initialization analysis hard gate', () => {
+  it('commits the first candidates selected for Chinese and English artist differences without downloading', async () => {
+    const playlist = { ...await fetchPlaylistSongs(), trackIds: [{ id: 42 }, { id: 43 }], songs: [42, 43].map(id => ({
+      id, name: 'Signal', no: 1, dt: 180_000, disc: '1', artists: [{ name: '中文艺人' }],
+      album: { id: 1, name: 'Night Drive', picUrl: '', publishTime: 0 },
+    })) }
+    fetchPlaylistSongs.mockResolvedValueOnce(playlist).mockResolvedValueOnce(playlist)
+    const { analyzeSourceInitialization, commitSourceInitialization } = await import('~~/server/lib/source-initialization/service')
+    const { arrangeInitializationPlan } = await import('~~/server/lib/source-initialization/automatic-plan')
+    const { setInitializationDecisions } = await import('~~/server/lib/source-initialization/store')
+    const analyzed = await analyzeSourceInitialization('source-1', 'user')
+    setInitializationDecisions({ initializationId: analyzed.initializationId, songIds: [42, 43], decision: 'defer' })
+    expect(arrangeInitializationPlan('source-1', analyzed.initializationId, 'deferred')).toMatchObject({ matched: 2, downloads: 0 })
+    expect(await commitSourceInitialization(analyzed.initializationId)).toMatchObject({ applied: 2, downloads: 0, conflicts: 0 })
+    expect(getDb().prepare('SELECT netease_song_id,plex_rating_key,binding_origin FROM song_identity_bindings ORDER BY netease_song_id').all()).toEqual([
+      { netease_song_id: 42, plex_rating_key: '100', binding_origin: 'confirmed' },
+      { netease_song_id: 43, plex_rating_key: '100', binding_origin: 'confirmed' },
+    ])
+    expect(getDb().prepare('SELECT COUNT(*) count FROM download_tasks').get()).toEqual({ count: 0 })
+    const { DEFAULT_CONFIG } = await import('~~/server/lib/config/defaults')
+    const { resolveTracks } = await import('~~/server/lib/sync/lookup')
+    const { buildReconciliationPlan } = await import('~~/server/lib/sync/reconciliation-plan')
+    const config = structuredClone(DEFAULT_CONFIG)
+    config.download.dir = directory
+    config.download.plexLibraryPathPrefix = '/music'
+    const { resolutions } = await resolveTracks(playlist.songs, '', '1', config, false, { sourceId: 'source-1' }, { automaticMediaFallback: true })
+    expect(resolutions.map(item => [item.resolution, item.plexRatingKey])).toEqual([
+      ['found_in_plex_library', '100'], ['found_in_plex_library', '100'],
+    ])
+    const plan = buildReconciliationPlan({ targets: resolutions.map(item => ({ neteaseSongId: item.song.id, plexRatingKey: item.plexRatingKey, matchTrace: item.matchTrace })), currentItems: [] })
+    expect(plan.targetOrder).toEqual(['100', '100'])
+    expect(plan.hasIncompleteTargetOrder).toBe(false)
+  })
+
   it('reaches awaiting review without downloads, Plex writes, or identity writes', async () => {
     const { analyzeSourceInitialization } = await import('~~/server/lib/source-initialization/service')
     const result = await analyzeSourceInitialization('source-1', 'user')

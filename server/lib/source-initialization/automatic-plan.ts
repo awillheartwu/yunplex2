@@ -2,18 +2,24 @@ import { getDb } from '../db'
 import { InitializationConflictError } from './errors'
 import { saveAutomaticPlan } from './quick-plan'
 import { requestInitializationApply } from './requests'
-import { getInitialization, getLatestInitialization } from './store'
+import { getInitialization, getLatestInitialization, initializationSelectionIds } from './store'
+import type { InitializationSelectionFilter } from './types'
+
+export type ArrangementScope = 'default' | 'deferred' | 'needs_review' | 'conflict' | 'selected'
 
 /** A user's quick-start choice authorizes this plan; ordinary sync keeps exact-path identity rules. */
-export function arrangeInitializationPlan(sourceId: string, initializationId: string, scope: 'default' | 'deferred' | 'needs_review' = 'default') {
+export function arrangeInitializationPlan(sourceId: string, initializationId: string, scope: ArrangementScope = 'default', selection: { songIds?: number[]; filter?: InitializationSelectionFilter } = {}) {
   return getDb().transaction(() => {
     const initialization = getInitialization(initializationId)
-    if (!initialization || getLatestInitialization(sourceId)?.id !== initializationId) throw new InitializationConflictError('接管方案已变化，请刷新后重试')
+    if (!initialization || initialization.sourceId !== sourceId || getLatestInitialization(sourceId)?.id !== initializationId) throw new InitializationConflictError('接管方案已变化，请刷新后重试')
     const plan = saveAutomaticPlan(sourceId, initializationId, {
       automatic: true,
-      preserveManual: scope !== 'deferred',
+      preserveManual: scope === 'default',
       onlyDeferred: scope === 'deferred',
       needsReviewOnly: scope === 'needs_review',
+      conflictOnly: scope === 'conflict',
+      firstCandidate: scope !== 'default' || initialization.autoProcess,
+      ...(scope === 'selected' ? { selectedSongIds: initializationSelectionIds(initializationId, selection) } : {}),
     })
     const manualDeferred = getDb().prepare("SELECT 1 FROM source_initialization_items WHERE initialization_id=? AND tier!='preserved' AND decision='defer' AND json_extract(evidence_json,'$.decisionOrigin')='manual' LIMIT 1").get(initializationId)
     const started = scope === 'default' && Boolean(initialization.autoProcess) && !manualDeferred

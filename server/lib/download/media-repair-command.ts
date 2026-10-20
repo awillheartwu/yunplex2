@@ -6,8 +6,8 @@ import { appendLog } from '../log/store'
 import {
   fetchAlbumSongs,
   fetchPlaylistSongs,
-  fetchSongDetail,
   setArtistAliases,
+  type NeteaseSong,
 } from '../netease'
 import { getSource } from '../playlist/store'
 import { getSectionKey, initPlexClient, refreshLibrary } from '../plex-client'
@@ -71,10 +71,11 @@ export async function startMediaRepairCommand(sourceId: string): Promise<{
           source.syncLimit == null || source.syncLimit === 0 ? undefined : source.syncLimit,
           cfg.netease.cookie,
         )).songs
+    if (!getSource(sourceId)) throw new Error('收藏已删除，补全任务已取消')
 
     const targets: RepairTarget[] = []
     for (const song of songs) {
-      const target = await resolveRepairTarget(song.id, cfg)
+      const target = resolveRepairTarget(song, cfg)
       if (target) targets.push(target)
     }
 
@@ -104,6 +105,8 @@ export async function startMediaRepairCommand(sourceId: string): Promise<{
           downloadLyrics: cfg.download.downloadLyrics,
           embedMetadata: true,
           embedCover: false,
+          saveAlbumCover: cfg.download.saveAlbumCover,
+          saveArtistImage: cfg.download.saveArtistImage,
         },
         idempotencyKey: buildDownloadTaskIdempotencyKey({
           songId: target.songId,
@@ -254,41 +257,36 @@ async function processRepairRuns(runs: Array<{ runId: string; taskHandle: FileTa
   }
 }
 
-async function resolveRepairTarget(songId: number, cfg: AppConfig): Promise<RepairTarget | null> {
-  try {
-    const song = await fetchSongDetail(songId, cfg.netease.cookie)
-    const splitArtists = createSplitArtists(cfg.other.multiArtistFormat)
-    const [albumArtist, trackArtist] = splitArtists(song.artists)
-    const discoveredPath = findExistingLocalSongPath(song, cfg)
-    const computedPath = join(cfg.download.dir, buildDownloadPath(
-      cfg.other.pathFormat,
-      {
-        artist: albumArtist,
-        album: song.album.name,
-        title: song.name,
-        year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
-        track: String(song.no),
-        'track:02d': String(song.no).padStart(2, '0'),
-        songId: String(song.id),
-      },
-      'mp3',
-    ))
-    const localAsset = getLocalMediaAsset(song.id)
-    const binding = getSongIdentityBinding(song.id)
-    const path = discoveredPath
-      ?? resolveAccessibleLocalPath(localAsset?.filePath, cfg)
-      ?? resolveAccessibleLocalPath(computedPath, cfg)
-      ?? resolveAccessibleLocalPath(binding?.plexFilePath, cfg)
-    if (!path) return null
-    return {
-      songId: song.id,
-      songName: song.name,
-      artist: trackArtist || albumArtist,
+function resolveRepairTarget(song: NeteaseSong, cfg: AppConfig): RepairTarget | null {
+  const splitArtists = createSplitArtists(cfg.other.multiArtistFormat)
+  const [albumArtist, trackArtist] = splitArtists(song.artists)
+  const discoveredPath = findExistingLocalSongPath(song, cfg)
+  const computedPath = join(cfg.download.dir, buildDownloadPath(
+    cfg.other.pathFormat,
+    {
+      artist: albumArtist,
       album: song.album.name,
-      path,
-    }
-  } catch {
-    return null
+      title: song.name,
+      year: song.album.publishTime > 0 ? dayjs(song.album.publishTime).format('YYYY') : '',
+      track: String(song.no),
+      'track:02d': String(song.no).padStart(2, '0'),
+      songId: String(song.id),
+    },
+    'mp3',
+  ))
+  const localAsset = getLocalMediaAsset(song.id)
+  const binding = getSongIdentityBinding(song.id)
+  const path = discoveredPath
+    ?? resolveAccessibleLocalPath(localAsset?.filePath, cfg)
+    ?? resolveAccessibleLocalPath(computedPath, cfg)
+    ?? resolveAccessibleLocalPath(binding?.plexFilePath, cfg)
+  if (!path) return null
+  return {
+    songId: song.id,
+    songName: song.name,
+    artist: trackArtist || albumArtist,
+    album: song.album.name,
+    path,
   }
 }
 
