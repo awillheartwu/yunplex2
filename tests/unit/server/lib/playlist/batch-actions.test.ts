@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, initDb } from '~~/server/lib/db'
+import { closeDb, getDb, initDb, readConfigFromDb } from '~~/server/lib/db'
 import { applyPlaylistSourceBatchAction } from '~~/server/lib/playlist/batch-actions'
 import { getSource } from '~~/server/lib/playlist/store'
+import { setSyncService } from '~~/server/lib/sync/instance'
+import { getSyncService } from '~~/server/lib/sync/service'
 
 const tempDirs: string[] = []
 let sourceSequence = 1000
@@ -17,6 +19,7 @@ function createTempDataDir(): string {
 
 function setupDb() {
   initDb(createTempDataDir())
+  setSyncService(getSyncService(readConfigFromDb))
 }
 
 function insertSource(partial: {
@@ -66,46 +69,47 @@ function insertSource(partial: {
 describe('playlist source batch actions', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    closeDb()
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('rejects empty ids', () => {
-    expect(() => applyPlaylistSourceBatchAction('enable', [])).toThrow('请选择要操作的同步源')
+  it('rejects empty ids', async () => {
+    await expect(applyPlaylistSourceBatchAction('enable', [])).rejects.toThrow('请选择要操作的同步源')
   })
 
-  it('rejects unsupported actions', () => {
-    expect(() => applyPlaylistSourceBatchAction('archive', ['src-1'])).toThrow('不支持的批量操作')
+  it('rejects unsupported actions', async () => {
+    await expect(applyPlaylistSourceBatchAction('archive', ['src-1'])).rejects.toThrow('不支持的批量操作')
   })
 
-  it('rejects missing sources', () => {
+  it('rejects missing sources', async () => {
     setupDb()
 
-    expect(() => applyPlaylistSourceBatchAction('disable', ['missing'])).toThrow('同步源不存在：missing')
+    await expect(applyPlaylistSourceBatchAction('disable', ['missing'])).rejects.toThrow('同步源不存在：missing')
   })
 
-  it('rejects album sources for sync', () => {
+  it('rejects album sources for sync', async () => {
     setupDb()
     insertSource({ id: 'playlist-1', type: 'playlist' })
     insertSource({ id: 'album-1', type: 'album' })
 
-    expect(() => applyPlaylistSourceBatchAction('sync', ['playlist-1', 'album-1'])).toThrow('批量同步仅支持歌单来源')
+    await expect(applyPlaylistSourceBatchAction('sync', ['playlist-1', 'album-1'])).rejects.toThrow('批量同步仅支持歌单来源')
   })
 
-  it('updates playlist enabled state in bulk', () => {
+  it('updates playlist enabled state in bulk', async () => {
     setupDb()
     insertSource({ id: 'playlist-1', enabled: true })
     insertSource({ id: 'playlist-2', enabled: true })
 
-    const result = applyPlaylistSourceBatchAction('disable', ['playlist-1', 'playlist-2'])
+    const result = await applyPlaylistSourceBatchAction('disable', ['playlist-1', 'playlist-2'])
 
     expect(result).toEqual({ action: 'disable', count: 2, ids: ['playlist-1', 'playlist-2'] })
     expect(getSource('playlist-1')?.enabled).toBe(false)
     expect(getSource('playlist-2')?.enabled).toBe(false)
   })
 
-  it('deletes selected sources and cascades download tasks', () => {
+  it('deletes selected sources while retaining file task history', async () => {
     setupDb()
     insertSource({ id: 'playlist-1' })
     getDb().prepare(`
@@ -124,19 +128,19 @@ describe('playlist source batch actions', () => {
       VALUES ('task-1', 'playlist-1', 1, 'Song', 'Artist', 'Album', 'done', 100, ?, ?)
     `).run(new Date().toISOString(), new Date().toISOString())
 
-    const result = applyPlaylistSourceBatchAction('delete', ['playlist-1'])
+    const result = await applyPlaylistSourceBatchAction('delete', ['playlist-1'])
 
     expect(result.count).toBe(1)
     expect(getSource('playlist-1')).toBeNull()
-    expect((getDb().prepare('SELECT COUNT(*) as count FROM download_tasks').get() as { count: number }).count).toBe(0)
+    expect(getDb().prepare('SELECT id,source_id FROM download_tasks').all()).toEqual([{ id: 'task-1', source_id: null }])
   })
 
-  it('triggers one sync run for selected enabled playlists', () => {
+  it('triggers one sync run for selected enabled playlists', async () => {
     setupDb()
     insertSource({ id: 'playlist-1' })
     insertSource({ id: 'playlist-2' })
     const runSync = vi.fn(() => ({ runId: 'run-1' }))
-    const result = applyPlaylistSourceBatchAction('sync', ['playlist-1', 'playlist-2'], {
+    const result = await applyPlaylistSourceBatchAction('sync', ['playlist-1', 'playlist-2'], {
       isSyncRunning: () => false,
       isRepairRunning: () => false,
       runSync,

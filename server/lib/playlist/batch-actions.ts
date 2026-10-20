@@ -1,4 +1,5 @@
-import { deleteSource, getSource, updateSource } from './store'
+import { getSource, updateSource } from './store'
+import { deleteSourceAndStopWork } from './delete-source'
 import type { PlaylistSource } from './types'
 
 export const PLAYLIST_SOURCE_BATCH_ACTIONS = ['enable', 'disable', 'delete', 'sync'] as const
@@ -35,11 +36,11 @@ function resolveBatchSources(ids: string[]): PlaylistSource[] {
   return sources as PlaylistSource[]
 }
 
-export function applyPlaylistSourceBatchAction(
+export async function applyPlaylistSourceBatchAction(
   actionInput: unknown,
   idsInput: unknown,
   deps: PlaylistSourceBatchDeps = {},
-): PlaylistSourceBatchResult {
+): Promise<PlaylistSourceBatchResult> {
   if (!isPlaylistSourceBatchAction(actionInput)) {
     throw new Error('不支持的批量操作')
   }
@@ -62,7 +63,7 @@ export function applyPlaylistSourceBatchAction(
   }
 
   if (actionInput === 'delete') {
-    for (const source of sources) deleteSource(source.id)
+    for (const source of sources) await deleteSourceAndStopWork(source.id)
     return { action: actionInput, count: sources.length, ids }
   }
 

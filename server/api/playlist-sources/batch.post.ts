@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const result = applyPlaylistSourceBatchAction(body?.action, body?.ids)
+    const result = await applyPlaylistSourceBatchAction(body?.action, body?.ids)
     getSyncWorker()?.update()
 
     const messages = {

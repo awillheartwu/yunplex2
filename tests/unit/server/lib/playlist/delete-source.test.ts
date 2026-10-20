@@ -11,6 +11,7 @@ import { setSyncService } from '~~/server/lib/sync/instance'
 import { getSyncService } from '~~/server/lib/sync/service'
 import { persistSourceRequest } from '~~/server/lib/sync/request-store'
 import { deleteSourceAndStopWork } from '~~/server/lib/playlist/delete-source'
+import { applyPlaylistSourceBatchAction } from '~~/server/lib/playlist/batch-actions'
 import { getSource } from '~~/server/lib/playlist/store'
 
 let directory = ''
@@ -30,7 +31,7 @@ const intent = (sourceId: string, jobId: string, songId: number) => ({
 })
 
 describe('delete a source with accepted work', () => {
-  it('aborts its active file, prevents pending work, and retains task records', async () => {
+  it.each(['single', 'batch'])('%s deletion aborts its active file, prevents pending work, and retains task records', async mode => {
     const files = submitFileTasks([intent('source-a', 'a', 1), intent('source-a', 'a', 2)])
     let began!: () => void
     const started = new Promise<void>(resolve => { began = resolve })
@@ -41,7 +42,8 @@ describe('delete a source with accepted work', () => {
     } })
     const draining = worker.wake()
     await started
-    await deleteSourceAndStopWork('source-a')
+    if (mode === 'batch') await applyPlaylistSourceBatchAction('delete', ['source-a'])
+    else await deleteSourceAndStopWork('source-a')
     await draining
     expect(getSource('source-a')).toBeNull()
     expect(signals).toHaveLength(1)
