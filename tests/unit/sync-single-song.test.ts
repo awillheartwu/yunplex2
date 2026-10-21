@@ -51,6 +51,12 @@ vi.mock('../../server/lib/media-validation', () => ({
   validateLocalAudioFile: vi.fn(() => ({ valid: true })),
 }))
 
+// Keep download orchestration independent of the database-backed identity guard.
+vi.mock('../../server/lib/download/media-write-guard', () => ({
+  withMediaWriteTarget: (_filePath: string, _songId: number, write: () => Promise<unknown>) => write(),
+  publishMediaWrite: (_input: unknown, publish: () => Promise<unknown>) => publish(),
+}))
+
 import { downloadSingleSong } from '../../server/lib/download/single-song'
 import type { SingleSongConfig } from '../../server/lib/download/single-song'
 import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../../server/lib/netease'
