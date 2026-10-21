@@ -44,6 +44,7 @@ import {
 } from './reconciliation-plan'
 import {
   PlexReorderError,
+  createPlaylistOrderError,
   validatePlaylistOrder,
   type ReorderMutation,
 } from './reorder'
@@ -431,6 +432,7 @@ export async function reconcilePlexPlaylist(
 
   setStage('updating_plex_playlist')
   let releaseIdentityLock: (() => void) | null = null
+  let reorderMutationsApplied = false
   try {
     releaseIdentityLock = await acquireIdentityMutationLock()
     input.assertRecoveryContextUnchanged?.()
@@ -462,6 +464,7 @@ export async function reconcilePlexPlaylist(
       },
     )
     applyConfirmedReorderMutations(reorderResult.mutations)
+    reorderMutationsApplied = true
     const postPlaylistTracks = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
     const postItems = postPlaylistTracks
       .filter(track => track.playlistItemID)
@@ -470,13 +473,7 @@ export async function reconcilePlexPlaylist(
       allowExtra: reconciliationPlan.allowExtra,
     })
     if (!orderValidation.ok) {
-      job.failStep(reorderStep, 'Plex 歌单重排校验失败', {
-        title: 'Plex 歌单重排校验失败',
-        message: 'Plex 写入完成后，实际歌单顺序与目标顺序不一致',
-        stage: 'plex_insert',
-        context: { ...orderValidation },
-      })
-      throw new Error('Plex 歌单重排校验失败')
+      throw createPlaylistOrderError(orderValidation, postItems, reorderResult)
     }
     recordAppliedPlexPlaylistFingerprint(
       source.id,
@@ -486,7 +483,7 @@ export async function reconcilePlexPlaylist(
     )
   } catch (error) {
     if (error instanceof PlexReorderError) {
-      applyConfirmedReorderMutations(error.result.mutations)
+      if (!reorderMutationsApplied) applyConfirmedReorderMutations(error.result.mutations)
       const ratingKeyToSongIds = new Map<string, string[]>()
       for (const resolution of resolutions) {
         if (!resolution.plexRatingKey) continue

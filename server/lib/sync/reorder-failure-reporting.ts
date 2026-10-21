@@ -16,7 +16,9 @@ export function buildPlexReorderStepError(error: PlexReorderError): StepError {
     title: 'Plex 歌单重排失败',
     message: error.message,
     stage: 'plex_insert',
+    code: error.code,
     context: {
+      ...error.validation,
       failures: error.result.failures,
       inserted: error.result.inserted,
       removed: error.result.removed,

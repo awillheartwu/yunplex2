@@ -299,9 +299,9 @@ describe('computeLCS', () => {
 
   it('does not delete authorized old items when Plex move calls are no-ops', async () => {
     vi.mocked(getPlaylistTracks).mockResolvedValue([
-      { ratingKey: 'rating-1' },
-      { ratingKey: 'rating-2' },
-      { ratingKey: 'old-rating' },
+      { ratingKey: 'rating-1', playlistItemID: 101 },
+      { ratingKey: 'rating-2', playlistItemID: 102 },
+      { ratingKey: 'old-rating', playlistItemID: 103 },
     ] as any)
 
     await expect(applyFullReorder(
@@ -318,7 +318,7 @@ describe('computeLCS', () => {
       { authorizedRemovalItemIds: new Set([103]) },
     )).rejects.toBeInstanceOf(PlexReorderError)
 
-    expect(getPlaylistTracks).toHaveBeenCalledTimes(3)
+    expect(getPlaylistTracks).toHaveBeenCalledTimes(4)
     expect(removeTrackFromPlaylist).not.toHaveBeenCalled()
   })
 

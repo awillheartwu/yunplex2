@@ -24,7 +24,7 @@ import {
   buildPlexPlaylistFingerprint,
 } from './playlist-fingerprint'
 import { applyFullReorder } from './plex-reconciler'
-import { PlexReorderError, validatePlaylistOrder } from './reorder'
+import { PlexReorderError, createPlaylistOrderError, validatePlaylistOrder } from './reorder'
 import { validateCachedTargetOrder } from './reorder-cache'
 import { buildPlexReorderStepError, markPlexReorderFailures } from './reorder-failure-reporting'
 
@@ -127,7 +127,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
         throw new Error(`歌曲 #${songId} 的身份已变化，本轮已安全中止 Plex 重排，请重试同步`)
       }
     }
-    await applyFullReorder(
+    const reorderResult = await applyFullReorder(
       playlist.ratingKey,
       targetOrder,
       currentItems,
@@ -142,13 +142,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
       .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
     const orderValidation = validatePlaylistOrder(targetOrder, postItems, { allowExtra: true })
     if (!orderValidation.ok) {
-      job.failStep(reorderStep, 'Plex 歌单重排校验失败', {
-        title: 'Plex 歌单重排校验失败',
-        message: 'Plex 写入完成后，实际歌单顺序与目标顺序不一致',
-        stage: 'plex_insert',
-        context: { ...orderValidation },
-      })
-      throw new Error('Plex 歌单重排校验失败')
+      throw createPlaylistOrderError(orderValidation, postItems, reorderResult)
     }
     recordAppliedPlexPlaylistFingerprint(
       source.id,

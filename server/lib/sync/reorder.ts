@@ -53,12 +53,16 @@ export interface PlaylistOrderValidation {
 }
 
 export class PlexReorderError extends Error {
+  readonly code = 'failed_plex_insert'
   result: ReorderResult
+  validation?: PlaylistOrderValidation
 
-  constructor(result: ReorderResult) {
-    super(`Plex 歌单重排失败: ${result.failures.length} 个写入操作失败`)
+  constructor(result: ReorderResult, validation?: PlaylistOrderValidation) {
+    const detail = result.failures[0]?.message
+    super(`Plex 歌单重排失败: ${result.failures.length} 个写入操作失败${detail ? `；${detail}` : ''}`)
     this.name = 'PlexReorderError'
     this.result = result
+    this.validation = validation
   }
 }
 
@@ -230,31 +234,65 @@ export async function applyFullReorder(
   const authorizedRemovalCandidates = removalCandidates.filter(item =>
     authorizedRemovalItemIds.has(item.playlistItemId),
   )
-  if (authorizedRemovalCandidates.length > 0) {
-    let preRemovalValidation: PlaylistOrderValidation | null = null
-    try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 250))
-        const observedItems = (await getPlaylistTracks(playlistRatingKey, 99999))
-          .map(track => ({ ratingKey: track.ratingKey }))
-        preRemovalValidation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
-        if (preRemovalValidation.ok) break
+  if (result.moved > 0 || authorizedRemovalCandidates.length > 0) {
+    const readBack = async (): Promise<PlexItem[]> => {
+      try {
+        return (await getPlaylistTracks(playlistRatingKey, 99999))
+          .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        result.failures.push({ action: 'move', message: `重排后读回 Plex 歌单失败: ${message}` })
+        throw new PlexReorderError(result)
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      result.failures.push({
-        action: 'move',
-        message: `删除前读回 Plex 歌单失败，已中止删除: ${message}`,
-      })
-      throw new PlexReorderError(result)
     }
-    if (!preRemovalValidation?.ok) {
-      result.failures.push({
-        action: 'move',
-        message: 'Plex 返回写入成功，但删除前读回校验未看到完整目标顺序；已中止删除',
-      })
-      throw new PlexReorderError(result)
+    let observedItems = workingItems
+    let validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (cancelRequested()) return result
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 250))
+      observedItems = await readBack()
+      validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
+      if (validation.ok) break
     }
+
+    if (!validation.ok && validation.missing.length === 0) {
+      // Plex can acknowledge an earlier move without placing the item before
+      // its successor. Move the inverted successor later instead, once.
+      const observedById = new Map(observedItems.map(item => [item.playlistItemId, item.ratingKey]))
+      const changedIndex = targetItemIds.findIndex((id, index) => observedById.get(id) !== targetOrder[index])
+      if (changedIndex >= 0) {
+        result.failures.push({
+          action: 'move',
+          ratingKey: targetOrder[changedIndex],
+          playlistItemId: targetItemIds[changedIndex],
+          message: 'Plex 读回的具体歌单项已变化，本轮停止重排',
+        })
+        throw new PlexReorderError(result, validation)
+      }
+      log('warn', 'Plex 移动后顺序未对齐，按读回的具体条目从另一方向调整错位项')
+      const observedOrder = observedItems.map(item => item.playlistItemId)
+      for (let index = 1; index < targetItemIds.length; index++) {
+        if (cancelRequested()) return result
+        const afterItemId = targetItemIds[index - 1]!
+        const itemId = targetItemIds[index]!
+        if (observedOrder.indexOf(afterItemId) < observedOrder.indexOf(itemId)) continue
+        try {
+          await movePlaylistItemAfter(playlistRatingKey, itemId, afterItemId)
+          result.moved++
+          result.mutations.push({ action: 'move', playlistItemId: itemId, afterPlaylistItemId: afterItemId })
+          observedOrder.splice(observedOrder.indexOf(itemId), 1)
+          observedOrder.splice(observedOrder.indexOf(afterItemId) + 1, 0, itemId)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          result.failures.push({ action: 'move', ratingKey: targetOrder[index], playlistItemId: itemId, message })
+          throw new PlexReorderError(result)
+        }
+      }
+      if (cancelRequested()) return result
+      observedItems = await readBack()
+      validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
+    }
+    if (!validation.ok) throw createPlaylistOrderError(validation, observedItems, result)
   }
 
   for (const item of authorizedRemovalCandidates) {
@@ -272,6 +310,51 @@ export async function applyFullReorder(
 
   if (result.failures.length > 0) throw new PlexReorderError(result)
   return result
+}
+
+/** Preserve concrete failed items when HTTP acknowledgements disagree with readback. */
+export function createPlaylistOrderError(
+  validation: PlaylistOrderValidation,
+  currentItems: PlexItem[],
+  result: ReorderResult,
+): PlexReorderError {
+  const failures: ReorderFailure[] = []
+  const missing = new Set(validation.missing)
+  let cursor = 0
+  for (const key of validation.expectedTargetOrder) {
+    const position = currentItems.findIndex((item, index) => index >= cursor && item.ratingKey === key)
+    if (position >= 0) {
+      cursor = position + 1
+      continue
+    }
+    const item = currentItems.find(candidate => candidate.ratingKey === key)
+    failures.push({
+      action: missing.has(key) ? 'insert' : 'move',
+      ratingKey: key,
+      playlistItemId: item?.playlistItemId,
+      message: missing.has(key)
+        ? `Plex 写后校验未找到目标媒体 #${key}`
+        : `Plex 写后校验发现媒体 #${key} 未按目标顺序排列`,
+    })
+  }
+  if (validation.extra.length > 0) {
+    const remainingIds = new Set(currentItems.map(item => item.playlistItemId))
+    const failedRemovals = result.mutations.filter(mutation =>
+      mutation.action === 'remove' && remainingIds.has(mutation.playlistItemId),
+    )
+    for (const mutation of failedRemovals) {
+      if (mutation.action !== 'remove') continue
+      failures.push({
+        action: 'remove',
+        ratingKey: mutation.ratingKey,
+        playlistItemId: mutation.playlistItemId,
+        message: `Plex 写后校验发现应移除的具体歌单项 #${mutation.playlistItemId} 仍存在`,
+      })
+    }
+    if (failedRemovals.length === 0) failures.push({ action: 'remove',
+      message: 'Plex 写后出现了未在本轮移除计划中的多余条目，请重新核对歌单成员' })
+  }
+  return new PlexReorderError({ ...result, failures: [...result.failures, ...failures] }, validation)
 }
 
 /**
