@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getDb, initDb } from '../../server/lib/db'
+import { writeConfig } from '../../server/lib/config/store'
+import { closeDb, getDb, initDb } from '../../server/lib/db'
 import {
   failureFingerprint,
+  getSourceFailureStatus,
   getSourceFailureCounts,
   getSourceFailurePolicy,
+  ignoreExhaustedFailures,
   queryFailureRecords,
   recordFailure,
   resolveFailures,
@@ -17,14 +20,16 @@ import { saveRun } from '../../server/lib/run/store'
 import type { TaskRun } from '../../server/lib/job/types'
 
 const directories: string[] = []
-function setup() {
+function setup(maxFailureAttempts = 3) {
   const directory = mkdtempSync(join(tmpdir(), 'reyunplex-failures-'))
   directories.push(directory)
   initDb(directory)
+  writeConfig({ sync: { maxFailureAttempts } })
 }
 
 describe('failure records', () => {
   afterEach(() => {
+    closeDb()
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
   })
 
@@ -126,6 +131,36 @@ describe('failure records', () => {
     expect(queryFailureRecords({ status: 'ignored' }).total).toBe(1)
   })
 
+  it.each([1, 3] as const)('automatically ignores after the configured %i-round budget', (limit) => {
+    setup(limit)
+    const rounds = Array.from({ length: limit }, (_, index) => {
+      const record = recordFailure({
+        songId: 42,
+        songName: 'Download Failure',
+        sourceId: 'source-one',
+        runId: `failure-round-${index + 1}`,
+        runType: 'sync',
+        failureKind: 'failed_download',
+        occurredAt: `2026-06-20T12:3${index}:00.000Z`,
+      })
+      ignoreExhaustedFailures('source-one', limit)
+      return record
+    })
+
+    expect(rounds.map(record => [record.status, record.attemptCount, record.occurrenceCount])).toEqual(
+      Array.from({ length: limit }, (_, index) => [
+        index + 1 === limit ? 'ignored' : 'open',
+        index + 1,
+        index + 1,
+      ]),
+    )
+    expect(queryFailureRecords({ status: 'ignored' }).items[0]).toMatchObject({
+      status: 'ignored',
+      ignoreReason: 'automatic',
+      attemptLimit: limit,
+    })
+  })
+
   it('keeps first and last seen bounds correct when history is replayed out of order', () => {
     setup()
     recordFailure({
@@ -170,7 +205,37 @@ describe('failure records', () => {
     recordFailure(failure)
     recordFailure(failure)
 
-    expect(queryFailureRecords({ status: 'open' }).items[0]?.occurrenceCount).toBe(1)
+    expect(queryFailureRecords({ status: 'open' }).items[0]).toMatchObject({
+      status: 'open',
+      occurrenceCount: 1,
+      attemptCount: 1,
+      attemptLimit: 3,
+    })
+  })
+
+  it('keeps an ignored source failure ahead of a newer open source failure', () => {
+    setup()
+    const ignored = recordFailure({
+      songName: '来源同步',
+      sourceId: 'source-one',
+      runId: 'source-run-1',
+      runType: 'sync',
+      failureKind: 'scheduler_interrupted',
+    })
+    setFailureRecordStatus([ignored.id], 'ignored')
+    const open = recordFailure({
+      songName: '来源同步',
+      sourceId: 'source-one',
+      runId: 'source-run-2',
+      runType: 'sync',
+      failureKind: 'source_missing',
+    })
+
+    const records = queryFailureRecords({ status: 'all', sourceId: 'source-one' }).items
+    expect(records.find(record => record.id === ignored.id)?.status).toBe('ignored')
+    expect(records.find(record => record.id === open.id)?.status).toBe('open')
+    // An ignored source-level prerequisite keeps automatic convergence stopped.
+    expect(getSourceFailureStatus('source-one')).toBe('ignored')
   })
 
   it('does not let an older success resolve a newer failure', () => {

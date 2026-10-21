@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, renameSync } from 'node:fs'
 import { copyFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -247,6 +247,7 @@ export async function downloadSong(
     separateLyricFiles?: boolean
     audioCache?: DownloadAudioCache
     audioCachePath?: string
+    commitFile?: (result: DownloadResult, publish: () => void) => Promise<void>
   },
   relativePath: string,
   onProgress?: (pct: number, phase?: 'downloading' | 'tagging') => void,
@@ -408,10 +409,15 @@ export async function downloadSong(
     }
 
     signal?.throwIfAborted()
-    if (stagedAudioPath) {
-      await rename(stagedAudioPath, filePath)
-      stagedCommitted = true
+    const publish = () => {
+      signal?.throwIfAborted()
+      if (stagedAudioPath) {
+        renameSync(stagedAudioPath, filePath)
+        stagedCommitted = true
+      }
     }
+    if (options.commitFile) await options.commitFile({ filePath, ops }, publish)
+    else publish()
     return { filePath, ops }
   } finally {
     // Never leave an owned .part file behind on failure or cancellation.

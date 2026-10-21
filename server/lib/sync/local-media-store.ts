@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs'
-import { normalize } from 'node:path'
+import { resolve } from 'node:path'
 import type { AppConfig } from '../config/types'
 import { getDb } from '../db'
 import { parseJsonObject } from '../json'
@@ -64,7 +64,7 @@ interface LocalMediaRow {
 function fromRow(row: LocalMediaRow): LocalMediaAsset {
   return {
     neteaseSongId: row.netease_song_id,
-    filePath: row.file_path,
+    filePath: resolve(row.file_path),
     provenance: row.provenance,
     ownership: row.ownership,
     sourceTaskId: row.source_task_id,
@@ -243,7 +243,7 @@ export function upsertLocalMediaAsset(input: {
   evidence?: Record<string, unknown>
 }): LocalMediaAsset {
   const now = new Date().toISOString()
-  const filePath = normalize(input.filePath)
+  const filePath = resolve(input.filePath)
   let fileSize: number | null = null
   let fileMtimeMs: number | null = null
   let status: LocalMediaStatus = 'missing'

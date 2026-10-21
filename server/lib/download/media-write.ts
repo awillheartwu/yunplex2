@@ -1,5 +1,5 @@
 import { stageCorrectionMedia } from '../sync/media-corrections'
-import { normalize } from 'node:path'
+import { resolve } from 'node:path'
 import { getDb } from '../db'
 import {
   getLocalMediaAsset,
@@ -21,17 +21,17 @@ export interface CompletedMediaWrite {
 
 /**
  * Commit one completed audio operation as the durable Local Media Asset fact.
- * File execution stays side-effect free; every queue/direct caller crosses this
- * single seam exactly once after tags have succeeded.
+ * The file writer calls this under the output-path and identity locks, after
+ * final validation and publication, before releasing the path to another task.
  */
 export function commitCompletedMediaWrite(input: CompletedMediaWrite): LocalMediaAsset {
-  const staged = stageCorrectionMedia(input)
+  const normalizedPath = resolve(input.filePath)
+  const staged = stageCorrectionMedia({ ...input, filePath: normalizedPath })
   if (staged) return staged
   const previous = getLocalMediaAsset(input.neteaseSongId)
-  const normalizedPath = normalize(input.filePath)
   const reusesManagedAsset = !input.audioDownloaded
     && previous?.ownership === 'managed'
-    && normalize(previous.filePath) === normalizedPath
+    && resolve(previous.filePath) === normalizedPath
   const ownership = input.audioDownloaded || reusesManagedAsset
     ? 'managed' as const
     : 'external' as const

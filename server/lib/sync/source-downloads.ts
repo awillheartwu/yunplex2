@@ -8,7 +8,7 @@ import {
   buildDownloadTaskIdempotencyKey,
   type DownloadTask,
 } from '../download/queue'
-import { submitFileTasks } from '../download/file-task-command'
+import { createFileTaskWaitHandle, getSourceFileRetryTasks, resumeSourceFileTasks, submitFileTasks } from '../download/file-task-command'
 import { getDownloadWorker } from '../download/worker'
 import { classifyDownloadTaskFailure } from './download-diagnostics'
 import { getActiveSongIdentityBindings } from './identity-store'
@@ -35,7 +35,8 @@ interface ApplySourceDownloadsInput {
 
 interface DownloadPlan {
   resolution: TrackResolution
-  mode: 'full' | 'replace'
+  mode: 'full' | 'missing' | 'replace'
+  retryTasks?: DownloadTask[]
   target?: import('../download/single-song').AudioTargetIntent
 }
 
@@ -105,6 +106,20 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     }
   }
 
+  if (!dryRun && !redownloadManagedMedia) {
+    const fileRetries = getSourceFileRetryTasks(source.id)
+    for (const resolution of resolutions) {
+      if (resolution.resolution === 'ignored_failure') continue
+      const correctionId = getMediaCorrection(resolution.song.id)?.id ?? null
+      const retryTasks = (fileRetries.get(resolution.song.id) ?? []).filter(task =>
+        (task.idempotencyKey?.split(':correction:')[1] ?? null) === correctionId,
+      )
+      if (retryTasks.length) downloadPlans.set(resolution.song.id, {
+        resolution, retryTasks, mode: retryTasks[0]!.executionIntent?.downloadMode ?? 'missing',
+      })
+    }
+  }
+
   const songsToDownload = [...downloadPlans.values()].map(plan => plan.resolution)
   const needsPlexRefresh = songsToDownload.length > 0 || (!dryRun && resolutions.some(resolution=>Boolean(getMediaCorrection(resolution.song.id)?.staged_asset_json)))
     || resolutions.some(resolution => resolution.resolution === 'found_on_disk')
@@ -118,7 +133,9 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     )
     setStage('downloading')
 
-    const fileTaskHandle = submitFileTasks(songsToDownload.map(resolution => {
+    const retryTaskIds = [...downloadPlans.values()].flatMap(plan => plan.retryTasks
+      ? resumeSourceFileTasks(plan.retryTasks, job.getId(), source.id) : [])
+    const submitted = submitFileTasks(songsToDownload.filter(resolution => !downloadPlans.get(resolution.song.id)?.retryTasks).map(resolution => {
       const [, trackArtist] = splitArtists(resolution.song.artists)
       const operation = downloadPlans.get(resolution.song.id)?.mode === 'replace'
         ? 'replace' as const
@@ -156,9 +173,10 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         }) + (getMediaCorrection(resolution.song.id) ? `:correction:${getMediaCorrection(resolution.song.id)!.id}` : ''),
       }
     }))
-    for (const { task } of fileTaskHandle.tasks) {
+    for (const { task } of submitted.tasks) {
       queuedDownloadTasks.set(task.songId, task)
     }
+    const fileTaskHandle = createFileTaskWaitHandle([...submitted.taskIds, ...retryTaskIds])
 
     const worker = getDownloadWorker()
     if (!worker) throw new Error('下载消费者尚未启动')
@@ -168,10 +186,12 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     })
     throwIfCancelled()
     queuedDownloadTasks.clear()
-    for (const task of fileTaskHandle.readResults()) queuedDownloadTasks.set(task.songId, task)
+    for (const task of fileTaskHandle.readResults()) {
+      if (queuedDownloadTasks.get(task.songId)?.status !== 'failed') queuedDownloadTasks.set(task.songId, task)
+    }
     setStage('processing_tags')
 
-    for (const resolution of songsToDownload) {
+    for (const resolution of resolutions.filter(item => downloadPlans.has(item.song.id))) {
       const songId = job.findSongIdByIndex(source.id, resolution.neteaseIndex)
         ?? job.findSongId(source.id, resolution.song.id)
       if (!songId) continue
@@ -214,7 +234,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         const previousFilePath = resolution.filePath
         resolution.filePath = task.filePath ?? resolution.filePath
         if (
-          downloadPlans.get(resolution.song.id)?.mode === 'replace'
+          (task.operation === 'replace' || task.executionIntent?.downloadMode === 'replace')
           && resolution.filePath
           && (!previousFilePath || !sameLocalFilePath(previousFilePath, resolution.filePath))
         ) {
@@ -228,7 +248,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
           fileType: task.fileType,
           metadata: {
             trackNumber: resolution.song.no,
-            quality: config.netease.quality,
+            quality: task.quality ?? config.netease.quality,
             duration: resolution.song.dt,
             disc: resolution.song.disc || '1',
           },

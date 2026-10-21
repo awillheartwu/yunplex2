@@ -18,7 +18,7 @@ test('request deep links restore pending progress after reload and show the term
   status = 'running'
   await expect(progress).toContainText('正在同步', { timeout: 6000 })
   status = 'failed'
-  await expect(progress).toContainText('执行失败', { timeout: 6000 })
+  await expect(progress).toContainText('处理失败', { timeout: 6000 })
   await expect(progress).toContainText('Plex 写入失败，请检查服务连接')
   await expect(progress.getByRole('link', { name: '查看运行结果' })).toHaveAttribute('href', '/task-center/runs/run-feedback')
 })

@@ -57,7 +57,7 @@
         </div>
       </header>
       <div class="source-settings__grid">
-        <FormField label="同步数量上限" hint="留空使用全局设置"
+        <FormField v-if="source.type === 'playlist'" label="同步数量上限" hint="留空使用全局设置"
           ><input v-model.number="form.syncLimit" type="number" min="0" class="form-input" placeholder="使用全局设置"
         /></FormField>
         <FormField label="自动同步间隔（分钟）" hint="留空使用全局设置"

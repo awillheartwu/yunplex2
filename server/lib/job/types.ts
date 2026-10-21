@@ -48,6 +48,7 @@ export interface SongTask {
     label?: string
     releaseDate?: string
     plexRatingKey?: string
+    plexPlaylistRatingKey?: string
     plexPlaylistItemId?: number
     matchTrace?: Record<string, unknown>
   }

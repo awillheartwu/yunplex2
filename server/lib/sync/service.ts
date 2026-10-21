@@ -166,6 +166,7 @@ export function getSyncService(getConfig: () => AppConfig) {
         const effectiveSettings = resolveEffectiveSourceSyncSettings(source, cfg)
         const skipPlexPL = isAlbum && effectiveSettings.skipPlexPlaylist
         const skipRemoveExtra = plexRecoveryOnly || effectiveSettings.skipRemoveExtraTracks
+        let sourceTrackCount: number | undefined
         const stepContext = {
           sourceId: source.id,
           sourceName: playlistName,
@@ -209,6 +210,7 @@ export function getSyncService(getConfig: () => AppConfig) {
 
           const {
             songs: yunSongs,
+            songIndices,
             trackUpdateTime,
             trackIds,
             allTrackIds,
@@ -246,6 +248,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           const resolvedSongIds = new Set(yunSongs.map(song => song.id))
           const missingSongDetailIds = currentIdOrder.filter(songId => !resolvedSongIds.has(songId))
           const authoritativeTrackCount = currentIdOrder.length
+          sourceTrackCount = authoritativeTrackCount
           if (missingSongDetailIds.length > 0) {
             log('warn', `网易云歌单返回 ${authoritativeTrackCount} 个 trackId，但 ${missingSongDetailIds.length} 首缺少歌曲详情；这些目标已进入删除保护`)
           }
@@ -443,7 +446,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           }
 
           // Pure reorder: skip download, just reorder Plex playlist
-          if (!plexRecoveryOnly && sourceFailureStatus !== 'open' && Object.keys(failurePolicy.failuresBySongId).length === 0
+          if (!plexRecoveryOnly && sourceFailureStatus !== 'open' && Object.keys(failurePolicy.failuresBySongId).length === 0 && Object.keys(failurePolicy.removalFailures).length === 0
             && det.isPureReorder && !det.needFullCompare && missingSongDetailIds.length === 0) {
             const reordered = await tryApplyPureSourceReorder({
               source,
@@ -492,6 +495,7 @@ export function getSyncService(getConfig: () => AppConfig) {
               requireExistingPlaylist: plexRecoveryOnly,
               trustedSongIds,
               ignoredSongIds,
+              neteaseIndices: songIndices,
             },
           )
           throwIfCancelled()
@@ -505,16 +509,16 @@ export function getSyncService(getConfig: () => AppConfig) {
             continue
           }
           // Register outcomes only after the comparison is safe to apply.
-          const allSongs = yunSongs.map((s, neteaseIndex) => ({
+          const allSongs = yunSongs.map((s, index) => ({
             songName: s.name,
             artist: joinArtist(s.artists),
             album: s.album.name,
             status: 'pending' as SongStatus,
             neteaseSongId: s.id,
-            neteaseIndex,
+            neteaseIndex: songIndices[index]!,
           }))
           job.addSongs(source.id, allSongs)
-          addMissingDetailSongs(job, source.id, missingSongDetailIds, failurePolicy)
+          addMissingDetailSongs(job, source.id, missingSongDetailIds, failurePolicy, currentIdOrder)
 
           if (!dryRun) {
             recordSourceComparison(source.id, {
@@ -554,6 +558,7 @@ export function getSyncService(getConfig: () => AppConfig) {
                 album: xt.album,
                 ratingKey: xt.ratingKey,
                 playlistItemId: xt.playlistItemId,
+                playlistRatingKey: plexPlaylist.ratingKey,
                 status: 'extra_skipped',
               })
               extraTaskIds.set(xt.playlistItemId, extraTaskId)
@@ -648,10 +653,12 @@ export function getSyncService(getConfig: () => AppConfig) {
     } catch (err) {
       if (err instanceof CancellationError) throw err
 
-      const message = recordSourceConvergenceFailure({ source, job, context: stepContext, error: err, stage: state.currentStage, dryRun })
-      log('error', `歌单「${source.name}」同步失败: ${message}`)
-      totalFailed++
-      failedSources++
+      const sourceResult = recordSourceConvergenceFailure({ source, job, context: stepContext, error: err,
+        stage: state.currentStage, dryRun, authoritativeTrackCount: sourceTrackCount })
+      log('error', `歌单「${source.name}」同步失败: ${sourceResult.summary}`)
+      totalFailed += sourceResult.failedSongs
+      if (sourceResult.status === 'partial') partialSources++
+      else failedSources++
     }
   }
 

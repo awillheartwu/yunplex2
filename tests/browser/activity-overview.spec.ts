@@ -38,7 +38,8 @@ for (const width of [1440, 390]) {
     await expect(overview.locator('.activity-run')).toHaveCount(4)
     const syncCard = overview.locator('.activity-run').filter({ has: page.getByRole('heading', { name: '夜间收藏', exact: true }) })
     await expect(syncCard.getByLabel('本次运行的文件任务统计')).toContainText('文件完成12')
-    await expect(syncCard).toContainText('当前阶段已处理 4 / 12')
+    await expect(syncCard.getByRole('progressbar', { name: '本次文件处理进度', exact: true })).toHaveAttribute('value', '13')
+    await expect(syncCard.getByRole('progressbar', { name: '本次文件处理进度', exact: true })).toHaveAttribute('max', '24')
     await expect(overview.getByText('等待执行', { exact: true })).toBeVisible()
     await expect(syncCard.getByRole('button', { name: '显示更多歌曲' })).toBeVisible()
     await page.route('**/api/downloads/tasks?**', route => {
@@ -55,7 +56,7 @@ for (const width of [1440, 390]) {
     data = snapshot([run({ live: { ...live, currentStage: 'refreshing_plex', progress: null, currentSong: null }, files: { counts: { pending: 0, downloading: 0, tagging: 0, done: 12, failed: 0, total: 12 }, items: [], total: 0 } })])
     await refresh.click()
     await expect(overview).toContainText('等待 Plex 识别')
-    await expect(overview.locator('[aria-current="step"]')).toHaveText('Plex 更新')
+    await expect(overview.getByLabel('当前同步阶段').locator('[aria-current="step"]')).toContainText('Plex 读取')
     await expect(overview.getByRole('progressbar')).toHaveCount(0)
     await expect(overview.locator('.activity-song')).toHaveCount(0)
 
@@ -69,7 +70,7 @@ for (const width of [1440, 390]) {
     await overview.getByRole('button', { name: '重试', exact: true }).click()
     await expect(overview.getByRole('alert')).toHaveCount(0)
     await page.getByRole('button', { name: '切换到浅色主题' }).click()
-    if (width < 720) expect((await page.locator('.activity-navigation').boundingBox())!.height).toBeLessThan(80)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath('awaiting-light.png'), fullPage: true, animations: 'disabled' })
     const action = overview.getByRole('link', { name: '查看接管方案' })
     await action.focus()
@@ -108,7 +109,7 @@ test('activity handles first-load failure, periodic completion, dry run and guar
   await expect(overview).not.toContainText('当前没有待办任务')
   fail = false
   await overview.getByRole('button', { name: '重试', exact: true }).click()
-  await expect(overview).toContainText('当前阶段已处理')
+  await expect(overview.getByRole('progressbar', { name: '本次文件处理进度', exact: true })).toBeVisible()
   data = snapshot()
   await expect(overview.getByRole('heading', { name: '当前没有待办任务' })).toBeVisible({ timeout: 10000 })
   data = { ...snapshot(), unlistedLive: { ...live, dryRun: true } }

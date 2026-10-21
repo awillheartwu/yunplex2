@@ -35,7 +35,11 @@ function confirmNavigation() {
   return new Promise<boolean>(resolve => { pending = resolve })
 }
 
-onBeforeRouteLeave(to => to.path === '/login' && auth.state.value?.authenticated === false ? true : confirmNavigation())
+onBeforeRouteLeave(to => {
+  if (to.path === '/login' && auth.state.value?.authenticated !== true) return true
+  if (to.path === '/setup' && auth.state.value?.setupRequired) return true
+  return confirmNavigation()
+})
 onBeforeRouteUpdate((to, from) => to.path === from.path || confirmNavigation())
 watch(() => [props.dirty, props.saving], () => {
   if (visible.value && !props.dirty && !props.saving) finish(true)

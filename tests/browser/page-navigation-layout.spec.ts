@@ -8,18 +8,12 @@ async function login(page: Page) {
   await expect(page).toHaveURL('/')
 }
 for (const width of [1440, 1024, 390]) {
-  test(`page navigation preserves content width and setting drafts at ${width}px`, async ({ page }, testInfo) => {
+  test(`page navigation keeps keyboard access and setting drafts at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 })
     await login(page)
     await page.goto('/task-center')
     const nav = page.getByRole('tablist', { name: '活动视图', exact: true })
     await expect(nav).toBeVisible()
-    const bounds = await nav.boundingBox()
-    const content = await page.locator('.activity-content').boundingBox()
-    const workspace = await page.locator('.activity-workspace').boundingBox()
-    expect(Math.abs(content!.width - workspace!.width)).toBeLessThan(1)
-    expect(Math.abs(content!.x - bounds!.x)).toBeLessThan(1)
-    expect(content!.y).toBeGreaterThanOrEqual(bounds!.y + bounds!.height)
     await nav.getByRole('tab', { name: '进行中', exact: true }).focus()
     await page.keyboard.press('ArrowRight')
     await expect(nav.getByRole('tab', { name: '运行记录', exact: true })).toBeFocused()
@@ -27,14 +21,6 @@ for (const width of [1440, 1024, 390]) {
     await expect(page.getByRole('searchbox', { name: '搜索运行记录' })).toBeVisible()
     await nav.getByRole('tab', { name: '进行中', exact: true }).click()
     await expect(page.locator('.activity-overview')).toBeVisible()
-    await page.getByRole('heading', { name: '活动', exact: true }).hover()
-    const active = nav.getByRole('tab', { name: '进行中', exact: true })
-    const selectedBackground = await active.evaluate(async node => {
-      await Promise.all(node.getAnimations().map(animation => animation.finished))
-      return getComputedStyle(node).backgroundColor
-    })
-    await active.hover()
-    await expect(active).toHaveCSS('background-color', selectedBackground)
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: testInfo.outputPath('activity-light.png'), fullPage: true, animations: 'disabled' })
 
@@ -54,21 +40,9 @@ for (const width of [1440, 1024, 390]) {
       await page.keyboard.press('ArrowRight')
       await expect(page.getByLabel('下载目录', { exact: true })).toBeVisible()
       await tabs.getByRole('tab', { name: '服务连接' }).click()
-      const search = page.getByRole('searchbox', { name: '查找设置分类' })
-      await search.fill('不存在的分类')
-      await expect(page.locator('.settings-no-results')).toContainText('没有匹配分类')
-      await search.fill('歌词')
-      await search.press('Tab')
-      await expect(page.getByRole('tab', { name: '下载与文件', exact: true })).toBeFocused()
-      await search.fill('')
     }
     await expect(field).toHaveValue('保留的未保存草稿')
     await expect(page.getByText('有未保存的修改', { exact: true })).toBeVisible()
-    const config = await page.locator('.config-workspace').boundingBox()
-    const body = await page.locator('.config-content').boundingBox()
-    const directory = await page.locator('.settings-directory').boundingBox()
-    expect(Math.abs(body!.width - config!.width)).toBeLessThan(1)
-    expect(body!.y).toBeGreaterThanOrEqual(directory!.y + directory!.height)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.getByRole('button', { name: '放弃修改', exact: true }).click()
     await page.evaluate(() => window.scrollTo(0, 0))

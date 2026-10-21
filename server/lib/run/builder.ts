@@ -102,6 +102,7 @@ export class RunBuilder {
     artist: string
     album: string
     playlistItemId: number
+    playlistRatingKey?: string
     ratingKey: string
     status?: Extract<SongStatus, 'removed' | 'extra_skipped'>
   }): string {
@@ -117,6 +118,7 @@ export class RunBuilder {
       metadata: {
         plexRatingKey: song.ratingKey,
         plexPlaylistItemId: song.playlistItemId,
+        plexPlaylistRatingKey: song.playlistRatingKey,
       },
     }
     this.songMap.set(id, task)

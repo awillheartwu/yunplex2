@@ -338,15 +338,18 @@ const currentFailureBySong = computed(() => {
   const states = new Map<string, RunFailureHandlingState>()
   const priority = { open: 0, ignored: 1, resolved: 2 }
   for (const failure of props.job.currentFailures ?? []) {
-    if (failure.songId === null) continue
-    const key = `${failure.sourceId ?? ''}:${failure.songId}`
+    const target = failure.songId ?? (failure.plexPlaylistItemId
+      ? `plex:${failure.plexPlaylistRatingKey}:${failure.plexPlaylistItemId}` : null)
+    if (target === null) continue
+    const key = `${failure.sourceId ?? ''}:${target}`
     const previous = states.get(key)
     if (!previous || priority[failure.status] < priority[previous.status]) states.set(key, failure)
   }
   return states
 })
 function failureStateForSong(song: SongTask) {
-  return currentFailureBySong.value.get(`${song.sourceId ?? ''}:${song.neteaseSongId}`)
+  const target = song.neteaseSongId ?? `plex:${song.metadata?.plexPlaylistRatingKey}:${song.metadata?.plexPlaylistItemId}`
+  return currentFailureBySong.value.get(`${song.sourceId ?? ''}:${target}`)
 }
 const failureSummaries = computed(() => {
   const groups = new Map<string, { message: string; names: string[] }>()

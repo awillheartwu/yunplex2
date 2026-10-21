@@ -3,6 +3,7 @@ import type { PlaylistSource, PlaylistSourceRow } from './types'
 import { rowToSource } from './types'
 import { randomUUID } from 'node:crypto'
 import type { AudioQuality } from '../config/types'
+import { fetchAlbumDetail } from '../netease'
 
 export interface PlaylistSourceFilter {
   search?: string
@@ -124,14 +125,20 @@ export function getEnabledSources(): PlaylistSource[] {
 
 export async function createSource(
   neteasePlaylistId: number,
-  _cookie: string,
+  cookie: string,
   opts?: { type?: 'playlist' | 'album'; subscribed?: boolean; enabled?: boolean; trackCount?: number; name?: string; artist?: string; coverUrl?: string; quality?: AudioQuality | null },
 ): Promise<PlaylistSource> {
   const isAlbum = opts?.type === 'album'
+  const albumDetail = isAlbum && (!opts?.name || !opts?.coverUrl)
+    ? await fetchAlbumDetail(neteasePlaylistId, cookie)
+    : null
   const neName = isAlbum
-    ? opts?.name || null
+    ? opts?.name || albumDetail?.name
     : opts?.name || await fetchPlaylistName(neteasePlaylistId)
+  if (isAlbum && !neName) throw new Error('专辑 ID 无效或暂时无法获取专辑信息，请核对 ID 和网易云连接后重试')
   const taskName = neName ? `${neName}任务` : '(待获取)'
+  const coverUrl = opts?.coverUrl || albumDetail?.picUrl || ''
+  const trackCount = opts?.trackCount ?? albumDetail?.size ?? 0
   const db = getDb()
   const id = randomUUID()
   const now = new Date().toISOString()
@@ -141,7 +148,7 @@ export async function createSource(
     db.prepare(`
       INSERT INTO playlist_sources (id, netease_playlist_id, name, netease_playlist_name, type, subscribed, enabled, cover_url, plex_playlist_name, plex_playlist_rating_key, quality, sync_limit, last_synced_at, last_status, last_error, auto_create_plex_playlist, track_count, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, NULL, NULL, 'idle', NULL, 1, ?, ?, ?, ?)
-    `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, (opts?.enabled ?? !isAlbum) ? 1 : 0, opts?.coverUrl || '', neName || '', opts?.quality ?? null, opts?.trackCount || 0, maxOrder + 1, now, now)
+    `).run(id, neteasePlaylistId, taskName, neName || '', isAlbum ? 'album' : 'playlist', opts?.subscribed ? 1 : 0, (opts?.enabled ?? !isAlbum) ? 1 : 0, coverUrl, neName || '', opts?.quality ?? null, trackCount, maxOrder + 1, now, now)
     if (!isAlbum) {
       db.prepare(`INSERT INTO source_initializations (id, source_id, status, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?)`)
         .run(randomUUID(), id, now, now)

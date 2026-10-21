@@ -8,6 +8,8 @@ import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
 import { isAwaitingManualSongStatus } from '../../../lib/media-status-projection'
 import { hasActiveMediaCorrectionsForSource } from './media-corrections'
 import { recordFailure, resolveFailures } from '../tasks/failure-records'
+import { isFailedSongStatus } from '../../../lib/task-status'
+import { PlexReorderError } from './reorder'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -20,12 +22,19 @@ export function recordSourceConvergenceFailure(input: {
   error: unknown
   stage: string
   dryRun: boolean
-}): string {
+  authoritativeTrackCount?: number
+}): SourceConvergenceResult {
   const { source, job, context, error, stage, dryRun } = input
   const sourceSteps = job.getRun().steps.filter(step => step.context?.sourceId === source.id)
   const stepCode = sourceSteps.filter(step => step.status === 'failed').at(-1)?.error?.code
   const cause = describeDomainError(error, stepCode)
   const message = cause.diagnostic ?? '未知错误'
+  const sourceSongs = job.getRun().songs.filter(song => song.sourceId === source.id)
+  const failedSongs = sourceSongs.filter(song => isFailedSongStatus(song.status))
+  const songWriteFailure = error instanceof PlexReorderError
+    && failedSongs.some(song => song.status === 'failed_plex_insert')
+  const status = songWriteFailure && sourceSongs.some(song => ['success', 'skipped_existing'].includes(song.status))
+    ? 'partial' : 'failed'
   const activeStep = sourceSteps.find(step => step.status === 'running')
   if (activeStep || !sourceSteps.some(step => step.status === 'failed' && step.error?.message === message)) {
     const stepId = activeStep?.id ?? job.startStep('source_error', '来源同步失败', { context })
@@ -37,16 +46,23 @@ export function recordSourceConvergenceFailure(input: {
     })
   }
   if (!dryRun) {
-    recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
-      runId: job.getId(), runType: 'sync', failureKind: cause.code, failureReason: message })
+    if (songWriteFailure) {
+      // Concrete song failures own their retry budgets; the run keeps the aggregate diagnostic.
+      recordSourceSongResults(source.id, job)
+      resolveFailures({ sourceId: source.id, songName: '来源同步' })
+    } else {
+      recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
+        runId: job.getId(), runType: 'sync', failureKind: cause.code, failureReason: message })
+    }
     updateSource(source.id, {
       lastSyncedAt: new Date().toISOString(),
-      lastStatus: 'failed',
+      lastStatus: status,
       lastError: message,
       lastJobId: job.getId(),
+      ...(input.authoritativeTrackCount === undefined ? {} : { trackCount: input.authoritativeTrackCount }),
     })
   }
-  return message
+  return { status, failedSongs: songWriteFailure ? failedSongs.length : 1, summary: message }
 }
 
 export interface SourceConvergenceResult {
@@ -114,19 +130,7 @@ export async function finalizeSourceConvergence(
     sourceStatus = 'partial'
   }
 
-  if (!dryRun) {
-    for (const song of sourceSongs) {
-      if (typeof song.neteaseIndex !== 'number') continue
-      recordPlaylistOccurrenceSyncResult({
-        sourceId: source.id,
-        position: song.neteaseIndex,
-        runId: job.getId(),
-        status: song.status,
-        matchTrace: song.metadata?.matchTrace as Record<string, unknown> | undefined,
-        error: song.error as Record<string, unknown> | undefined,
-      })
-    }
-  }
+  if (!dryRun) recordSourceSongResults(source.id, job)
 
   let finalPlexUpdatedAt = plexUpdatedAt
   if (plexPlaylist?.ratingKey) {
@@ -176,4 +180,18 @@ export async function finalizeSourceConvergence(
 
   const summary = parts.join('，')
   return { status: sourceStatus, failedSongs: failCount, summary }
+}
+
+function recordSourceSongResults(sourceId: string, job: RunBuilder): void {
+  for (const song of job.getRun().songs) {
+    if (song.sourceId !== sourceId || typeof song.neteaseIndex !== 'number') continue
+    recordPlaylistOccurrenceSyncResult({
+      sourceId,
+      position: song.neteaseIndex,
+      runId: job.getId(),
+      status: song.status,
+      matchTrace: song.metadata?.matchTrace as Record<string, unknown> | undefined,
+      error: song.error as Record<string, unknown> | undefined,
+    })
+  }
 }

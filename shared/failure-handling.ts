@@ -13,6 +13,8 @@ export interface FailureHandlingState {
 export interface RunFailureHandlingState extends FailureHandlingState {
   sourceId: string | null
   songId: number | null
+  plexPlaylistRatingKey?: string
+  plexPlaylistItemId?: number
 }
 
 /** These are run outcomes; the error code describes the underlying cause. */

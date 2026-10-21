@@ -43,7 +43,7 @@ describe('task status semantics', () => {
     expect(songMatchesStatusBucket('copyright_restricted', 'failure')).toBe(false)
   })
 
-  it('presents continuous failures as paused retries, not user ignores', () => {
+  it('presents ignored failures as ignored items requiring attention', () => {
     expect(songStatusPresentation('ignored_failure').label).toBe('已忽略')
     expect(SONG_STATUS_BUCKETS.find(bucket => bucket.key === 'ignored')?.label).toBe('需关注')
   })

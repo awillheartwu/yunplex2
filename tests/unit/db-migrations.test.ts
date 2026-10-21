@@ -102,6 +102,36 @@ describe('current database schema baseline', () => {
     expect(getDb().pragma('integrity_check', { simple: true })).toBe('ok')
   })
 
+  it('upgrades failure budgets and paused records without losing ignore choices or history', () => {
+    const dir = createTempDataDir()
+    initDb(dir)
+    const now = new Date().toISOString()
+    const insert = getDb().prepare(`INSERT INTO failure_records (
+      id, fingerprint, subject_key, song_name, run_type, failure_kind, status,
+      first_seen_at, last_seen_at, occurrence_count, retry_count
+    ) VALUES (?, ?, ?, 'Fixture', 'sync', 'failed_download', ?, ?, ?, ?, ?)`)
+    for (const [id, status, occurrences, retries] of [
+      ['paused', 'paused', 4, 2],
+      ['manual', 'ignored', 2, 1],
+      ['pending', 'open', 2, 0],
+      ['resolved', 'resolved', 5, 3],
+    ] as const) insert.run(id, id, id, status, now, now, occurrences, retries)
+    getDb().exec('ALTER TABLE failure_records DROP COLUMN attempt_count; ALTER TABLE failure_records DROP COLUMN ignore_reason')
+
+    for (let pass = 0; pass < 2; pass++) {
+      closeDb()
+      initDb(dir)
+      expect(getDb().prepare(`SELECT id, status, attempt_count, occurrence_count, retry_count, ignore_reason
+        FROM failure_records ORDER BY id`).all()).toEqual([
+        { id: 'manual', status: 'ignored', attempt_count: 2, occurrence_count: 2, retry_count: 1, ignore_reason: 'manual' },
+        { id: 'paused', status: 'ignored', attempt_count: 4, occurrence_count: 4, retry_count: 2, ignore_reason: 'automatic' },
+        { id: 'pending', status: 'open', attempt_count: 2, occurrence_count: 2, retry_count: 0, ignore_reason: null },
+        { id: 'resolved', status: 'resolved', attempt_count: 0, occurrence_count: 5, retry_count: 3, ignore_reason: null },
+      ])
+      expect(getDb().pragma('integrity_check', { simple: true })).toBe('ok')
+    }
+  })
+
   it('migrates existing playlists to pending initialization while excluding albums', () => {
     const dir = createTempDataDir()
     initDb(dir)

@@ -4,10 +4,7 @@ import { expect, test, type Page } from './fixtures'
 
 const PASSWORD = 'browser-test-password'
 
-
-function ok(data: unknown) {
-  return { code: 0, msg: 'ok', data }
-}
+function ok(data: unknown) { return { code: 0, msg: 'ok', data } }
 
 function initializationFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -285,7 +282,7 @@ test('manual playlist download keeps resource identity for partial selection and
   await expect(page.getByText(/ID 203/)).toBeVisible()
 })
 
-test('download and save creates one disabled-source command without starting a separate download', async ({ page }) => {
+test('download and save submits one managed-source command after opting in', async ({ page }) => {
   await login(page)
   await page.route('**/api/netease/playlist-songs**', route => route.fulfill({
     json: ok({
@@ -317,7 +314,10 @@ test('download and save creates one disabled-source command without starting a s
   await page.goto('/manual-download')
   await page.getByLabel('网易云链接、歌单 ID、专辑 ID 或歌曲 ID').fill('https://music.163.com/playlist?id=8877')
   await page.getByRole('button', { name: '解析并预览' }).click()
-  await page.getByRole('button', { name: '下载并保存为同步源' }).click()
+  const saveSource = page.getByRole('checkbox', { name: '同时将歌单保存为收藏' })
+  await expect(saveSource).toBeEnabled()
+  await saveSource.check()
+  await page.getByRole('button', { name: '下载 1 首', exact: true }).click()
 
   await expect.poll(() => sourceCommand).toEqual(expect.objectContaining({
     type: 'playlist',
@@ -326,21 +326,21 @@ test('download and save creates one disabled-source command without starting a s
     name: '待托管歌单',
   }))
   expect(ordinaryDownloadRequests).toBe(0)
-  await expect(page.locator('.toast-region')).toContainText('已创建禁用的同步源')
+  await expect(page.locator('.toast-region')).toContainText('已保存收藏并提交下载')
 })
 
-test('awaiting-manual media supports managed download and Explicit Adoption', async ({ page }) => {
+test('awaiting-manual media supports managed download and explicit Plex rebind', async ({ page }) => {
   await login(page)
   await mockSourceMedia(page)
 
-  let managedDownloadRequested = false
-  let explicitAdoptionRequested = false
+  let managedDownloadBody: Record<string, unknown> | null = null
+  let explicitRebindBody: Record<string, unknown> | null = null
   await page.route('**/api/playlist-sources/source-browser/songs/101/download-managed', route => {
-    managedDownloadRequested = true
+    managedDownloadBody = route.request().postDataJSON() as Record<string, unknown>
     return route.fulfill({ json: ok({ batchId: 'batch-101', total: 1 }) })
   })
   await page.route('**/api/match-management/bindings/101/rebind', route => {
-    explicitAdoptionRequested = true
+    explicitRebindBody = route.request().postDataJSON() as Record<string, unknown>
     return route.fulfill({ json: ok({ neteaseSongId: 101 }) })
   })
 
@@ -349,18 +349,23 @@ test('awaiting-manual media supports managed download and Explicit Adoption', as
   await page.getByRole('link', { name: '打开 浏览器验收歌单' }).click()
   await page.getByRole('tab', { name: '歌曲与媒体' }).click()
 
-  await expect(page.locator('.source-media__state', { hasText: '等待手动选择' })).toBeVisible()
-  await page.getByRole('button', { name: '下载并托管' }).click()
-  await expect.poll(() => managedDownloadRequested).toBe(true)
-  await expect(page.locator('.toast-region')).toContainText('已加入托管下载队列')
+  const mediaRow = page.locator('.source-media__row').filter({ hasText: '等待选择的歌曲' })
+  await expect(mediaRow).toContainText('等待手动选择')
+  await page.getByRole('button', { name: '下载并关联这首歌', exact: true }).click()
+  await expect.poll(() => managedDownloadBody).toEqual({})
+  await expect(page.locator('.toast-region')).toContainText('已加入下载队列')
 
-  await page.getByRole('button', { name: '使用 Plex 媒体' }).click()
+  await page.getByRole('button', { name: '选择 Plex 媒体', exact: true }).click()
   await expect(page.getByText('刮削器重命名后的标题')).toBeVisible()
-  await page.getByRole('button', { name: '选择' }).click()
-  await expect(page.getByRole('dialog', { name: '确认使用 Plex 媒体' })).toBeVisible()
+  await page.getByRole('button', { name: '选择', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '确认更换关联的文件' })).toBeVisible()
   await page.getByRole('button', { name: '保存关联' }).click()
-  await expect.poll(() => explicitAdoptionRequested).toBe(true)
-  await expect(page.locator('.toast-region')).toContainText('Plex 媒体关联已保存')
+  await expect.poll(() => explicitRebindBody).toEqual({
+    ratingKey: 'plex-101',
+    expectedBindingUpdatedAt: null,
+    sourceId: 'source-browser',
+  })
+  await expect(page.locator('.toast-region')).toContainText('新的关联已保存')
 })
 
 test('mobile source view has no horizontal overflow', async ({ page }) => {
@@ -378,19 +383,27 @@ test('mobile source view has no horizontal overflow', async ({ page }) => {
   await expect(page.getByRole('button', { name: '打开导航' })).toBeVisible()
 })
 
-test('source detail settings keep override controls readable on desktop and mobile', async ({ page }, testInfo) => {
+test('source detail settings save overrides without overflowing desktop or mobile', async ({ page }) => {
   await login(page)
   await mockSourceMedia(page)
   await page.route('**/api/config', route => route.fulfill({
     json: ok({
+      netease: { quality: 'lossless' },
       sync: {
         initializeMediaOnFirstSync: true,
         forceFullCompare: false,
         skipRemoveExtraTracks: false,
+        extraTrackRemovalPolicy: 'balanced',
         skipPlexPlaylist: false,
       },
     }),
   }))
+  let settingsBody: Record<string, unknown> | null = null
+  await page.route('**/api/playlist-sources/source-browser', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    settingsBody = route.request().postDataJSON() as Record<string, unknown>
+    return route.fulfill({ json: ok({ ...source, initializeMediaOnFirstSync: false }) })
+  })
   await page.route('**/api/playlist-sources/source-browser/initialization', route => route.fulfill({
     json: ok({
       applicable: true,
@@ -402,35 +415,22 @@ test('source detail settings keep override controls readable on desktop and mobi
 
   await page.goto('/sync-sources/source-browser?tab=settings')
   await expect(page.getByRole('link', { name: '返回', exact: true })).toBeVisible()
-  await expect(page.locator('.source-boolean-override')).toHaveCount(3)
+  await expect(page.getByRole('combobox', { name: '首次同步前确认已有音乐', exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '每次检查完整歌单', exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Plex 多余歌曲', exact: true })).toBeVisible()
 
-  if (process.env.UI_SCREENSHOTS === '1') await page.screenshot({ path: testInfo.outputPath('source-settings-desktop.png'), fullPage: true })
-  const desktopOverrides = await page.locator('.source-boolean-override').evaluateAll(elements => elements.map(element => {
-    const copy = element.children[0]!
-    const select = element.children[1]!
-    return {
-      height: element.getBoundingClientRect().height,
-      copyWidth: copy.getBoundingClientRect().width,
-      selectWidth: select.getBoundingClientRect().width,
-    }
-  }))
-  for (const item of desktopOverrides) {
-    expect(item.height).toBeLessThan(80)
-    expect(item.copyWidth).toBeGreaterThan(200)
-    expect(item.selectWidth).toBeGreaterThan(100)
-  }
+  await page.getByRole('combobox', { name: '首次同步前确认已有音乐', exact: true }).selectOption('false')
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await expect.poll(() => settingsBody).toEqual(expect.objectContaining({ initializeMediaOnFirstSync: false }))
+  await expect(page.getByText('所有设置已同步', { exact: true })).toBeVisible()
 
   await page.setViewportSize({ width: 375, height: 812 })
-  await expect(page.getByText('首次同步前媒体接管', { exact: true })).toBeVisible()
-  for (const tab of ['概览', '首次媒体接管', '歌曲与媒体', '运行记录', '设置']) {
+  await expect(page.getByRole('heading', { name: '首次媒体接管', exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '每次检查完整歌单', exact: true })).toBeVisible()
+  for (const tab of ['概览', '歌曲与媒体', '运行记录', '设置']) {
     await page.getByRole('tab', { name: tab, exact: true }).click()
-    const dimensions = await page.evaluate(() => ({
-      viewport: document.documentElement.clientWidth,
-      content: document.documentElement.scrollWidth,
-    }))
+    const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
     expect(dimensions.content, tab).toBeLessThanOrEqual(dimensions.viewport)
-    if (tab === '概览') await expect(page.locator('.source-detail__status-main')).toHaveCSS('display', 'flex')
-    if (process.env.UI_SCREENSHOTS === '1') await page.screenshot({ path: testInfo.outputPath(`source-mobile-${tab}.png`), fullPage: true })
   }
 })
 
@@ -463,9 +463,9 @@ test('first media adoption handles a 3450-song review with cross-page selection'
   })
 
   await page.goto('/sync-sources/source-browser?tab=initialization')
-  await expect(page.getByText('浏览器验收歌单 · 3450 首（接管快照）')).toBeVisible()
-  await expect(page.locator('.source-adoption__metrics').getByText('3450', { exact: true })).toBeVisible()
-  await expect(page.locator('.source-adoption__metrics').getByText('已有绑定', { exact: true })).toBeVisible()
+  await expect(page.getByText('浏览器验收歌单 · 3450 首（方案内）')).toBeVisible()
+  await expect(page.getByText('共 3450 首', { exact: true })).toBeVisible()
+  await expect(page.getByText(/继续使用 920 首.*选用 Plex 410 首.*计划下载 0 首.*暂不加入 3040 首/)).toBeVisible()
   await expect(page.getByRole('navigation', { name: '候选分组' })).toContainText('需要核对')
   await page.getByRole('button', { name: '查看证据', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: '歌曲 1 证据详情' })).toContainText('/music/1.flac')
@@ -474,7 +474,7 @@ test('first media adoption handles a 3450-song review with cross-page selection'
   await page.getByRole('checkbox', { name: '选择 歌曲 1', exact: true }).check()
   await page.getByRole('button', { name: '下一页' }).click()
   await page.getByRole('checkbox', { name: '选择 歌曲 51', exact: true }).check()
-  await expect(page.getByText('已跨页选择 2 首')).toBeVisible()
+  await expect(page.getByText('已选 2 首', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '下载并托管' }).click()
   await expect.poll(() => submittedRequests).toEqual([{ songIds: [1, 51], decision: 'download', initializationId: 'init-browser' }])
 })
@@ -525,11 +525,14 @@ test('failed reanalysis keeps the current review draft visible', async ({ page }
   await page.goto('/sync-sources/source-browser?tab=initialization')
   const reviewRow = page.locator('.source-adoption__table tbody tr').filter({ hasText: '歌曲 601' })
   await expect(reviewRow).toBeVisible()
-  await page.getByRole('button', { name: '放弃方案并重新分析', exact: true }).click()
-  await expect(page.getByRole('region', { name: '重新分析前比较' })).toBeVisible()
-  await page.getByRole('button', { name: '确认创建新草案', exact: true }).click()
+  await page.getByRole('button', { name: '重新分析当前方案', exact: true }).click()
+  await expect(page.getByRole('region', { name: '重新分析当前方案前比较' })).toBeVisible()
+  await page.getByRole('button', { name: '确认并重新分析当前方案', exact: true }).click()
 
-  await expect(page.getByRole('alert')).toContainText('重新分析请求失败')
+  const reanalysis = page.getByRole('dialog', { name: '重新分析当前方案', exact: true })
+  await expect(reanalysis.getByRole('alert')).toContainText('重新分析请求失败')
+  await reanalysis.getByRole('button', { name: '保留当前方案', exact: true }).click()
+  await expect(reanalysis).toBeHidden()
   await expect(reviewRow).toBeVisible()
   await expect.poll(() => restartBody).toEqual({ initializationId: 'init-reanalysis-failure' })
 })
@@ -546,14 +549,15 @@ test('commit conflict keeps the compatible review draft and reports the server e
   })
 
   await page.goto('/sync-sources/source-browser?tab=initialization')
-  await page.getByRole('button', { name: '提交接管方案', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '提交首次媒体接管方案' })).toBeVisible()
-  await page.getByRole('button', { name: '确认并应用', exact: true }).click()
+  await page.getByRole('button', { name: '开始下载并同步', exact: true }).first().click()
+  const deferredDialog = page.getByRole('dialog', { name: '还有 1 首不会加入 Plex', exact: true })
+  await expect(deferredDialog).toBeVisible()
+  await deferredDialog.getByRole('button', { name: '仍跳过这 1 首，只同步其余歌曲', exact: true }).click()
 
   await expect(page.getByRole('alert')).toContainText('接管方案已变化，请刷新后重试')
   await expect(page.locator('.source-adoption__table tbody tr').filter({ hasText: '歌曲 602' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '提交接管方案', exact: true })).toBeVisible()
-  await expect.poll(() => commitBody).toEqual({ initializationId: 'init-commit-conflict' })
+  await expect(page.getByRole('button', { name: '开始下载并同步', exact: true }).first()).toBeVisible()
+  await expect.poll(() => commitBody).toEqual({ initializationId: 'init-commit-conflict', confirmDeferred: true })
 })
 
 test('old-version review drafts remain readable but cannot be edited or committed', async ({ page }) => {
@@ -568,13 +572,13 @@ test('old-version review drafts remain readable but cannot be edited or committe
   await mockInitializationReview(page, initialization, [reviewItem])
 
   await page.goto('/sync-sources/source-browser?tab=initialization')
-  await expect(page.getByText('接管规则已更新', { exact: true })).toBeVisible()
-  await expect(page.getByText('当前方案使用旧版匹配规则，仍可查看审核快照，但必须重新分析后才能编辑或提交。现有方案不会被应用。', { exact: true })).toBeVisible()
+  await expect(page.getByText('匹配设置已更新', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前结果由旧设置生成，可以查看，但不能修改或提交；请重新分析后再继续。', { exact: true })).toBeVisible()
   await expect(page.locator('.source-adoption__table tbody tr').filter({ hasText: '歌曲 603' })).toBeVisible()
   await expect(page.getByRole('checkbox', { name: '选择 歌曲 603', exact: true })).toBeDisabled()
-  await expect(page.getByRole('combobox', { name: '歌曲 603 的处理决定', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '提交接管方案', exact: true })).toHaveCount(0)
-
+  await expect(page.getByRole('combobox', { name: '歌曲 603 的处理决定', exact: true })).toHaveCount(0)
+  await expect(page.getByText('暂缓（不加入同步）', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '开始下载并同步', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '查看证据', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '歌曲 603 证据详情' })
   await expect(dialog).toContainText('/music/603.flac')
@@ -708,10 +712,10 @@ test('library preserves selection across layouts, persists view and filters, and
 test('command search opens a collection by keyboard and restores focus', async ({ page }) => {
   await login(page)
   await mockSourceMedia(page)
-  const trigger = page.getByRole('button', { name: '搜索页面与音乐收藏', exact: true })
+  const trigger = page.getByRole('button', { name: '搜索设置、收藏与页面', exact: true })
   await trigger.click()
   const dialog = page.getByRole('dialog', { name: '搜索与快捷跳转', exact: true })
-  const field = dialog.getByLabel('搜索页面与收藏', { exact: true })
+  const field = dialog.getByLabel('搜索设置、收藏与页面', { exact: true })
   await expect(field).toBeFocused()
   await field.fill('浏览器验收')
   await expect(dialog.getByRole('link', { name: /浏览器验收歌单/ })).toBeVisible()
@@ -769,7 +773,7 @@ test('media groups keep detail reasons and distinguish filtered empty results fr
   const request = page.waitForRequest(request => request.url().includes('/match-management/overview') && new URL(request.url()).searchParams.get('state') === 'problem')
   await selectListOption(page, page.getByLabel('媒体状态'), 'problem')
   await request
-  await expect(page.getByText('没有符合当前筛选条件的歌曲，请调整筛选。')).toBeVisible()
+  await expect(page.getByText('没有符合条件的歌曲，换个筛选或搜索词再试。')).toBeVisible()
   await page.getByRole('combobox', { name: '具体原因', exact: true }).click()
   await expect(page.getByRole('listbox', { name: '具体原因', exact: true }).getByRole('option')).toHaveCount(4)
   await page.keyboard.press('Escape')
@@ -777,8 +781,9 @@ test('media groups keep detail reasons and distinguish filtered empty results fr
   await selectListOption(page, page.getByLabel('具体原因'), 'binding_stale')
   await exact
   await selectListOption(page, page.getByLabel('媒体状态'), '')
+  await expect(page.getByText('还没有读到这个收藏的歌曲，先同步一次再看。')).toBeVisible()
   await expect(page.getByLabel('媒体状态')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '刷新快照' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新列表' })).toBeVisible()
 })
 test('bulk high-confidence adoption submits even when the visible page only has unmatched songs', async ({ page }) => {
   await login(page)
@@ -786,9 +791,9 @@ test('bulk high-confidence adoption submits even when the visible page only has 
   await mockInitializationReview(page, initialization, [actionableInitializationItem(601, { tier: 'unmatched', candidate: null, allowedDecisions: ['download', 'defer'] })])
   await page.route('**/api/playlist-sources/source-browser/initialization/decisions', route => route.fulfill({ json: ok({ changed: 2241 }) }))
   await page.goto('/sync-sources/source-browser?tab=initialization')
-  await page.getByRole('button', { name: '将 2241 首高置信候选设为使用 Plex', exact: true }).click()
+  await page.getByRole('button', { name: '采用推荐候选（2241 首）', exact: true }).click()
   const request = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/initialization/decisions'))
-  await page.getByRole('button', { name: '更新草案', exact: true }).click()
+  await page.getByRole('dialog', { name: '批量设为使用 Plex', exact: true }).getByRole('button', { name: '确认修改', exact: true }).click()
   expect((await request).postDataJSON()).toEqual({ initializationId: initialization.id, tier: 'high_confidence', decision: 'adopt' })
   await expect(page.getByText('所选歌曲当前不允许这个处理决定，请刷新后重试')).toHaveCount(0)
 })

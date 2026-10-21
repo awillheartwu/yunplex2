@@ -95,7 +95,10 @@ export type DownloadProcessor = (
   task: DownloadTask,
   onProgress: (pct: number, phase?: 'downloading' | 'tagging') => void,
   signal: AbortSignal,
+  commit: DownloadCommit,
 ) => Promise<DownloadProcessorResult>
+
+export type DownloadCommit = (result: DownloadProcessorResult, publish: () => void) => Promise<void>
 
 interface TaskRow {
   id: string; source_id: string | null; song_id: number; song_name: string
@@ -326,7 +329,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
       sourceId: associations.length > 0 ? caller.sourceId : caller.sourceId ?? task.sourceId,
     }
     if (status === 'done') {
-      if (runType !== 'sync') resolveFailures(common)
+      resolveFailures({ ...common, ...(runType === 'sync' ? { downloadTaskId: task.id } : {}) })
     } else {
       recordFailure({
         ...common,
@@ -345,7 +348,7 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
   for (const runId of runIds) {
     const associatedRun = getRun(runId)
     if (associatedRun?.type === 'manual_download') syncManualDownloadRun(runId)
-    if (associatedRun?.type === 'repair') syncRepairRun(runId, { finalize: false })
+    if (associatedRun?.type === 'repair' && associatedRun.status === 'running') syncRepairRun(runId, { finalize: false })
   }
   if (status === 'done') {
     for (const sourceId of new Set(associations.flatMap(association => association.sourceId ? [association.sourceId] : []))) {
@@ -462,7 +465,7 @@ export function enqueueTask(task: {
  * Tasks that conflict with another active task for the same output identity
  * remain failed so a retry cannot create a duplicate concurrent media write.
  */
-export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
+export function requeueFailedDownloadTasks(ids: string[], options: { resumeRuns?: boolean } = {}): DownloadTask[] {
   const uniqueIds = [...new Set(ids.filter(Boolean))]
   if (uniqueIds.length === 0) return []
   const db = getDb()
@@ -508,6 +511,7 @@ export function requeueFailedDownloadTasks(ids: string[]): DownloadTask[] {
     if (task.jobId) requeuedRunIds.add(task.jobId)
   }
   for (const runId of requeuedRunIds) {
+    if (options.resumeRuns === false) continue
     const run = getRun(runId)
     if (run?.type === 'manual_download') syncManualDownloadRun(runId)
     if (run?.type === 'repair') syncRepairRun(runId, { finalize: false })

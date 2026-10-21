@@ -8,23 +8,33 @@ function normalizePart(value: string | number | null | undefined): string {
     .replace(/\s+/g, ' ')
 }
 
-export function failureSubjectKey(input: {
+export interface FailureSubject {
   songId?: number | null
   songName: string
   artist?: string
   sourceId?: string | null
-}): string {
+  plexPlaylistRatingKey?: string
+  plexPlaylistItemId?: number
+}
+
+export function plexRemovalTarget(subjectKey: string): { plexPlaylistRatingKey: string; plexPlaylistItemId: number } | null {
+  const match = /^plex-item:([^:]+):([1-9]\d*):source:/.exec(subjectKey)
+  if (!match) return null
+  const plexPlaylistItemId = Number(match[2])
+  if (!Number.isSafeInteger(plexPlaylistItemId)) return null
+  return { plexPlaylistRatingKey: decodeURIComponent(match[1]!), plexPlaylistItemId }
+}
+
+export function failureSubjectKey(input: FailureSubject): string {
   const resource = input.songId
     ? `netease:${input.songId}`
-    : `text:${normalizePart(input.songName)}:${normalizePart(input.artist)}`
+    : input.plexPlaylistRatingKey && input.plexPlaylistItemId
+      ? `plex-item:${encodeURIComponent(input.plexPlaylistRatingKey)}:${input.plexPlaylistItemId}`
+      : `text:${normalizePart(input.songName)}:${normalizePart(input.artist)}`
   return `${resource}:source:${normalizePart(input.sourceId || 'manual')}`
 }
 
-export function failureFingerprint(input: {
-  songId?: number | null
-  songName: string
-  artist?: string
-  sourceId?: string | null
+export function failureFingerprint(input: FailureSubject & {
   failureKind: string
 }): string {
   const raw = `${failureSubjectKey(input)}:kind:${normalizePart(input.failureKind)}`

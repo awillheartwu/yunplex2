@@ -153,7 +153,8 @@ const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolea
 defineEmits<{ toggle: []; retry: [] }>()
 
 const showRetry = computed(() => {
-  return props.failureState?.status !== 'resolved' && canRetrySong(props.song.status) && !!props.song.neteaseSongId
+  const target = props.song.neteaseSongId || (props.song.metadata?.plexPlaylistRatingKey && props.song.metadata?.plexPlaylistItemId)
+  return props.failureState?.status !== 'resolved' && canRetrySong(props.song.status) && !!target
 })
 
 const statusPresentation = computed(() => songStatusPresentation(props.song.status))

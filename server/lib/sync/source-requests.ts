@@ -8,6 +8,7 @@ import { requestSourceInitialization } from '../source-initialization/requests'
 import { getSyncServiceInstance, isRepairRunning } from './instance'
 import { persistSourceRequest, sourceRequestsBusy, type SourceRequestInput, type SourceRequestKind } from './request-store'
 import { isSyncMode, type SyncRunOptions } from './service-state'
+import { reopenIgnoredSourceFailures } from '../tasks/failure-records'
 
 export interface SourceRequestResult {
   sourceId: string
@@ -65,7 +66,9 @@ export function acceptSourceRequest(source: PlaylistSource, config: AppConfig, i
     return { sourceId: source.id, status: 'accepted', kind: 'analysis', ...request, message: '已接受首次媒体接管分析' }
   }
   const requestId = persistSourceRequest({ ...input, kind: 'convergence', allowDisabled: input.trigger !== 'schedule' })
-  return { sourceId: source.id, status: 'accepted', kind: 'convergence', requestId, message: '已接受同步请求' }
+  const reopened = input.trigger === 'user' && input.mode !== 'preview' ? reopenIgnoredSourceFailures(source.id) : 0
+  return { sourceId: source.id, status: 'accepted', kind: 'convergence', requestId,
+    message: reopened ? '已接受同步请求，将重新尝试来源错误，已忽略歌曲保持不变' : '已接受同步请求' }
 }
 
 export interface SourceRequestSnapshot {

@@ -83,6 +83,7 @@ export function classifyDownloadError(error: unknown): DomainErrorCode {
   }
   if (status === 429 || /限流|请求.*频繁|rate.?limit|too many requests/.test(message)) return 'rate_limited'
   if (/版权|copyright_restricted/i.test(`${code} ${message}`)) return 'copyright_restricted'
+  if (/MEDIA_IDENTITY_CONFLICT/.test(code)) return 'media_identity_conflict'
   if (/SONG_URL_UNAVAILABLE/.test(code) || /未提供.*可用音源|音源状态\s*404|试听音源|账号权限/.test(message)) {
     return 'source_unavailable'
   }

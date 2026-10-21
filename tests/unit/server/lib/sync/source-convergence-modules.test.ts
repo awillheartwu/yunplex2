@@ -178,6 +178,7 @@ describe('source finalization projection', () => {
       const persistedSource = await createSource(42, '', {
         type: 'album',
         name: 'Persisted Source',
+        coverUrl: '/test-cover.jpg',
       })
       const job = new RunBuilder(false)
       const completed = resolution(1, 'found_in_plex_library')
@@ -224,6 +225,7 @@ describe('source finalization projection', () => {
       const persistedSource = await createSource(43, '', {
         type: 'album',
         name: 'Copyright Source',
+        coverUrl: '/test-cover.jpg',
       })
       updateSource(persistedSource.id, { requiresMatchReconcile: true })
       const job = new RunBuilder(false)

@@ -139,7 +139,7 @@ test('login and first setup keep their forms readable without changing credentia
   }
 })
 
-test('settings deep links, category search and discard preserve saved configuration', async ({ page }) => {
+test('settings deep links, global search and discard preserve saved configuration', async ({ page }) => {
   await login(page)
   await page.goto('/config?tab=display')
   await expect(page.getByLabel('字体缩放', { exact: true })).toBeVisible()
@@ -148,9 +148,11 @@ test('settings deep links, category search and discard preserve saved configurat
   await page.getByLabel('音乐库名称', { exact: true }).fill('临时编辑')
   await page.getByRole('button', { name: '放弃修改', exact: true }).click()
   await expect(page.getByLabel('音乐库名称', { exact: true })).toHaveValue(original)
-  await page.getByLabel('查找设置分类', { exact: true }).fill('歌词')
-  await expect(page.getByRole('tab', { name: '下载与文件', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '安全与维护', exact: true })).toHaveCount(0)
-  await page.getByLabel('查找设置分类', { exact: true }).press('Tab')
-  await expect(page.getByRole('tab', { name: '下载与文件', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: '搜索设置、收藏与页面', exact: true }).click()
+  const search = page.getByRole('dialog', { name: '搜索与快捷跳转', exact: true })
+  await search.getByLabel('搜索设置、收藏与页面', { exact: true }).fill('下载歌词')
+  await search.getByRole('link').filter({ hasText: '下载歌词' }).first().click()
+  await expect(page).toHaveURL(url => url.searchParams.get('tab') === 'media'
+    && url.searchParams.get('setting') === 'download.downloadLyrics')
+  await expect(page.locator('#setting-download-downloadLyrics')).toBeFocused()
 })

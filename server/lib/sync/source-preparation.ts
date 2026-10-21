@@ -16,6 +16,7 @@ import {
 
 export interface SourceSongSnapshot {
   songs: NeteaseSong[]
+  songIndices: number[]
   trackUpdateTime: number | null
   trackIds: { id: number }[]
   allTrackIds: { id: number }[]
@@ -31,8 +32,10 @@ export async function loadSourceSongSnapshot(input: {
   dryRun: boolean
 }): Promise<SourceSongSnapshot> {
   if (input.source.type === 'album') {
+    const songs = await fetchAlbumSongs(input.playlistId, input.cookie)
     return {
-      songs: await fetchAlbumSongs(input.playlistId, input.cookie),
+      songs,
+      songIndices: songs.map((_, index) => index),
       trackUpdateTime: null,
       trackIds: [],
       allTrackIds: [],
@@ -64,6 +67,7 @@ export async function loadSourceSongSnapshot(input: {
       const song = songsById.get(track.id)
       return song ? [song] : []
     }),
+    songIndices: summary.trackIds.flatMap((track, index) => songsById.has(track.id) ? [index] : []),
     trackUpdateTime: summary.trackUpdateTime,
     trackIds: summary.trackIds,
     allTrackIds: summary.allTrackIds,
@@ -85,14 +89,15 @@ export function resolveSourceSkipState(input: {
   maxFailureAttempts: number
 }): SourceSkipState {
   const { source, missingSongDetailIds, failurePolicy, maxFailureAttempts } = input
+  const failures = [...Object.values(failurePolicy.failuresBySongId), ...Object.values(failurePolicy.removalFailures)]
   return {
     unresolvedMissingDetailIds: missingSongDetailIds.filter(songId =>
       !isTerminalFailure(failurePolicy.failuresBySongId[songId], maxFailureAttempts),
     ),
-    hasActionableFailures: Object.values(failurePolicy.failuresBySongId)
+    hasActionableFailures: failures
       .some(entry => !isTerminalFailure(entry, maxFailureAttempts)),
     unresolvedPartialState: source.lastStatus !== 'success'
-      && Object.keys(failurePolicy.failuresBySongId).length === 0,
+      && failures.length === 0,
   }
 }
 
@@ -101,14 +106,18 @@ export function addMissingDetailSongs(
   sourceId: string,
   missingSongDetailIds: readonly number[],
   failurePolicy: SourceFailurePolicy,
+  sourceSongIds: readonly number[],
 ): void {
-  for (const missingSongId of missingSongDetailIds) {
+  const missingIds = new Set(missingSongDetailIds)
+  for (const [neteaseIndex, missingSongId] of sourceSongIds.entries()) {
+    if (!missingIds.has(missingSongId)) continue
     const [taskSongId] = job.addSongs(sourceId, [{
       songName: `网易云歌曲 #${missingSongId}`,
       artist: '详情未返回',
       album: '未知专辑',
       status: failurePolicy.failuresBySongId[missingSongId]?.status === 'ignored' ? 'ignored_failure' : 'failed_download',
       neteaseSongId: missingSongId,
+      neteaseIndex,
     }])
     if (!taskSongId) continue
     job.updateSong(taskSongId, {

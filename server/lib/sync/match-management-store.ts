@@ -315,8 +315,8 @@ export function recordPlaylistOccurrenceSyncResult(input: {
 
 /**
  * Reconcile occurrence-level audit state against concrete items read from the
- * Plex playlist. A Plex occurrence is consumed at most once so duplicate target
- * songs require the same number of concrete playlist items.
+ * Plex playlist, using the same shared-media projection as synchronization.
+ * Repeated occurrences and explicitly shared bindings may use one Plex item.
  */
 export function recordPlaylistAlignmentValidation(
   input: PlaylistAlignmentValidationInput,
@@ -331,6 +331,9 @@ export function recordPlaylistAlignmentValidation(
   const rows = db.prepare(`
     SELECT
       occurrence.id,
+      occurrence.netease_song_id,
+      binding.binding_method,
+      binding.plex_section_key,
       binding.plex_file_path,
       binding.plex_relative_path,
       binding.plex_rating_key,
@@ -345,6 +348,9 @@ export function recordPlaylistAlignmentValidation(
     ORDER BY occurrence.position ASC, occurrence.occurrence ASC
   `).all(input.sourceId, ...requestedSongIds) as Array<{
     id: string
+    netease_song_id: number
+    binding_method: string | null
+    plex_section_key: string | null
     plex_file_path: string | null
     plex_relative_path: string | null
     plex_rating_key: string | null
@@ -355,7 +361,7 @@ export function recordPlaylistAlignmentValidation(
     ratingKey: item.ratingKey,
     plexFilePaths: new Set(item.plexFilePaths.map(normalizePlexPath)),
   }))
-  const consumed = new Set<number>()
+  const consumed = new Map<number, typeof rows[number]>()
   const observedAt = input.observedAt ?? new Date().toISOString()
 
   return db.transaction(() => {
@@ -389,19 +395,24 @@ export function recordPlaylistAlignmentValidation(
         continue
       }
       const bindingPath = normalizePlexPath(row.plex_file_path)
-      const itemIndex = playlistItems.findIndex((item, index) =>
-        !consumed.has(index)
-        && (
+      const itemIndex = playlistItems.findIndex((item, index) => {
+        const owner = consumed.get(index)
+        const canShare = !owner || owner.netease_song_id === row.netease_song_id
+          || (owner.binding_method === 'manual' && row.binding_method === 'manual'
+            && owner.plex_rating_key === row.plex_rating_key
+            && owner.plex_section_key === row.plex_section_key
+            && normalizePlexPath(owner.plex_file_path!) === bindingPath)
+        return canShare && (
           Boolean(row.plex_rating_key && item.ratingKey === row.plex_rating_key)
           || item.plexFilePaths.has(bindingPath)
-        ),
-      )
+        )
+      })
       if (itemIndex < 0) {
         markUnaligned.run('pending', observedAt, row.id)
         result.pending++
         continue
       }
-      consumed.add(itemIndex)
+      consumed.set(itemIndex, row)
       const item = playlistItems[itemIndex]!
       markAligned.run(
         item.ratingKey,

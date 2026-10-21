@@ -68,15 +68,21 @@ export function requestMediaCorrection(songId:number,expectedVersion:string|null
     return {correctionId:id,...queueIdentityRealignment(songId,id)}
   })()
 }
-/** File completed, but old asset and binding remain authoritative until exact Plex validation. */
-export function stageCorrectionMedia(input:CompletedMediaWrite):LocalMediaAsset|null {
-  const correction=getMediaCorrection(input.neteaseSongId)
-  const task=input.taskId?getDb().prepare('SELECT idempotency_key FROM download_tasks WHERE id=?').get(input.taskId) as {idempotency_key:string|null}|undefined:undefined
+/** Check under the identity mutation lock before publishing any replacement. */
+export function assertMediaCorrectionCurrent(songId:number,taskId?:string|null):MediaCorrection|null {
+  const correction=getMediaCorrection(songId)
+  const task=taskId?getDb().prepare('SELECT idempotency_key FROM download_tasks WHERE id=?').get(taskId) as {idempotency_key:string|null}|undefined:undefined
   const expectedCorrection=task?.idempotency_key?.split(':correction:')[1]
   if(expectedCorrection && correction?.id!==expectedCorrection)throw new BindingVersionConflictError()
   if(!correction)return null
-  if(input.taskId&&!expectedCorrection)throw new Error('当前有媒体纠错正在处理，请完成后重试其他文件操作')
-  if((getSongIdentityBinding(input.neteaseSongId)?.updatedAt??null)!==correction.expected_version)throw new BindingVersionConflictError()
+  if(taskId&&!expectedCorrection)throw new Error('当前有媒体纠错正在处理，请完成后重试其他文件操作')
+  if((getSongIdentityBinding(songId)?.updatedAt??null)!==correction.expected_version)throw new BindingVersionConflictError()
+  return correction
+}
+/** File completed, but old asset and binding remain authoritative until exact Plex validation. */
+export function stageCorrectionMedia(input:CompletedMediaWrite):LocalMediaAsset|null {
+  const correction=assertMediaCorrectionCurrent(input.neteaseSongId,input.taskId)
+  if(!correction)return null
   const stat=statSync(input.filePath),now=new Date().toISOString()
   const asset:LocalMediaAsset={neteaseSongId:input.neteaseSongId,filePath:input.filePath,provenance:input.provenance,ownership:'managed',sourceTaskId:input.taskId??null,status:'active',fileSize:stat.size,fileMtimeMs:stat.mtimeMs,evidence:{correctionId:correction.id},createdAt:now,updatedAt:now,lastVerifiedAt:now}
   getDb().prepare("UPDATE media_corrections SET staged_asset_json=?,status='ready',updated_at=? WHERE id=?").run(JSON.stringify(asset),now,correction.id)

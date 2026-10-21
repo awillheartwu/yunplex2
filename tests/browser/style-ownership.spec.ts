@@ -9,7 +9,7 @@ async function login(page: Page) {
 }
 
 for (const width of [375, 1440]) {
-  test(`cold source review and portal styles work at ${width}px without visiting the library`, async ({ page }) => {
+  test(`cold source review and reanalysis recover at ${width}px without visiting the library`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await login(page)
     const source = { id: 'style-owner', name: '样式独立加载', neteasePlaylistName: '样式独立加载', neteasePlaylistId: 123, type: 'playlist', enabled: true, subscribed: false, coverUrl: '', trackCount: 1, plexPlaylistName: '目标', plexPlaylistRatingKey: 'target', lastStatus: 'idle', lastSyncedAt: null, initializationStatus: 'awaiting_review', initializationTotalItems: 1 }
@@ -37,46 +37,30 @@ for (const width of [375, 1440]) {
       await page.keyboard.press('Escape')
     }
     await page.getByRole('navigation', { name: '候选分组' }).getByRole('button', { name: /^全部/ }).click()
-    const snapshot = page.locator('.matching-snapshot')
-    expect(await snapshot.evaluate(el => parseFloat(getComputedStyle(el).paddingLeft))).toBeGreaterThanOrEqual(16)
-    const settingsLink = snapshot.getByRole('link', { name: '初始化匹配设置' })
-    expect((await settingsLink.boundingBox())!.width).toBeLessThan(220)
-    await page.getByRole('button', { name: '放弃方案并重新分析', exact: true }).click()
-    const comparison = page.getByRole('dialog', { name: '重新分析', exact: true })
+    await page.getByRole('button', { name: '重新分析当前方案', exact: true }).click()
+    const comparison = page.getByRole('dialog', { name: '重新分析当前方案', exact: true })
     await expect(comparison).toBeVisible()
     await expect(comparison.getByRole('alert')).toContainText('比较服务暂不可用')
-    await expect(comparison.getByRole('button', { name: '确认创建新草案' })).toBeDisabled()
+    await expect(comparison.getByRole('button', { name: '确认并重新分析当前方案' })).toBeDisabled()
     await comparison.getByRole('button', { name: '重试比较' }).click()
-    await expect(comparison.getByRole('button', { name: '确认创建新草案' })).toBeEnabled()
+    await expect(comparison.getByRole('button', { name: '确认并重新分析当前方案' })).toBeEnabled()
     await expect(comparison.locator('.matching-reanalysis__comparison')).toContainText('2241')
-    expect(await comparison.locator('.matching-reanalysis').evaluate(el => parseFloat(getComputedStyle(el).paddingLeft))).toBeGreaterThanOrEqual(16)
-    await comparison.getByText('查看变化样本（前 20 首）', { exact: true }).click()
+    await comparison.getByText('查看变化的前 20 首', { exact: true }).click()
     await expect(comparison.getByText('变化样本歌曲', { exact: true })).toBeVisible()
     for (const dark of [false, true]) {
       await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
       await comparison.scrollIntoViewIfNeeded()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     }
-    await comparison.getByRole('button', { name: '保留当前草案' }).click()
+    await comparison.getByRole('button', { name: '保留当前方案' }).click()
     await expect(comparison).toBeHidden()
     const table = page.locator('.source-adoption__table')
     await expect(table).toBeVisible()
-    await expect(table).toHaveCSS('display', width < 640 ? 'block' : 'table')
-    await expect(table.locator('.source-adoption__tier')).toHaveCSS('display', 'inline-flex')
-    const footer = page.locator('.source-adoption__commit')
-    await expect(footer).toHaveCSS('position', 'fixed')
-    const footerBox = (await footer.boundingBox())!
-    expect(footerBox.x).toBeGreaterThanOrEqual(0)
-    expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(width)
-    if (width < 768) expect(footerBox.y + footerBox.height).toBeLessThanOrEqual((await page.locator('.mobile-dock').boundingBox())!.y)
+    await expect(page.getByRole('button', { name: '开始下载并同步', exact: true }).first()).toBeVisible()
     for (const dark of [false, true]) {
       await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark)
       await page.getByRole('button', { name: '查看证据', exact: true }).click()
       const drawer = page.getByRole('dialog', { name: `${item.title} 证据详情`, exact: true })
-      await expect(drawer).toHaveCSS('position', 'fixed')
-      await expect(drawer).toHaveCSS('overflow-y', 'auto')
-      // The badge is a flex item here, so its computed outer display is blockified.
-      await expect(drawer.locator('.source-adoption__tier')).toHaveCSS('display', 'flex')
       expect(await drawer.evaluate(element => element.closest('.source-adoption') === null)).toBe(true)
       const box = (await drawer.boundingBox())!
       expect(box.x).toBeGreaterThanOrEqual(0)

@@ -61,6 +61,34 @@ export async function executeDownloadTasks(
         })
 
         const abortController = new AbortController()
+        let mediaCommitted = false
+        const commitResult = (result: DownloadProcessorResult, publish?: () => void) => getDb().transaction(() => {
+          if (publish) {
+            abortController.signal.throwIfAborted()
+            const owned = db.prepare("SELECT 1 FROM download_tasks WHERE id = ? AND lease_owner = ? AND status IN ('downloading','tagging')")
+              .get(task.id, leaseOwner)
+            if (!owned) throw new DownloadCancelledError()
+            // No event-loop gap between the last lease check, rename and registration.
+            publish()
+          }
+          const accepted = updateTaskState(task.id, {
+            status: 'done', progress: 100,
+            filePath: result.filePath, fileType: result.fileType,
+            error: null, errorCode: null, leaseOwner: null, leaseExpiresAt: null,
+          }, { leaseOwner })
+          if (!accepted) return false
+          commitCompletedMediaWrite({
+            neteaseSongId: task.songId,
+            filePath: result.filePath,
+            provenance: task.operation === 'repair_existing' ? 'manual' : 'download_task',
+            taskId: task.id,
+            audioDownloaded: result.ops?.download === 'ok',
+            audioOperation: result.audioOperation,
+            runId: task.jobId ?? null,
+            sourceId: task.sourceId,
+          })
+          return true
+        })()
         let watchdog: ReturnType<typeof setTimeout> | undefined
         let watchdogActive = true
         let unregisterDownload: (() => void) | undefined
@@ -106,7 +134,9 @@ export async function executeDownloadTasks(
               data: { taskId: task.id, songName: task.songName, status, progress: pct, sourceId: task.sourceId },
               timestamp: new Date().toISOString(),
             })
-          }, abortController.signal)).then(
+          }, abortController.signal, async (value, publish) => {
+            mediaCommitted = commitResult(value, publish)
+          })).then(
             value => {
               if (!watchdogActive) return
               watchdogActive = false
@@ -159,28 +189,7 @@ export async function executeDownloadTasks(
           continue
         }
 
-        const updated = getDb().transaction(() => {
-          const accepted = updateTaskState(task.id, {
-            status: 'done', progress: 100,
-            filePath: result.filePath, fileType: result.fileType,
-            error: null,
-            errorCode: null,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          }, { leaseOwner })
-          if (!accepted) return false
-          commitCompletedMediaWrite({
-            neteaseSongId: task.songId,
-            filePath: result.filePath,
-            provenance: task.operation === 'repair_existing' ? 'manual' : 'download_task',
-            taskId: task.id,
-            audioDownloaded: result.ops?.download === 'ok',
-            audioOperation: result.audioOperation,
-            runId: task.jobId ?? null,
-            sourceId: task.sourceId,
-          })
-          return true
-        })()
+        const updated = mediaCommitted || commitResult(result)
         if (!updated) continue
         if (result.audioCache) await clearAudioCache(result.audioCache)
 

@@ -100,6 +100,49 @@ export function createFileTaskWaitHandle(taskIds: readonly string[]): FileTaskSu
   return createFileTaskSubmissionHandle([], [...taskIds])
 }
 
+/** File failures retain their original target, options and audio cache during source retries. */
+export function getSourceFileRetryTasks(sourceId: string): Map<number, DownloadTask[]> {
+  const rows = getDb().prepare(`
+    SELECT failure_kind, download_task_ids FROM failure_records
+    WHERE source_id = ? AND song_id IS NOT NULL AND status = 'open'
+      AND TRIM(COALESCE(download_task_ids, '')) != ''
+  `).all(sourceId) as Array<{ failure_kind: string; download_task_ids: string }>
+  const tasksBySong = new Map<number, DownloadTask[]>()
+  const selected = new Set<string>()
+  for (const row of rows) {
+    for (const id of row.download_task_ids.split(',')) {
+      if (selected.has(id)) continue
+      const task = getDownloadTask(id)
+      if (!task || task.status === 'done') continue
+      const retryOriginalTask = task.operation === 'repair_existing' || task.operation === 'replace'
+        || task.executionIntent?.downloadMode === 'replace' || row.failure_kind === 'failed_tags'
+      if (!retryOriginalTask) continue
+      selected.add(id)
+      const tasks = tasksBySong.get(task.songId) ?? []
+      tasks.push(task)
+      tasksBySong.set(task.songId, tasks)
+    }
+  }
+  return tasksBySong
+}
+
+/** Attach retries to the current convergence without reopening their historical runs. */
+export function resumeSourceFileTasks(tasks: readonly DownloadTask[], runId: string, sourceId: string): string[] {
+  return getDb().transaction(() => {
+    requeueFailedDownloadTasks(tasks.map(task => task.id), { resumeRuns: false })
+    return tasks.map(task => {
+      const current = getDownloadTask(task.id)!
+      const active = current.status === 'failed' && current.idempotencyKey
+        ? getDb().prepare(`SELECT id FROM download_tasks WHERE idempotency_key = ?
+            AND status IN ('pending','downloading','tagging') ORDER BY created_at ASC LIMIT 1`)
+          .get(current.idempotencyKey) as { id: string } | undefined : undefined
+      const taskId = active?.id ?? current.id
+      linkRunFileTask(getDb(), { runId, taskId, sourceId })
+      return taskId
+    })
+  })()
+}
+
 function createFileTaskSubmissionHandle(
   submissions: readonly FileTaskSubmission[],
   taskIds = submissions.map(({ task }) => task.id),

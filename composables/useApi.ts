@@ -121,6 +121,9 @@ export function useApi() {
 
 async function handleAuthStatus(res: Response): Promise<void> {
   if (!import.meta.client) return
+  if (res.status !== 401 && res.status !== 428) return
+  const auth = useAuth()
+  await auth.refreshState(true).catch(() => { auth.state.value = null })
   if (res.status === 401) {
     const route = useRoute()
     await navigateTo({ path: '/login', query: { redirect: route.fullPath } })

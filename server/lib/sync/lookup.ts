@@ -66,7 +66,7 @@ export async function resolveTracks(
   cfg: AppConfig,
   dryRun = false,
   identityContext: IdentityContext = {},
-  options: { automaticMediaFallback?: boolean; trustedSongIds?: ReadonlySet<number>; ignoredSongIds?: ReadonlySet<number> } = {},
+  options: { automaticMediaFallback?: boolean; trustedSongIds?: ReadonlySet<number>; ignoredSongIds?: ReadonlySet<number>; neteaseIndices?: readonly number[] } = {},
 ): Promise<{ resolutions: TrackResolution[]; extraTracks: ExtraTrack[] }> {
   const playlistTracks = plexPlaylistRatingKey
     ? await getPlaylistTracks(plexPlaylistRatingKey, 99999)
@@ -103,7 +103,8 @@ export async function resolveTracks(
   const directTracks = await getTracksByRatingKeys(targetBindings.flatMap(binding =>
     binding.plexRatingKey && !trustedBindingIds.has(binding.neteaseSongId) && !options.ignoredSongIds?.has(binding.neteaseSongId) ? [binding.plexRatingKey] : [],
   ))
-  for (const [index, song] of yunSongs.entries()) {
+  for (const [songIndex, song] of yunSongs.entries()) {
+    const index = options.neteaseIndices?.[songIndex] ?? songIndex
     if (options.ignoredSongIds?.has(song.id)) {
       const binding = bindingsById.get(song.id)
       const existing = binding?.status === 'active' && binding.plexRatingKey

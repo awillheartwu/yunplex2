@@ -62,6 +62,7 @@ import {
   buildPlexPlaylistFingerprint,
 } from './playlist-fingerprint'
 import type { TrackResolution } from './types'
+import { observePlexRemovalFailures } from '../tasks/failure-records'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -146,7 +147,7 @@ export async function reconcilePlexPlaylist(
       ? [{ key: String(index), song: resolution.song, filePath }]
       : []
   })
-  const needsScan = Boolean(needsPlexRefresh && sectionKey && retryRequests.length)
+  const needsScan = Boolean(needsPlexRefresh && sectionKey)
   const scanEvents = needsScan ? await openPlexScanEvents(config.plex, sectionKey) : undefined
   let batchMatches: Map<string, PlexMatchResult>
   try {
@@ -289,6 +290,11 @@ export async function reconcilePlexPlaylist(
       ),
     ),
   }))
+  const ignoredRemovalItemIds = observePlexRemovalFailures({
+    sourceId: source.id, playlistRatingKey: plexPlaylist.ratingKey,
+    currentItemIds: new Set(currentItems.map(item => item.playlistItemId)),
+    maxFailureAttempts: config.sync.maxFailureAttempts,
+  })
   const currentOccurrences = listPlaylistSourceTrackOccurrences(source.id)
   const occurrencesByPreviousRatingKey = new Map<string, typeof currentOccurrences>()
   for (const occurrence of currentOccurrences) {
@@ -354,6 +360,7 @@ export async function reconcilePlexPlaylist(
     allowEmptyRemoval: emptyTargetConfirmed,
     extraTrackRemovalPolicy: config.sync.extraTrackRemovalPolicy,
     extraObservationCounts,
+    ignoredRemovalItemIds,
   })
 
   for (const decision of reconciliationPlan.removalDecisions) {
@@ -368,6 +375,7 @@ export async function reconcilePlexPlaylist(
           album: track.parentTitle || '',
           ratingKey: track.ratingKey,
           playlistItemId: decision.playlistItemId,
+          playlistRatingKey: plexPlaylist.ratingKey,
           status: 'extra_skipped',
         })
         extraTaskIds.set(decision.playlistItemId, extraSongId)
@@ -375,11 +383,12 @@ export async function reconcilePlexPlaylist(
     }
     if (!extraSongId || decision.action !== 'preserve') continue
     job.updateSong(extraSongId, {
-      status: 'extra_skipped',
+      status: ignoredRemovalItemIds.has(decision.playlistItemId) ? 'ignored_failure' : 'extra_skipped',
       phase: 'done',
       metadata: {
         plexRatingKey: decision.ratingKey,
         plexPlaylistItemId: decision.playlistItemId,
+        plexPlaylistRatingKey: plexPlaylist.ratingKey,
         matchTrace: {
           decision: 'preserved',
           deletionProtectionReason: decision.reason,
@@ -405,6 +414,7 @@ export async function reconcilePlexPlaylist(
         metadata: {
           plexRatingKey: mutation.ratingKey,
           plexPlaylistItemId: mutation.playlistItemId,
+          plexPlaylistRatingKey: plexPlaylist.ratingKey,
           matchTrace: { decision: 'removed' },
         },
       })

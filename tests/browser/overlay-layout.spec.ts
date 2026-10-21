@@ -86,7 +86,7 @@ for (const width of [1440, 390]) {
       await expect(page.getByRole('listbox')).toHaveCount(0)
       await expectStableTrace(page)
       await checkOverlay(page, page.getByRole('button', { name: '添加歌单', exact: true }), page.getByRole('dialog', { name: '添加音乐收藏', exact: true }))
-      await checkOverlay(page, page.getByRole('button', { name: '搜索页面与音乐收藏', exact: true }), page.getByRole('dialog', { name: '搜索与快捷跳转', exact: true }))
+      await checkOverlay(page, page.getByRole('button', { name: '搜索设置、收藏与页面', exact: true }), page.getByRole('dialog', { name: '搜索与快捷跳转', exact: true }))
       if (width < 768) await checkOverlay(page, page.getByRole('button', { name: '打开导航', exact: true }), page.getByRole('dialog', { name: '移动端导航', exact: true }))
       if (process.env.UI_SCREENSHOTS === '1') {
         await filter.click()
@@ -138,8 +138,8 @@ for (const width of [1440, 390]) {
       sample: { localPath: '/app/music/artist/album/song.flac', plexPath: '/music/artist/album/song.flac', roundTripLocalPath: '/app/music/artist/album/song.flac' }, checks: [],
     } }) }))
     await page.goto('/config?tab=media')
-    await page.getByRole('button', { name: '测试下载路径', exact: true }).click()
-    await checkOverlay(page, page.getByRole('button', { name: '查看诊断', exact: true }), page.getByRole('dialog', { name: '文件发布诊断', exact: true }))
+    await page.getByRole('button', { name: '检查下载目录', exact: true }).click()
+    await checkOverlay(page, page.getByRole('button', { name: '查看路径', exact: true }), page.getByRole('dialog', { name: '音乐目录检查', exact: true }))
     await page.goto('/config?tab=advanced')
     await checkOverlay(page, page.getByRole('button', { name: '恢复默认', exact: true }), page.getByRole('dialog', { name: '恢复默认配置', exact: true }))
   })

@@ -7,7 +7,9 @@ import {
   failureReasonGroupKey,
   failureSubjectKey,
   normalizeFailureIdentityPart,
+  plexRemovalTarget,
 } from './failure-identity'
+import type { FailureSubject } from './failure-identity'
 import type { DomainErrorCategory, DomainErrorCode, DomainErrorSeverity } from '../../../shared/domain-errors'
 import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
 import { sanitizeDiagnosticMessage } from '../domain-error'
@@ -82,6 +84,7 @@ export interface SourceFailurePolicyEntry {
 
 export interface SourceFailurePolicy {
   failuresBySongId: Record<number, SourceFailurePolicyEntry>
+  removalFailures: Record<string, SourceFailurePolicyEntry>
 }
 
 export interface SourceFailureCounts {
@@ -150,11 +153,7 @@ function rowToRecord(row: Record<string, unknown>): FailureRecord {
   }
 }
 
-export function recordFailure(input: {
-  songId?: number | null
-  songName: string
-  artist?: string
-  sourceId?: string | null
+export function recordFailure(input: FailureSubject & {
   sourceName?: string
   runId?: string | null
   runType: TaskRunType
@@ -292,13 +291,11 @@ export function recordFailure(input: {
   return rowToRecord(db.prepare('SELECT * FROM failure_records WHERE fingerprint = ?').get(fingerprint) as Record<string, unknown>)
 }
 
-export function resolveFailures(input: {
-  songId?: number | null
-  songName: string
-  artist?: string
-  sourceId?: string | null
+export function resolveFailures(input: FailureSubject & {
   failureKinds?: string[]
   resolvedAt?: string
+  includeIgnored?: boolean
+  downloadTaskId?: string
 }): number {
   const subject = failureSubjectKey(input)
   const resolvedAt = input.resolvedAt || new Date().toISOString()
@@ -308,10 +305,34 @@ export function resolveFailures(input: {
     kindClause = ` AND failure_kind IN (${input.failureKinds.map(() => '?').join(',')})`
     params.push(...input.failureKinds)
   }
+  if (input.downloadTaskId) {
+    kindClause += " AND INSTR(',' || COALESCE(download_task_ids, '') || ',', ',' || ? || ',') > 0"
+    params.push(input.downloadTaskId)
+  }
   const result = getDb().prepare(`
     UPDATE failure_records
     SET status = 'resolved', resolved_at = ?, ignored_at = NULL, attempt_count = 0, ignore_reason = NULL
-    WHERE subject_key = ? AND status = 'open' AND last_seen_at <= ?${kindClause}
+    WHERE subject_key = ? AND status IN (${input.includeIgnored ? "'open','ignored'" : "'open'"}) AND last_seen_at <= ?${kindClause}
+      AND NOT EXISTS (
+        SELECT 1 FROM download_tasks task
+        WHERE INSTR(',' || COALESCE(failure_records.download_task_ids, '') || ',', ',' || task.id || ',') > 0
+          AND task.status != 'done'
+          AND (task.operation IN ('repair_existing', 'replace')
+            OR json_extract(task.execution_intent_json, '$.downloadMode') = 'replace'
+            OR failure_records.failure_kind = 'failed_tags')
+          AND NOT EXISTS (
+            SELECT 1 FROM download_tasks completed
+            WHERE completed.song_id = task.song_id AND completed.status = 'done'
+              AND (completed.file_path = COALESCE(task.file_path, task.target_path)
+                OR completed.idempotency_key = task.idempotency_key)
+              AND completed.updated_at >= failure_records.last_seen_at
+              AND CASE
+                WHEN task.operation = 'replace' OR json_extract(task.execution_intent_json, '$.downloadMode') = 'replace'
+                THEN completed.operation = 'replace' OR json_extract(completed.execution_intent_json, '$.downloadMode') = 'replace'
+                ELSE json_extract(completed.execution_intent_json, '$.embedMetadata') = 1
+              END
+          )
+      )
   `).run(...params)
   return result.changes
 }
@@ -319,6 +340,11 @@ export function resolveFailures(input: {
 export function reconcileRunFailures(run: TaskRun): void {
   for (const song of run.songs || []) {
     const sourceName = song.sourceId || run.source
+    const subject: FailureSubject = {
+      songId: song.neteaseSongId, songName: song.songName, artist: song.artist, sourceId: song.sourceId,
+      plexPlaylistRatingKey: song.metadata?.plexPlaylistRatingKey,
+      plexPlaylistItemId: song.metadata?.plexPlaylistItemId,
+    }
     if (FAILURE_STATUSES.has(song.status)) {
       if (song.status === 'copyright_restricted') {
         resolveFailures({
@@ -339,10 +365,7 @@ export function reconcileRunFailures(run: TaskRun): void {
           .get(run.id, song.neteaseSongId ?? null, run.id, song.sourceId ?? '') as { id: string } | undefined
         : undefined
       recordFailure({
-        songId: song.neteaseSongId,
-        songName: song.songName,
-        artist: song.artist,
-        sourceId: song.sourceId,
+        ...subject,
         sourceName,
         runId: run.id,
         runType: run.type,
@@ -355,15 +378,11 @@ export function reconcileRunFailures(run: TaskRun): void {
       // Observing an ignored problem links this run without recording another failure.
       getDb().prepare(`INSERT OR IGNORE INTO failure_occurrences (fingerprint, occurrence_key, occurred_at)
         SELECT fingerprint, ?, ? FROM failure_records WHERE subject_key = ? AND status = 'ignored'`)
-        .run(`run:${run.id}`, run.finishedAt || new Date().toISOString(), failureSubjectKey({
-          songId: song.neteaseSongId, songName: song.songName, artist: song.artist, sourceId: song.sourceId,
-        }))
-    } else if (song.status === 'success' || song.status === 'skipped_existing') {
+        .run(`run:${run.id}`, run.finishedAt || new Date().toISOString(), failureSubjectKey(subject))
+    } else if (song.status === 'success' || song.status === 'skipped_existing' || song.status === 'removed') {
       resolveFailures({
-        songId: song.neteaseSongId,
-        songName: song.songName,
-        artist: song.artist,
-        sourceId: song.sourceId,
+        ...subject,
+        includeIgnored: song.status === 'removed',
         resolvedAt: run.finishedAt || new Date().toISOString(),
       })
     }
@@ -371,10 +390,19 @@ export function reconcileRunFailures(run: TaskRun): void {
 }
 
 export function getSourceFailureStatus(sourceId: string): 'open' | 'ignored' | null {
-  const row = getDb().prepare(`SELECT status FROM failure_records WHERE source_id = ? AND song_id IS NULL
+  const row = getDb().prepare(`SELECT status FROM failure_records WHERE subject_key = ?
     AND status IN ('open', 'ignored') ORDER BY status = 'open' ASC LIMIT 1`)
-    .get(sourceId) as { status: 'open' | 'ignored' } | undefined
+    .get(failureSubjectKey({ sourceId, songName: '来源同步' })) as { status: 'open' | 'ignored' } | undefined
   return row?.status ?? null
+}
+
+export function reopenIgnoredSourceFailures(sourceId: string): number {
+  const rows = getDb().prepare("SELECT id FROM failure_records WHERE subject_key = ? AND status = 'ignored'")
+    .all(failureSubjectKey({ sourceId, songName: '来源同步' })) as { id: string }[]
+  const ids = rows.map(row => row.id)
+  const count = setFailureRecordStatus(ids, 'open')
+  incrementFailureRetries(ids)
+  return count
 }
 
 function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['phase'] {
@@ -387,11 +415,10 @@ function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['pha
 export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   // A newly approved replacement can proceed without deleting older failure history.
   const rows = getDb().prepare(`
-    SELECT song_id, failure_kind, occurrence_count, attempt_count, last_seen_at, status
+    SELECT subject_key, song_id, failure_kind, occurrence_count, attempt_count, last_seen_at, status
     FROM failure_records
     WHERE source_id = ?
       AND status IN ('open', 'ignored')
-      AND song_id IS NOT NULL
       AND failure_kind != 'ignored_failure'
       AND NOT EXISTS (
         SELECT 1 FROM media_corrections correction
@@ -401,7 +428,8 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
       )
     ORDER BY status = 'ignored' DESC, last_seen_at DESC
   `).all(sourceId) as Array<{
-    song_id: number
+    subject_key: string
+    song_id: number | null
     failure_kind: string
     occurrence_count: number
     attempt_count: number
@@ -409,19 +437,41 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
     status: 'open' | 'ignored'
   }>
   const failuresBySongId: Record<number, SourceFailurePolicyEntry> = {}
+  const removalFailures: Record<string, SourceFailurePolicyEntry> = {}
 
   for (const row of rows) {
-    if (failuresBySongId[row.song_id]) continue
-    failuresBySongId[row.song_id] = {
+    const entry: SourceFailurePolicyEntry = {
       failureKind: row.failure_kind,
       occurrenceCount: row.occurrence_count,
       attemptCount: row.attempt_count,
       status: row.status,
       phase: phaseForFailureKind(row.failure_kind),
     }
+    if (row.song_id !== null) failuresBySongId[row.song_id] ??= entry
+    else if (plexRemovalTarget(row.subject_key)) removalFailures[row.subject_key] ??= entry
   }
 
-  return { failuresBySongId }
+  return { failuresBySongId, removalFailures }
+}
+
+/** A missing concrete item is already removed; an ignored present item stays untouched. */
+export function observePlexRemovalFailures(input: {
+  sourceId: string
+  playlistRatingKey: string
+  currentItemIds: ReadonlySet<number>
+  maxFailureAttempts: number
+}): Set<number> {
+  const ignored = new Set<number>()
+  for (const [subject, failure] of Object.entries(getSourceFailurePolicy(input.sourceId).removalFailures)) {
+    const target = plexRemovalTarget(subject)!
+    if (target.plexPlaylistRatingKey !== input.playlistRatingKey) continue
+    if (!input.currentItemIds.has(target.plexPlaylistItemId)) {
+      resolveFailures({ ...target, sourceId: input.sourceId, songName: '', includeIgnored: true })
+    } else if (isTerminalFailure(failure, input.maxFailureAttempts)) {
+      ignored.add(target.plexPlaylistItemId)
+    }
+  }
+  return ignored
 }
 
 export function shouldIgnoreSourceFailure(
@@ -595,15 +645,17 @@ export function getFailureRecords(ids: string[]): FailureRecord[] {
 
 export function getRunFailureStates(runId: string): RunFailureHandlingState[] {
   const { where, from, params } = buildFailureRecordQuery({ runId, status: 'all' })
-  const rows = getDb().prepare(`SELECT fr.source_id,fr.song_id,fr.status,fr.ignore_reason,
+  const rows = getDb().prepare(`SELECT fr.subject_key,fr.source_id,fr.song_id,fr.status,fr.ignore_reason,
     fr.attempt_count,fr.failure_kind,fr.failure_reason ${from} ${where}
     ORDER BY fr.status='open' DESC,fr.status='ignored' DESC,fr.last_seen_at DESC`).all(...params) as Array<{
       source_id: string | null; song_id: number | null; status: FailureRecordStatus;
+      subject_key: string;
       ignore_reason: 'automatic' | 'manual' | null; attempt_count: number; failure_kind: string; failure_reason: string;
     }>
   const attemptLimit = Math.max(1, readConfigFromDb().sync.maxFailureAttempts)
   return rows.map(row => ({
     sourceId: row.source_id, songId: row.song_id, status: row.status, ignoreReason: row.ignore_reason,
+    ...plexRemovalTarget(row.subject_key),
     attemptCount: row.attempt_count, attemptLimit,
     errorCode: resolveDomainErrorDefinition(row.failure_kind, row.failure_reason).code,
   }))

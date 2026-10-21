@@ -114,7 +114,7 @@ function executionOverrides(task: DownloadTask): Parameters<typeof resolveSingle
   if (persisted) {
     return {
       quality: task.quality,
-      downloadMode: persisted.downloadMode,
+      downloadMode: task.operation === 'replace' ? 'replace' : persisted.downloadMode,
       target: persisted.target,
       downloadLyrics: persisted.downloadLyrics,
       embedMetadata: persisted.embedMetadata,
@@ -168,11 +168,13 @@ export function startDownloadWorker(
   if (singleton) return singleton
   singleton = createDownloadWorker({
     getConcurrency: () => getConfig().sync.downloadConcurrency || 1,
-    execute: execute ?? ((task, onProgress, signal) => downloadSingleSong(
+    execute: execute ?? ((task, onProgress, signal, commit) => downloadSingleSong(
         task.songId,
         {
           ...resolveSingleSongConfig(getConfig(), executionOverrides(task)),
           audioCache: { directory: join(getDataDir(), 'download-cache'), taskId: task.id },
+          taskId: task.id,
+          commit,
         },
         onProgress,
         signal,

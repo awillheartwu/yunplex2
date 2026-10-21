@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { cloneConfig } from '~~/server/lib/config/validation'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
+import { writeConfig } from '~~/server/lib/config/store'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { getSource, updateSource } from '~~/server/lib/playlist/store'
+import { getSourceFailureStatus, queryFailureRecords } from '~~/server/lib/tasks/failure-records'
 import {
   claimNextSourceRequest,
   enqueueManualSourceSync,
@@ -121,6 +123,65 @@ describe('source schedule store', () => {
     expect(recoverInterruptedSourceRequests(restartedAt)).toBe(1)
     expect(claimNextSourceRequest('new-worker', restartedAt)).toBeNull()
     expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id = ?').get(first!.id)).toEqual({ status: 'failed' })
+  })
+
+  it('counts repeated interruptions against the budget without reviving an ignored failure', () => {
+    writeConfig({ sync: { maxFailureAttempts: 3 } })
+    const intervalMinutes = 10
+    const base = new Date('2026-08-28T00:00:00.000Z')
+    insertSource('source-1', base, { interval: intervalMinutes })
+    let dueAt = base
+    const rounds: Array<{ status: string; attemptCount: number; occurrenceCount: number }> = []
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      expect(reconcileSourceSchedules(config(intervalMinutes), dueAt)).toBe(1)
+      expect(claimNextSourceRequest(`worker-${attempt}`, dueAt)).not.toBeNull()
+      const interruptedAt = new Date(dueAt.getTime() + 60_000)
+
+      expect(recoverInterruptedSourceRequests(interruptedAt)).toBe(1)
+      expect(claimNextSourceRequest(`replacement-${attempt}`, interruptedAt)).toBeNull()
+      const record = queryFailureRecords({
+        status: 'all',
+        sourceId: 'source-1',
+        failureKind: 'scheduler_interrupted',
+      }).items[0]!
+      rounds.push({
+        status: record.status,
+        attemptCount: record.attemptCount,
+        occurrenceCount: record.occurrenceCount,
+      })
+      expect(getSource('source-1')?.nextSyncAt).toBe(
+        new Date(interruptedAt.getTime() + intervalMinutes * 60_000).toISOString(),
+      )
+      dueAt = new Date(interruptedAt.getTime() + intervalMinutes * 60_000)
+    }
+
+    expect(rounds).toEqual([
+      { status: 'open', attemptCount: 1, occurrenceCount: 1 },
+      { status: 'open', attemptCount: 2, occurrenceCount: 2 },
+      { status: 'ignored', attemptCount: 3, occurrenceCount: 3 },
+    ])
+    expect(getSourceFailureStatus('source-1')).toBe('ignored')
+
+    expect(reconcileSourceSchedules(config(intervalMinutes), dueAt)).toBe(1)
+    expect(claimNextSourceRequest('next-worker', dueAt)).not.toBeNull()
+    expect(getSourceFailureStatus('source-1')).toBe('ignored')
+    const interruptedAgainAt = new Date(dueAt.getTime() + 60_000)
+    expect(recoverInterruptedSourceRequests(interruptedAgainAt)).toBe(1)
+
+    const finalRecord = queryFailureRecords({
+      status: 'all',
+      sourceId: 'source-1',
+      failureKind: 'scheduler_interrupted',
+    }).items[0]!
+    expect(finalRecord).toMatchObject({
+      status: 'ignored',
+      attemptCount: 4,
+      occurrenceCount: 4,
+      retryCount: 0,
+      ignoreReason: 'automatic',
+    })
+    expect(claimNextSourceRequest('after-recovery', interruptedAgainAt)).toBeNull()
   })
 
   it('records an expired sync lease without immediately retrying it', () => {

@@ -7,11 +7,15 @@ import { getDownloadTask, requeueFailedDownloadTasks } from '../download/queue'
 import { requestDownloadProcessing } from '../download/worker'
 import { appendLog } from '../log/store'
 import { getFailureRecords, incrementFailureRetries, setFailureRecordStatus } from './failure-records'
+import { failureSubjectKey, plexRemovalTarget } from './failure-identity'
+import { resumePendingMediaRepairCommands } from '../download/media-repair-command'
 
 export interface RetryTarget {
   sourceId?: string | null
   songId?: number | null
   downloadTaskIds?: readonly string[]
+  plexPlaylistRatingKey?: string
+  plexPlaylistItemId?: number
 }
 
 /** Explicit retries reopen only the selected targets and start a fresh attempt budget. */
@@ -19,8 +23,19 @@ export function retryTargets(targets: readonly RetryTarget[]) {
   const result = getDb().transaction(() => {
     const sourceSongs = new Map<string, Set<number>>()
     const sourceFailures = new Set<string>()
+    const removalSubjects = new Map<string, Set<string>>()
     const fileTaskIds = new Set<string>()
     for (const target of targets) {
+      if (target.sourceId && !target.songId && target.plexPlaylistRatingKey && target.plexPlaylistItemId) {
+        if (getSource(target.sourceId)?.plexPlaylistRatingKey !== target.plexPlaylistRatingKey) {
+          throw new Error('该异常对应的 Plex 歌单已变化，请刷新后核对当前歌单')
+        }
+        const subjects = removalSubjects.get(target.sourceId) ?? new Set<string>()
+        subjects.add(failureSubjectKey({ ...target, songName: '' }))
+        removalSubjects.set(target.sourceId, subjects)
+        if (!sourceSongs.has(target.sourceId)) sourceSongs.set(target.sourceId, new Set())
+        continue
+      }
       if (target.sourceId && !target.songId) {
         sourceFailures.add(target.sourceId)
         if (!sourceSongs.has(target.sourceId)) sourceSongs.set(target.sourceId, new Set())
@@ -38,6 +53,7 @@ export function retryTargets(targets: readonly RetryTarget[]) {
           const songs = sourceSongs.get(target.sourceId) ?? new Set<number>()
           songs.add(target.songId)
           sourceSongs.set(target.sourceId, songs)
+          // Source downloads retry saved replacement/tag/repair tasks with their original intent.
           continue
         }
       }
@@ -69,14 +85,16 @@ export function retryTargets(targets: readonly RetryTarget[]) {
     for (const [sourceId, songIds] of sourceSongs) {
       const ids = [...songIds]
       // Source-level errors are prerequisites for retrying any selected song in that source.
-      const scope = ['song_id IS NULL',
-        ids.length ? `song_id IN (${ids.map(() => '?').join(',')})` : '0 = 1'].join(' OR ')
+      const subjects = [...(removalSubjects.get(sourceId) ?? [])]
+      const scope = ['subject_key = ?',
+        ids.length ? `song_id IN (${ids.map(() => '?').join(',')})` : '0 = 1',
+        subjects.length ? `subject_key IN (${subjects.map(() => '?').join(',')})` : '0 = 1'].join(' OR ')
       const rows = getDb()
         .prepare(
           `SELECT id FROM failure_records WHERE source_id = ?
         AND (${scope}) AND status IN ('open','ignored')`,
         )
-        .all(sourceId, ...ids) as { id: string }[]
+        .all(sourceId, failureSubjectKey({ sourceId, songName: '来源同步' }), ...ids, ...subjects) as { id: string }[]
       for (const row of rows) failureIds.add(row.id)
     }
     for (const task of requeued) {
@@ -88,7 +106,8 @@ export function retryTargets(targets: readonly RetryTarget[]) {
         .all(task.id) as { id: string }[]
       for (const row of rows) failureIds.add(row.id)
     }
-    const count = [...sourceSongs.values()].reduce((sum, songs) => sum + songs.size, 0) + sourceFailures.size + requeued.length
+    const count = [...sourceSongs.values()].reduce((sum, songs) => sum + songs.size, 0)
+      + [...removalSubjects.values()].reduce((sum, subjects) => sum + subjects.size, 0) + sourceFailures.size + requeued.length
     if (!count) throw new Error('所选问题没有可重新处理的当前歌曲或失败文件任务，请刷新后重试')
     setFailureRecordStatus([...failureIds], 'open')
     incrementFailureRetries([...failureIds])
@@ -101,10 +120,12 @@ export function retryTargets(targets: readonly RetryTarget[]) {
       .catch((error) => {
         appendLog({ level: 'error', message: '重试来源未能启动', detail: String(error) })
       })
-  if (result.downloadTaskCount)
+  if (result.downloadTaskCount) {
+    resumePendingMediaRepairCommands()
     void requestDownloadProcessing().catch((error) => {
       appendLog({ level: 'error', message: '重试下载未能启动', detail: String(error) })
     })
+  }
   return result
 }
 
@@ -116,6 +137,7 @@ export function retryFailureRecords(ids: string[]) {
         sourceId: record.sourceId,
         songId: record.songId,
         downloadTaskIds: record.downloadTaskIds,
+        ...plexRemovalTarget(record.subjectKey),
       })),
   )
 }

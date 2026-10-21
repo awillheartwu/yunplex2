@@ -69,6 +69,7 @@ export function buildReconciliationPlan(input: {
   allowEmptyRemoval?: boolean
   extraTrackRemovalPolicy?: ExtraTrackRemovalPolicy
   extraObservationCounts?: ReadonlyMap<string, number>
+  ignoredRemovalItemIds?: ReadonlySet<number>
 }): ReconciliationPlan {
   const targetOrder = buildStrongTargetOrder(input.targets)
   const expectedTargetSongIds = input.expectedTargetSongIds ?? input.targets.map(target => target.neteaseSongId)
@@ -109,6 +110,11 @@ export function buildReconciliationPlan(input: {
     const requiredCount = targetCounts.get(item.ratingKey) ?? 0
     const isExtra = requiredCount === 0 || seen > requiredCount
     if (!isExtra) continue
+
+    if (input.ignoredRemovalItemIds?.has(item.playlistItemId)) {
+      removalDecisions.push(preserve(item, '该条目的移除失败已忽略，可从异常记录手动重试'))
+      continue
+    }
 
     if (input.skipRemoveExtraTracks) {
       removalDecisions.push(preserve(item, '已配置保留 Plex 多余歌曲'))

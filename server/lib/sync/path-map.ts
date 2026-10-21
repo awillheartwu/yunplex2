@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { isAbsolute, join, normalize, relative, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import type { AppConfig } from '../config/types'
 
 function trimTrailingSeparators(value: string): string {
@@ -14,15 +14,15 @@ export function normalizePathPrefix(value: string | null | undefined): string {
 }
 
 export function normalizeExistingLocalPath(value: string | null | undefined): string | null {
-  const normalized = normalizePathPrefix(value)
-  return normalized || null
+  const path = value?.trim()
+  return path ? resolve(path) : null
 }
 
 export function mapPlexPathToLocal(plexPath: string | null | undefined, cfg: AppConfig): string | null {
   if (!plexPath) return null
 
   const plexPrefix = normalizePathPrefix(cfg.download.plexLibraryPathPrefix)
-  const downloadDir = normalizePathPrefix(cfg.download.dir)
+  const downloadDir = normalizeExistingLocalPath(cfg.download.dir)
   const normalizedPath = normalize(plexPath)
 
   if (!downloadDir) return null
@@ -38,7 +38,7 @@ export function mapPlexPathToLocal(plexPath: string | null | undefined, cfg: App
 /** Map an application-visible media path to the path exposed to Plex. */
 export function mapLocalPathToPlex(localPath: string | null | undefined, cfg: AppConfig): string | null {
   const normalizedPath = normalizeExistingLocalPath(localPath)
-  const downloadDir = normalizePathPrefix(cfg.download.dir)
+  const downloadDir = normalizeExistingLocalPath(cfg.download.dir)
   const plexPrefix = normalizePathPrefix(cfg.download.plexLibraryPathPrefix)
 
   if (!normalizedPath || !downloadDir) return null

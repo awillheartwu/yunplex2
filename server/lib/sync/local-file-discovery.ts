@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import dayjs from 'dayjs'
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
@@ -33,10 +33,11 @@ function buildPathVars(song: NeteaseSong, cfg: AppConfig) {
 
 export function findExistingLocalSongPath(song: NeteaseSong, cfg: AppConfig): string | null {
   const vars = buildPathVars(song, cfg)
+  const downloadDir = resolve(cfg.download.dir)
 
   for (const ext of getAudioExtensionCandidates(cfg.netease.quality)) {
     const relativePath = buildDownloadPath(cfg.other?.pathFormat ?? '{artist}/{album} ({year})/{title}', vars, ext)
-    const absolutePath = join(cfg.download.dir, relativePath)
+    const absolutePath = join(downloadDir, relativePath)
     if (existsSync(absolutePath)) return absolutePath
   }
 
@@ -46,11 +47,11 @@ export function findExistingLocalSongPath(song: NeteaseSong, cfg: AppConfig): st
     vars,
     'flac',
   )
-  const albumDir = join(cfg.download.dir, dirname(sampleRelativePath))
+  const albumDir = join(downloadDir, dirname(sampleRelativePath))
   if (!existsSync(albumDir)) return null
 
   const stem = sampleRelativePath.replace(/\.\w+$/, '')
-  const absoluteStem = join(cfg.download.dir, stem)
+  const absoluteStem = join(downloadDir, stem)
   for (const ext of AUDIO_EXTENSION_FALLBACKS) {
     const candidate = `${absoluteStem}.${ext}`
     if (existsSync(candidate)) return candidate
