@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readConfigFromDb, getDb } from '~~/server/lib/db'
 import type { NeteaseSong, RawSong } from '~~/server/lib/netease'
@@ -126,6 +128,8 @@ async function runIgnoredSync(
 ) {
   const testDb = createFailureTestDatabase(`reyunplex-ignored-${mode}-`, 3)
   try {
+    writeFileSync(join(testDb.directory, 'Ignored Song.flac'), 'fLaCfixture')
+    writeFileSync(join(testDb.directory, 'Active Song.flac'), 'fLaCfixture')
     insertFailureSource('source-1')
     updateSource('source-1', {
       name: 'Ignored Source',
