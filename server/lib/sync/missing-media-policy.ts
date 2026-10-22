@@ -1,7 +1,9 @@
 import type { AppConfig } from '../config/types'
 import type { NeteaseSong } from '../netease'
 import { validateLocalAudioFile } from '../media-validation'
+import { isPlexMediaPathAvailable } from '../plex-media'
 import { getActiveSongIdentityBindings } from './identity-store'
+import { resolvePlexIdentityPath } from './identity-normalization'
 import {
   inspectLocalMediaAssets,
   type LocalMediaInspection,
@@ -63,7 +65,11 @@ export function planMissingMedia(
     if (plans.has(song.id)) continue
     const inspection = inspections.get(song.id)!
     const binding = bindings.get(song.id)
-    if (binding?.bindingMethod === 'manual') {
+    if (binding?.bindingMethod === 'manual' && isPlexMediaPathAvailable(resolvePlexIdentityPath({
+      relativePath: binding.plexRelativePath,
+      currentSectionRoot: cfg.download.plexLibraryPathPrefix,
+      lastObservedPath: binding.plexFilePath,
+    }), cfg)) {
       plans.set(song.id, plan(song.id, 'manual_exempt', inspection, '人工绑定优先，已豁免自动下载'))
       continue
     }

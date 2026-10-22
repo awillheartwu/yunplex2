@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,6 +45,7 @@ let directory = ''
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'reyunplex-initialization-service-'))
+  writeFileSync(join(directory, 'Signal.flac'), 'fLaCfixture')
   initDb(directory)
   const now = new Date().toISOString()
   getDb().prepare(`INSERT INTO playlist_sources (

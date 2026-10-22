@@ -168,13 +168,13 @@ export function persistLocalMediaInspection(item: LocalMediaInspection): LocalMe
     })
   }
   if (item.asset && item.state === 'missing') {
-    markMissing(item.neteaseSongId)
+    removeMissingLocalMediaAsset(item.neteaseSongId)
     return getLocalMediaAsset(item.neteaseSongId)
   }
   if (item.asset && item.state === 'replaced') {
     const stat = safeFileStat(item.asset.filePath)
     if (stat) return markReplaced(item.asset, stat)
-    markMissing(item.neteaseSongId)
+    removeMissingLocalMediaAsset(item.neteaseSongId)
     return getLocalMediaAsset(item.neteaseSongId)
   }
   if (item.asset && (item.state === 'active_managed' || item.state === 'active_external')) {
@@ -209,8 +209,10 @@ function safeFileStat(filePath: string): { fileSize: number; fileMtimeMs: number
       size: stat.size,
       mtimeMs: stat.mtimeMs,
     }
-  } catch {
-    return null
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null
+    throw error
   }
 }
 
@@ -280,9 +282,11 @@ export function upsertLocalMediaAsset(input: {
   return getLocalMediaAsset(input.neteaseSongId)!
 }
 
-function markMissing(neteaseSongId: number): void {
-  getDb().prepare(`UPDATE local_media_assets SET status = 'missing', updated_at = ?, last_verified_at = ? WHERE netease_song_id = ?`)
-    .run(new Date().toISOString(), new Date().toISOString(), neteaseSongId)
+export function removeMissingLocalMediaAsset(neteaseSongId: number): void {
+  const asset = getLocalMediaAsset(neteaseSongId)
+  if (asset && !safeFileStat(asset.filePath)) {
+    getDb().prepare('DELETE FROM local_media_assets WHERE netease_song_id = ?').run(neteaseSongId)
+  }
 }
 
 function markReplaced(
@@ -331,18 +335,8 @@ function adoptLatestSuccessfulDownload(neteaseSongId: number): LocalMediaAsset |
  */
 export function resolveLocalMediaAsset(song: NeteaseSong, cfg: AppConfig): LocalMediaAsset | null {
   const current = getLocalMediaAsset(song.id)
-  if (current && existsSync(current.filePath)) {
-    let stat
-    try {
-      stat = statSync(current.filePath)
-    } catch {
-      markMissing(song.id)
-      return getLocalMediaAsset(song.id)
-    }
-    if (!stat.isFile()) {
-      markMissing(song.id)
-      return getLocalMediaAsset(song.id)
-    }
+  const stat = current ? safeFileStat(current.filePath) : null
+  if (current && stat) {
     if (
       current.ownership === 'managed'
       && current.status === 'active'
@@ -368,7 +362,7 @@ export function resolveLocalMediaAsset(song: NeteaseSong, cfg: AppConfig): Local
       evidence: current.evidence,
     })
   }
-  if (current) markMissing(song.id)
+  if (current) removeMissingLocalMediaAsset(song.id)
 
   const recovered = adoptLatestSuccessfulDownload(song.id)
   if (recovered) return recovered

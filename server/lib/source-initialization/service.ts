@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readConfigFromDb, getDb } from '../db'
 import { fetchPlaylistSongs } from '../netease'
 import { getSectionKey, getSectionTracks, initPlexClient } from '../plex-client'
+import { filterAvailablePlexTracks } from '../plex-media'
 import { getSource } from '../playlist/store'
 import { getRun, saveRun } from '../run/store'
 import { acquireIdentityMutationLock } from '../sync/identity-coordinator'
@@ -62,7 +63,7 @@ export async function analyzeSourceInitialization(sourceId: string, trigger: Tas
     await initPlexClient(config.plex)
     const sectionKey = await getSectionKey(config.plex.section)
     if (!sectionKey) throw new Error('未找到 Plex 音乐库分区')
-    const tracks = await getSectionTracks(sectionKey); controller.signal.throwIfAborted()
+    const tracks = filterAvailablePlexTracks(await getSectionTracks(sectionKey), config); controller.signal.throwIfAborted()
     const bindings = getInitializationIdentityBindings(playlist.songs.map(song => song.id))
     let plans = buildInitializationPlans({ songs: playlist.songs, tracks, bindings, aliases: policy.legacyAliases, matching: policy.config, reevaluateAutomatic: initialization.reevaluateAutomatic })
     if (policy.config.enabled && policy.config.musicBrainzAliases && policy.config.useArtistAliases) {
@@ -150,7 +151,7 @@ async function applySourceInitialization(initializationId: string, allowDisabled
     throw new InitializationConflictError('网易云歌单已变化，请重新扫描后提交')
   }
   const rows = getDb().prepare(`SELECT * FROM source_initialization_items WHERE initialization_id = ? AND tier != 'preserved' ORDER BY position`).all(initialization.id) as Array<Record<string, unknown>>
-  const currentTracks = await getSectionTracks(sectionKey)
+  const currentTracks = filterAvailablePlexTracks(await getSectionTracks(sectionKey), config)
   const trackByRatingKey = new Map(currentTracks.map(track => [String(track.ratingKey), track]))
   const release = await acquireIdentityMutationLock()
   let applied = 0; let deferred = 0; let downloads = 0; let conflicts = 0

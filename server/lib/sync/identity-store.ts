@@ -222,6 +222,20 @@ export function markSongIdentityBindingStale(
   )
 }
 
+/** Forget an unavailable identity and invalidate every source that reused it. */
+export function deleteSongIdentityBinding(binding: SongIdentityBinding): void {
+  const db = getDb()
+  db.transaction(() => {
+    assertVersion(binding.neteaseSongId, binding.updatedAt)
+    db.prepare('DELETE FROM song_identity_bindings WHERE netease_song_id = ?').run(binding.neteaseSongId)
+    db.prepare(`UPDATE playlist_source_track_occurrences
+      SET alignment_status='pending', aligned_plex_rating_key=NULL,
+        aligned_plex_relative_path=NULL, aligned_binding_updated_at=NULL, aligned_at=NULL
+      WHERE netease_song_id=? AND membership_status='current'`).run(binding.neteaseSongId)
+    requireRealignment(affectedSources(binding.neteaseSongId))
+  })()
+}
+
 export function markAutomaticSongIdentityBindingsStale(
   songIds: number[],
   evidence: Record<string, unknown> = {},

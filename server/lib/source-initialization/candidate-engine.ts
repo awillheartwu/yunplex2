@@ -1,6 +1,7 @@
 import { DEFAULT_INITIALIZATION_MATCHING } from '../../../shared/initialization-matching'
 import type { NeteaseSong } from '../netease'
 import type { PlexTrack } from '../plex-client'
+import { isPlexTrackAvailable } from '../plex-media'
 import { normalizePlexPath, type SongIdentityBinding } from '../sync/identity-store'
 import { albumsMatchConservatively, normalizeTitle, stripPunct, titlesMatchConservatively } from '../sync/matchers'
 import { plexCandidate, type InitializationItemPlan } from './types'
@@ -73,10 +74,11 @@ export function buildInitializationPlans(input: {
   musicBrainz?: MusicBrainzMatchingEvidence
   reevaluateAutomatic?: boolean
 }): InitializationItemPlan[] {
+  const tracks = input.tracks.filter(isPlexTrackAvailable)
   const aliases = input.aliases ?? {}
   const byTitle = new Map<string, PlexTrack[]>()
   const bySongId = new Map<number, PlexTrack[]>()
-  for (const track of input.tracks) {
+  for (const track of tracks) {
     const title = canonical(track.title || '')
     if (title) byTitle.set(title, [...(byTitle.get(title) ?? []), track])
     for (const media of track.Media ?? []) for (const part of media.Part ?? []) {
@@ -108,7 +110,7 @@ export function buildInitializationPlans(input: {
       expectedBindingUpdatedAt: binding?.updatedAt ?? null,
     }
     const currentBindingTrack = binding?.status === 'active'
-      ? findCurrentBindingTrack(binding, input.tracks)
+      ? findCurrentBindingTrack(binding, tracks)
       : null
     const reevaluateAutomaticBinding = Boolean(input.reevaluateAutomatic
       && binding?.bindingOrigin === 'auto'
@@ -164,7 +166,7 @@ export function buildInitializationPlans(input: {
   })
   if (!input.matching?.enabled) {
     const config = {...DEFAULT_INITIALIZATION_MATCHING,...input.matching}
-    const tracksByKey = new Map(input.tracks.map(track=>[String(track.ratingKey),track]))
+    const tracksByKey = new Map(tracks.map(track=>[String(track.ratingKey),track]))
     const songsById = new Map(input.songs.map(song=>[song.id,song]))
     return plans.map(plan=>{
       const candidates = plan.tier === 'preserved' ? [] : plan.candidates.flatMap(candidate=>tracksByKey.has(candidate.ratingKey)?[tracksByKey.get(candidate.ratingKey)!]:[])
@@ -173,9 +175,9 @@ export function buildInitializationPlans(input: {
     })
   }
   const config = withMusicBrainzAliases(input.matching, input.musicBrainz)
-  const enhanced = enhanceInitializationPlans(plans, input.songs, input.tracks, config, input.bindings)
+  const enhanced = enhanceInitializationPlans(plans, input.songs, tracks, config, input.bindings)
   if (config === input.matching) return enhanced
-  const withoutMb = enhanceInitializationPlans(plans, input.songs, input.tracks, input.matching, input.bindings)
+  const withoutMb = enhanceInitializationPlans(plans, input.songs, tracks, input.matching, input.bindings)
   return enhanced.map((plan, index) => {
     if (JSON.stringify(plan) === JSON.stringify(withoutMb[index])) return plan
     const artistKeys = new Set(plan.artists.map(name => matchingKey(name, config)))

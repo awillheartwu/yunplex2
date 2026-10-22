@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { normalizePlexPath } from './identity-normalization'
+import { isPlexTrackAvailable } from '../plex-media'
 
 export interface PlexPlaylistOccurrence {
   ratingKey: string
@@ -24,6 +25,7 @@ export interface OrderedSnapshotDiff {
 
 export interface PlexPathTrack {
   ratingKey: string
+  deletedAt?: number | string
   Media?: Array<{ Part?: Array<{ file?: string }> }>
 }
 
@@ -85,6 +87,7 @@ function normalizedPaths(paths: readonly string[]): string[] {
 export function buildPlexPathMap(tracks: readonly PlexPathTrack[]): Record<string, string[]> {
   const paths: Record<string, string[]> = {}
   for (const track of tracks) {
+    if (!isPlexTrackAvailable(track)) continue
     const files = (track.Media ?? [])
       .flatMap(media => media.Part ?? [])
       .flatMap(part => part.file ? [part.file] : [])

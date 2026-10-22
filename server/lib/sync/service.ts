@@ -2,7 +2,7 @@ import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { appendLog } from '../log/store'
 import { checkCookie, clearAlbumCache, setArtistAliases } from '../netease'
-import { getPlaylistSnapshotByRatingKey, initPlexClient } from '../plex-client'
+import { getPlaylistSnapshotByRatingKey, initPlexClient, type PlexTrack } from '../plex-client'
 import { RunBuilder } from '../run/builder'
 import { cancelRunDownloads } from '../download/queue-control'
 import { saveSyncRun } from '../run/store'
@@ -16,7 +16,8 @@ import { emitEvent } from './events'
 import { reconcileSource } from './plex-reconciler'
 import { createSplitArtists, joinArtist } from './artist-utils'
 import { detectChanges } from './change-detection'
-import { markAutomaticSongIdentityBindingsStale } from './identity-store'
+import { getActiveSongIdentityBindings, markAutomaticSongIdentityBindingsStale } from './identity-store'
+import { pruneUnavailableSongBindings } from './identity-availability'
 import { resolveEffectiveSourceSyncSettings } from './effective-settings'
 import { resolveSyncModePolicy } from './mode-policy'
 import { observePlaylistSourceTracks } from './match-management-store'
@@ -274,12 +275,14 @@ export function getSyncService(getConfig: () => AppConfig) {
           let plexUpdatedAt: number | null = null
           let observedPlexFingerprint: string | null = null
           let observedPlexPaths: string | null = null
+          let observedPlexTracks: PlexTrack[] = []
           let plexObservationKind: ReturnType<typeof classifyPlexPlaylistObservation> = 'initial'
           if (source.plexPlaylistRatingKey) {
             await initPlexClient(cfg.plex)
             const staleRatingKey = source.plexPlaylistRatingKey
             const snapshot = await getPlaylistSnapshotByRatingKey(staleRatingKey, 99999)
             if (snapshot) {
+              observedPlexTracks = snapshot.tracks
               plexUpdatedAt = snapshot.updatedAt
               observedPlexFingerprint = buildPlexPlaylistFingerprint(snapshot.tracks)
               observedPlexPaths = buildPlexPathSnapshot(snapshot.tracks)
@@ -370,6 +373,10 @@ export function getSyncService(getConfig: () => AppConfig) {
                 && (currentSnapshotAlreadyCompared || legacyTimestampDrift)
               )
             )
+          const unavailableBindings = pruneUnavailableSongBindings(
+            getActiveSongIdentityBindings(currentIdOrder).values(), observedPlexTracks, cfg, dryRun,
+          )
+          if (unavailableBindings.size > 0) source.requiresMatchReconcile = true
           const missingMediaPolicyEnabled = !plexRecoveryOnly && mode !== 'redownload_managed'
           const failurePolicy = getSourceFailurePolicy(source.id)
           const ignoredSongIds = new Set(Object.entries(failurePolicy.failuresBySongId)

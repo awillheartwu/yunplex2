@@ -171,7 +171,7 @@ describe('safe media reuse', () => {
       resolution: 'needs_download',
       matchTrace: { source: 'download_required' },
     })
-    expect(getSongIdentityBinding(song.id)?.status).toBe('stale')
+    expect(getSongIdentityBinding(song.id)).toBeNull()
   })
 
   it('downloads when there is no verified identity instead of guessing metadata', async () => {

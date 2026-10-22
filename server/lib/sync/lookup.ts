@@ -3,6 +3,7 @@ import type { AppConfig } from '../config/types'
 import { findTracksByFilePath, getPlaylistTracks, getTrackByRatingKey, getTracksByRatingKeys, type PlexTrack } from '../plex-client'
 import type { NeteaseSong } from '../netease'
 import { validateLocalAudioFile } from '../media-validation'
+import { isPlexMediaPathAvailable, isPlexTrackAvailable } from '../plex-media'
 import type { MatchTrace, TrackResolution } from './types'
 import { findExistingLocalSongPath } from './local-file-discovery'
 import {
@@ -11,6 +12,7 @@ import {
   getLocalMediaAssets,
   persistLocalMediaInspection,
   resolveLocalMediaAsset,
+  removeMissingLocalMediaAsset,
   upsertLocalMediaAsset,
   type LocalMediaAsset,
   type LocalMediaInspection,
@@ -25,6 +27,7 @@ import {
 import {
   getSongIdentityBindings,
   getActiveSongIdentityBindings,
+  deleteSongIdentityBinding,
   markSongIdentityBindingStale,
   upsertVerifiedSongIdentityBinding,
 } from './identity-store'
@@ -34,6 +37,7 @@ import {
   resolvePlexIdentityPath,
 } from './identity-normalization'
 import { bindResolvedIdentity } from './lookup-identity'
+import { pruneUnavailableSongBindings } from './identity-availability'
 import type { SongIdentityBinding } from './identity-store'
 import { getActiveMediaDecisions, resolveMediaDecision } from '../source-initialization/store'
 
@@ -81,11 +85,13 @@ export async function resolveTracks(
   const resolutions: TrackResolution[] = []
   const claimedRatingKeys = new Map<string, number>()
   const usedRatingKeys = new Set<string>()
-  const targetBindings = [...getSongIdentityBindings(yunSongs.map(song => song.id)).values()]
+  const existingBindings = [...getSongIdentityBindings(yunSongs.map(song => song.id)).values()]
     .filter(binding => binding.status !== 'unbound')
+  const unavailableIds = pruneUnavailableSongBindings(existingBindings, playlistTracks, cfg, dryRun)
+  const targetBindings = existingBindings.filter(binding => !unavailableIds.has(binding.neteaseSongId))
   const bindingsById = new Map(targetBindings.map(binding => [binding.neteaseSongId, binding]))
   const assetsById = getLocalMediaAssets(yunSongs.map(song => song.id))
-  const playlistByRatingKey = new Map(playlistTracks.map(track => [track.ratingKey, track]))
+  const playlistByRatingKey = new Map(playlistTracks.filter(isPlexTrackAvailable).map(track => [track.ratingKey, track]))
   const initializationDecisions = identityContext.sourceId
     ? getActiveMediaDecisions(identityContext.sourceId)
     : new Map<number, 'defer' | 'download'>()
@@ -238,7 +244,7 @@ async function resolveOne(input: {
   initializationDecision?: 'defer' | 'download'
   previewInspection?: LocalMediaInspection
   directTracks: ReadonlyMap<string, PlexTrack>
-  bindingsById: ReadonlyMap<number, SongIdentityBinding>
+  bindingsById: Map<number, SongIdentityBinding>
 }): Promise<TrackResolution> {
   const { song, index, playlistTracks, playlistByRatingKey, sectionKey, cfg, dryRun, identityContext, mediaPlan, directTracks, bindingsById } = input
   const base = { neteaseIndex: index, song }
@@ -256,6 +262,7 @@ async function resolveOne(input: {
     ?? (correction ? findExistingLocalSongPath(song, cfg) : null)
   const expectedPlexPath = mapLocalPathToPlex(expectedLocalPath, cfg)
   const managed = localAsset?.ownership === 'managed' && localAsset.status === 'active'
+  const boundAsset = localAsset ?? mediaPlan?.inspection.asset ?? input.previewInspection?.asset
   const bound = bindingsById.get(song.id) ?? null
 
   if (input.initializationDecision === 'defer') {
@@ -283,9 +290,10 @@ async function resolveOne(input: {
       ? directTracks.get(bound.plexRatingKey) ?? await getTrackByRatingKey(bound.plexRatingKey)
       : null
     const directPath = matchingTrackPath(directTrack, boundPlexPath)
-    const recovered = directTrack && directPath
+    const recovered = (directTrack && directPath
       ? [{ track: directTrack, path: directPath }]
-      : await exactPathMatches(sectionKey, boundPlexPath)
+      : await exactPathMatches(sectionKey, boundPlexPath))
+      .filter(item => isPlexMediaPathAvailable(item.path, cfg))
 
     if (recovered.length === 1) {
       const { track, path } = recovered[0]!
@@ -332,9 +340,15 @@ async function resolveOne(input: {
       }
     }
 
-    if (!dryRun && bound.status === 'active') {
+    if (recovered.length === 0) {
+      if (!dryRun) {
+        deleteSongIdentityBinding(bound)
+        removeMissingLocalMediaAsset(song.id)
+      }
+      bindingsById.delete(song.id)
+    } else if (!dryRun && bound.status === 'active') {
       markSongIdentityBindingStale(song.id, {
-        reason: recovered.length > 1 ? 'adopted_path_ambiguous' : 'adopted_media_missing',
+        reason: 'adopted_path_ambiguous',
         plexFilePath: boundPlexPath,
         conflictingRatingKeys: recovered.map(item => item.track.ratingKey),
       })
@@ -360,7 +374,7 @@ async function resolveOne(input: {
   // media, the durable asset can still point at the old path. Re-verify the
   // binding before the missing-media policy downloads a duplicate, and repair
   // the local asset only when the Plex path maps to an accessible file.
-  if (bound?.status === 'active' && bound.bindingMethod === 'path' && localAsset?.ownership === 'managed') {
+  if (bound?.status === 'active' && bound.bindingMethod === 'path' && boundAsset?.ownership === 'managed') {
     const boundPlexPath = resolvePlexIdentityPath({
       relativePath: bound.plexRelativePath,
       currentSectionRoot: cfg.download.plexLibraryPathPrefix,
@@ -370,9 +384,10 @@ async function resolveOne(input: {
       ? directTracks.get(bound.plexRatingKey) ?? await getTrackByRatingKey(bound.plexRatingKey)
       : null
     const directPath = matchingTrackPath(directTrack, boundPlexPath)
-    const recovered = directTrack && directPath
+    const recovered = (directTrack && directPath
       ? [{ track: directTrack, path: directPath }]
-      : await exactPathMatches(sectionKey, boundPlexPath)
+      : await exactPathMatches(sectionKey, boundPlexPath))
+      .filter(item => isPlexMediaPathAvailable(item.path, cfg))
 
     if (recovered.length === 1) {
       const { track, path } = recovered[0]!
@@ -398,11 +413,11 @@ async function resolveOne(input: {
           upsertLocalMediaAsset({
             neteaseSongId: song.id,
             filePath: accessiblePath,
-            provenance: localAsset.provenance,
+            provenance: boundAsset.provenance,
             ownership: 'managed',
-            sourceTaskId: localAsset.sourceTaskId,
+            sourceTaskId: boundAsset.sourceTaskId,
             evidence: {
-              ...localAsset.evidence,
+              ...boundAsset.evidence,
               recoveredFrom: 'active_path_binding',
               plexFilePath: normalizePlexPath(path),
             },
@@ -431,7 +446,7 @@ async function resolveOne(input: {
       return {
         ...base,
         resolution: 'unavailable',
-        filePath: localAsset.filePath,
+        filePath: boundAsset.filePath,
         matchTrace: trace('identity_conflict', {
           filePath: boundPlexPath,
           message: '托管绑定路径对应多个 Plex 媒体，无法安全复用',
@@ -442,11 +457,10 @@ async function resolveOne(input: {
     }
 
     if (!dryRun) {
-      markSongIdentityBindingStale(song.id, {
-        reason: 'managed_binding_media_missing',
-        plexFilePath: boundPlexPath,
-      })
+      deleteSongIdentityBinding(bound)
+      removeMissingLocalMediaAsset(song.id)
     }
+    bindingsById.delete(song.id)
   }
 
   const completedManagedDownload = managed && expectedLocalPath && validateLocalAudioFile(expectedLocalPath).valid
@@ -654,6 +668,7 @@ function trackPaths(track: PlexTrack | null | undefined): string[] {
 }
 
 function matchingTrackPath(track: PlexTrack | null | undefined, expectedPath: string): string | null {
+  if (!isPlexTrackAvailable(track)) return null
   const expected = normalizePlexPath(expectedPath)
   const exact = trackPaths(track).find(path => normalizePlexPath(path) === expected)
   if (exact) return exact

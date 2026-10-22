@@ -2,6 +2,7 @@ import { createPlexHttpClient } from './plex-http'
 import type { PlexConfig } from './config/types'
 import { s2t, t2s, normalizeForSearch } from './sync/matchers'
 import { foldPlexPath, normalizePlexPath } from './sync/identity-normalization'
+import { isPlexTrackAvailable } from './plex-media'
 
 export interface PlexTrack {
   ratingKey: string
@@ -10,6 +11,7 @@ export interface PlexTrack {
   parentTitle: string
   thumb?: string
   addedAt?: number | string
+  deletedAt?: number | string
   playlistItemID?: number
   originalTitle?: string
   index?: number | string
@@ -62,6 +64,7 @@ async function buildSectionPathIndex(sectionKey: string): Promise<PlexPathIndex>
     }
     const tracks = extractMetadata(res)
     for (const track of tracks) {
+      if (!isPlexTrackAvailable(track)) continue
       const indexedPaths = new Set<string>()
       for (const media of track.Media ?? []) {
         for (const part of media.Part ?? []) {
@@ -368,7 +371,7 @@ export async function getSectionTracks(sectionKey: string): Promise<PlexTrack[]>
       `/library/sections/${sectionKey}/all?type=10&includeGuids=1&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${PLEX_PATH_INDEX_PAGE_SIZE}`,
     ) as { MediaContainer?: { totalSize?: number | string; Metadata?: PlexTrack[] | PlexTrack } }
     const page = extractMetadata(res)
-    tracks.push(...page)
+    tracks.push(...page.filter(isPlexTrackAvailable))
     if (!page.length) break
     start += page.length
     const total = Number(res.MediaContainer?.totalSize)
@@ -387,7 +390,7 @@ export async function getRecentlyAddedTracks(sectionKey: string, limit = 5): Pro
   )) as {
     MediaContainer?: { Metadata?: PlexTrack[] | PlexTrack }
   }
-  return extractMetadata(res).slice(0, size)
+  return extractMetadata(res).filter(isPlexTrackAvailable).slice(0, size)
 }
 
 export async function searchTracksByTitle(sectionKey: string, songName: string): Promise<PlexTrack[]> {
@@ -411,7 +414,7 @@ export async function searchTracksByTitle(sectionKey: string, songName: string):
       `/library/sections/${sectionKey}/search?type=10&title=${encodeURIComponent(title)}`,
     )
     for (const track of extractMetadata(res)) {
-      if (seen.has(track.ratingKey)) continue
+      if (!isPlexTrackAvailable(track) || seen.has(track.ratingKey)) continue
       seen.add(track.ratingKey)
       matches.push(track)
     }
@@ -505,7 +508,8 @@ export async function getTrackByRatingKey(ratingKey: string): Promise<PlexTrack 
     }
     const raw = res.MediaContainer?.Metadata
     if (!raw) return null
-    return Array.isArray(raw) ? raw[0] ?? null : raw
+    const track = Array.isArray(raw) ? raw[0] : raw
+    return track && isPlexTrackAvailable(track) ? track : null
   } catch (error) {
     if (isPlexNotFoundError(error)) return null
     throw error
@@ -526,7 +530,9 @@ export async function getTracksByRatingKeys(ratingKeys: string[]): Promise<Map<s
       }
       const raw = response.MediaContainer?.Metadata
       const tracks = raw ? (Array.isArray(raw) ? raw : [raw]) : []
-      for (const track of tracks) result.set(String(track.ratingKey), track)
+      for (const track of tracks) {
+        if (isPlexTrackAvailable(track)) result.set(String(track.ratingKey), track)
+      }
     } catch (error) {
       if (!isPlexNotFoundError(error) && (error as { status?: number } | null)?.status !== 400) throw error
       // Some older Plex builds do not support comma-separated metadata keys.

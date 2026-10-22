@@ -49,7 +49,8 @@ function writeFlac(filePath: string, suffix = ''): void {
 
 describe('missing media policy', () => {
   it('preserves manual authority even when no media asset exists', () => {
-    const { config } = setup()
+    const { dir, config } = setup()
+    writeFlac(join(dir, 'manual.flac'))
     upsertSongIdentityBinding({
       neteaseSongId: 1,
       plexSectionKey: '12',

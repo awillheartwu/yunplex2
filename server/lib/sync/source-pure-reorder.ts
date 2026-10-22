@@ -82,7 +82,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
   ]))
 
   await initPlexClient(config.plex)
-  const cacheValidation = await validateCachedTargetOrder(songs, cacheKeys, undefined, bindingPaths)
+  const cacheValidation = await validateCachedTargetOrder(songs, cacheKeys, undefined, bindingPaths, config)
   const targetOrder = cacheValidation.targetOrder
   if (!targetOrder) {
     log('warn', `歌单「${source.name || source.neteasePlaylistName}」纯重排缓存未通过校验，回退到完整对比`)

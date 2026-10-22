@@ -3,6 +3,7 @@ import type { InitializationMatchingConfig, MatchingCounts, MatchingPreviewItem,
 import { readConfigFromDb } from '../db'
 import { fetchPlaylistSongs, type NeteaseSong } from '../netease'
 import { getSectionKey, getSectionTracks, initPlexClient, type PlexTrack } from '../plex-client'
+import { filterAvailablePlexTracks } from '../plex-media'
 import { getSource } from '../playlist/store'
 import { getInitializationIdentityBindings, type SongIdentityBinding } from '../sync/identity-store'
 import { buildInitializationPlans } from './candidate-engine'
@@ -45,7 +46,7 @@ export async function previewMatching(input: { sourceId: string; config: Initial
       await initPlexClient(config.plex)
       const section = await getSectionKey(config.plex.section)
       if (!section) throw new Error('未找到 Plex 音乐库分区')
-      const tracks = await getSectionTracks(section)
+      const tracks = filterAvailablePlexTracks(await getSectionTracks(section), config)
       snapshot = { id: randomUUID(), initializationId: input.initializationId, sourceId: source.id, sourceName: source.name,
         capturedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + TTL).toISOString(),
         songs: playlist.songs, trackIds: playlist.trackIds, tracks,

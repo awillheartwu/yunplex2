@@ -1,6 +1,8 @@
 import type { NeteaseSong } from '../netease'
 import { getTrackByRatingKey } from '../plex-client'
 import { plexPathsExactlyEqual } from './identity-normalization'
+import type { AppConfig } from '../config/types'
+import { isPlexMediaPathAvailable, isPlexTrackAvailable } from '../plex-media'
 
 export interface CachedRatingKeyValidationIssue {
   songId: number
@@ -18,6 +20,7 @@ export async function validateCachedTargetOrder(
   ratingKeys: Map<number, string>,
   verifyTrack: typeof getTrackByRatingKey = getTrackByRatingKey,
   bindingPaths: Map<number, string> = new Map(),
+  config?: AppConfig,
 ): Promise<CachedTargetOrderValidation> {
   const targetOrder: string[] = []
   const issues: CachedRatingKeyValidationIssue[] = []
@@ -30,7 +33,7 @@ export async function validateCachedTargetOrder(
     }
 
     const track = await verifyTrack(ratingKey)
-    if (!track) {
+    if (!track || !isPlexTrackAvailable(track)) {
       issues.push({ songId: song.id, ratingKey, reason: 'missing_plex_track' })
       continue
     }
@@ -38,6 +41,10 @@ export async function validateCachedTargetOrder(
     const bindingPath = bindingPaths.get(song.id)
     if (!bindingPath) {
       issues.push({ songId: song.id, ratingKey, reason: 'missing_cache' })
+      continue
+    }
+    if (config && !isPlexMediaPathAvailable(bindingPath, config)) {
+      issues.push({ songId: song.id, ratingKey, reason: 'missing_plex_track' })
       continue
     }
     const actualPaths = track.Media?.flatMap(media =>
