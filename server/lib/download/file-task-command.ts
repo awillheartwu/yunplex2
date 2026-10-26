@@ -7,10 +7,12 @@ import {
   type DownloadTask,
   type DownloadTaskOperation,
 } from './queue'
-import { getDb } from '../db'
+import { getDb, readConfigFromDb } from '../db'
 import { createFileTaskSchema, linkRunFileTask } from '../db/file-task-schema'
 import { requestDownloadProcessing } from './worker'
 import { createHash } from 'node:crypto'
+import { getSongIdentityBinding } from '../sync/identity-store'
+import { isFileTaskSupersededByManualBinding } from './intent-identity'
 
 export interface FileTaskIntent {
   sourceId?: string | null
@@ -58,11 +60,31 @@ export function submitFileTasks(intents: readonly FileTaskIntent[]): FileTaskSub
   // Keeping this idempotent makes old databases safe during the transition and
   // keeps command transactions atomic when they are the first caller.
   createFileTaskSchema(getDb())
+  const config = readConfigFromDb()
   const submissions = intents.map((intent) => {
-    const execution = intent.executionIntent
+    const binding = getSongIdentityBinding(intent.songId)
+    const execution = intent.executionIntent ? {
+      downloadDir: config.download.dir,
+      pathFormat: config.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+      multiArtistFormat: config.other?.multiArtistFormat ?? 'ampersand',
+      lyricOrder: config.other?.lyricOrder ?? 'original_first',
+      downloadTranslatedLyric: config.other?.downloadTranslatedLyric ?? true,
+      downloadRomajiLyric: config.other?.downloadRomajiLyric ?? false,
+      artistAliases: config.other?.artistAliases ?? {},
+      applyAliasToAlbum: config.other?.applyAliasToAlbum ?? false,
+      ...intent.executionIntent,
+      manualBindingVersion: binding?.status === 'active' && binding.bindingMethod === 'manual' ? binding.updatedAt : null,
+    } : undefined
+    if (execution?.artistAliases) execution.artistAliases = Object.fromEntries(Object.entries(execution.artistAliases).sort(([a], [b]) => a.localeCompare(b)))
+    intent = { ...intent, executionIntent: execution }
     const target = execution?.target
     const fingerprint = JSON.stringify([
       intent.operation ?? 'download', intent.targetPath ?? null,
+      execution?.downloadDir ?? null, execution?.pathFormat ?? null,
+      execution?.multiArtistFormat ?? null, execution?.lyricOrder ?? null,
+      execution?.artistAliases ?? null, execution?.applyAliasToAlbum ?? null,
+      execution?.manualBindingVersion ?? null,
+      execution?.downloadTranslatedLyric ?? null, execution?.downloadRomajiLyric ?? null,
       execution?.downloadMode ?? null,
       target?.kind === 'existing' ? [target.kind, target.path]
         : target ? [target.kind, target.protectedPath ?? null, target.requireManagedCopy ?? false] : null,
@@ -79,7 +101,7 @@ export function submitFileTasks(intents: readonly FileTaskIntent[]): FileTaskSub
     const sameIntent = previousTask && previousTask.operation === (intent.operation ?? 'download')
       && previousTask.targetPath === intent.targetPath
       && JSON.stringify(previousTask.executionIntent) === JSON.stringify(intent.executionIntent)
-    const task = (sameIntent && requeueFailedDownloadTasks([previousTask.id])[0]) || enqueueTask({ ...intent, idempotencyKey })
+    const task = (sameIntent && requeueFailedDownloadTasks([previousTask.id], { resumeRuns: false })[0]) || enqueueTask({ ...intent, idempotencyKey })
     linkRunFileTask(getDb(), {
       runId: intent.jobId,
       taskId: task.id,
@@ -103,20 +125,26 @@ export function createFileTaskWaitHandle(taskIds: readonly string[]): FileTaskSu
 /** File failures retain their original target, options and audio cache during source retries. */
 export function getSourceFileRetryTasks(sourceId: string): Map<number, DownloadTask[]> {
   const rows = getDb().prepare(`
-    SELECT failure_kind, download_task_ids FROM failure_records
+    SELECT download_task_ids FROM failure_records
     WHERE source_id = ? AND song_id IS NOT NULL AND status = 'open'
       AND TRIM(COALESCE(download_task_ids, '')) != ''
-  `).all(sourceId) as Array<{ failure_kind: string; download_task_ids: string }>
+  `).all(sourceId) as Array<{ download_task_ids: string }>
   const tasksBySong = new Map<number, DownloadTask[]>()
   const selected = new Set<string>()
+  // A system interruption can leave original writes pending without a file failure.
+  const interrupted = getDb().prepare(`SELECT DISTINCT task.id FROM download_tasks task
+    JOIN run_file_tasks caller ON caller.task_id=task.id
+    JOIN task_runs run ON run.id=caller.run_id
+    WHERE caller.source_id=? AND caller.paused=0 AND run.type='sync'
+      AND run.status IN ('running','failed') AND task.status IN ('pending','downloading','tagging')`)
+    .all(sourceId) as { id: string }[]
+  rows.push(...interrupted.map(task => ({ download_task_ids: task.id })))
   for (const row of rows) {
     for (const id of row.download_task_ids.split(',')) {
       if (selected.has(id)) continue
       const task = getDownloadTask(id)
       if (!task || task.status === 'done') continue
-      const retryOriginalTask = task.operation === 'repair_existing' || task.operation === 'replace'
-        || task.executionIntent?.downloadMode === 'replace' || row.failure_kind === 'failed_tags'
-      if (!retryOriginalTask) continue
+      if (isFileTaskSupersededByManualBinding(task)) continue
       selected.add(id)
       const tasks = tasksBySong.get(task.songId) ?? []
       tasks.push(task)

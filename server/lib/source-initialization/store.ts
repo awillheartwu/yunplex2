@@ -246,8 +246,15 @@ export function upsertMediaDecision(sourceId: string, songId: number, dispositio
 }
 
 export function getActiveMediaDecisions(sourceId: string): Map<number, 'defer' | 'download'> {
-  const rows = getDb().prepare('SELECT netease_song_id, disposition FROM source_media_decisions WHERE source_id = ? AND resolved_at IS NULL').all(sourceId) as Array<{ netease_song_id: number; disposition: 'defer' | 'download' }>
-  return new Map(rows.map(row => [row.netease_song_id, row.disposition]))
+  return new Map([...getActiveMediaDecisionRecords(sourceId)].map(([songId, item]) => [songId, item.disposition]))
+}
+
+export interface MediaDecisionRecord { disposition: 'defer' | 'download'; updatedAt: string }
+
+export function getActiveMediaDecisionRecords(sourceId: string): Map<number, MediaDecisionRecord> {
+  const rows = getDb().prepare('SELECT netease_song_id,disposition,updated_at FROM source_media_decisions WHERE source_id=? AND resolved_at IS NULL')
+    .all(sourceId) as Array<{ netease_song_id: number; disposition: 'defer' | 'download'; updated_at: string }>
+  return new Map(rows.map(row => [row.netease_song_id, { disposition: row.disposition, updatedAt: row.updated_at }]))
 }
 
 export function resolveMediaDecision(sourceId: string, songId: number): void {

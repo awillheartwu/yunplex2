@@ -1,5 +1,5 @@
 import { success, fail } from '../../lib/response'
-import { getSource, updateSource } from '../../lib/playlist/store'
+import { getSource, updateSourceSettings } from '../../lib/playlist/store'
 import { getSyncWorker } from '../../lib/sync/instance'
 import { isAudioQuality, type AudioQuality } from '../../../shared/audio-quality'
 
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     return fail('同步间隔必须是 1 到 1440 分钟的整数')
   }
 
-  const updated = updateSource(id, {
+  const updated = updateSourceSettings(id, {
     name: body.name,
     enabled: body.enabled,
     plexPlaylistName: body.plexPlaylistName,

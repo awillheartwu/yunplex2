@@ -6,6 +6,9 @@ import {
   removeTrackFromPlaylist,
   getPlaylistTracks,
 } from '../plex-client'
+import { CancellationError } from './service-state'
+import { classifyErrorCode } from '../domain-error'
+import type { DomainErrorCode } from '../../../shared/domain-errors'
 
 export interface PlexItem {
   ratingKey: string
@@ -17,6 +20,7 @@ export interface ReorderFailure {
   ratingKey?: string
   playlistItemId?: number
   message: string
+  code?: DomainErrorCode
 }
 
 export interface ReorderResult {
@@ -53,7 +57,7 @@ export interface PlaylistOrderValidation {
 }
 
 export class PlexReorderError extends Error {
-  readonly code = 'failed_plex_insert'
+  readonly code: DomainErrorCode
   result: ReorderResult
   validation?: PlaylistOrderValidation
 
@@ -61,9 +65,15 @@ export class PlexReorderError extends Error {
     const detail = result.failures[0]?.message
     super(`Plex 歌单重排失败: ${result.failures.length} 个写入操作失败${detail ? `；${detail}` : ''}`)
     this.name = 'PlexReorderError'
+    this.code = result.failures.find(failure => failure.code === 'plex_authentication_failed')?.code
+      ?? result.failures[0]?.code ?? 'failed_plex_insert'
     this.result = result
     this.validation = validation
   }
+}
+
+export class PlexReorderCancelledError extends CancellationError {
+  constructor(readonly result: ReorderResult) { super() }
 }
 
 /**
@@ -104,6 +114,9 @@ export async function applyFullReorder(
   const usedItemIds = new Set(currentItems.map(item => item.playlistItemId))
   const authorizedRemovalItemIds = new Set(options.authorizedRemovalItemIds ?? [])
   const removalCandidates: PlexItem[] = []
+  const checkCancellation = (error?: unknown) => {
+    if (error instanceof CancellationError || cancelRequested()) throw new PlexReorderCancelledError(result)
+  }
 
   // Determine concrete extra occurrences, but do not mutate Plex yet. This is
   // deliberately occurrence-based: using ratingKey counts alone can delete the
@@ -133,7 +146,7 @@ export async function applyFullReorder(
   const currentCounts = countKeys(workingItems.map(item => item.ratingKey))
   for (const [key, requiredCount] of targetCounts) {
     while ((currentCounts.get(key) ?? 0) < requiredCount) {
-      if (cancelRequested()) return result
+      checkCancellation()
       try {
         await insertTrackIntoPlaylist(playlistRatingKey, key)
         const itemIds = await getPlaylistItemIds(playlistRatingKey, key)
@@ -150,8 +163,9 @@ export async function applyFullReorder(
           break
         }
       } catch (err) {
+        checkCancellation(err)
         const msg = err instanceof Error ? err.message : String(err)
-        result.failures.push({ action: 'insert', ratingKey: key, message: msg })
+        result.failures.push({ action: 'insert', ratingKey: key, message: msg, code: classifyErrorCode(err, 'failed_plex_insert') })
         log('error', `插入歌单失败 (${key}): ${msg}`)
         break
       }
@@ -200,7 +214,7 @@ export async function applyFullReorder(
     let isFirst = true
 
     for (const itemId of targetItemIds) {
-      if (cancelRequested()) return result
+      checkCancellation()
       if (lcs.has(itemId)) {
         afterId = itemId
         isFirst = false
@@ -219,8 +233,9 @@ export async function applyFullReorder(
         result.mutations.push({ action: 'move', playlistItemId: itemId, afterPlaylistItemId: mutationAfterId })
         afterId = itemId
       } catch (err) {
+        checkCancellation(err)
         const msg = err instanceof Error ? err.message : String(err)
-        result.failures.push({ action: 'move', playlistItemId: itemId, message: msg })
+        result.failures.push({ action: 'move', playlistItemId: itemId, message: msg, code: classifyErrorCode(err, 'failed_plex_insert') })
         log('error', `重排失败 (item ${itemId}): ${msg}`)
       }
     }
@@ -240,15 +255,16 @@ export async function applyFullReorder(
         return (await getPlaylistTracks(playlistRatingKey, 99999))
           .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
       } catch (err) {
+        checkCancellation(err)
         const message = err instanceof Error ? err.message : String(err)
-        result.failures.push({ action: 'move', message: `重排后读回 Plex 歌单失败: ${message}` })
+        result.failures.push({ action: 'move', message: `重排后读回 Plex 歌单失败: ${message}`, code: classifyErrorCode(err, 'failed_plex_insert') })
         throw new PlexReorderError(result)
       }
     }
     let observedItems = workingItems
     let validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (cancelRequested()) return result
+      checkCancellation()
       if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 250))
       observedItems = await readBack()
       validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
@@ -272,7 +288,7 @@ export async function applyFullReorder(
       log('warn', 'Plex 移动后顺序未对齐，按读回的具体条目从另一方向调整错位项')
       const observedOrder = observedItems.map(item => item.playlistItemId)
       for (let index = 1; index < targetItemIds.length; index++) {
-        if (cancelRequested()) return result
+        checkCancellation()
         const afterItemId = targetItemIds[index - 1]!
         const itemId = targetItemIds[index]!
         if (observedOrder.indexOf(afterItemId) < observedOrder.indexOf(itemId)) continue
@@ -283,12 +299,13 @@ export async function applyFullReorder(
           observedOrder.splice(observedOrder.indexOf(itemId), 1)
           observedOrder.splice(observedOrder.indexOf(afterItemId) + 1, 0, itemId)
         } catch (err) {
+          checkCancellation(err)
           const message = err instanceof Error ? err.message : String(err)
-          result.failures.push({ action: 'move', ratingKey: targetOrder[index], playlistItemId: itemId, message })
+          result.failures.push({ action: 'move', ratingKey: targetOrder[index], playlistItemId: itemId, message, code: classifyErrorCode(err, 'failed_plex_insert') })
           throw new PlexReorderError(result)
         }
       }
-      if (cancelRequested()) return result
+      checkCancellation()
       observedItems = await readBack()
       validation = validatePlaylistOrder(targetOrder, observedItems, { allowExtra: true })
     }
@@ -296,15 +313,38 @@ export async function applyFullReorder(
   }
 
   for (const item of authorizedRemovalCandidates) {
-    if (cancelRequested()) return result
+    checkCancellation()
     try {
       await removeTrackFromPlaylist(playlistRatingKey, item.playlistItemId)
-      result.removed++
-      result.mutations.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId })
     } catch (err) {
+      checkCancellation(err)
       const msg = err instanceof Error ? err.message : String(err)
-      result.failures.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId, message: msg })
+      result.failures.push({ action: 'remove', ratingKey: item.ratingKey, playlistItemId: item.playlistItemId, message: msg, code: classifyErrorCode(err, 'failed_plex_insert') })
       log('error', `移除失败 (item ${item.playlistItemId}): ${msg}`)
+    }
+  }
+
+  if (authorizedRemovalCandidates.length) {
+    checkCancellation()
+    let remaining: Set<number>
+    try {
+      remaining = new Set((await getPlaylistTracks(playlistRatingKey, 99999)).map(track => track.playlistItemID!))
+    } catch (err) {
+      checkCancellation(err)
+      const message = err instanceof Error ? err.message : String(err)
+      for (const item of authorizedRemovalCandidates) result.failures.push({ action: 'remove', ...item, message: `删除后读回失败: ${message}`, code: classifyErrorCode(err, 'failed_plex_insert') })
+      throw new PlexReorderError(result)
+    }
+    for (const item of authorizedRemovalCandidates) {
+      if (remaining.has(item.playlistItemId)) {
+        if (!result.failures.some(failure => failure.action === 'remove' && failure.playlistItemId === item.playlistItemId)) {
+          result.failures.push({ action: 'remove', ...item, message: 'Plex 已接受删除请求，但具体 playlistItemID 仍存在' })
+        }
+      } else {
+        result.failures = result.failures.filter(failure => failure.action !== 'remove' || failure.playlistItemId !== item.playlistItemId)
+        result.removed++
+        result.mutations.push({ action: 'remove', ...item })
+      }
     }
   }
 

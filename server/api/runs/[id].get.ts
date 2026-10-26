@@ -1,7 +1,7 @@
 import { fail, success } from '../../lib/response'
 import { getRun, syncManualDownloadRun, syncRepairRun } from '../../lib/run/store'
 import { getSyncServiceInstance } from '../../lib/sync/instance'
-import { getRunFailureStates } from '../../lib/tasks/failure-records'
+import { getRunFailureStates } from '../../lib/tasks/failure-queries'
 
 export default defineEventHandler((event) => {
   const id = getRouterParam(event, 'id')

@@ -1,7 +1,4 @@
-import type {
-  FailureRecord,
-  FailureRecordStatusFilter,
-} from '~~/server/lib/tasks/failure-records'
+import type { FailureRecord, FailureRecordStatusFilter } from '~~/server/lib/tasks/failure-model'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import type { FailureGroup, FailureMutationSelection } from '~~/server/lib/tasks/failure-groups'
 import type { FailureHandlingStatus } from '~~/shared/failure-handling'

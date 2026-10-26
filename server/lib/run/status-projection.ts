@@ -1,5 +1,7 @@
 import type { getDb } from '../db'
 import type { JobStatus, SourceRequestStatus, TaskRunType } from '../job/types'
+import type { RunIssueCounts, SongStatus } from '../job/types'
+import { summarizeRunIssues } from '../../../lib/run-issues'
 
 type RunDatabase = ReturnType<typeof getDb>
 
@@ -10,6 +12,7 @@ export type TaskRunStatusRow = {
 }
 
 export type TaskRunDynamicFields = {
+  issueCounts: RunIssueCounts
   awaitingSourceSync: boolean
   sourceRequestStatus: SourceRequestStatus | null
 }
@@ -95,6 +98,10 @@ export function projectTaskRunDynamicFields(db: RunDatabase, row: TaskRunStatusR
   }
 
   return {
+    issueCounts: summarizeRunIssues((db.prepare(`SELECT item_id AS id,source_id AS sourceId,
+      netease_song_id AS neteaseSongId,status FROM task_run_song_changes WHERE run_id=?
+      AND status IN ('awaiting_retry','ignored_failure','awaiting_manual_match','extra_skipped','copyright_restricted')`)
+      .all(row.id) as { id: string; sourceId?: string; neteaseSongId?: number; status: SongStatus }[])),
     awaitingSourceSync: result.awaiting_source_sync === 1,
     sourceRequestStatus: result.source_request_status,
   }

@@ -20,6 +20,7 @@ export type SongStatus =
   | 'failed_plex_insert'
   | 'copyright_restricted'
   | 'ignored_failure'
+  | 'awaiting_retry'
   | 'awaiting_manual_match'
 
 // ── Core entities ──
@@ -104,6 +105,7 @@ export type TaskRunTrigger = 'user' | 'schedule' | 'system' | 'retry'
 export type SourceRequestStatus = 'pending' | 'running'
 
 export interface SyncJob {
+  issueCounts?: RunIssueCounts
   id: string
   type: SyncRunType
   startedAt: string
@@ -145,6 +147,7 @@ export interface TaskRun extends Omit<SyncJob, 'type'> {
 // ── Query / filter types ──
 
 export interface TaskRunSummary {
+  issueCounts?: RunIssueCounts
   id: string
   type: TaskRunType
   trigger: TaskRunTrigger
@@ -163,6 +166,14 @@ export interface TaskRunSummary {
   dryRun: boolean
   awaitingSourceSync: boolean
   sourceRequestStatus: SourceRequestStatus | null
+}
+
+export interface RunIssueCounts {
+  deferred: number
+  ignored: number
+  manual: number
+  preserved: number
+  restricted: number
 }
 
 export interface TaskRunFilter {

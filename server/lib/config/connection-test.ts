@@ -88,7 +88,7 @@ export function testDownloadPathConfig(
  * Proves the directory can actually take a new file and is not out of space, instead of trusting
  * permission bits alone. The unique probe file is always removed in `finally`.
  */
-function assertDownloadDirWritable(downloadDir: string): void {
+export function assertDownloadDirWritable(downloadDir: string): void {
   if (readAvailableBlocks(downloadDir) === 0) {
     throw new ConnectionTestError('filesystem_failed', `下载目录所在存储已无可用空间: ${downloadDir}`)
   }

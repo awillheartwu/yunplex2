@@ -97,7 +97,7 @@ describe('pure Source reorder', () => {
       log: () => undefined,
     })
 
-    expect(handled).toBe(true)
+    expect(handled?.plexPlaylist.ratingKey).toBe(source.plexPlaylistRatingKey)
     expect(applyFullReorder).toHaveBeenCalledOnce()
     expect(getPlaylistTracks).toHaveBeenCalledTimes(2)
     expect(job.getRun().steps).toMatchObject([{ type: 'reorder', status: 'success' }])

@@ -3,20 +3,15 @@ import { getSource } from '../playlist/store'
 import { assertSourcesReadyForConvergence } from '../source-initialization/gate'
 import { requestSources } from '../sync/source-requests'
 import { getSyncWorker } from '../sync/instance'
-import { getDownloadTask, requeueFailedDownloadTasks } from '../download/queue'
+import { requeueFailedDownloadTasks } from '../download/queue'
 import { requestDownloadProcessing } from '../download/worker'
 import { appendLog } from '../log/store'
-import { getFailureRecords, incrementFailureRetries, setFailureRecordStatus } from './failure-records'
+import { getFailureRecords, getRetryFailureIds } from './failure-queries'
+import { reopenFailuresForRetry } from './failure-records'
 import { failureSubjectKey, plexRemovalTarget } from './failure-identity'
 import { resumePendingMediaRepairCommands } from '../download/media-repair-command'
 
-export interface RetryTarget {
-  sourceId?: string | null
-  songId?: number | null
-  downloadTaskIds?: readonly string[]
-  plexPlaylistRatingKey?: string
-  plexPlaylistItemId?: number
-}
+import { resolveRecoveryTarget, type RetryTarget } from './recovery-targets'
 
 /** Explicit retries reopen only the selected targets and start a fresh attempt budget. */
 export function retryTargets(targets: readonly RetryTarget[]) {
@@ -25,42 +20,24 @@ export function retryTargets(targets: readonly RetryTarget[]) {
     const sourceFailures = new Set<string>()
     const removalSubjects = new Map<string, Set<string>>()
     const fileTaskIds = new Set<string>()
+    const config = readConfigFromDb()
     for (const target of targets) {
-      if (target.sourceId && !target.songId && target.plexPlaylistRatingKey && target.plexPlaylistItemId) {
-        if (getSource(target.sourceId)?.plexPlaylistRatingKey !== target.plexPlaylistRatingKey) {
-          throw new Error('该异常对应的 Plex 歌单已变化，请刷新后核对当前歌单')
-        }
-        const subjects = removalSubjects.get(target.sourceId) ?? new Set<string>()
-        subjects.add(failureSubjectKey({ ...target, songName: '' }))
-        removalSubjects.set(target.sourceId, subjects)
-        if (!sourceSongs.has(target.sourceId)) sourceSongs.set(target.sourceId, new Set())
+      const eligibility = resolveRecoveryTarget(target, config, 'manual')
+      if (!eligibility.eligible) {
+        if (target.sourceId && !target.songId) throw new Error(eligibility.message)
         continue
       }
-      if (target.sourceId && !target.songId) {
-        sourceFailures.add(target.sourceId)
-        if (!sourceSongs.has(target.sourceId)) sourceSongs.set(target.sourceId, new Set())
-        continue
-      }
-      if (target.sourceId && target.songId) {
-        const membership = getDb()
-          .prepare(
-            `SELECT membership_status FROM playlist_source_track_occurrences
-          WHERE source_id = ? AND netease_song_id = ? ORDER BY membership_status = 'current' DESC LIMIT 1`,
-          )
-          .get(target.sourceId, target.songId) as { membership_status: string } | undefined
-        if (membership) {
-          if (membership.membership_status !== 'current') continue
-          const songs = sourceSongs.get(target.sourceId) ?? new Set<number>()
-          songs.add(target.songId)
-          sourceSongs.set(target.sourceId, songs)
-          // Source downloads retry saved replacement/tag/repair tasks with their original intent.
-          continue
-        }
-      }
-      // A saved manual download can have source attribution before first sync.
-      for (const id of target.downloadTaskIds ?? []) {
-        if (getDownloadTask(id)?.status === 'failed') fileTaskIds.add(id)
-      }
+      if (eligibility.route === 'source') {
+        const sourceId = eligibility.sourceId!
+        const songs = sourceSongs.get(sourceId) ?? new Set<number>()
+        if (target.songId) songs.add(target.songId)
+        else if (target.plexPlaylistRatingKey && target.plexPlaylistItemId) {
+          const subjects = removalSubjects.get(sourceId) ?? new Set<string>()
+          subjects.add(failureSubjectKey({ ...target, songName: '' }))
+          removalSubjects.set(sourceId, subjects)
+        } else sourceFailures.add(sourceId)
+        sourceSongs.set(sourceId, songs)
+      } else for (const id of eligibility.taskIds) fileTaskIds.add(id)
     }
 
     const sources = [...sourceSongs.keys()].map((id) => {
@@ -81,36 +58,11 @@ export function retryTargets(targets: readonly RetryTarget[]) {
       throw new Error(sourceRequests.results[0]?.message ?? '来源任务未能排队，请稍后重试')
     }
     const requeued = requeueFailedDownloadTasks([...fileTaskIds])
-    const failureIds = new Set<string>()
-    for (const [sourceId, songIds] of sourceSongs) {
-      const ids = [...songIds]
-      // Source-level errors are prerequisites for retrying any selected song in that source.
-      const subjects = [...(removalSubjects.get(sourceId) ?? [])]
-      const scope = ['subject_key = ?',
-        ids.length ? `song_id IN (${ids.map(() => '?').join(',')})` : '0 = 1',
-        subjects.length ? `subject_key IN (${subjects.map(() => '?').join(',')})` : '0 = 1'].join(' OR ')
-      const rows = getDb()
-        .prepare(
-          `SELECT id FROM failure_records WHERE source_id = ?
-        AND (${scope}) AND status IN ('open','ignored')`,
-        )
-        .all(sourceId, failureSubjectKey({ sourceId, songName: '来源同步' }), ...ids, ...subjects) as { id: string }[]
-      for (const row of rows) failureIds.add(row.id)
-    }
-    for (const task of requeued) {
-      const rows = getDb()
-        .prepare(
-          `SELECT id FROM failure_records WHERE status IN ('open','ignored')
-        AND INSTR(',' || COALESCE(download_task_ids, '') || ',', ',' || ? || ',') > 0`,
-        )
-        .all(task.id) as { id: string }[]
-      for (const row of rows) failureIds.add(row.id)
-    }
+    const failureIds = getRetryFailureIds(sourceSongs, removalSubjects, requeued.map(task => task.id))
     const count = [...sourceSongs.values()].reduce((sum, songs) => sum + songs.size, 0)
       + [...removalSubjects.values()].reduce((sum, subjects) => sum + subjects.size, 0) + sourceFailures.size + requeued.length
     if (!count) throw new Error('所选问题没有可重新处理的当前歌曲或失败文件任务，请刷新后重试')
-    setFailureRecordStatus([...failureIds], 'open')
-    incrementFailureRetries([...failureIds])
+    reopenFailuresForRetry(failureIds)
     return { count, sourceCount: sources.length, downloadTaskCount: requeued.length, sourceRequests }
   })()
 

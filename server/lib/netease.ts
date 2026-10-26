@@ -369,36 +369,47 @@ function applyAlias(name: string): string {
   return name
 }
 
-export function mapRawSong(raw: RawSong, options: { preserveArtistNames?: boolean } = {}): NeteaseSong {
+export interface SongMappingOptions {
+  preserveArtistNames?: boolean
+  artistAliases?: Record<string, string>
+  applyAliasToAlbum?: boolean
+}
+
+export function mapRawSong(raw: RawSong, options: SongMappingOptions = {}): NeteaseSong {
   const invalidField = findInvalidRawSongField(raw)
   if (invalidField) {
     throw new Error(`网易云歌曲 ${raw.id} 元数据不完整：${invalidField}`)
   }
   // v3 API may put publishTime at song level or album level, or omit it
   const pubTime = raw.publishTime ?? raw.al?.publishTime ?? 0
+  const aliases = options.artistAliases
+  const normalized = aliases ? new Map(Object.entries(aliases).map(([key, value]) => [normalizeAliasKey(key), value])) : null
+  const alias = (name: string) => aliases
+    ? aliases[name] ?? normalized?.get(normalizeAliasKey(name)) ?? name
+    : applyAlias(name)
   return {
     id: raw.id,
     name: raw.name,
     no: raw.no ?? 0,
     dt: raw.dt ?? 0,
     disc: raw.cd || '1',
-    artists: (raw.ar ?? []).map(a => ({ ...a, name: options.preserveArtistNames ? a.name : applyAlias(a.name) })),
+    artists: (raw.ar ?? []).map(a => ({ ...a, name: options.preserveArtistNames ? a.name : alias(a.name) })),
     album: {
       id: raw.al?.id ?? 0,
       name: raw.al?.name ?? '未知专辑',
       picUrl: raw.al?.picUrl ?? '',
       publishTime: pubTime,
-      artist: raw.al?.artist ? { ...raw.al.artist, name: !options.preserveArtistNames && applyAliasToAlbum ? applyAlias(raw.al.artist.name) : raw.al.artist.name } : undefined,
+      artist: raw.al?.artist ? { ...raw.al.artist, name: !options.preserveArtistNames && (options.applyAliasToAlbum ?? applyAliasToAlbum) ? alias(raw.al.artist.name) : raw.al.artist.name } : undefined,
     },
   }
 }
 
 /** Fetch a single song's detail by ID */
-export async function fetchSongDetail(songId: number, cookie: string): Promise<NeteaseSong> {
+export async function fetchSongDetail(songId: number, cookie: string, options: SongMappingOptions = {}): Promise<NeteaseSong> {
   const res = await controlledNeteaseRequest(() => song_detail({ ids: String(songId), cookie }), 'song_detail')
   const data = (res as NeteaseResponse<SongDetailBody>).body
   if (!data?.songs?.[0]) throw new Error(`无法获取歌曲 ${songId} 的详情`)
-  return mapRawSong(data.songs[0])
+  return mapRawSong(data.songs[0], options)
 }
 
 /** Cache album detail calls — they repeat across songs in the same album */

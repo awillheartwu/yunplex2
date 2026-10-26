@@ -34,6 +34,7 @@ export function getDownloadQueueControl(): DownloadQueueControl {
 }
 
 export function pauseDownloadQueue(reason: NonNullable<DownloadQueueControl['reason']>, message: string): void {
+  if (reason !== 'manual' && getDownloadQueueControl().reason === 'manual') return
   const db = getDb()
   createFileTaskSchema(db)
   db.prepare(`INSERT INTO download_queue_control (id, pause_reason, message) VALUES (1, ?, ?)

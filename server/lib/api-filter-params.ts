@@ -1,7 +1,7 @@
 import type { JobStatus, TaskRunFilter, TaskRunType } from './job/types'
 import type { PlaylistSource } from './playlist/types'
 import type { PlaylistSourceFilter } from './playlist/store'
-import type { FailureRecordFilter, FailureRecordStatusFilter } from './tasks/failure-records'
+import type { FailureRecordFilter, FailureRecordStatusFilter } from './tasks/failure-model'
 import { DOMAIN_ERROR_CATALOG } from '../../shared/domain-errors'
 import { isValidDateFilter, isValidTimeZone } from './date-range'
 

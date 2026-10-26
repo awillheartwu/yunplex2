@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import type { TaskRun } from '../../server/lib/job/types'
-import type { FailureRecord } from '../../server/lib/tasks/failure-records'
+import type { FailureRecord } from '../../server/lib/tasks/failure-model'
 import type { FailureGroup } from '../../server/lib/tasks/failure-groups'
 import { expect, test } from './fixtures'
 import { login } from './helpers/config'

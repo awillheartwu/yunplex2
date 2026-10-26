@@ -4,18 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeConfig } from '../../server/lib/config/store'
 import { closeDb, getDb, initDb } from '../../server/lib/db'
-import {
-  failureFingerprint,
-  getSourceFailureStatus,
-  getSourceFailureCounts,
-  getSourceFailurePolicy,
-  ignoreExhaustedFailures,
-  queryFailureRecords,
-  recordFailure,
-  resolveFailures,
-  setFailureRecordStatus,
-  shouldIgnoreSourceFailure,
-} from '../../server/lib/tasks/failure-records'
+import { failureFingerprint } from '../../server/lib/tasks/failure-identity'
+import { getSourceFailureStatus, getSourceFailurePolicy, shouldDeferFailure } from '../../server/lib/sync/failure-policy'
+import { getSourceFailureCounts, queryFailureRecords } from '../../server/lib/tasks/failure-queries'
+import { recordFailure, resolveRecordedFailures as resolveFailures, setFailureRecordStatus } from '../../server/lib/tasks/failure-records'
 import { saveRun } from '../../server/lib/run/store'
 import type { TaskRun } from '../../server/lib/job/types'
 
@@ -131,7 +123,7 @@ describe('failure records', () => {
     expect(queryFailureRecords({ status: 'ignored' }).total).toBe(1)
   })
 
-  it.each([1, 3] as const)('automatically ignores after the configured %i-round budget', (limit) => {
+  it.each([1, 3] as const)('keeps a problem open and cools down after the configured %i-round budget', (limit) => {
     setup(limit)
     const rounds = Array.from({ length: limit }, (_, index) => {
       const record = recordFailure({
@@ -143,21 +135,18 @@ describe('failure records', () => {
         failureKind: 'failed_download',
         occurredAt: `2026-06-20T12:3${index}:00.000Z`,
       })
-      ignoreExhaustedFailures('source-one', limit)
       return record
     })
 
     expect(rounds.map(record => [record.status, record.attemptCount, record.occurrenceCount])).toEqual(
       Array.from({ length: limit }, (_, index) => [
-        index + 1 === limit ? 'ignored' : 'open',
+        'open',
         index + 1,
         index + 1,
       ]),
     )
-    expect(queryFailureRecords({ status: 'ignored' }).items[0]).toMatchObject({
-      status: 'ignored',
-      ignoreReason: 'automatic',
-      attemptLimit: limit,
+    expect(queryFailureRecords({ status: 'open' }).items[0]).toMatchObject({
+      status: 'open', ignoreReason: null, attemptLimit: limit, recovery: { action: 'retry' },
     })
   })
 
@@ -382,10 +371,10 @@ describe('failure records', () => {
     })
 
     const policy = getSourceFailurePolicy('source-one')
-    expect(policy.failuresBySongId[43]).toMatchObject({ failureKind: 'copyright_restricted', status: 'ignored' })
+    expect(policy.failuresBySongId[43]).toMatchObject({ failureKind: 'copyright_restricted', status: 'open' })
     expect(policy.failuresBySongId[42]).toMatchObject({ occurrenceCount: 3, phase: 'download' })
-    expect(shouldIgnoreSourceFailure(policy.failuresBySongId[42], 3)).toBe(true)
-    expect(shouldIgnoreSourceFailure(policy.failuresBySongId[44], 1)).toBe(true)
-    expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 1, copyrightRestricted: 0 })
+    expect(shouldDeferFailure(policy.failuresBySongId[42], 3)).toBe(true)
+    expect(shouldDeferFailure(policy.failuresBySongId[44], 1)).toBe(true)
+    expect(getSourceFailureCounts('source-one')).toEqual({ actionable: 2, copyrightRestricted: 1 })
   })
 })

@@ -1,4 +1,5 @@
 import type { DomainErrorCode } from './domain-errors'
+import type { RecoveryDecision } from './error-recovery'
 
 export type FailureHandlingStatus = 'open' | 'ignored' | 'resolved'
 
@@ -8,6 +9,10 @@ export interface FailureHandlingState {
   attemptCount: number
   attemptLimit: number
   errorCode: DomainErrorCode
+  recovery?: RecoveryDecision
+  automaticRecoveryEnabled?: boolean
+  retryable?: boolean
+  notApplicable?: boolean
 }
 
 export interface RunFailureHandlingState extends FailureHandlingState {
@@ -26,14 +31,6 @@ export function canRetrySong(status: string): boolean {
     'failed_plex_insert',
     'copyright_restricted',
     'ignored_failure',
+    'awaiting_retry',
   ].includes(status)
-}
-
-export function canRetryFailure(input: {
-  status: string
-  sourceId: string | null
-  songId: number | null
-  downloadTaskIds: readonly string[]
-}): boolean {
-  return input.status !== 'resolved' && Boolean(input.sourceId || input.downloadTaskIds.length)
 }

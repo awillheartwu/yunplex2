@@ -1,3 +1,4 @@
+import { summarizeRunIssues } from '../../../lib/run-issues'
 import type { SyncJob, JobStep, SongTask, StepStatus, SongStatus, StepError, JobStepContext } from '../job/types'
 import { isDistinctWarningSongStatus } from '../../../lib/media-status-projection'
 import { randomUUID } from 'node:crypto'
@@ -262,6 +263,7 @@ export class RunBuilder {
   }
 
   private updateStats(): void {
+    this.job.issueCounts = summarizeRunIssues(this.job.songs)
     this.job.successSongs = this.job.songs.filter((s) => s.status === 'success').length
     this.job.failedSongs = this.job.songs.filter((s) =>
       ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(s.status),

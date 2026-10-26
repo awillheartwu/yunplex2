@@ -11,6 +11,7 @@ import type { RunBuilder } from '~~/server/lib/run/builder'
 import { getRun } from '~~/server/lib/run/store'
 import { getSyncService } from '~~/server/lib/sync/service'
 import type { SyncMode } from '~~/server/lib/sync/service-state'
+import type { applySourceDownloads } from '~~/server/lib/sync/source-downloads'
 
 const remote = vi.hoisted(() => ({
   fetchPlaylistSummary: vi.fn(),
@@ -48,7 +49,9 @@ vi.mock('~~/server/lib/sync/plex-batch-match', () => ({
   matchTracksInPlexWithRetry: remote.matchTracksInPlexWithRetry,
 }))
 vi.mock('~~/server/lib/sync/source-downloads', () => ({
-  applySourceDownloads: async () => ({ needsPlexRefresh: false, downloadTargetCount: 0 }),
+  applySourceDownloads: async ({ resolutions }: Parameters<typeof applySourceDownloads>[0]) => ({
+    resolutions, needsPlexRefresh: false, downloadTargetCount: 0,
+  }),
 }))
 
 const song: NeteaseSong = {

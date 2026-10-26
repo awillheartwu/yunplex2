@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import type { AppConfig } from '../config/types'
 import type { SyncState } from '../log/types'
 import { getDb } from '../db'
+import { recoverDueFileTasks } from '../download/recovery'
 import { getRun, saveRun } from '../run/store'
+import { appendLog } from '../log/store'
 import { getSource } from '../playlist/store'
 import { resolveInitializationGate } from '../source-initialization/gate'
 import { analyzeSourceInitialization, commitSourceInitialization, stopInitializationAnalyses } from '../source-initialization/service'
@@ -12,6 +14,7 @@ import {
   claimNextSourceRequest,
   attachSourceRequestRun,
   finishSourceRequest,
+  interruptSourceRequest,
   getSourceScheduleSnapshot,
   reconcileSourceSchedules,
   recoverInterruptedSourceRequests,
@@ -46,7 +49,7 @@ interface SyncServiceHandle {
     runId: string
     run: () => Promise<SyncState>
   }
-  cancelSync: () => boolean
+  cancelSync: (reason?: 'user' | 'shutdown') => boolean
 }
 
 export function getWorker() {
@@ -77,6 +80,7 @@ export function startWorker(
   async function executeOnce(): Promise<void> {
     let config = getConfig()
     heartbeatAt = new Date().toISOString()
+    recoverDueFileTasks(config)
     reconcileSourceSchedules(config)
     if (syncService.getState().isRunning || !canStartConvergence()) return
 
@@ -149,6 +153,10 @@ export function startWorker(
         }
         const running = prepared.run()
         const state = await running
+        if (state.cancellationReason === 'shutdown') {
+          interruptSourceRequest({ ...request, runId: prepared.runId })
+          break
+        }
         const result = state.lastSyncResult ?? 'failure'
         finishSourceRequest(
           request,
@@ -158,7 +166,9 @@ export function startWorker(
         )
       } catch (error) {
         if (stopping) {
-          getDb().prepare("UPDATE source_sync_queue SET status='pending', lease_owner=NULL, lease_expires_at=NULL WHERE id=? AND lease_owner=?").run(request.id, workerId)
+          if (request.kind === 'analysis' || request.kind === 'initialization_apply') {
+            getDb().prepare("UPDATE source_sync_queue SET status='pending', lease_owner=NULL, lease_expires_at=NULL WHERE id=? AND lease_owner=?").run(request.id, workerId)
+          } else interruptSourceRequest(request)
           if (request.kind === 'analysis' && request.initializationId) {
             setInitializationStatus(request.initializationId, 'pending', { error: '服务停止，等待恢复分析' })
             const run = request.runId ? getRun(request.runId) : null
@@ -193,9 +203,10 @@ export function startWorker(
   function schedule(startImmediately = true) {
     stopping = false
     if (timer) clearInterval(timer)
-    timer = setInterval(() => { void runOnce() }, SCHEDULER_POLL_MS)
+    const tick = () => { void runOnce().catch(error => appendLog({ level: 'error', message: `来源调度失败：${error instanceof Error ? error.message : String(error)}` })) }
+    timer = setInterval(tick, SCHEDULER_POLL_MS)
     timer.unref()
-    if (startImmediately) void runOnce()
+    if (startImmediately) tick()
   }
 
   function update() {
@@ -207,7 +218,7 @@ export function startWorker(
   async function stop() {
     stopping = true
     stopInitializationAnalyses()
-    syncService.cancelSync()
+    syncService.cancelSync('shutdown')
     if (timer) clearInterval(timer)
     timer = null
     await currentTick

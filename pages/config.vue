@@ -153,7 +153,7 @@
           <FormField setting="sync.plexScanRetries" label="Plex 索引核对次数" search-keywords="索引 刷新" hint="本轮等待索引稳定时读取文件路径的次数，不重新下载，不计入失败尝试上限"><input v-model.number="form.sync.plexScanRetries" type="number" min="1" max="20" class="form-input" /></FormField>
           <FormField setting="sync.plexScanRetryDelaySec" label="Plex 索引核对间隔（秒）" search-keywords="等待 延迟" hint="扫描完成后每次路径核对的间隔；扫描仍在进行时会继续等待扫描窗口"><input v-model.number="form.sync.plexScanRetryDelaySec" type="number" min="5" max="60" class="form-input" /></FormField>
         </div>
-        <FormField setting="sync.maxFailureAttempts" label="失败次数上限（次）" search-keywords="重试 忽略 失败次数" hint="包含首次；每轮失败记录一次，下一次同步再试。达到上限后自动忽略，需到异常处理手动重试。版权、音源或格式等不可自动恢复的问题首次即忽略"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
+        <FormField setting="sync.maxFailureAttempts" label="快速重试次数（次）" search-keywords="重试 冷却 失败次数" hint="包含首次；临时错误按退避间隔恢复，达到次数后延长冷却，不会自动忽略。登录、磁盘问题暂停；无音源、格式或身份问题等待人工处理"><input v-model.number="form.sync.maxFailureAttempts" type="number" min="1" max="20" class="form-input" /></FormField>
         <ToggleField v-model="form.sync.forceFullCompare" setting="sync.forceFullCompare" label="始终全量对比" search-keywords="增量 完整" hint="每次同步都走完整对比流程，不跳过未变化的歌单。单个歌单源可覆盖此设置" />
         <ToggleField v-model="form.sync.reconcileOnPlexDrift" setting="sync.reconcileOnPlexDrift" label="自动修复 Plex 歌单改动" search-keywords="漂移 手动修改" hint="网易云没有变化、但 Plex 歌单被手动改动时，自动触发一次全量对比" />
         <template v-if="!form.sync.forceFullCompare">

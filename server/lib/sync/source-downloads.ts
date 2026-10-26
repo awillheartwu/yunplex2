@@ -15,11 +15,11 @@ import { getActiveSongIdentityBindings } from './identity-store'
 import { normalizePlexPath } from './identity-normalization'
 import { getLocalMediaAsset } from './local-media-store'
 import { decideRedownload } from './redownload-policy'
-import type { TrackResolution } from './types'
+import type { ReadonlyTrackResolution, TrackResolution } from './types'
 
 interface ApplySourceDownloadsInput {
   source: PlaylistSource
-  resolutions: TrackResolution[]
+  resolutions: readonly ReadonlyTrackResolution[]
   config: AppConfig
   job: RunBuilder
   stepContext: JobStepContext
@@ -31,6 +31,12 @@ interface ApplySourceDownloadsInput {
   setStage: (stage: SyncState['currentStage']) => void
   addFailure: (songName: string, reason: string) => void
   log: (level: 'warn' | 'error', message: string, detail?: string) => void
+}
+
+export interface SourceDownloadResult {
+  resolutions: readonly ReadonlyTrackResolution[]
+  needsPlexRefresh: boolean
+  downloadTargetCount: number
 }
 
 interface DownloadPlan {
@@ -47,16 +53,13 @@ function sameLocalFilePath(first: string, second: string): boolean {
 /**
  * Apply every local-media write required by one Source Convergence.
  *
- * The input Track Resolutions are updated in place because Plex reconciliation
- * must consume the exact post-download identity and failure state.
+ * The caller's comparison stays unchanged. Plex consumes the returned
+ * post-download identities and file outcomes explicitly.
  */
-export async function applySourceDownloads(input: ApplySourceDownloadsInput): Promise<{
-  needsPlexRefresh: boolean
-  downloadTargetCount: number
-}> {
+export async function applySourceDownloads(input: ApplySourceDownloadsInput): Promise<SourceDownloadResult> {
   const {
     source,
-    resolutions,
+    resolutions: comparedResolutions,
     config,
     job,
     stepContext,
@@ -69,6 +72,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     addFailure,
     log,
   } = input
+  const resolutions = comparedResolutions.map(resolution => ({ ...resolution }))
 
   const downloadPlans = new Map<number, DownloadPlan>()
   for (const resolution of resolutions) {
@@ -109,7 +113,7 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
   if (!dryRun && !redownloadManagedMedia) {
     const fileRetries = getSourceFileRetryTasks(source.id)
     for (const resolution of resolutions) {
-      if (resolution.resolution === 'ignored_failure') continue
+      if (resolution.resolution === 'ignored_failure' || resolution.resolution === 'awaiting_manual') continue
       const correctionId = getMediaCorrection(resolution.song.id)?.id ?? null
       const retryTasks = (fileRetries.get(resolution.song.id) ?? []).filter(task =>
         (task.idempotencyKey?.split(':correction:')[1] ?? null) === correctionId,
@@ -282,5 +286,5 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     }
   }
 
-  return { needsPlexRefresh, downloadTargetCount: songsToDownload.length }
+  return { resolutions, needsPlexRefresh, downloadTargetCount: songsToDownload.length }
 }

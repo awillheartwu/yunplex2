@@ -29,7 +29,7 @@
           <div class="system-log-row__summary">
             <p class="system-log-row__message">{{ log.message }}</p>
             <span v-if="log.errorCode" class="system-log-row__error-code">
-              {{ errorLabel(log.errorCode) }} · {{ log.retryable ? '可自动重试' : '不可自动重试' }}
+              {{ errorLabel(log.errorCode) }} · {{ recoveryLabel(log.errorCode) }}
             </span>
           </div>
           <details v-if="log.detail" class="system-log-row__detail">
@@ -49,6 +49,7 @@
 <script setup lang="ts">
 import { useSystemLogs } from '~~/composables/useSystemLogs'
 import { getDomainErrorDefinition } from '~~/shared/domain-errors'
+import { errorRecoveryMode } from '~~/shared/error-recovery'
 
 const {
   activeFilter, error, fetchLogs, filters, formatTime, goToPage, levelClass,
@@ -64,6 +65,11 @@ async function changePage(target: number) {
 
 function errorLabel(code: string) {
   return getDomainErrorDefinition(code).label
+}
+
+function recoveryLabel(code: string) {
+  const mode = errorRecoveryMode(getDomainErrorDefinition(code).code)
+  return mode === 'retry' ? '按规则自动重试' : mode === 'paused' ? '等待环境修复' : '等待人工处理'
 }
 </script>
 

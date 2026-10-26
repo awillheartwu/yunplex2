@@ -1,5 +1,5 @@
 import type { TaskSourceOption } from '~~/server/lib/task-filter-options'
-import type { FailureRecord, FailureRecordStatusFilter } from '~~/server/lib/tasks/failure-records'
+import type { FailureRecord, FailureRecordStatusFilter } from '~~/server/lib/tasks/failure-model'
 import type { FailureGroup } from '~~/server/lib/tasks/failure-groups'
 import type { TaskRunType } from '~~/server/lib/job/types'
 import {
@@ -236,8 +236,7 @@ export function useTaskCenterPage() {
     return isDomainErrorCode(kind) ? getDomainErrorDefinition(kind).label : failureKindFilters.find(item => item.value === kind)?.label || kind
   }
   function failureAttemptLabel(record: FailureRecord): string {
-    if (record.status !== 'open') return failureStatePresentation(record).description
-    return `失败 ${record.attemptCount}/${record.attemptLimit} 次${record.runType === 'sync' ? '，下次同步再试' : '，等待手动重试'}`
+    return failureStatePresentation(record).description
   }
   function failureKindTone(kind: string): TaskSemanticTone {
     const definition = getDomainErrorDefinition(kind)

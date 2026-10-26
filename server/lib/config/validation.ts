@@ -150,7 +150,7 @@ export function validateFullConfig(input: unknown): AppConfig {
       skipPlexPlaylist: readBoolean(candidate.sync.skipPlexPlaylist, '默认不入 Plex 歌单'),
       skipRemoveExtraTracks: readBoolean(candidate.sync.skipRemoveExtraTracks, '不删除 Plex 多余歌曲'),
       extraTrackRemovalPolicy: readEnum(candidate.sync.extraTrackRemovalPolicy, EXTRA_TRACK_REMOVAL_POLICIES, '多余歌曲清理策略'),
-      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '失败次数上限', 1, 20),
+      maxFailureAttempts: readInteger(candidate.sync.maxFailureAttempts, '快速重试次数', 1, 20),
       unverifiedMediaPolicy: readEnum(candidate.sync.unverifiedMediaPolicy, UNVERIFIED_MEDIA_POLICIES, '未验证媒体处理方式'),
       initializeMediaOnFirstSync: readBoolean(candidate.sync.initializeMediaOnFirstSync ?? true, '首次同步前媒体接管'),
     },

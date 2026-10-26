@@ -32,7 +32,6 @@ import {
   normalizePlexPath,
   plexPathsExactlyEqual,
 } from './identity-normalization'
-import type { ExtraTrack } from './lookup'
 import { listPlaylistSourceTrackOccurrences } from './match-management-store'
 import { resolveAccessibleLocalPath } from './path-map'
 import { buildPlexReorderStepError, markPlexReorderFailures } from './reorder-failure-reporting'
@@ -44,6 +43,7 @@ import {
 } from './reconciliation-plan'
 import {
   PlexReorderError,
+  PlexReorderCancelledError,
   createPlaylistOrderError,
   validatePlaylistOrder,
   type ReorderMutation,
@@ -62,8 +62,11 @@ import {
   buildPlexPathSnapshot,
   buildPlexPlaylistFingerprint,
 } from './playlist-fingerprint'
-import type { TrackResolution } from './types'
-import { observePlexRemovalFailures } from '../tasks/failure-records'
+import type { ReadonlyTrackResolution, TrackResolution } from './types'
+import { getSourceFailurePolicy, observePlexRemovalFailures, resolveSupersededPlexRemovals } from './failure-policy'
+import { confirmPlaylistItemAbsent, confirmPlaylistReconciled } from '../tasks/completion'
+import { failureSubjectKey } from '../tasks/failure-identity'
+import { captureSourceConvergenceCheckpoint, type SourceConvergenceCheckpoint } from './source-checkpoint'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -72,9 +75,8 @@ interface PlexPlaylistIdentity {
 
 interface ReconcilePlexPlaylistInput {
   source: PlaylistSource
-  resolutions: TrackResolution[]
-  extraTracks: ExtraTrack[]
-  extraTaskIds: Map<number, string>
+  resolutions: readonly ReadonlyTrackResolution[]
+  extraTaskIds: ReadonlyMap<number, string>
   config: AppConfig
   job: RunBuilder
   stepContext: JobStepContext
@@ -82,6 +84,7 @@ interface ReconcilePlexPlaylistInput {
   sectionKey: string
   currentIdOrder: number[]
   bindingVersionSnapshot: BindingVersionSnapshot
+  bindingRatingKeys: ReadonlyMap<number, string | null>
   emptyTargetConfirmed: boolean
   skipRemoveExtra: boolean
   retryUnresolvedSnapshot: boolean
@@ -104,11 +107,11 @@ interface ReconcilePlexPlaylistInput {
  */
 export async function reconcilePlexPlaylist(
   input: ReconcilePlexPlaylistInput,
-): Promise<void> {
+): Promise<SourceConvergenceCheckpoint> {
   const {
     source,
-    resolutions,
-    extraTaskIds,
+    resolutions: downloadedResolutions,
+    extraTaskIds: previousExtraTaskIds,
     config,
     job,
     stepContext,
@@ -116,6 +119,7 @@ export async function reconcilePlexPlaylist(
     sectionKey,
     currentIdOrder,
     bindingVersionSnapshot,
+    bindingRatingKeys,
     emptyTargetConfirmed,
     skipRemoveExtra,
     retryUnresolvedSnapshot,
@@ -126,6 +130,10 @@ export async function reconcilePlexPlaylist(
     setStage,
     log,
   } = input
+  // This terminal stage owns its resolution entries and run-item lookup.
+  // Song metadata remains shared; matchTrace is replaced when identity changes.
+  const resolutions = downloadedResolutions.map(resolution => ({ ...resolution }))
+  const extraTaskIds = new Map(previousExtraTaskIds)
 
   const reorderStep = job.startStep('reorder', '核对 Plex 媒体并更新歌单', {
     context: {
@@ -297,6 +305,7 @@ export async function reconcilePlexPlaylist(
     maxFailureAttempts: config.sync.maxFailureAttempts,
   })
   const currentOccurrences = listPlaylistSourceTrackOccurrences(source.id)
+  const removalProblems = getSourceFailurePolicy(source.id).removalFailures
   const occurrencesByPreviousRatingKey = new Map<string, typeof currentOccurrences>()
   for (const occurrence of currentOccurrences) {
     if (!occurrence.alignedPlexRatingKey) continue
@@ -384,7 +393,11 @@ export async function reconcilePlexPlaylist(
     }
     if (!extraSongId || decision.action !== 'preserve') continue
     job.updateSong(extraSongId, {
-      status: ignoredRemovalItemIds.has(decision.playlistItemId) ? 'ignored_failure' : 'extra_skipped',
+      status: ignoredRemovalItemIds.has(decision.playlistItemId)
+        ? removalProblems[failureSubjectKey({ sourceId: source.id, songName: '',
+          plexPlaylistRatingKey: plexPlaylist.ratingKey, plexPlaylistItemId: decision.playlistItemId })]?.status === 'ignored'
+          ? 'ignored_failure' : 'awaiting_retry'
+        : 'extra_skipped',
       phase: 'done',
       metadata: {
         plexRatingKey: decision.ratingKey,
@@ -402,6 +415,8 @@ export async function reconcilePlexPlaylist(
     const removedObservationKeys: string[] = []
     for (const mutation of mutations) {
       if (mutation.action !== 'remove') continue
+      confirmPlaylistItemAbsent(source.id, { plexPlaylistRatingKey: plexPlaylist.ratingKey,
+        plexPlaylistItemId: mutation.playlistItemId })
       const observationKey = currentItems.find(
         item => item.playlistItemId === mutation.playlistItemId,
       )?.observationKey
@@ -433,6 +448,7 @@ export async function reconcilePlexPlaylist(
   setStage('updating_plex_playlist')
   let releaseIdentityLock: (() => void) | null = null
   let reorderMutationsApplied = false
+  let checkpoint: SourceConvergenceCheckpoint | undefined
   try {
     releaseIdentityLock = await acquireIdentityMutationLock()
     input.assertRecoveryContextUnchanged?.()
@@ -446,6 +462,7 @@ export async function reconcilePlexPlaylist(
     const currentBindings = applyVerifiedBindingsIfSnapshotCurrent(
       bindingVersionSnapshot,
       pendingVerifiedBindings,
+      bindingRatingKeys,
     )
     assertResolvedIdentitiesCurrent(resolutions, currentBindings)
 
@@ -475,13 +492,24 @@ export async function reconcilePlexPlaylist(
     if (!orderValidation.ok) {
       throw createPlaylistOrderError(orderValidation, postItems, reorderResult)
     }
+    const extraItemIds = new Set(findExtraPlaylistOccurrences(reconciliationPlan.targetOrder, postItems).map(item => item.playlistItemId))
+    resolveSupersededPlexRemovals({ sourceId: source.id, playlistRatingKey: plexPlaylist.ratingKey,
+      retainedItemIds: new Set(postItems.filter(item => !extraItemIds.has(item.playlistItemId)).map(item => item.playlistItemId)) })
+    confirmPlaylistReconciled(source.id, { items: postItems, targets: resolutions.flatMap(resolution =>
+      resolution.plexRatingKey && resolution.resolution !== 'ignored_failure'
+        ? [{ songId: resolution.song.id, songName: resolution.song.name, ratingKey: resolution.plexRatingKey }] : []) })
     recordAppliedPlexPlaylistFingerprint(
       source.id,
       buildPlexPlaylistFingerprint(postPlaylistTracks),
       undefined,
       buildPlexPathSnapshot(postPlaylistTracks),
     )
+    checkpoint = captureSourceConvergenceCheckpoint(currentIdOrder)
   } catch (error) {
+    if (error instanceof PlexReorderCancelledError) {
+      applyConfirmedReorderMutations(error.result.mutations)
+      throw error
+    }
     if (error instanceof PlexReorderError) {
       if (!reorderMutationsApplied) applyConfirmedReorderMutations(error.result.mutations)
       const ratingKeyToSongIds = new Map<string, string[]>()
@@ -535,6 +563,7 @@ export async function reconcilePlexPlaylist(
   job.finishStep(reorderStep, 'success', sharedCount > 0
     ? `Plex 歌单重排完成，${resolvedCount} 首来源歌曲对应 ${strongTargetOrder.length} 个 Plex 媒体，${sharedCount} 首共用已有媒体`
     : 'Plex 歌单重排完成')
+  return checkpoint!
 }
 
 /**

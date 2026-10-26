@@ -100,10 +100,10 @@ function plexConnectionFailure(config: AppConfig, error: unknown): ConnectionTes
   const target = sanitizeDiagnosticMessage(`${config.plex.server}:${config.plex.port}`) ?? `端口 ${config.plex.port}`
   const reason = (error instanceof Error ? error.message : typeof error === 'string' ? error : '').toLowerCase()
   if (reason.includes('permission') || reason.includes('403')) {
-    return new ConnectionTestError('plex_unavailable', `Plex 拒绝访问（${target}）：当前账号缺少该音乐库权限，请检查 Plex 共享权限后重试。`)
+    return new ConnectionTestError('plex_authentication_failed', `Plex 拒绝访问（${target}）：当前账号缺少该音乐库权限，请检查 Plex 共享权限后重试。`)
   }
   if (reason.includes('401') || reason.includes('authenticate') || reason.includes('denied request')) {
-    return new ConnectionTestError('plex_unavailable', `Plex 拒绝访问（${target}）：Token 无效或未授权，请在 Plex 中重新获取 Token 后重试。`)
+    return new ConnectionTestError('plex_authentication_failed', `Plex 拒绝访问（${target}）：Token 无效或未授权，请在 Plex 中重新获取 Token 后重试。`)
   }
   if (/econnrefused|ehostunreach|enetunreach|enotfound|eai_again|econnreset/.test(reason)) {
     return new ConnectionTestError('plex_unavailable', `无法连接 Plex（${target}）：请检查服务器地址、端口以及 Plex 服务是否在运行。`)

@@ -26,29 +26,29 @@ YunPlex 是 Nuxt 4 网页应用，后端使用 Nitro 和 SQLite。一个应用�
 
 ## 文件放在哪里
 
-| 目录                                             | 内容                                 |
-| ------------------------------------------------ | ------------------------------------ |
-| `pages/`、`components/`                          | 页面入口和 Vue 组件                  |
-| `composables/`、`lib/`                           | 前端请求、状态与展示工具             |
-| `shared/`                                        | 前后端共用的类型和规则               |
-| `server/api/`                                    | 读取请求参数、调用业务模块、返回结果 |
-| `server/lib/config/`                             | 默认配置、校验和保存                 |
-| `server/lib/auth/`、`server/middleware/`         | 管理员会话、请求鉴权和来源校验       |
-| `server/lib/playlist/`                           | 收藏的歌单和专辑                     |
-| `server/lib/source-initialization/`              | 首次接管分析、候选选择和确认         |
-| `server/lib/sync/`                               | 来源调度、媒体关联和 Plex 歌单同步   |
-| `server/lib/download/`                           | 文件任务、并发下载和标签修复         |
-| `server/lib/run/`、`server/lib/log/`             | 运行记录和诊断日志                   |
-| `server/lib/tasks/`                              | 异常记录、批量处理与重试路由         |
-| `server/lib/db.ts`、`server/lib/db/`             | 数据库连接、结构与初始化             |
-| `server/lib/runtime/`、`server/lib/maintenance/` | 就绪状态与运行数据保留策略           |
-| `assets/css/`                                    | 基础样式、共享控件和页面样式         |
-| `tests/`                                         | 单元、集成、浏览器测试及测试工具     |
-| `scripts/`、`deploy/`                            | 开发检查、诊断、备份和部署工具       |
+| 目录                                             | 内容                                   |
+| ------------------------------------------------ | -------------------------------------- |
+| `pages/`、`components/`                          | 页面入口和 Vue 组件                    |
+| `composables/`、`lib/`                           | 前端请求、状态与展示工具               |
+| `shared/`                                        | 前后端共用的类型和规则                 |
+| `server/api/`                                    | 读取请求参数、调用业务模块、返回结果   |
+| `server/lib/config/`                             | 默认配置、校验和保存                   |
+| `server/lib/auth/`、`server/middleware/`         | 管理员会话、请求鉴权和来源校验         |
+| `server/lib/playlist/`                           | 收藏的歌单和专辑                       |
+| `server/lib/source-initialization/`              | 首次接管分析、候选选择和确认           |
+| `server/lib/sync/`                               | 来源调度、媒体关联和 Plex 歌单同步     |
+| `server/lib/download/`                           | 文件任务、并发下载和标签修复           |
+| `server/lib/run/`、`server/lib/log/`             | 运行记录和诊断日志                     |
+| `server/lib/tasks/`                              | 当前问题、完成证据、批量处理与重试路由 |
+| `server/lib/db.ts`、`server/lib/db/`             | 数据库连接、结构与初始化               |
+| `server/lib/runtime/`、`server/lib/maintenance/` | 就绪状态与运行数据保留策略             |
+| `assets/css/`                                    | 基础样式、共享控件和页面样式           |
+| `tests/`                                         | 单元、集成、浏览器测试及测试工具       |
+| `scripts/`、`deploy/`                            | 开发检查、诊断、备份和部署工具         |
 
 Nuxt 自动导入 Vue API、组件和 composable。浏览器共享一个 SSE 连接，页面离开时释放订阅；连接恢复后重新读取当前状态。
 
-`server/lib/plex-notifications.ts` 管理 Plex 事件连接、解析与重连；`plex-scan-events.ts` 关联单次扫描，`plex-library-monitor.ts` 负责缓存失效和歌单变化提示。失败处理由下一次来源同步或异常记录中的手动重试驱动，歌单写入仍由来源队列调用 `sync/service.ts` 完成。具体完成条件见[同步流程](sync-flow.md#plex-完成条件)。
+`server/lib/plex-notifications.ts` 管理 Plex 事件连接、解析与重连；`plex-scan-events.ts` 关联单次扫描，`plex-library-monitor.ts` 负责缓存失效和歌单变化提示。失败处理由持久来源请求、文件恢复安排或异常记录中的手动重试驱动，歌单写入仍由来源队列调用 `sync/service.ts` 完成。具体完成条件见[同步流程](sync-flow.md#plex-完成条件)。
 
 ## 一次同步怎样执行
 
@@ -59,14 +59,35 @@ sync/source-requests.ts 接受请求
   → sync/request-store.ts 保存请求
   → sync/worker.ts 依次执行
   → 需要首次接管时，调用 source-initialization/service.ts 分析并安排歌曲
-  → 可以同步时，调用 sync/service.ts
-      → 获取网易云歌曲与顺序
-      → lookup.ts 查已有媒体，source-downloads.ts 安排缺失文件
-      → source-plex-reconciliation.ts 更新 Plex 歌单并重新读取结果
-      → source-finalization.ts 保存结果
+  → 可以同步时，sync/service.ts 创建运行并串行调用 source-convergence.ts
+      → 获取并观察网易云、Plex 的状态，判定是否需要继续
+      → lookup.ts 查已有媒体
+      → source-downloads.ts 返回下载后的解析结果及刷新需求
+      → source-plex-reconciliation.ts 消费下载输出，更新 Plex 并读回
+      → source-finalization.ts 核对检查点并保存来源结果
 ```
 
-同步请求串行执行，下载任务按全局并发数执行。`source-schedule-store.ts` 计算来源下次运行时间，并处理请求领取和重启恢复。API 只调用这套流程。
+`service.ts` 管理运行生命周期、来源选择与串行循环、取消和关闭、全局状态与 SSE、总体汇总。`source-convergence.ts` 负责单个来源的观察、判定、比较、下载、Plex 协调和来源级异常，只通过阶段、失败和日志回调报告进度，不读写服务层状态。
+
+单来源返回未变化、延后、完成或失败的明确结果。下载与 Plex 阶段接收只读解析条目，在入口浅复制实际会修改的条目，歌曲和未修改的元数据保持共享；下载返回的新解析结果显式交给 Plex。Plex 是终端阶段，返回检查点而不重复暴露无人消费的数据。`RunBuilder` 仍是各阶段明确共享的进度和运行结果记录。
+
+同步请求串行执行，下载任务按全局并发数执行。`source-schedule-store.ts` 计算来源下次运行时间，并处理请求领取和重启恢复。`shared/error-recovery.ts` 统一决定恢复动作和退避间隔，`sync/recovery.ts` 安排来源后续请求，`download/recovery.ts` 恢复到期的独立文件任务。异常记录不会因次数耗尽而自动忽略；实际操作模块凭完成证据解决问题。API 只调用这套流程。
+
+`lookup.ts` 在内存中核对候选、重复身份和本地文件观测；`lookup-identity.ts` 在身份锁内检查原绑定版本及文件记录，再统一提交接受的结果。查询和批量验证的 Plex 网络读取都在锁与数据库事务外进行，旧观测不能覆盖期间完成的下载或人工选择。
+
+`effective-settings.ts` 按来源实际生效值识别需要重新核对的配置变化；`source-checkpoint.ts` 保存本轮写入边界确认的绑定版本、实际 Plex 编号和文件快照。完整协调和纯换序共用 `source-finalization.ts` 收尾，最后一次网络等待后核对快照，再同步保存结果与对齐证据。媒体验证可以记录成员情况或要求重新对齐，来源待协调标记只由完整执行同步后的收尾清除。
+
+错误处理按下表分工。执行模块报告实际失败或完成事实，恢复模块安排后续动作，页面读取当前投影。
+
+| 模块                                                                 | 职责                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `domain-error.ts`、`error-signals.ts`、`shared/domain-errors.ts`     | 识别错误原因、保留外部上下文并提供脱敏说明                   |
+| `shared/error-recovery.ts`                                           | 唯一的自动恢复动作、快速退避和长期冷却规则                   |
+| `tasks/failure-records.ts`、`failure-queries.ts`、`failure-model.ts` | 异常写入与去重、状态操作、读取与展示投影；不启动任务         |
+| `tasks/recovery-targets.ts`、`sync/failure-policy.ts`                | 来源、成员、原文件和调用方资格，以及来源和删除问题的暂缓判断 |
+| `tasks/completion.ts`、`completion-evidence.ts`                      | 文件、歌曲详情、当前身份、歌单读回及指定条目删除的完成确认   |
+
+手动、自动和环境恢复共用目标资格事实，并显式区分触发权限。`sync/request-store.ts` 管理恢复请求的去重、替代及持久标记，环境恢复只协调检查和所属模块的命令；网络检查在事务外执行，状态与排队提交后再唤醒 worker。`run/failure-recording.ts` 归集运行失败，`run/recovery.ts` 协调启动恢复，运行存储不反向调用文件队列。
 
 首次接管分析不会下载歌曲或修改 Plex；自动模式分析后排队应用，审批模式等用户提交。两种模式均由来源队列应用安排并接续同步，暂停自动同步的收藏也能执行这一次手动请求。具体操作见[首次接管](initialization-matching.md)。
 
@@ -119,6 +140,8 @@ download/file-task-command.ts 保存文件任务
 
 `server/middleware/auth.ts` 检查管理员会话和初始化状态，写请求校验同源与 CSRF。`401` 表示需要登录，`428` 表示需要完成初始化；`composables/useApi.ts` 处理状态刷新和页面跳转。普通写请求不会因等待超时自动重发。
 
-业务成功响应由 `server/lib/response.ts` 返回 `{ code: 0, msg: "ok", data }`。业务失败响应包含用户说明和错误码、类别、严重度、可重试标记；对应定义在 `shared/domain-errors.ts`。页面、队列和日志共用这份定义，诊断信息在进入日志和响应前脱敏。认证中间件等入口也可能直接返回 HTTP 错误，调用方应同时处理 HTTP 状态与业务 `code`。
+业务成功响应由 `server/lib/response.ts` 返回 `{ code: 0, msg: "ok", data }`。业务失败响应包含用户说明和错误码、类别、严重度；对应定义在 `shared/domain-errors.ts`。响应中保留的 `retryable` 是原 API 的提示，异常列表中的同名字段表示是否有可手动重试的目标，两者都不决定自动执行；自动动作只由 `shared/error-recovery.ts` 计算。诊断信息在进入日志和响应前脱敏。认证中间件等入口也可能直接返回 HTTP 错误，调用方应同时处理 HTTP 状态与业务 `code`。
+
+诊断日志直接读取恢复策略，区分按规则自动重试、等待环境修复和等待人工处理；不使用响应中的兼容提示推断自动恢复。
 
 配置保存经过校验再合并。来源设置中的 `null` 表示继承全局值，`true` 和 `false` 都是明确选择。

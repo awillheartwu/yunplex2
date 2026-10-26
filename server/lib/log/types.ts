@@ -41,6 +41,7 @@ export interface SyncState {
   currentSourceName: string | null
   lastSyncAt: string | null
   lastSyncResult: 'success' | 'partial' | 'failure' | null
+  cancellationReason?: 'user' | 'shutdown'
   syncCount: number
   successCount: number
   failureCount: number

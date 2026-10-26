@@ -11,6 +11,7 @@ import { RunBuilder } from '~~/server/lib/run/builder'
 import { saveSyncRun } from '~~/server/lib/run/store'
 import { applySourceDownloads } from '~~/server/lib/sync/source-downloads'
 import { finalizeSourceConvergence } from '~~/server/lib/sync/source-finalization'
+import { captureSourceConvergenceCheckpoint } from '~~/server/lib/sync/source-checkpoint'
 import { assertResolvedIdentitiesCurrent } from '~~/server/lib/sync/source-plex-reconciliation'
 import type { TrackResolution } from '~~/server/lib/sync/types'
 import { startDownloadWorker, stopDownloadWorker } from '~~/server/lib/download/worker'
@@ -113,7 +114,7 @@ describe('source download convergence', () => {
       log,
     })
 
-    expect(result).toEqual({ needsPlexRefresh: true, downloadTargetCount: 1 })
+    expect(result).toEqual({ resolutions: downloads, needsPlexRefresh: true, downloadTargetCount: 1 })
     expect(job.getRun().steps).toMatchObject([{
       type: 'download',
       status: 'success',
@@ -138,7 +139,7 @@ describe('source download convergence', () => {
         audioOperation: 'downloaded',
       }))
 
-      await expect(applySourceDownloads({
+      const result = await applySourceDownloads({
         source,
         resolutions: [target],
         config,
@@ -152,9 +153,11 @@ describe('source download convergence', () => {
         setStage: () => undefined,
         log: () => undefined,
         addFailure: () => undefined,
-      })).resolves.toEqual({ needsPlexRefresh: true, downloadTargetCount: 1 })
+      })
+      expect(result).toMatchObject({ needsPlexRefresh: true, downloadTargetCount: 1,
+        resolutions: [{ filePath: '/tmp/source-1.flac' }] })
 
-      expect(target.filePath).toBe('/tmp/source-1.flac')
+      expect(target.filePath).toBeUndefined()
       expect(getDb().prepare("SELECT status, execution_intent_json IS NOT NULL intent FROM download_tasks").get())
         .toEqual({ status: 'done', intent: 1 })
       expect(getDb().prepare(`
@@ -194,6 +197,8 @@ describe('source finalization projection', () => {
 
       await finalizeSourceConvergence({
         source: persistedSource,
+        config: DEFAULT_CONFIG,
+        checkpoint: captureSourceConvergenceCheckpoint([1]),
         job,
         dryRun: false,
         fullVerification: true,
@@ -242,6 +247,8 @@ describe('source finalization projection', () => {
 
       const result = await finalizeSourceConvergence({
         source: { ...persistedSource, requiresMatchReconcile: true },
+        config: DEFAULT_CONFIG,
+        checkpoint: captureSourceConvergenceCheckpoint([2]),
         job,
         dryRun: false,
         fullVerification: true,

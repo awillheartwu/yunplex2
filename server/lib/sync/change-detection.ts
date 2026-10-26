@@ -53,8 +53,6 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
     currentIdOrder, trackIdSnapshot, plexDriftDetected = false,
   } = input
 
-  const neteaseChanged = !trackUpdateTime || trackUpdateTime !== lastTrackUpdateTime
-
   // Auto-force after N skips or N days since last full compare
   let autoForce = false
   const skips = consecutiveSkips || 0
@@ -74,6 +72,9 @@ export function detectChanges(input: ChangeDetectionInput): ChangeDetectionResul
       if (Array.isArray(parsed)) oldSnapshot = parsed.map(Number).filter(Number.isInteger)
     }
   } catch { /* ignore */ }
+
+  const neteaseChanged = !trackUpdateTime || trackUpdateTime !== lastTrackUpdateTime
+    || JSON.stringify(oldSnapshot) !== JSON.stringify(currentIdOrder)
 
   const oldIds = new Set(oldSnapshot)
   const currentIds = new Set(currentIdOrder)

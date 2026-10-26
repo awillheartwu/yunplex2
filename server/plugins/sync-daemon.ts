@@ -7,7 +7,7 @@ import { getSyncService } from '../lib/sync/service'
 import { startWorker, stopWorker } from '../lib/sync/worker'
 import { recoverInterruptedSourceRequests } from '../lib/sync/source-schedule-store'
 import { isRepairRunning, setSyncService, setSyncWorker, clearSyncWorker } from '../lib/sync/instance'
-import { recoverInterruptedRuns } from '../lib/run/store'
+import { recoverInterruptedRuns } from '../lib/run/recovery'
 import { recoverExpiredDownloadTasks } from '../lib/download/queue'
 import { startDownloadWorker, stopDownloadWorker } from '../lib/download/worker'
 import {

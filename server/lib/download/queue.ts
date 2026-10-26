@@ -3,10 +3,13 @@ export { getQueueStatus } from './queue-status'
 import { AWAITING_SOURCE_SYNC_PROJECTION } from './task-status-projection'
 import { randomUUID } from 'node:crypto'
 import { getDb } from '../db'
-import { createFileTaskSchema, listFileTaskRuns } from '../db/file-task-schema'
+import { createFileTaskSchema, listFileTaskRuns, linkRunFileTask } from '../db/file-task-schema'
 import { emitEvent } from '../sync/events'
-import { recordFailure, resolveFailures } from '../tasks/failure-records'
-import { getRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
+import { recordFailure } from '../tasks/failure-records'
+import { completeFileTask, confirmManualBindingSupersedesFileIntents } from '../tasks/completion'
+import { getRun, createManualDownloadRun, createRepairRun, syncManualDownloadRun, syncRepairRun } from '../run/store'
+import type { TaskRunTrigger } from '../job/types'
+import type { LyricOrder } from '../config/types'
 import { updateSource } from '../playlist/store'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
 import { classifyDomainErrorCode, isDomainErrorCode, type DomainErrorCode } from '../../../shared/domain-errors'
@@ -28,6 +31,8 @@ export interface DownloadTask {
   quality?: string
   error?: string
   errorCode?: DomainErrorCode
+  errorPhase?: 'download' | 'tags'
+  nextRetryAt?: string
   retryCount: number
   jobId?: string
   idempotencyKey?: string
@@ -42,6 +47,15 @@ export interface DownloadTask {
 
 export type DownloadTaskOperation = 'download' | 'replace' | 'managed_copy' | 'repair_existing'
 export interface DownloadExecutionIntent {
+  artistAliases?: Record<string, string>
+  applyAliasToAlbum?: boolean
+  manualBindingVersion?: string | null
+  downloadDir?: string
+  pathFormat?: string
+  multiArtistFormat?: string
+  lyricOrder?: LyricOrder
+  downloadTranslatedLyric?: boolean
+  downloadRomajiLyric?: boolean
   downloadMode?: 'full' | 'missing' | 'replace'
   target?:
     | { kind: 'computed'; protectedPath?: string; requireManagedCopy?: boolean }
@@ -110,6 +124,8 @@ interface TaskRow {
   operation: string; target_path: string | null; execution_intent_json: string | null
   awaiting_source_sync?: number | null
   created_at: string; updated_at: string
+  next_retry_at?: string | null
+  error_phase?: string | null
 }
 
 function rowToTask(r: TaskRow): DownloadTask {
@@ -121,6 +137,8 @@ function rowToTask(r: TaskRow): DownloadTask {
     filePath: r.file_path ?? undefined, fileType: r.file_type ?? undefined,
     quality: r.quality ?? undefined, error: r.error ?? undefined,
     errorCode: isDomainErrorCode(r.error_code) ? r.error_code : undefined,
+    errorPhase: r.error_phase === 'download' || r.error_phase === 'tags' ? r.error_phase : undefined,
+    nextRetryAt: r.next_retry_at ?? undefined,
     retryCount: r.retry_count, jobId: r.run_id ?? r.job_id ?? undefined,
     idempotencyKey: r.idempotency_key ?? undefined,
     operation: DOWNLOAD_TASK_OPERATIONS.has(r.operation as DownloadTaskOperation)
@@ -273,7 +291,7 @@ export function getNextDownloadWakeDelay(): number | null {
 
 export function updateTaskState(id: string, updates: Partial<{
   status: string; progress: number; filePath: string; fileType: string
-  quality: string; error: string | null; errorCode: DomainErrorCode | null; retryCount: number; leaseOwner: string | null
+  quality: string; error: string | null; errorCode: DomainErrorCode | null; errorPhase: 'download' | 'tags' | null; retryCount: number; leaseOwner: string | null
   leaseExpiresAt: string | null; attemptStartedAt: string | null
 }>, guard?: { leaseOwner: string }): boolean {
   createFileTaskSchema(getDb())
@@ -281,12 +299,14 @@ export function updateTaskState(id: string, updates: Partial<{
   const vals: unknown[] = []
 
   if (updates.status !== undefined) { sets.push('status = ?'); vals.push(updates.status) }
+  if (updates.status === 'done') sets.push('next_retry_at = NULL', 'error_phase = NULL')
   if (updates.progress !== undefined) { sets.push('progress = ?'); vals.push(updates.progress) }
   if (updates.filePath !== undefined) { sets.push('file_path = ?'); vals.push(updates.filePath) }
   if (updates.fileType !== undefined) { sets.push('file_type = ?'); vals.push(updates.fileType) }
   if (updates.quality !== undefined) { sets.push('quality = ?'); vals.push(updates.quality) }
   if (updates.error !== undefined) { sets.push('error = ?'); vals.push(updates.error) }
   if (updates.errorCode !== undefined) { sets.push('error_code = ?'); vals.push(updates.errorCode) }
+  if (updates.errorPhase !== undefined) { sets.push('error_phase = ?'); vals.push(updates.errorPhase) }
   if (updates.retryCount !== undefined) { sets.push('retry_count = ?'); vals.push(updates.retryCount) }
   if (updates.leaseOwner !== undefined) { sets.push('lease_owner = ?'); vals.push(updates.leaseOwner) }
   if (updates.leaseExpiresAt !== undefined) { sets.push('lease_expires_at = ?'); vals.push(updates.leaseExpiresAt) }
@@ -318,6 +338,8 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
   const activeCallers = associations.filter(caller => getRun(caller.runId)?.status === 'running')
   const failureCallers = activeCallers.length > 0 ? activeCallers
     : associations.length > 0 ? associations.slice(-1) : [{ runId: task.jobId || '', sourceId: task.sourceId }]
+  if (status === 'done') completeFileTask(task.id)
+  let nextRetryAt: string | null = null
   const reason = error || task.error || '下载失败'
   for (const caller of failureCallers) {
     const run = getRun(caller.runId)
@@ -328,10 +350,8 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
       artist: task.artist,
       sourceId: associations.length > 0 ? caller.sourceId : caller.sourceId ?? task.sourceId,
     }
-    if (status === 'done') {
-      resolveFailures({ ...common, ...(runType === 'sync' ? { downloadTaskId: task.id } : {}) })
-    } else {
-      recordFailure({
+    if (status === 'failed') {
+      const problem = recordFailure({
         ...common,
         sourceName: task.sourceName || (common.sourceId ? '' : '手动下载'),
         runId: caller.runId || null,
@@ -340,14 +360,24 @@ function recordTerminalTaskState(id: string, status: 'done' | 'failed', error?: 
         failureReason: reason,
         downloadTaskId: task.id,
       })
+      const cooldownUntil = getDownloadQueueControl().cooldownUntil
+      const recoveryAt = problem.recovery?.nextRetryAt
+      const plannedAt = runType === 'sync' || !recoveryAt ? null
+        : cooldownUntil && cooldownUntil > recoveryAt ? cooldownUntil : recoveryAt
+      if (plannedAt && (!nextRetryAt || plannedAt < nextRetryAt)) nextRetryAt = plannedAt
     }
+  }
+
+  if (status === 'failed') {
+    getDb().prepare('UPDATE download_tasks SET next_retry_at=? WHERE id=?').run(nextRetryAt, task.id)
+    confirmManualBindingSupersedesFileIntents(task.songId)
   }
 
   const runIds = new Set(associations.map(association => association.runId))
   if (task.jobId) runIds.add(task.jobId)
   for (const runId of runIds) {
     const associatedRun = getRun(runId)
-    if (associatedRun?.type === 'manual_download') syncManualDownloadRun(runId)
+    if (associatedRun?.type === 'manual_download' && associatedRun.status === 'running') syncManualDownloadRun(runId)
     if (associatedRun?.type === 'repair' && associatedRun.status === 'running') syncRepairRun(runId, { finalize: false })
   }
   if (status === 'done') {
@@ -385,6 +415,7 @@ function recoverActiveDownloadTasks(now: string, interrupted: boolean): number {
       progress = 0,
       error = ?,
       error_code = 'scheduler_interrupted',
+      error_phase = CASE WHEN status = 'tagging' THEN 'tags' ELSE 'download' END,
       lease_owner = NULL,
       lease_expires_at = NULL,
       attempt_started_at = NULL,
@@ -465,13 +496,13 @@ export function enqueueTask(task: {
  * Tasks that conflict with another active task for the same output identity
  * remain failed so a retry cannot create a duplicate concurrent media write.
  */
-export function requeueFailedDownloadTasks(ids: string[], options: { resumeRuns?: boolean } = {}): DownloadTask[] {
+export function requeueFailedDownloadTasks(ids: string[], options: { resumeRuns?: boolean; sourceByTask?: ReadonlyMap<string, string | null>; trigger?: TaskRunTrigger } = {}): DownloadTask[] {
   const uniqueIds = [...new Set(ids.filter(Boolean))]
   if (uniqueIds.length === 0) return []
   const db = getDb()
   createFileTaskSchema(db)
   const now = new Date().toISOString()
-  const requeuedIds = db.transaction(() => {
+  return db.transaction(() => {
     const changed: string[] = []
     const statement = db.prepare(`
       UPDATE download_tasks
@@ -479,10 +510,12 @@ export function requeueFailedDownloadTasks(ids: string[], options: { resumeRuns?
         progress = 0,
         error = NULL,
         error_code = NULL,
+        error_phase = NULL,
         retry_count = retry_count + 1,
         lease_owner = NULL,
         lease_expires_at = NULL,
         attempt_started_at = NULL,
+        next_retry_at = NULL,
         updated_at = ?
       WHERE id = ?
         AND status = 'failed'
@@ -500,23 +533,29 @@ export function requeueFailedDownloadTasks(ids: string[], options: { resumeRuns?
     for (const id of uniqueIds) {
       if (statement.run(now, id).changes > 0) changed.push(id)
     }
-    return changed
+    const requeued = changed.map(id => getDownloadTask(id)!)
+    if (options.resumeRuns !== false && requeued.length) {
+      const sourceOf = (task: DownloadTask) => options.sourceByTask?.has(task.id) ? options.sourceByTask.get(task.id)! : task.sourceId
+      const groups = new Map<string, DownloadTask[]>()
+      for (const task of requeued) {
+        const key = task.operation === 'repair_existing' ? `repair:${sourceOf(task) ?? ''}` : 'download'
+        groups.set(key, [...(groups.get(key) ?? []), task])
+      }
+      for (const tasks of groups.values()) {
+        const runId = randomUUID()
+        const trigger = options.trigger ?? 'retry'
+        const repair = tasks[0]!.operation === 'repair_existing'
+        if (repair) createRepairRun({ id: runId, total: tasks.length, skipped: 0, trigger,
+          sourceId: sourceOf(tasks[0]!), sourceLabel: tasks[0]!.sourceName || '重试补全文件' })
+        else createManualDownloadRun({ id: runId, total: tasks.length, sourceLabel: '重试文件任务', trigger,
+          sourceIds: [...new Set(tasks.flatMap(task => sourceOf(task) ? [sourceOf(task)!] : []))] })
+        for (const task of tasks) linkRunFileTask(db, { runId, taskId: task.id, sourceId: sourceOf(task) })
+        if (repair) syncRepairRun(runId, { finalize: false })
+        else syncManualDownloadRun(runId)
+      }
+    }
+    return requeued
   })()
-  const requeued = requeuedIds
-    .map(id => getDownloadTask(id))
-    .filter((task): task is DownloadTask => task !== null)
-  const requeuedRunIds = new Set<string>()
-  for (const task of requeued) {
-    for (const association of listFileTaskRuns(db, task.id)) requeuedRunIds.add(association.runId)
-    if (task.jobId) requeuedRunIds.add(task.jobId)
-  }
-  for (const runId of requeuedRunIds) {
-    if (options.resumeRuns === false) continue
-    const run = getRun(runId)
-    if (run?.type === 'manual_download') syncManualDownloadRun(runId)
-    if (run?.type === 'repair') syncRepairRun(runId, { finalize: false })
-  }
-  return requeued
 }
 
 export function buildDownloadTaskIdempotencyKey(input: {

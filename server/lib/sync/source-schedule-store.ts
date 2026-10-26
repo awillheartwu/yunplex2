@@ -4,9 +4,10 @@ import { getSource, listSources, updateSource } from '../playlist/store'
 import type { PlaylistSource } from '../playlist/types'
 import { getLatestInitialization } from '../source-initialization/store'
 import { acceptSourceRequest } from './source-requests'
-import { persistSourceRequest, type SourceRequestInput, type SourceRequestKind } from './request-store'
+import { persistSourceRequest, SOURCE_RECOVERY_REQUEST_SQL, type SourceRequestInput, type SourceRequestKind } from './request-store'
 import { parseJsonOr } from '../json'
 import { recordFailure } from '../tasks/failure-records'
+import { scheduleSourceRecovery, sourceRecoveryGate } from './recovery'
 
 export type SourceConvergenceRequestStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -136,6 +137,12 @@ function settleInterruptedSourceRequests(rows: InterruptedSourceRequest[], messa
   })()
 }
 
+/** Graceful shutdown uses the same durable outcome as restart interruption. */
+export function interruptSourceRequest(request: SourceConvergenceRequest): void {
+  settleInterruptedSourceRequests([{ id: request.id, source_id: request.sourceId,
+    request_kind: request.kind, run_id: request.runId }], '来源同步因服务停止中断', new Date())
+}
+
 /** Persist one idempotent Source Convergence Request for every due Playlist Source. */
 export function reconcileSourceSchedules(config: AppConfig, now = new Date()): number {
   const db = getDb()
@@ -162,7 +169,7 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
           SET status = 'cancelled', finished_at = ?, updated_at = ?,
               lease_owner = NULL, lease_expires_at = NULL,
               last_error = '来源或自动同步已停用'
-          WHERE source_id = ? AND status = 'pending' AND (trigger = 'schedule' OR request_kind = 'plex_recovery')
+          WHERE source_id = ? AND status = 'pending' AND (trigger = 'schedule' OR request_kind = 'plex_recovery' OR ${SOURCE_RECOVERY_REQUEST_SQL})
         `).run(nowIso, nowIso, source.id)
         if (
           cancelled.changes > 0
@@ -208,19 +215,25 @@ export function reconcileSourceSchedules(config: AppConfig, now = new Date()): n
         }
       }
 
-      const dueAt = nextSourceDueAt(source, config, now)
-      const dueIso = dueAt.toISOString()
-      if (source.nextSyncAt !== dueIso) updateSource(source.id, { nextSyncAt: dueIso })
-      if (dueAt.getTime() > now.getTime()) continue
+      const recoveryGate = sourceRecoveryGate(source.id, config, false)
+      if (recoveryGate && recoveryGate.action !== 'retry') {
+        if (source.nextSyncAt) updateSource(source.id, { nextSyncAt: null })
+        continue
+      }
+      const active = db.prepare(`SELECT COUNT(CASE WHEN status='running'
+          OR NOT (${SOURCE_RECOVERY_REQUEST_SQL}) THEN 1 END) AS count,
+        MIN(CASE WHEN status='pending' THEN available_at END) AS available_at
+        FROM source_sync_queue WHERE source_id=? AND status IN ('pending','running')`)
+        .get(source.id) as { count: number; available_at: string | null }
+      const scheduledAt = nextSourceDueAt(source, config, now)
+      const dueAt = recoveryGate?.nextRetryAt && Date.parse(recoveryGate.nextRetryAt) > scheduledAt.getTime()
+          ? new Date(recoveryGate.nextRetryAt) : scheduledAt
+      const nextAt = active.available_at && Date.parse(active.available_at) < dueAt.getTime()
+        ? active.available_at : dueAt.toISOString()
+      if (source.nextSyncAt !== nextAt) updateSource(source.id, { nextSyncAt: nextAt })
+      if (dueAt.getTime() > now.getTime() || active.count) continue
 
-      const active = db.prepare(`
-        SELECT 1 FROM source_sync_queue
-        WHERE source_id = ? AND status IN ('pending','running')
-        LIMIT 1
-      `).get(source.id)
-      if (active) continue
-
-      const accepted = acceptSourceRequest(source, config, { sourceId: source.id, trigger: 'schedule', scheduleWindow: dueIso, now })
+      const accepted = acceptSourceRequest(source, config, { sourceId: source.id, trigger: 'schedule', scheduleWindow: dueAt.toISOString(), now })
       if (accepted.status !== 'accepted') continue
       enqueued++
       updateSource(source.id, { lastScheduleStatus: 'queued', lastScheduledAt: nowIso, lastScheduleError: null })
@@ -394,6 +407,7 @@ export function finishSourceRequest(
       lastScheduledAt: nowIso,
       lastScheduleError: error,
     })
+    if (!cancelled) scheduleSourceRecovery(source.id, config)
   })()
 }
 

@@ -10,7 +10,7 @@ import {
 import { getSystemHealthSnapshot } from '../system-health'
 import { readConfig } from '../config/store'
 import { listSources } from '../playlist/store'
-import { queryFailureRecords } from '../tasks/failure-records'
+import { queryFailureRecords } from '../tasks/failure-queries'
 import { getSyncServiceInstance } from '../sync/instance'
 import { getDb } from '../db'
 

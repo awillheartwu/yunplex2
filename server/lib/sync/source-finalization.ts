@@ -2,14 +2,20 @@ import type { RunBuilder } from '../run/builder'
 import type { JobStepContext } from '../job/types'
 import { describeDomainError } from '../domain-error'
 import { getPlaylistUpdatedAt } from '../plex-client'
-import { updateSource } from '../playlist/store'
+import { recordSourceComparison, updateSource } from '../playlist/store'
+import type { AppConfig } from '../config/types'
 import type { PlaylistSource } from '../playlist/types'
-import { recordPlaylistOccurrenceSyncResult } from './match-management-store'
+import { recordPlaylistAlignmentValidation, recordPlaylistOccurrenceSyncResult, type PlaylistAlignmentValidationInput } from './match-management-store'
 import { isAwaitingManualSongStatus } from '../../../lib/media-status-projection'
 import { hasActiveMediaCorrectionsForSource } from './media-corrections'
-import { recordFailure, resolveFailures } from '../tasks/failure-records'
+import { recordFailure } from '../tasks/failure-records'
+import { confirmSongIdentity, confirmSourceConvergenceCompleted } from '../tasks/completion'
 import { isFailedSongStatus } from '../../../lib/task-status'
 import { PlexReorderError } from './reorder'
+import { pauseDownloadQueue } from '../download/queue-control'
+import type { MatchTrace } from './types'
+import type { BindingVersionSnapshot } from './identity-coordinator'
+import { sourceConvergenceCheckpointIsCurrent, type SourceConvergenceCheckpoint } from './source-checkpoint'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -27,7 +33,7 @@ export function recordSourceConvergenceFailure(input: {
   const { source, job, context, error, stage, dryRun } = input
   const sourceSteps = job.getRun().steps.filter(step => step.context?.sourceId === source.id)
   const stepCode = sourceSteps.filter(step => step.status === 'failed').at(-1)?.error?.code
-  const cause = describeDomainError(error, stepCode)
+  const cause = describeDomainError(error, stepCode ?? (stage.includes('plex') || stage === 'reorder' ? 'failed_plex_insert' : 'unknown_error'))
   const message = cause.diagnostic ?? '未知错误'
   const sourceSongs = job.getRun().songs.filter(song => song.sourceId === source.id)
   const failedSongs = sourceSongs.filter(song => isFailedSongStatus(song.status))
@@ -46,10 +52,10 @@ export function recordSourceConvergenceFailure(input: {
     })
   }
   if (!dryRun) {
+    if (cause.code === 'authentication_failed') pauseDownloadQueue('authentication', cause.userMessage)
     if (songWriteFailure) {
       // Concrete song failures own their retry budgets; the run keeps the aggregate diagnostic.
       recordSourceSongResults(source.id, job)
-      resolveFailures({ sourceId: source.id, songName: '来源同步' })
     } else {
       recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
         runId: job.getId(), runType: 'sync', failureKind: cause.code, failureReason: message })
@@ -62,17 +68,24 @@ export function recordSourceConvergenceFailure(input: {
       ...(input.authoritativeTrackCount === undefined ? {} : { trackCount: input.authoritativeTrackCount }),
     })
   }
-  return { status, failedSongs: songWriteFailure ? failedSongs.length : 1, summary: message }
+  return { kind: 'failed', status, failedSongs: songWriteFailure ? failedSongs.length : 1, summary: message }
 }
 
-export interface SourceConvergenceResult {
-  status: PlaylistSource['lastStatus']
+interface SourceResultSummary {
+  status: 'success' | 'partial' | 'failed'
   failedSongs: number
   summary: string
 }
 
+export type SourceConvergenceResult =
+  | (SourceResultSummary & { kind: 'completed' })
+  | (SourceResultSummary & { kind: 'failed'; status: 'partial' | 'failed' })
+  | (SourceResultSummary & { kind: 'deferred'; reason: 'superseded'; status: 'partial' })
+
 interface FinalizeSourceConvergenceInput {
   source: PlaylistSource
+  config: AppConfig
+  checkpoint: SourceConvergenceCheckpoint
   job: RunBuilder
   dryRun: boolean
   fullVerification: boolean
@@ -82,6 +95,8 @@ interface FinalizeSourceConvergenceInput {
   trackUpdateTime: number | null
   plexUpdatedAt: number | null
   plexPlaylist: PlexPlaylistIdentity | null | undefined
+  neteaseCursor?: string
+  verifiedPlaylistItems?: PlaylistAlignmentValidationInput['playlistItems']
 }
 
 /**
@@ -114,6 +129,7 @@ export async function finalizeSourceConvergence(
   ).length
   const restrictedCount = sourceSongs.filter(song => song.status === 'copyright_restricted').length
   const ignoredCount = sourceSongs.filter(song => song.status === 'ignored_failure').length
+  const deferredCount = sourceSongs.filter(song => song.status === 'awaiting_retry').length
   const preservedExtraCount = sourceSongs.filter(song => song.status === 'extra_skipped').length
   const awaitingManualCount = sourceSongs.filter(song => isAwaitingManualSongStatus(song.status)).length
 
@@ -123,6 +139,7 @@ export async function finalizeSourceConvergence(
   } else if (
     failCount > 0
     || ignoredCount > 0
+    || deferredCount > 0
     || restrictedCount > 0
     || awaitingManualCount > 0
     || (!skipRemoveExtra && preservedExtraCount > 0)
@@ -130,15 +147,23 @@ export async function finalizeSourceConvergence(
     sourceStatus = 'partial'
   }
 
-  if (!dryRun) recordSourceSongResults(source.id, job)
-
   let finalPlexUpdatedAt = plexUpdatedAt
   if (plexPlaylist?.ratingKey) {
     finalPlexUpdatedAt = await getPlaylistUpdatedAt(plexPlaylist.ratingKey)
   }
 
   if (!dryRun) {
-    resolveFailures({ sourceId: source.id, songName: '来源同步' })
+    if (!sourceConvergenceCheckpointIsCurrent(source, input.config, input.checkpoint)) {
+      const summary = '同步期间配置或媒体关联已变化，等待下次对齐'
+      updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastJobId: job.getId(),
+        lastStatus: 'partial', lastError: summary, requiresMatchReconcile: true })
+      return { kind: 'deferred', reason: 'superseded', status: 'partial', failedSongs: failCount, summary }
+    }
+    recordSourceSongResults(source.id, job, input.checkpoint.bindings)
+    if (input.verifiedPlaylistItems) recordPlaylistAlignmentValidation({ sourceId: source.id, playlistItems: input.verifiedPlaylistItems })
+    if (input.neteaseCursor) recordSourceComparison(source.id, { neteaseCursor: input.neteaseCursor })
+    // Source rate limits remain unresolved until this pass completes every upstream stage.
+    confirmSourceConvergenceCompleted(source.id)
     const sourceUpdate: Parameters<typeof updateSource>[1] = {
       lastSyncedAt: new Date().toISOString(),
       lastStatus: sourceStatus,
@@ -148,6 +173,7 @@ export async function finalizeSourceConvergence(
             failCount > 0 ? `${failCount} 首失败` : '',
             restrictedCount > 0 ? `${restrictedCount} 首版权受限` : '',
             ignoredCount > 0 ? `${ignoredCount} 首已忽略` : '',
+            deferredCount > 0 ? `${deferredCount} 首等待恢复` : '',
             awaitingManualCount > 0 ? `${awaitingManualCount} 首暂未加入同步` : '',
             !skipRemoveExtra && preservedExtraCount > 0 ? `${preservedExtraCount} 首保留待确认` : '',
           ].filter(Boolean).join('，'),
@@ -175,23 +201,33 @@ export async function finalizeSourceConvergence(
   if (failCount > 0) parts.push(`${failCount} 失败`)
   if (restrictedCount > 0) parts.push(`${restrictedCount} 版权受限`)
   if (ignoredCount > 0) parts.push(`${ignoredCount} 已忽略`)
+  if (deferredCount > 0) parts.push(`${deferredCount} 等待恢复`)
   if (awaitingManualCount > 0) parts.push(`${awaitingManualCount} 等待手动选择`)
   if (!skipRemoveExtra && preservedExtraCount > 0) parts.push(`${preservedExtraCount} 保留待确认`)
 
   const summary = parts.join('，')
-  return { status: sourceStatus, failedSongs: failCount, summary }
+  return { kind: 'completed', status: sourceStatus, failedSongs: failCount, summary }
 }
 
-function recordSourceSongResults(sourceId: string, job: RunBuilder): void {
-  for (const song of job.getRun().songs) {
-    if (song.sourceId !== sourceId || typeof song.neteaseIndex !== 'number') continue
+function recordSourceSongResults(sourceId: string, job: RunBuilder, bindingVersions?: BindingVersionSnapshot): void {
+  const songs = job.getRun().songs.filter(song => song.sourceId === sourceId)
+  for (const song of songs) {
+    if (typeof song.neteaseIndex !== 'number') continue
+    const matchTrace = song.metadata?.matchTrace as MatchTrace | undefined
+    if (bindingVersions && typeof song.neteaseSongId === 'number' && matchTrace?.ratingKey
+      && matchTrace.identity?.bindingStatus === 'active'
+      && song.status !== 'ignored_failure' && song.status !== 'awaiting_retry') {
+      confirmSongIdentity(sourceId, { songId: song.neteaseSongId, songName: song.songName,
+        ratingKey: matchTrace.ratingKey, plexFilePath: matchTrace.identity.plexFilePath })
+    }
     recordPlaylistOccurrenceSyncResult({
       sourceId,
       position: song.neteaseIndex,
       runId: job.getId(),
       status: song.status,
-      matchTrace: song.metadata?.matchTrace as Record<string, unknown> | undefined,
+      matchTrace: song.metadata?.matchTrace,
       error: song.error as Record<string, unknown> | undefined,
+      expectedBindingUpdatedAt: typeof song.neteaseSongId === 'number' ? bindingVersions?.get(song.neteaseSongId) : undefined,
     })
   }
 }

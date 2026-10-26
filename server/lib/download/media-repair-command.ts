@@ -149,7 +149,7 @@ export async function startMediaRepairCommand(sourceId: string): Promise<{
 }
 
 export function resumePendingMediaRepairCommands(): boolean {
-  if (repairStarting || activeRepairPromise) return false
+  if (repairStarting || activeRepairPromise || getSyncServiceInstance().getState().isRunning) return false
   repairStopping = false
   const db = getDb()
   createFileTaskSchema(db)
@@ -211,7 +211,6 @@ async function processRepairRuns(runs: Array<{ runId: string; taskHandle: FileTa
       const run = getRun(runId)
       if (!run || run.type !== 'repair') continue
       const sourceId = run.sourceIds?.[0]
-      if (!sourceId) continue
       emitEvent({
         type: 'stage-change',
         data: { stage: 'repair', sourceId, jobId: runId },
@@ -311,7 +310,7 @@ async function requestPlexRefresh(run: NonNullable<ReturnType<typeof getRun>>, c
 
 function emitRepairProgress(
   jobId: string,
-  sourceId: string,
+  sourceId: string | undefined,
   processed: number,
   totalSongs: number,
   finished: boolean,
@@ -323,7 +322,7 @@ function emitRepairProgress(
   })
 }
 
-function emitIdle(jobId: string, sourceId: string): void {
+function emitIdle(jobId: string, sourceId: string | undefined): void {
   emitEvent({
     type: 'stage-change',
     data: { stage: 'idle', sourceId, jobId },

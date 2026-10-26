@@ -33,9 +33,7 @@
       <div class="run-detail__error-copy">
         <strong>{{ currentFailureTitle }}</strong>
         <div v-if="job.currentFailures?.length" class="run-detail__failure-states">
-          <StatusBadge v-if="currentFailureCounts.open" status="error" :label="`当前待处理 ${currentFailureCounts.open} 项`" />
-          <StatusBadge v-if="currentFailureCounts.ignored" status="warning" :label="`当前已忽略 ${currentFailureCounts.ignored} 项`" />
-          <StatusBadge v-if="currentFailureCounts.resolved" status="ok" :label="`当前已解决 ${currentFailureCounts.resolved} 项`" />
+          <StatusBadge v-for="item in currentRecoveryCounts" :key="item.label" :status="item.resolved ? 'ok' : 'warning'" :label="`${item.label} ${item.count} 项`" />
         </div>
         <ul>
           <li v-for="item in failureSummaries.slice(0, 2)" :key="item.message">
@@ -242,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import { failureStatePresentation } from '~~/lib/failure-presentation'
 import type { TaskRun, SongTask } from '~~/server/lib/job/types'
 import type { RunFailureHandlingState } from '~~/shared/failure-handling'
 import { sseSubscribe } from '~~/composables/sse'
@@ -328,8 +327,16 @@ const currentFailureCounts = computed(() => {
 })
 const currentFailureStatus = computed(() => currentFailureCounts.value.open ? 'open'
   : currentFailureCounts.value.ignored ? 'ignored' : currentFailureCounts.value.resolved ? 'resolved' : 'open')
+const currentRecoveryCounts = computed(() => {
+  const groups = new Map<string, number>()
+  for (const state of props.job.currentFailures ?? []) {
+    const label = failureStatePresentation(state).label
+    groups.set(label, (groups.get(label) ?? 0) + 1)
+  }
+  return [...groups].map(([label, count]) => ({ label, count, resolved: label === '已解决' }))
+})
 const currentFailureTitle = computed(() => {
-  if (currentFailureCounts.value.open) return `${currentFailureCounts.value.open} 项异常待处理`
+  if (currentFailureCounts.value.open) return currentRecoveryCounts.value.filter(item => !item.resolved).map(item => `${item.label} ${item.count} 项`).join('，')
   if (currentFailureCounts.value.ignored) return currentFailureCounts.value.resolved ? '当前无待处理异常' : '本次运行的异常已全部忽略'
   if (currentFailureCounts.value.resolved) return '本次运行的异常已全部解决'
   return `本次运行有 ${failedSongs.value.length} 首失败`

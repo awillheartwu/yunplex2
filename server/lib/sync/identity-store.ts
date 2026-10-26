@@ -195,7 +195,15 @@ export function upsertVerifiedSongIdentityBinding(input: BindingInput): SongIden
     && previous.status === next.status
     && previous.bindingMethod === next.bindingMethod
     && previous.bindingOrigin === next.bindingOrigin
+    && previous.plexSectionKey === next.plexSectionKey
     && previous.plexRelativePath === next.plexRelativePath
+  if (previous && previous.plexRatingKey !== next.plexRatingKey) {
+    getDb().prepare(`UPDATE playlist_source_track_occurrences
+      SET alignment_status='pending',aligned_plex_rating_key=NULL,
+        aligned_plex_relative_path=NULL,aligned_binding_updated_at=NULL,aligned_at=NULL
+      WHERE netease_song_id=? AND membership_status='current'`).run(input.neteaseSongId)
+    requireRealignment(affectedSources(input.neteaseSongId))
+  }
   if (sameIdentity) {
     getDb().prepare('UPDATE song_identity_bindings SET updated_at = ? WHERE netease_song_id = ?')
       .run(previous.updatedAt, input.neteaseSongId)
@@ -326,6 +334,9 @@ export function rebindSongIdentity(input: {
       evidence: { ...input.binding.evidence, source: 'explicit_adoption', sourceId: input.sourceId ?? null },
     })
     const sources = affectedSources(input.neteaseSongId)
+    db.prepare(`UPDATE source_media_decisions SET resolved_at=?,updated_at=?
+      WHERE netease_song_id=? AND resolved_at IS NULL`)
+      .run(binding.updatedAt, binding.updatedAt, input.neteaseSongId)
     requireRealignment(sources)
     return { binding, affectedSources: sources }
   })()

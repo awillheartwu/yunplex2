@@ -43,7 +43,8 @@ export function createPlexHttpClient(config: PlexConfig) {
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined)
         throw Object.assign(new Error(`Plex ${method} ${url.pathname} 请求失败（HTTP ${response.status}，耗时 ${Date.now() - started} ms）`), {
-          status: response.status, httpStatus: response.status,
+          provider: 'plex', status: response.status, httpStatus: response.status,
+          code: [401, 403].includes(response.status) ? 'plex_authentication_failed' : undefined,
         })
       }
       const text = await response.text()
@@ -75,7 +76,10 @@ export function createPlexHttpClient(config: PlexConfig) {
       })
       if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) {
         await response.body?.cancel().catch(() => undefined)
-        throw new Error(`Plex 事件订阅失败（HTTP ${response.status}）`)
+        throw Object.assign(new Error(`Plex 事件订阅失败（HTTP ${response.status}）`), {
+          provider: 'plex', httpStatus: response.status,
+          code: [401, 403].includes(response.status) ? 'plex_authentication_failed' : undefined,
+        })
       }
       return response
     },

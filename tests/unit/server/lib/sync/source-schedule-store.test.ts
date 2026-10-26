@@ -7,7 +7,8 @@ import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 import { writeConfig } from '~~/server/lib/config/store'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { getSource, updateSource } from '~~/server/lib/playlist/store'
-import { getSourceFailureStatus, queryFailureRecords } from '~~/server/lib/tasks/failure-records'
+import { getSourceFailureStatus } from '~~/server/lib/sync/failure-policy'
+import { queryFailureRecords } from '~~/server/lib/tasks/failure-queries'
 import {
   claimNextSourceRequest,
   enqueueManualSourceSync,

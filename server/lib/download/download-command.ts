@@ -74,6 +74,8 @@ export function createDownloadCommand(input: {
         jobId: batchId,
         operation,
         executionIntent: {
+          artistAliases: config.artistAliases,
+          applyAliasToAlbum: config.applyAliasToAlbum,
           downloadMode: config.downloadMode ?? 'full',
           ...(config.target ? { target: config.target } : {}),
           downloadLyrics: config.downloadLyrics,

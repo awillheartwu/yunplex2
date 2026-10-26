@@ -34,7 +34,9 @@ export function markPlexReorderFailures(
 ): number {
   const markedSongIds = new Set<string>()
 
-  for (const failure of failures) {
+  // A later readback error must not hide an authentication failure for the same item.
+  const ordered = [...failures].sort((a, b) => Number(b.code === 'plex_authentication_failed') - Number(a.code === 'plex_authentication_failed'))
+  for (const failure of ordered) {
     for (const songId of resolveFailureSongIds(failure, targets)) {
       if (markedSongIds.has(songId)) continue
       job.updateSong(songId, {
@@ -43,6 +45,7 @@ export function markPlexReorderFailures(
         error: {
           title: describeFailureTitle(failure),
           message: failure.message,
+          code: failure.code ?? 'failed_plex_insert',
           stage: 'plex_insert',
           context: {
             action: failure.action,

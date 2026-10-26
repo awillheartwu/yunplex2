@@ -350,7 +350,7 @@ async function validateBinding(item: MatchOverviewItem) {
       : data.valid
         ? 'Plex 里的文件仍然有效'
         : data.stale
-          ? 'Plex 里已经找不到这个文件，建议更换或下载'
+          ? '当前无法唯一确认这份媒体，请重新选择或下载'
           : '这首歌还没有关联'
     notice.value = `核对完成：${outcome}。`
     emit('changed')

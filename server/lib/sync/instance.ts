@@ -1,4 +1,4 @@
-import { getSyncService } from './service'
+import type { getSyncService } from './service'
 import type { startWorker } from './worker'
 
 let syncService: ReturnType<typeof getSyncService> | null = null

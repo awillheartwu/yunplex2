@@ -114,6 +114,14 @@ function executionOverrides(task: DownloadTask): Parameters<typeof resolveSingle
   if (persisted) {
     return {
       quality: task.quality,
+      downloadDir: persisted.downloadDir,
+      pathFormat: persisted.pathFormat,
+      multiArtistFormat: persisted.multiArtistFormat,
+      artistAliases: persisted.artistAliases,
+      applyAliasToAlbum: persisted.applyAliasToAlbum,
+      lyricOrder: persisted.lyricOrder,
+      downloadTranslatedLyric: persisted.downloadTranslatedLyric,
+      downloadRomajiLyric: persisted.downloadRomajiLyric,
       downloadMode: task.operation === 'replace' ? 'replace' : persisted.downloadMode,
       target: persisted.target,
       downloadLyrics: persisted.downloadLyrics,
@@ -159,6 +167,10 @@ function executionOverrides(task: DownloadTask): Parameters<typeof resolveSingle
   }
 }
 
+export function resolveDownloadTaskConfig(task: DownloadTask, config: AppConfig) {
+  return resolveSingleSongConfig(config, executionOverrides(task))
+}
+
 let singleton: DownloadWorker | null = null
 
 export function startDownloadWorker(
@@ -171,9 +183,11 @@ export function startDownloadWorker(
     execute: execute ?? ((task, onProgress, signal, commit) => downloadSingleSong(
         task.songId,
         {
-          ...resolveSingleSongConfig(getConfig(), executionOverrides(task)),
+          ...resolveDownloadTaskConfig(task, getConfig()),
           audioCache: { directory: join(getDataDir(), 'download-cache'), taskId: task.id },
           taskId: task.id,
+          manualBindingVersion: task.executionIntent?.manualBindingVersion,
+          taskCreatedAt: task.createdAt,
           commit,
         },
         onProgress,

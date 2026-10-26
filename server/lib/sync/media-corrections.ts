@@ -8,6 +8,7 @@ import { markSongSourcesPendingAlignment } from './match-management-store'
 import { BindingVersionConflictError, getSongIdentityBinding, upsertVerifiedSongIdentityBinding, type BindingInput } from './identity-store'
 import { getLocalMediaAsset, upsertLocalMediaAsset, type LocalMediaAsset } from './local-media-store'
 import type { CompletedMediaWrite } from '../download/media-write'
+import { confirmManualBindingSupersedesFileIntents } from '../tasks/completion'
 export interface MediaCorrection {id:string;song_id:number;expected_version:string|null;old_binding_json:string;old_asset_json:string;staged_asset_json:string|null;status:string}
 export function getMediaCorrection(songId:number):MediaCorrection|null {
   return getDb().prepare("SELECT * FROM media_corrections WHERE song_id=? AND status IN ('pending','ready') ORDER BY created_at DESC LIMIT 1").get(songId) as MediaCorrection??null
@@ -40,6 +41,7 @@ export function hasActiveMediaCorrectionsForSource(sourceId: string): boolean {
   return Boolean(row)
 }
 export function queueIdentityRealignment(songId:number,changeId:string) {
+  confirmManualBindingSupersedesFileIntents(songId)
   const affected=markSongSourcesPendingAlignment(songId)
   const requests=affected.filter(source=>getSource(source.id)?.enabled).map(source=>persistSourceRequest({sourceId:source.id,kind:'convergence',trigger:'user',followUpOf:`identity:${changeId}:${source.id}`}))
   return {affectedSources:affected,requestIds:requests}

@@ -13,9 +13,9 @@ import type {
 import { getDb } from '../db'
 import { createFileTaskSchema } from '../db/file-task-schema'
 import { dateEndBoundary, dateKeyInTimeZone, dateStartBoundary } from '../date-range'
-import { reconcileRunFailures } from '../tasks/failure-records'
-import { recoverInterruptedDownloadTasks } from '../download/queue'
-import { classifyDownloadFailure } from '../sync/download-diagnostics'
+import { reconcileRunFailures } from './failure-recording'
+import { classifyDownloadTaskFailure } from '../sync/download-diagnostics'
+import { isDomainErrorCode } from '../../../shared/domain-errors'
 import { projectTaskRunDynamicFields, projectTaskRunStatus, taskRunStatusFilterSql, taskRunsSupportsAwaitingAction } from './status-projection'
 
 function normalizeRun(run: TaskRun): TaskRun {
@@ -379,12 +379,13 @@ export function createManualDownloadRun(input: {
   sourceIds?: string[]
   config?: TaskRun['config']
   songs?: SongTask[]
+  trigger?: TaskRunTrigger
 }): TaskRun {
   const startedAt = new Date().toISOString()
   const run: TaskRun = {
     id: input.id,
     type: 'manual_download',
-    trigger: 'user',
+    trigger: input.trigger ?? 'user',
     startedAt,
     finishedAt: null,
     status: 'running',
@@ -422,21 +423,22 @@ export function createRepairRun(input: {
   id: string
   total: number
   skipped: number
-  sourceId: string
+  sourceId?: string | null
   sourceLabel: string
+  trigger?: TaskRunTrigger
 }): TaskRun {
   const startedAt = new Date().toISOString()
   const run: TaskRun = {
     id: input.id,
     type: 'repair',
-    trigger: 'user',
+    trigger: input.trigger ?? 'user',
     startedAt,
     finishedAt: null,
     status: 'running',
     durationMs: 0,
     summary: `补全资源：${input.sourceLabel}`,
     source: input.sourceLabel,
-    sourceIds: [input.sourceId],
+    sourceIds: input.sourceId ? [input.sourceId] : [],
     target: '本地媒体标签与辅助文件',
     totalSongs: input.total,
     successSongs: 0,
@@ -544,7 +546,7 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
   const linkedRows = db.prepare(`
     SELECT task.id, linked.source_id AS source_id,
       task.song_id, task.song_name, task.artist, task.album, task.status, task.progress,
-      task.file_path, task.file_type, task.quality, task.error, task.created_at, task.updated_at
+      task.file_path, task.file_type, task.quality, task.error, task.error_code, task.error_phase, task.created_at, task.updated_at
     FROM run_file_tasks linked
     JOIN download_tasks task ON task.id = linked.task_id
     WHERE linked.run_id = ?
@@ -562,12 +564,14 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
     file_type: string | null
     quality: string | null
     error: string | null
+    error_code: string | null
+    error_phase: string | null
     created_at: string
     updated_at: string
   }>
   const rows = linkedRows.length > 0 ? linkedRows : db.prepare(`
     SELECT id, source_id, song_id, song_name, artist, album, status, progress,
-      file_path, file_type, quality, error, created_at, updated_at
+      file_path, file_type, quality, error, error_code, error_phase, created_at, updated_at
     FROM download_tasks
     WHERE COALESCE(run_id, job_id) = ?
     ORDER BY created_at ASC
@@ -584,6 +588,8 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
     file_type: string | null
     quality: string | null
     error: string | null
+    error_code: string | null
+    error_phase: string | null
     created_at: string
     updated_at: string
   }>
@@ -602,7 +608,9 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
   run.summary = `手动下载 ${rows.length} 首歌曲${failed > 0 ? `，${failed} 首失败` : ''}`
   run.songs = rows.map((row) => {
     const diagnosis = row.status === 'failed'
-      ? classifyDownloadFailure(row.error, row.file_path)
+      ? classifyDownloadTaskFailure({ error: row.error ?? undefined, filePath: row.file_path ?? undefined,
+          errorCode: isDomainErrorCode(row.error_code) ? row.error_code : undefined,
+          errorPhase: row.error_phase === 'tags' || row.error_phase === 'download' ? row.error_phase : undefined })
       : null
     return {
       id: row.id,
@@ -656,84 +664,4 @@ export function syncManualDownloadRun(runId: string): TaskRun | null {
   step.message = `成功 ${success} 首${failed > 0 ? `，失败 ${failed} 首` : ''}`
   saveRun(run)
   return run
-}
-
-export function recoverInterruptedRuns(): number {
-  const now = new Date().toISOString()
-  let changed = recoverInterruptedDownloadTasks(now)
-
-  const db = getDb()
-  createFileTaskSchema(db)
-  db.prepare(`
-    UPDATE task_run_song_changes
-    SET status = 'failed_download',
-      phase = 'download',
-      error_json = ?
-    WHERE status = 'downloading'
-  `).run(JSON.stringify({
-    title: '重试中断',
-    message: '任务因服务重启中断',
-    stage: 'download',
-    code: 'scheduler_interrupted',
-  }))
-
-  const rows = db.prepare("SELECT id FROM task_runs WHERE status = 'running'").all() as Array<{ id: string }>
-  for (const row of rows) {
-    const run = getRun(row.id)
-    if (!run) continue
-    const activeRequest = db.prepare(`
-      SELECT 1 FROM source_sync_queue
-      WHERE run_id = ? AND (
-        (? = 'source_initialization' AND request_kind = 'analysis' AND status IN ('pending','running'))
-        OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at > ?)
-      )
-      LIMIT 1
-    `).get(run.id, run.type, now)
-    if (activeRequest) continue
-    if (run.type === 'manual_download') {
-      const synced = syncManualDownloadRun(run.id)
-      if (synced?.status !== 'running') changed += 1
-      continue
-    }
-    if (run.type === 'repair') {
-      const repairTasks = db.prepare(`
-        SELECT COUNT(*) AS count,
-          SUM(CASE WHEN repair_task.status IN ('pending','downloading','tagging') THEN 1 ELSE 0 END) AS active
-        FROM (
-          SELECT task.id, task.status
-          FROM run_file_tasks linked
-          JOIN download_tasks task ON task.id = linked.task_id
-          WHERE linked.run_id = ? AND task.operation = 'repair_existing'
-          UNION
-          SELECT task.id, task.status
-          FROM download_tasks task
-          WHERE COALESCE(task.run_id, task.job_id) = ? AND task.operation = 'repair_existing'
-        ) repair_task
-      `).get(run.id, run.id) as { count: number; active: number | null }
-      if ((repairTasks.active ?? 0) > 0) {
-        syncRepairRun(run.id)
-        continue
-      }
-      // Media Repair has durable post-processing (Run projection + Plex refresh)
-      // outside the file worker. Leave the Run recoverable even when every task
-      // reached a terminal state just before the process stopped.
-      if (repairTasks.count > 0) continue
-      const synced = syncRepairRun(run.id)
-      if (synced?.status !== 'running') changed += 1
-      continue
-    }
-    run.status = 'failed'
-    run.finishedAt = now
-    run.durationMs = Math.max(0, Date.now() - new Date(run.startedAt).getTime())
-    run.summary = run.summary ? `${run.summary}（服务重启后中断）` : '任务因服务重启中断'
-    for (const step of run.steps) {
-      if (step.status === 'running' || step.status === 'pending') {
-        step.status = 'cancelled'
-        step.finishedAt = now
-      }
-    }
-    saveRun(run)
-    changed += 1
-  }
-  return changed
 }

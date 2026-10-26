@@ -26,6 +26,9 @@ export interface TrackResolution {
   matchTrace?: MatchTrace
 }
 
+/** Stages share song metadata and own only the resolution entries they change. */
+export type ReadonlyTrackResolution = Readonly<TrackResolution>
+
 export type MatchTraceSource =
   | 'playlist'
   | 'plex_search'

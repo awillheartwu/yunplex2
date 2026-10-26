@@ -3,15 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { closeDb, getDb, initDb } from '../../server/lib/db'
-import {
-  createManualDownloadRun,
-  createRepairRun,
-  getRun,
-  listRuns,
-  saveRun,
-  syncManualDownloadRun,
-  recoverInterruptedRuns,
-} from '../../server/lib/run/store'
+import { createManualDownloadRun, createRepairRun, getRun, listRuns, saveRun, syncManualDownloadRun } from '../../server/lib/run/store'
+import { recoverInterruptedRuns } from '../../server/lib/run/recovery'
 import type { TaskRun } from '../../server/lib/job/types'
 
 const directories: string[] = []

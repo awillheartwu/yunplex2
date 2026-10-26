@@ -1,3 +1,4 @@
+import { readConfigFromDb } from '../db'
 import type { PlaylistSource } from '../playlist/types'
 import type { RunBuilder } from '../run/builder'
 import {
@@ -8,11 +9,8 @@ import {
   type NeteaseSong,
 } from '../netease'
 import { loadNeteaseRawSongs, saveNeteaseRawSongs } from '../netease-song-cache'
-import {
-  getSourceFailurePolicy,
-  isTerminalFailure,
-  type SourceFailurePolicy,
-} from '../tasks/failure-records'
+import { getSourceFailurePolicy, shouldDeferFailure, type SourceFailurePolicy } from './failure-policy'
+import { confirmSongDetailsAvailable } from '../tasks/completion'
 
 export interface SourceSongSnapshot {
   songs: NeteaseSong[]
@@ -33,6 +31,7 @@ export async function loadSourceSongSnapshot(input: {
 }): Promise<SourceSongSnapshot> {
   if (input.source.type === 'album') {
     const songs = await fetchAlbumSongs(input.playlistId, input.cookie)
+    if (!input.dryRun) confirmSongDetailsAvailable(input.source.id, new Map(songs.map(song => [song.id, song])))
     return {
       songs,
       songIndices: songs.map((_, index) => index),
@@ -47,8 +46,9 @@ export async function loadSourceSongSnapshot(input: {
   const requestedIds = summary.trackIds.map(track => track.id)
   const cachedRaw = loadNeteaseRawSongs(requestedIds)
   const failures = getSourceFailurePolicy(input.source.id).failuresBySongId
+  const maxFailureAttempts = readConfigFromDb().sync.maxFailureAttempts
   const missingIds = [...new Set(requestedIds.filter(id => !cachedRaw.has(id)
-    && failures[id]?.status !== 'ignored'))]
+    && !shouldDeferFailure(failures[id], maxFailureAttempts)))]
   const fetched = missingIds.length > 0
     ? await fetchNeteaseSongDetails(missingIds, input.cookie)
     : { songs: [], rawSongs: [] }
@@ -60,6 +60,7 @@ export async function loadSourceSongSnapshot(input: {
   for (const [id, raw] of rawById) {
     if (!songsById.has(id)) songsById.set(id, mapRawSong(raw))
   }
+  if (!input.dryRun) confirmSongDetailsAvailable(input.source.id, songsById)
   const uniqueRequested = [...new Set(requestedIds)]
   const cachedCount = uniqueRequested.filter(id => cachedRaw.has(id)).length
   return {
@@ -92,10 +93,10 @@ export function resolveSourceSkipState(input: {
   const failures = [...Object.values(failurePolicy.failuresBySongId), ...Object.values(failurePolicy.removalFailures)]
   return {
     unresolvedMissingDetailIds: missingSongDetailIds.filter(songId =>
-      !isTerminalFailure(failurePolicy.failuresBySongId[songId], maxFailureAttempts),
+      !shouldDeferFailure(failurePolicy.failuresBySongId[songId], maxFailureAttempts),
     ),
     hasActionableFailures: failures
-      .some(entry => !isTerminalFailure(entry, maxFailureAttempts)),
+      .some(entry => !shouldDeferFailure(entry, maxFailureAttempts)),
     unresolvedPartialState: source.lastStatus !== 'success'
       && failures.length === 0,
   }
@@ -108,6 +109,7 @@ export function addMissingDetailSongs(
   failurePolicy: SourceFailurePolicy,
   sourceSongIds: readonly number[],
 ): void {
+  const maxFailureAttempts = readConfigFromDb().sync.maxFailureAttempts
   const missingIds = new Set(missingSongDetailIds)
   for (const [neteaseIndex, missingSongId] of sourceSongIds.entries()) {
     if (!missingIds.has(missingSongId)) continue
@@ -115,7 +117,8 @@ export function addMissingDetailSongs(
       songName: `网易云歌曲 #${missingSongId}`,
       artist: '详情未返回',
       album: '未知专辑',
-      status: failurePolicy.failuresBySongId[missingSongId]?.status === 'ignored' ? 'ignored_failure' : 'failed_download',
+      status: failurePolicy.failuresBySongId[missingSongId]?.status === 'ignored' ? 'ignored_failure'
+        : shouldDeferFailure(failurePolicy.failuresBySongId[missingSongId], maxFailureAttempts) ? 'awaiting_retry' : 'failed_download',
       neteaseSongId: missingSongId,
       neteaseIndex,
     }])

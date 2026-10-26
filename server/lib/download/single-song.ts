@@ -21,6 +21,10 @@ export interface SingleSongConfig {
   downloadDir: string
   pathFormat: string
   multiArtistFormat: string
+  artistAliases?: Record<string, string>
+  applyAliasToAlbum?: boolean
+  manualBindingVersion?: string | null
+  taskCreatedAt?: string
   downloadLyrics: boolean
   embedMetadata: boolean
   embedCover: boolean
@@ -75,7 +79,9 @@ async function executeSingleSong(
   const cachedAudio = config.audioCache ? findCachedAudio(config.audioCache) : null
 
   // 1. Fetch song detail
-  const song = await fetchSongDetail(songId, config.cookie)
+  const song = await fetchSongDetail(songId, config.cookie, {
+    artistAliases: config.artistAliases ?? {}, applyAliasToAlbum: config.applyAliasToAlbum ?? false,
+  })
   signal?.throwIfAborted()
 
   const configuredAudioPath = config.target?.kind === 'existing' ? resolve(config.target.path) : undefined
@@ -164,7 +170,7 @@ async function executeSingleSong(
     const targetIsKnownManaged = previousAsset?.ownership === 'managed'
       && plexPathsExactlyEqual(resolve(previousAsset.filePath), targetPath)
     if (config.target?.kind === 'computed' && config.target.requireManagedCopy && !targetIsKnownManaged && existsSync(targetPath)) {
-      throw new Error('命名模板的目标文件已存在且未被接管；请选择复用该文件或调整命名模板，未自动改名或覆盖')
+      throw Object.assign(new Error('命名模板的目标文件已存在且未被接管；请选择复用该文件或调整命名模板，未自动改名或覆盖'), { code: 'media_identity_conflict' })
     }
     const audioExists = existsSync(targetPath) && validateLocalAudioFile(targetPath).valid
 
@@ -236,6 +242,7 @@ async function executeSingleSong(
         separateLyricFiles: lyricData?.separateFiles,
         commitFile: async (result: DownloadResult, publish: () => void) => publishMediaWrite({
           songId, filePath: result.filePath, taskId: config.taskId, signal,
+          manualBindingVersion: config.manualBindingVersion, taskCreatedAt: config.taskCreatedAt,
         }, async () => {
           if (config.commit) await config.commit({
             ...result, fileType,

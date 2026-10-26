@@ -260,6 +260,7 @@ export function recordPlaylistOccurrenceSyncResult(input: {
   matchTrace?: Record<string, unknown> | null
   error?: Record<string, unknown> | null
   observedAt?: string
+  expectedBindingUpdatedAt?: string | null
 }): void {
   const db = getDb()
   const observedAt = input.observedAt ?? new Date().toISOString()
@@ -270,16 +271,18 @@ export function recordPlaylistOccurrenceSyncResult(input: {
   `).get(input.sourceId, input.position) as { netease_song_id: number } | undefined
   if (!row) return
   const binding = db.prepare(`
-    SELECT plex_rating_key, plex_relative_path, updated_at
+    SELECT plex_rating_key, plex_relative_path, updated_at, status
     FROM song_identity_bindings
-    WHERE netease_song_id = ? AND status = 'active'
+    WHERE netease_song_id = ?
   `).get(row.netease_song_id) as {
     plex_rating_key: string | null
     plex_relative_path: string
     updated_at: string
+    status: string
   } | undefined
-  const aligned = Boolean(binding && ['success', 'skipped_existing'].includes(input.status))
-  const missing = ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(input.status)
+  const sameBinding = input.expectedBindingUpdatedAt !== undefined && (binding?.updated_at ?? null) === input.expectedBindingUpdatedAt
+  const aligned = binding?.status === 'active' && sameBinding && ['success', 'skipped_existing'].includes(input.status)
+  const missing = sameBinding && ['failed_download', 'failed_tags', 'failed_plex_match', 'failed_plex_insert'].includes(input.status)
   db.prepare(`
     UPDATE playlist_source_track_occurrences SET
       last_song_status = ?,
@@ -432,11 +435,11 @@ export function recordPlaylistAlignmentValidation(
         AND membership_status = 'current'
         AND alignment_status != 'aligned'
     `).get(input.sourceId) as { count: number }
-    db.prepare(`
-      UPDATE playlist_sources
-      SET requires_match_reconcile = ?
-      WHERE id = ?
-    `).run(remaining.count > 0 ? 1 : 0, input.sourceId)
+    // Presence validation cannot discharge pending policy/extra-item work.
+    // Only completed source convergence owns clearing the source-wide flag.
+    if (remaining.count > 0) db.prepare(`
+      UPDATE playlist_sources SET requires_match_reconcile = 1 WHERE id = ?
+    `).run(input.sourceId)
     return result
   })()
 }

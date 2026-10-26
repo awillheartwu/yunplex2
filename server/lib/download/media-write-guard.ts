@@ -4,6 +4,7 @@ import { acquireIdentityMutationLock } from '../sync/identity-coordinator'
 import { normalizePlexPath } from '../sync/identity-normalization'
 import { assertMediaCorrectionCurrent } from '../sync/media-corrections'
 import { mapLocalPathToPlex } from '../sync/path-map'
+import { assertFileTaskIdentityCurrent } from './intent-identity'
 
 const targetWrites = new Map<string, Promise<void>>()
 
@@ -50,10 +51,14 @@ export async function publishMediaWrite<T>(input: {
   filePath: string
   taskId?: string
   signal?: AbortSignal
+  manualBindingVersion?: string | null
+  taskCreatedAt?: string
 }, publish: () => Promise<T>): Promise<T> {
   const release = await acquireIdentityMutationLock()
   try {
     input.signal?.throwIfAborted()
+    assertFileTaskIdentityCurrent({ songId: input.songId, createdAt: input.taskCreatedAt,
+      executionIntent: { manualBindingVersion: input.manualBindingVersion } })
     assertMediaPathAvailable(input.filePath, input.songId)
     assertMediaCorrectionCurrent(input.songId, input.taskId)
     return await publish()

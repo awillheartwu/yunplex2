@@ -18,11 +18,13 @@ const OVERVIEW_STATE_BY_SONG_STATUS: Partial<Record<SongStatus, MatchOverviewSta
   awaiting_manual_match: 'awaiting_manual',
   copyright_restricted: 'copyright_restricted',
   ignored_failure: 'retry_paused',
+  awaiting_retry: 'retry_paused',
 }
 
 const ATTENTION_STATUSES = new Set<SongStatus>([
   'copyright_restricted',
   'ignored_failure',
+  'awaiting_retry',
   'awaiting_manual_match',
 ])
 

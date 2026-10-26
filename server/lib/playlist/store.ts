@@ -1,9 +1,10 @@
-import { getDb } from '../db'
+import { getDb, readConfigFromDb } from '../db'
 import type { PlaylistSource, PlaylistSourceRow } from './types'
 import { rowToSource } from './types'
 import { randomUUID } from 'node:crypto'
 import type { AudioQuality } from '../config/types'
 import { fetchAlbumDetail } from '../netease'
+import { sourceConvergenceSettingsKey } from '../sync/effective-settings'
 
 export interface PlaylistSourceFilter {
   search?: string
@@ -259,6 +260,18 @@ export function updateSource(id: string, partial: Partial<{
 
 function toNullableBoolean(value: boolean | null): number | null {
   return value === null ? null : value ? 1 : 0
+}
+
+/** User settings invalidate the effective result without disturbing runtime-only updates. */
+export function updateSourceSettings(id: string, partial: Parameters<typeof updateSource>[1]): PlaylistSource | null {
+  return getDb().transaction(() => {
+    const previous = getSource(id)
+    if (!previous) return null
+    const config = readConfigFromDb()
+    const updated = updateSource(id, partial)!
+    return sourceConvergenceSettingsKey(previous, config) === sourceConvergenceSettingsKey(updated, config)
+      ? updated : updateSource(id, { requiresMatchReconcile: true })
+  })()
 }
 
 export interface SourceSyncObservation {

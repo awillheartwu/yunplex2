@@ -43,7 +43,7 @@ describe('identity mutation coordination', () => {
     setup()
     const snapshot = captureBindingVersions([1])
 
-    const current = applyVerifiedBindingsIfSnapshotCurrent(snapshot, [binding(1, 'new')])
+    const current = applyVerifiedBindingsIfSnapshotCurrent(snapshot, [binding(1, 'new')], new Map([[1, null]]))
 
     expect(current.get(1)).toMatchObject({
       plexFilePath: '/music/new.flac',
@@ -57,7 +57,7 @@ describe('identity mutation coordination', () => {
     const snapshot = captureBindingVersions([1])
     upsertSongIdentityBinding(binding(1, 'concurrent'))
 
-    expect(() => applyVerifiedBindingsIfSnapshotCurrent(snapshot, [binding(1, 'stale')]))
+    expect(() => applyVerifiedBindingsIfSnapshotCurrent(snapshot, [binding(1, 'stale')], new Map([[1, 'rating-initial']])))
       .toThrow('身份已变化')
     expect(getSongIdentityBinding(1)?.plexFilePath).toBe('/music/concurrent.flac')
   })

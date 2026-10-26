@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getDb } from '~~/server/lib/db'
 import { getSource } from '~~/server/lib/playlist/store'
 import { clearSyncWorker, setSyncService } from '~~/server/lib/sync/instance'
-import {
-  getFailureRecords,
-  getSourceFailureStatus,
-  recordFailure,
-} from '~~/server/lib/tasks/failure-records'
+import { getFailureRecords } from '~~/server/lib/tasks/failure-queries'
+import { getSourceFailureStatus } from '~~/server/lib/sync/failure-policy'
+import { recordFailure } from '~~/server/lib/tasks/failure-records'
 import { retryFailureRecords } from '~~/server/lib/tasks/retry'
 import {
   createFailureTestDatabase,

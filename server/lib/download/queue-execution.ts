@@ -13,6 +13,7 @@ import { withExternalRequestSignal } from '../external-request-context'
 import { clearAudioCache } from './audio-cache'
 import { classifyDownloadError } from '../sync/download-diagnostics'
 import { DownloadCancelledError, registerActiveDownload } from './queue-control'
+import { assertFileTaskIdentityCurrent } from './intent-identity'
 
 export async function executeDownloadTasks(
   processor: DownloadProcessor,
@@ -54,6 +55,7 @@ export async function executeDownloadTasks(
       const task = claimDownloadTask(selected.id, leaseOwner, leaseDurationMs)
       if (!task) continue
       try {
+        assertFileTaskIdentityCurrent(task)
         emitEvent({
           type: 'queue-update',
           data: { taskId: task.id, songName: task.songName, status: 'downloading', progress: 0, sourceId: task.sourceId },
@@ -162,6 +164,7 @@ export async function executeDownloadTasks(
             status: 'failed',
             error: msg,
             errorCode: 'failed_tags',
+            errorPhase: 'tags',
             progress: 0,
             filePath: result.filePath,
             fileType: result.fileType,
@@ -202,7 +205,7 @@ export async function executeDownloadTasks(
       } catch (err) {
         if (err instanceof DownloadCancelledError) {
           updateTaskState(task.id, {
-            status: 'pending', progress: 0, error: null, errorCode: null,
+            status: 'pending', progress: 0, error: null, errorCode: null, errorPhase: null,
             leaseOwner: null, leaseExpiresAt: null,
           }, { leaseOwner })
           emitEvent({ type: 'queue-update', data: { taskId: task.id, status: 'pending' }, timestamp: new Date().toISOString() })
@@ -214,7 +217,8 @@ export async function executeDownloadTasks(
         const updated = updateTaskState(task.id, {
           status: 'failed',
           error: msg,
-          errorCode: tagError ? 'failed_tags' : classifyDownloadError(err),
+          errorCode: classifyDownloadError(err),
+          errorPhase: tagError ? 'tags' : 'download',
           progress: 0,
           ...(tagError?.filePath ? { filePath: tagError.filePath } : {}),
           ...(tagError?.fileType ? { fileType: tagError.fileType } : {}),

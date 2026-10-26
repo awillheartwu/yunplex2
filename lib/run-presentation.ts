@@ -1,5 +1,4 @@
 import type { JobStatus, TaskRunTrigger, TaskRunType } from '~~/server/lib/job/types'
-import { presentRunSummary } from '~~/lib/failure-cache-presentation'
 
 export type RunTypeTone = 'sync' | 'download' | 'repair' | 'initialization'
 
@@ -78,7 +77,7 @@ export function runStatusLabel(status: JobStatus): string {
 
 export function runSummaryLabel(summary: string, fallback = '', status?: JobStatus): string {
   if (status === 'failed' && summary.includes('无需变更')) return '同步失败，请查看详情'
-  return presentRunSummary(summary || fallback)
+  return summary || fallback
 }
 
 export function runBadgeStatus(status: JobStatus): 'ok' | 'error' | 'warning' | 'running' | 'idle' {

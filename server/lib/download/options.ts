@@ -5,6 +5,14 @@ export type SingleSongConfigOverrides = Partial<
   Pick<
     SingleSongConfig,
     | 'quality'
+    | 'downloadDir'
+    | 'pathFormat'
+    | 'multiArtistFormat'
+    | 'artistAliases'
+    | 'applyAliasToAlbum'
+    | 'lyricOrder'
+    | 'downloadTranslatedLyric'
+    | 'downloadRomajiLyric'
     | 'downloadMode'
     | 'target'
     | 'downloadLyrics'
@@ -28,17 +36,19 @@ export function resolveSingleSongConfig(
   return {
     quality: overrides.quality ?? config.netease.quality,
     cookie: config.netease.cookie,
-    downloadDir: config.download.dir,
-    pathFormat: config.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
-    multiArtistFormat: config.other?.multiArtistFormat ?? 'ampersand',
+    downloadDir: overrides.downloadDir ?? config.download.dir,
+    pathFormat: overrides.pathFormat ?? config.other?.pathFormat ?? '{artist}/{album} ({year})/{title}',
+    multiArtistFormat: overrides.multiArtistFormat ?? config.other?.multiArtistFormat ?? 'ampersand',
+    artistAliases: overrides.artistAliases ?? config.other?.artistAliases ?? {},
+    applyAliasToAlbum: overrides.applyAliasToAlbum ?? config.other?.applyAliasToAlbum ?? false,
     downloadLyrics: overrides.downloadLyrics ?? config.download.downloadLyrics,
     embedMetadata: overrides.embedMetadata ?? config.download.embedMetadata,
     embedCover: overrides.embedCover ?? config.download.embedCover,
     saveAlbumCover: overrides.saveAlbumCover ?? config.download.saveAlbumCover ?? false,
     saveArtistImage: overrides.saveArtistImage ?? config.download.saveArtistImage ?? false,
-    lyricOrder: config.other?.lyricOrder ?? 'original_first',
-    downloadTranslatedLyric: config.other?.downloadTranslatedLyric ?? true,
-    downloadRomajiLyric: config.other?.downloadRomajiLyric ?? false,
+    lyricOrder: overrides.lyricOrder ?? config.other?.lyricOrder ?? 'original_first',
+    downloadTranslatedLyric: overrides.downloadTranslatedLyric ?? config.other?.downloadTranslatedLyric ?? true,
+    downloadRomajiLyric: overrides.downloadRomajiLyric ?? config.other?.downloadRomajiLyric ?? false,
     ...(overrides.downloadMode ? { downloadMode: overrides.downloadMode } : {}),
     ...(overrides.target ? { target: overrides.target } : {}),
   }

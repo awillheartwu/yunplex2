@@ -10,7 +10,8 @@ import { getRun } from '~~/server/lib/run/store'
 import { upsertSongIdentityBinding } from '~~/server/lib/sync/identity-store'
 import { getSyncService } from '~~/server/lib/sync/service'
 import type { SyncMode } from '~~/server/lib/sync/service-state'
-import { getFailureRecords, recordFailure } from '~~/server/lib/tasks/failure-records'
+import { getFailureRecords } from '~~/server/lib/tasks/failure-queries'
+import { recordFailure } from '~~/server/lib/tasks/failure-records'
 import {
   createFailureTestDatabase,
   insertFailureSource,

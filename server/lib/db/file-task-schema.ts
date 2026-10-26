@@ -62,6 +62,9 @@ export function createFileTaskSchema(db: Database.Database): void {
 
     const taskColumns = new Set((db.prepare('PRAGMA table_info(download_tasks)').all() as Array<{ name: string }>).map(row => row.name))
     if (!taskColumns.has('error_code')) db.exec('ALTER TABLE download_tasks ADD COLUMN error_code TEXT')
+    if (!taskColumns.has('error_phase')) db.exec('ALTER TABLE download_tasks ADD COLUMN error_phase TEXT')
+    if (!taskColumns.has('next_retry_at')) db.exec('ALTER TABLE download_tasks ADD COLUMN next_retry_at TEXT')
+    db.exec("CREATE INDEX IF NOT EXISTS idx_download_tasks_recovery ON download_tasks(next_retry_at) WHERE status='failed' AND next_retry_at IS NOT NULL")
     const linkColumns = db.prepare('PRAGMA table_info(run_file_tasks)').all() as Array<{ name: string }>
     if (!linkColumns.some(column => column.name === 'paused')) db.exec('ALTER TABLE run_file_tasks ADD COLUMN paused INTEGER NOT NULL DEFAULT 0')
     if (taskColumns.has('status') && taskColumns.has('created_at')) {

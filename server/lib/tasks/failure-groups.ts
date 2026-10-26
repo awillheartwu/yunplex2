@@ -1,8 +1,9 @@
 import { getDb } from '../db'
 import { sanitizeDiagnosticMessage } from '../domain-error'
 import { parseFailureRecordFilters } from '../api-filter-params'
-import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
-import { buildFailureRecordQuery, RETRYABLE_FAILURE_SQL, type FailureRecordFilter, type FailureRecordStatus } from './failure-records'
+import { buildFailureRecordQuery } from './failure-queries'
+import { RETRYABLE_FAILURE_SQL } from './recovery-targets'
+import { failureDefinition, type FailureRecordFilter, type FailureRecordStatus } from './failure-model'
 import { failureReasonGroupKey } from './failure-identity'
 
 export interface FailureGroup {
@@ -26,12 +27,12 @@ export interface FailureGroup {
 export function queryFailureGroups(filter: FailureRecordFilter = {}) {
   const db = getDb()
   const { where, from, params } = buildFailureRecordQuery(filter)
-  const grouped = `${from} ${where} GROUP BY fr.failure_kind,
-    CASE WHEN fr.failure_kind = 'copyright_restricted' THEN '' ELSE fr.failure_reason END`
+  const grouped = `${from} ${where} GROUP BY fr.canonical_kind,
+    CASE WHEN fr.canonical_kind = 'copyright_restricted' THEN '' ELSE fr.failure_reason END`
   const total = (db.prepare(`SELECT COUNT(*) AS count FROM (SELECT 1 ${grouped})`).get(...params) as { count: number }).count
   const recordTotal = (db.prepare(`SELECT COUNT(*) AS count ${from} ${where}`).get(...params) as { count: number }).count
   const rows = db.prepare(`
-    SELECT MIN(fr.id) AS id, fr.failure_kind, MIN(fr.failure_reason) AS failure_reason, COUNT(*) AS total,
+    SELECT MIN(fr.id) AS id, fr.canonical_kind AS failure_kind, MIN(fr.failure_reason) AS failure_reason, COUNT(*) AS total,
       COUNT(DISTINCT CASE WHEN fr.source_id IS NOT NULL AND fr.song_id IS NULL THEN NULL
         ELSE COALESCE(CAST(fr.song_id AS TEXT), fr.song_name || ':' || fr.artist) END) AS song_count,
       COUNT(DISTINCT COALESCE(fr.source_id, 'manual')) AS source_count,
@@ -48,7 +49,7 @@ export function queryFailureGroups(filter: FailureRecordFilter = {}) {
   }>
   const items: FailureGroup[] = rows.map(row => {
     const reason = sanitizeDiagnosticMessage(row.failure_reason) || ''
-    const definition = resolveDomainErrorDefinition(row.failure_kind, reason)
+    const definition = failureDefinition(row.failure_kind, reason)
     return {
       id: row.id, key: failureReasonGroupKey(row.failure_kind, row.failure_reason), failureKind: definition.code,
       failureReason: row.failure_kind === 'copyright_restricted' ? definition.userMessage : reason || definition.userMessage,
