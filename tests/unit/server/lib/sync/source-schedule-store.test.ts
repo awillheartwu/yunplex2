@@ -126,7 +126,7 @@ describe('source schedule store', () => {
     expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id = ?').get(first!.id)).toEqual({ status: 'failed' })
   })
 
-  it('counts repeated interruptions against the budget without reviving an ignored failure', () => {
+  it('counts repeated interruptions without automatically ignoring them', () => {
     writeConfig({ sync: { maxFailureAttempts: 3 } })
     const intervalMinutes = 10
     const base = new Date('2026-08-28T00:00:00.000Z')
@@ -160,13 +160,13 @@ describe('source schedule store', () => {
     expect(rounds).toEqual([
       { status: 'open', attemptCount: 1, occurrenceCount: 1 },
       { status: 'open', attemptCount: 2, occurrenceCount: 2 },
-      { status: 'ignored', attemptCount: 3, occurrenceCount: 3 },
+      { status: 'open', attemptCount: 3, occurrenceCount: 3 },
     ])
-    expect(getSourceFailureStatus('source-1')).toBe('ignored')
+    expect(getSourceFailureStatus('source-1')).toBe('open')
 
     expect(reconcileSourceSchedules(config(intervalMinutes), dueAt)).toBe(1)
     expect(claimNextSourceRequest('next-worker', dueAt)).not.toBeNull()
-    expect(getSourceFailureStatus('source-1')).toBe('ignored')
+    expect(getSourceFailureStatus('source-1')).toBe('open')
     const interruptedAgainAt = new Date(dueAt.getTime() + 60_000)
     expect(recoverInterruptedSourceRequests(interruptedAgainAt)).toBe(1)
 
@@ -176,11 +176,11 @@ describe('source schedule store', () => {
       failureKind: 'scheduler_interrupted',
     }).items[0]!
     expect(finalRecord).toMatchObject({
-      status: 'ignored',
+      status: 'open',
       attemptCount: 4,
       occurrenceCount: 4,
       retryCount: 0,
-      ignoreReason: 'automatic',
+      ignoreReason: null,
     })
     expect(claimNextSourceRequest('after-recovery', interruptedAgainAt)).toBeNull()
   })

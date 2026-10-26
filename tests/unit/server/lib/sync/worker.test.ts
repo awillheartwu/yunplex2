@@ -11,6 +11,7 @@ import { startWorker, stopWorker } from '~~/server/lib/sync/worker'
 import { enqueueManualSourceSync } from '~~/server/lib/sync/source-schedule-store'
 import { ensurePendingInitialization, setInitializationStatus } from '~~/server/lib/source-initialization/store'
 import { saveRun } from '~~/server/lib/run/store'
+import { setSyncService } from '~~/server/lib/sync/instance'
 
 let directory = ''
 
@@ -37,7 +38,7 @@ function makeService(runSyncForSource = vi.fn(async (_sourceId: string, _options
   lastSyncResult: 'success',
   failures: [],
 }))) {
-  return {
+  const service = {
     getState: vi.fn(() => ({ isRunning: false })),
     prepareSyncForSource: vi.fn((sourceId: string, options?: { mode?: 'normal'; trigger?: 'schedule' }) => ({
       runId: `run-${sourceId}`,
@@ -45,6 +46,8 @@ function makeService(runSyncForSource = vi.fn(async (_sourceId: string, _options
     })),
     cancelSync: vi.fn(() => false),
   }
+  setSyncService(service as never)
+  return service
 }
 
 function saveTestRun(id: string, type: 'source_initialization' | 'sync', status: 'awaiting_action' | 'running') {

@@ -14,6 +14,7 @@ import { initializationFailure, InitializationConflictError } from '~~/server/li
 import { requestSources } from '~~/server/lib/sync/source-requests'
 import { startWorker, stopWorker } from '~~/server/lib/sync/worker'
 import { recoverInterruptedSourceRequests } from '~~/server/lib/sync/source-schedule-store'
+import { setSyncService } from '~~/server/lib/sync/instance'
 
 const remote = vi.hoisted(() => ({ tracks: vi.fn(), playlist: vi.fn() }))
 vi.mock('~~/server/lib/netease', () => ({ fetchPlaylistSongs: remote.playlist }))
@@ -42,7 +43,9 @@ async function reviewed() {
 }
 function config() { const value = readConfigFromDb(); value.sync.enabled = false; return value }
 function service() {
-  return { getState: () => ({ isRunning: false }), prepareSyncForSource: vi.fn((id: string) => ({ runId: `sync-${id}`, run: async () => ({ lastSyncResult: 'success', failures: [] }) })), cancelSync: () => true }
+  const value = { getState: () => ({ isRunning: false }), prepareSyncForSource: vi.fn((id: string) => ({ runId: `sync-${id}`, run: async () => ({ lastSyncResult: 'success', failures: [] }) })), cancelSync: () => true }
+  setSyncService(value as never)
+  return value
 }
 
 describe('queued initialization application', () => {

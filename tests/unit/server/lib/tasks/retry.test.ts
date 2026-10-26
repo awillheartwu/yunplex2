@@ -88,11 +88,11 @@ describe('manual failure retry', () => {
       ignoreReason: null,
     })
     expect(getFailureRecords([other.id])[0]).toMatchObject({
-      status: 'ignored',
+      status: 'open',
       attemptCount: 3,
       occurrenceCount: 3,
       retryCount: 0,
-      ignoreReason: 'automatic',
+      ignoreReason: null,
     })
     expect(getSourceFailureStatus('source-1')).toBe('open')
     expect(getDb().prepare(`
@@ -118,13 +118,13 @@ describe('manual failure retry', () => {
     expect(laterRounds.map(record => [record.status, record.attemptCount])).toEqual([
       ['open', 1],
       ['open', 2],
-      ['ignored', 3],
+      ['open', 3],
     ])
     expect(getFailureRecords([selected.id])[0]).toMatchObject({
-      status: 'ignored',
+      status: 'open',
       occurrenceCount: 6,
       retryCount: 1,
-      ignoreReason: 'automatic',
+      ignoreReason: null,
     })
   })
 })

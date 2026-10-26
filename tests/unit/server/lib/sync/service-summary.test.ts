@@ -28,12 +28,12 @@ function job(overrides: Partial<SyncJob> = {}): SyncJob {
 }
 
 describe('sync service summary copy', () => {
-  it('describes warnings as attention items rather than user ignores', () => {
+  it('keeps aggregate warnings as historical hints', () => {
     expect(buildSyncRunSummary({
       job: job({ successSongs: 1, failedSongs: 2, warnings: 3 }),
       sourceCount: 4,
       mode: 'normal',
-    })).toBe('4 个源，新增 1 首，失败 2 首，3 首需关注')
+    })).toBe('4 个源，新增 1 首，失败 2 首，3 项历史提示')
   })
 
   it('separates already-present tracks from newly inserted tracks', () => {
@@ -41,7 +41,7 @@ describe('sync service summary copy', () => {
       job: job({ successSongs: 0, skippedSongs: 15, failedSongs: 3, warnings: 18 }),
       sourceCount: 1,
       mode: 'normal',
-    })).toBe('1 个源，已存在 15 首，失败 3 首，18 首需关注')
+    })).toBe('1 个源，已存在 15 首，失败 3 首，18 项历史提示')
   })
 
   it('reports a true no-op without pretending every target was inserted', () => {

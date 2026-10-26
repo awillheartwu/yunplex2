@@ -323,11 +323,16 @@ describe('computeLCS', () => {
   })
 
   it('retains confirmed removal mutations when a later occurrence fails', async () => {
-    vi.mocked(getPlaylistTracks).mockResolvedValue([
-      { ratingKey: 'target' },
-      { ratingKey: 'old-1' },
-      { ratingKey: 'old-2' },
-    ] as any)
+    vi.mocked(getPlaylistTracks)
+      .mockResolvedValueOnce([
+        { ratingKey: 'target', playlistItemID: 100 },
+        { ratingKey: 'old-1', playlistItemID: 101 },
+        { ratingKey: 'old-2', playlistItemID: 102 },
+      ] as any)
+      .mockResolvedValue([
+        { ratingKey: 'target', playlistItemID: 100 },
+        { ratingKey: 'old-2', playlistItemID: 102 },
+      ] as any)
     vi.mocked(removeTrackFromPlaylist)
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('second delete failed'))

@@ -170,7 +170,7 @@ describe('persistent file task caller associations', () => {
     legacy.pragma('foreign_keys = ON')
     legacy.exec(`
       CREATE TABLE task_runs (id TEXT PRIMARY KEY);
-      CREATE TABLE download_tasks (id TEXT PRIMARY KEY);
+      CREATE TABLE download_tasks (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending');
       CREATE TABLE run_file_tasks (
         run_id TEXT NOT NULL,
         task_id TEXT NOT NULL,
@@ -181,7 +181,7 @@ describe('persistent file task caller associations', () => {
       CREATE INDEX idx_run_file_tasks_task ON run_file_tasks(task_id, run_id);
       CREATE INDEX idx_run_file_tasks_source ON run_file_tasks(source_id, run_id);
       INSERT INTO task_runs VALUES ('run-1');
-      INSERT INTO download_tasks VALUES ('task-1');
+      INSERT INTO download_tasks (id) VALUES ('task-1');
       INSERT INTO run_file_tasks VALUES ('run-1', 'task-1', 'source-1', 'now');
       INSERT INTO run_file_tasks VALUES ('orphan-run', 'orphan-task', NULL, 'now');
     `)
@@ -202,7 +202,7 @@ describe('persistent file task caller associations', () => {
     transactional.pragma('foreign_keys = ON')
     transactional.exec(`
       CREATE TABLE task_runs (id TEXT PRIMARY KEY);
-      CREATE TABLE download_tasks (id TEXT PRIMARY KEY);
+      CREATE TABLE download_tasks (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending');
     `)
     expect(() => transactional.transaction(() => {
       createFileTaskSchema(transactional)

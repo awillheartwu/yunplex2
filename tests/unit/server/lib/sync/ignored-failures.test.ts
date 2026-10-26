@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { readConfigFromDb, getDb } from '~~/server/lib/db'
+import { readConfigFromDb, getDb, writeConfigToDb } from '~~/server/lib/db'
 import type { NeteaseSong, RawSong } from '~~/server/lib/netease'
 import { saveNeteaseRawSongs } from '~~/server/lib/netease-song-cache'
 import type { PlexTrack } from '~~/server/lib/plex-client'
@@ -11,7 +11,7 @@ import { upsertSongIdentityBinding } from '~~/server/lib/sync/identity-store'
 import { getSyncService } from '~~/server/lib/sync/service'
 import type { SyncMode } from '~~/server/lib/sync/service-state'
 import { getFailureRecords } from '~~/server/lib/tasks/failure-queries'
-import { recordFailure } from '~~/server/lib/tasks/failure-records'
+import { recordFailure, setFailureRecordStatus } from '~~/server/lib/tasks/failure-records'
 import {
   createFailureTestDatabase,
   insertFailureSource,
@@ -158,6 +158,7 @@ async function runIgnoredSync(
     const ignoredFailure = getDb().prepare(`
       SELECT id FROM failure_records WHERE source_id = 'source-1' AND song_id = ?
     `).get(ignoredSongId) as { id: string }
+    setFailureRecordStatus([ignoredFailure.id], 'ignored')
     const cachedIgnoredPublishTime = options.withIgnoredDetails
       ? (JSON.parse((getDb().prepare(`
           SELECT raw_json FROM netease_song_details WHERE netease_song_id = ?
@@ -237,6 +238,7 @@ async function runIgnoredSync(
     config.sync.extraTrackRemovalPolicy = 'exact'
     config.sync.plexScanRetries = 0
     config.sync.plexScanRetryDelaySec = 0
+    writeConfigToDb(config)
 
     const service = getSyncService(() => config)
     const prepared = service.prepareSyncForSource('source-1', { mode, trigger: 'user' })
@@ -264,7 +266,7 @@ function expectIgnoredBoundary(
     status: 'ignored',
     attemptCount: 3,
     occurrenceCount: 3,
-    ignoreReason: 'automatic',
+    ignoreReason: 'manual',
   })
 
   expect(remote.fetchNeteaseSongDetails).toHaveBeenCalledTimes(1)

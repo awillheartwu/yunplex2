@@ -13,7 +13,11 @@ vi.mock('~~/server/lib/download/queue', () => ({
   getQueueStatus: vi.fn(() => ({ pending: 0, downloading: 0, tagging: 0, done: 1, failed: 0, total: 1 })),
 }))
 vi.mock('~~/server/lib/download/worker', () => ({ requestDownloadProcessing }))
-vi.mock('~~/server/lib/db', () => ({ getDb: () => ({ transaction: (callback: () => unknown) => callback }) }))
+vi.mock('~~/server/lib/db', () => ({
+  getDb: () => ({ transaction: (callback: () => unknown) => callback }),
+  readConfigFromDb: () => structuredClone(DEFAULT_CONFIG),
+}))
+vi.mock('~~/server/lib/sync/identity-store', () => ({ getSongIdentityBinding: () => null }))
 vi.mock('~~/server/lib/db/file-task-schema', () => ({
   createFileTaskSchema: vi.fn(),
   linkRunFileTask: vi.fn(),

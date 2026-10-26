@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
 
 const mocks = vi.hoisted(() => ({
   enqueueTask: vi.fn(),
@@ -17,7 +18,9 @@ vi.mock('~~/server/lib/download/worker', () => ({
 }))
 vi.mock('~~/server/lib/db', () => ({
   getDb: () => ({}),
+  readConfigFromDb: () => structuredClone(DEFAULT_CONFIG),
 }))
+vi.mock('~~/server/lib/sync/identity-store', () => ({ getSongIdentityBinding: () => null }))
 vi.mock('~~/server/lib/db/file-task-schema', () => ({
   createFileTaskSchema: vi.fn(),
   linkRunFileTask: vi.fn(),

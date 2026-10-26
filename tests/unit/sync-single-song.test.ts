@@ -134,7 +134,9 @@ describe('downloadSingleSong', () => {
   it('calls the full download pipeline in order', async () => {
     const result = await downloadSingleSong(123456, mockConfig)
 
-    expect(fetchSongDetail).toHaveBeenCalledWith(123456, 'test-cookie')
+    expect(fetchSongDetail).toHaveBeenCalledWith(123456, 'test-cookie', {
+      artistAliases: {}, applyAliasToAlbum: false,
+    })
     expect(getSongUrl).toHaveBeenCalledWith(123456, 'lossless', 'test-cookie')
     expect(fetchLyric).toHaveBeenCalledWith(123456, 'test-cookie', 'original_first', true)
     expect(fetchAlbumDetail).toHaveBeenCalledWith(999, 'test-cookie')

@@ -8,6 +8,7 @@ import { closeDb, getDb, initDb } from '../../server/lib/db'
 import { getSource, updateSource } from '../../server/lib/playlist/store'
 import { enqueueTask, processAll } from '../../server/lib/download/queue'
 import { startWorker, stopWorker } from '../../server/lib/sync/worker'
+import { setSyncService } from '../../server/lib/sync/instance'
 
 let directory = ''
 
@@ -84,6 +85,7 @@ describe('automatic sync acceptance', () => {
         }
       }),
     }
+    setSyncService(service as never)
     const worker = startWorker(() => config, service as never, directory)
     await Promise.resolve()
     convergenceBusy = false

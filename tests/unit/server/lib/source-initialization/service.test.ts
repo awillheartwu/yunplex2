@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { getRun } from '~~/server/lib/run/store'
+import { setSyncService } from '~~/server/lib/sync/instance'
 
 const { fetchPlaylistSongs, getSectionTracks } = vi.hoisted(() => ({
   fetchPlaylistSongs: vi.fn(async () => ({
@@ -400,6 +401,7 @@ describe('quick plan retry', () => {
             prepareSyncForSource: vi.fn(),
             cancelSync: () => false,
           }
+          setSyncService(service as never)
           const worker = startWorker(readConfigFromDb, service as never, directory)
           try {
             await worker.runOnce()

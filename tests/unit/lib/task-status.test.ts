@@ -37,15 +37,17 @@ describe('task status semantics', () => {
     expect(songMatchesStatusBucket('failed_plex_match', 'failure')).toBe(true)
     expect(songMatchesStatusBucket('skipped_existing', 'existing')).toBe(true)
     expect(songMatchesStatusBucket('removed', 'removed')).toBe(true)
-    expect(songMatchesStatusBucket('copyright_restricted', 'ignored')).toBe(true)
+    expect(songMatchesStatusBucket('copyright_restricted', 'restricted')).toBe(true)
     expect(songMatchesStatusBucket('ignored_failure', 'ignored')).toBe(true)
-    expect(songMatchesStatusBucket('awaiting_manual_match', 'ignored')).toBe(true)
+    expect(songMatchesStatusBucket('awaiting_manual_match', 'manual')).toBe(true)
+    expect(songMatchesStatusBucket('copyright_restricted', 'ignored')).toBe(false)
+    expect(songMatchesStatusBucket('awaiting_manual_match', 'ignored')).toBe(false)
     expect(songMatchesStatusBucket('copyright_restricted', 'failure')).toBe(false)
   })
 
-  it('presents ignored failures as ignored items requiring attention', () => {
+  it('labels manually ignored failures explicitly', () => {
     expect(songStatusPresentation('ignored_failure').label).toBe('已忽略')
-    expect(SONG_STATUS_BUCKETS.find(bucket => bucket.key === 'ignored')?.label).toBe('需关注')
+    expect(SONG_STATUS_BUCKETS.find(bucket => bucket.key === 'ignored')?.label).toBe('已忽略')
   })
 
   it('counts bucket totals for song filter badges', () => {
@@ -68,7 +70,7 @@ describe('task status semantics', () => {
     }).map(item => [item.label, item.count, item.tone])).toEqual([
       ['成功', 1, 'success'],
       ['已存在', 42, 'existing'],
-      ['需关注', 1, 'ignored'],
+      ['历史提示', 1, 'warning'],
       ['已移除', 1, 'warning'],
       ['失败', 0, 'failure'],
     ])

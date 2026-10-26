@@ -134,6 +134,7 @@ describe('Media Repair Command', () => {
       waitForMediaRepairCommands,
     } = await import('~~/server/lib/download/media-repair-command')
 
+    const config = readConfig()
     const result = await startMediaRepairCommand('source-one')
     await waitForMediaRepairCommands()
 
@@ -150,6 +151,14 @@ describe('Media Repair Command', () => {
       operation: 'repair_existing',
       target_path: audioPath,
       execution_intent_json: JSON.stringify({
+        downloadDir: config.download.dir,
+        pathFormat: config.other.pathFormat,
+        multiArtistFormat: config.other.multiArtistFormat,
+        lyricOrder: config.other.lyricOrder,
+        downloadTranslatedLyric: config.other.downloadTranslatedLyric,
+        downloadRomajiLyric: config.other.downloadRomajiLyric,
+        artistAliases: config.other.artistAliases,
+        applyAliasToAlbum: config.other.applyAliasToAlbum,
         downloadMode: 'missing',
         target: { kind: 'existing', path: audioPath },
         downloadLyrics: true,
@@ -157,6 +166,7 @@ describe('Media Repair Command', () => {
         embedCover: false,
         saveAlbumCover: false,
         saveArtistImage: false,
+        manualBindingVersion: null,
       }),
       status: 'done',
       run_id: result.jobId,

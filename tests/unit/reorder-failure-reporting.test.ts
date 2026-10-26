@@ -30,6 +30,7 @@ describe('reorder failure reporting', () => {
           status: 'failed_plex_insert',
           phase: 'plex_insert',
           error: {
+            code: 'failed_plex_insert',
             title: 'Plex 歌单插入失败',
             message: 'insert failed',
             stage: 'plex_insert',

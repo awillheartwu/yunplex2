@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_CONFIG } from '~~/server/lib/config/defaults'
-import { closeDb, initDb } from '~~/server/lib/db'
+import { closeDb, initDb, writeConfigToDb } from '~~/server/lib/db'
 import type { NeteaseSong } from '~~/server/lib/netease'
 import type { PlexTrack } from '~~/server/lib/plex-client'
 import { createSource, getSource, updateSource } from '~~/server/lib/playlist/store'
@@ -83,6 +83,7 @@ async function runComparison(hasRetainedExtra: boolean, mode: SyncMode = 'full')
   config.download.dir = directory
   config.download.plexLibraryPathPrefix = '/music'
   config.sync.extraTrackRemovalPolicy = 'balanced'
+  writeConfigToDb(config)
   const localPath = join(directory, 'song.flac')
   writeFileSync(localPath, 'test audio')
   const target: PlexTrack = {
