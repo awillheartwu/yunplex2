@@ -80,24 +80,5 @@ jobs:
           export NAS_MUSIC_DIR
           docker compose -p reyunplex -f deploy/nas.compose.yml config --quiet
 
-      - name: Build immutable image on the target Docker daemon
-        run: |
-          if ! docker image inspect "$REYUNPLEX_IMAGE" >/dev/null 2>&1; then
-            version=$(node -p "require('./package.json').version")
-            source=$(node -p "require('./package.json').repository.url")
-            docker build \
-              --build-arg "REYUNPLEX_REVISION=$REYUNPLEX_REVISION" \
-              --build-arg "REYUNPLEX_VERSION=$version" \
-              --build-arg "REYUNPLEX_SOURCE=$source" \
-              --label "org.opencontainers.image.revision=$REYUNPLEX_REVISION" \
-              -t "$REYUNPLEX_IMAGE" .
-          fi
-          bytes=$(docker image inspect --format '{{.Size}}' "$REYUNPLEX_IMAGE")
-          echo "Image size: $bytes bytes (limit: 256 MiB)"
-          test "$bytes" -le 268435456
-
-      - name: Verify container using disposable volumes
-        run: NASUID="$NAS_UID:$NAS_GID" sh tests/acceptance/docker-smoke.sh "$REYUNPLEX_IMAGE"
-
-      - name: Back up stopped data, deploy and wait for readiness
-        run: node scripts/deploy/start-deployment.mjs
+      - name: Lock, build, verify and hand off deployment
+        run: node scripts/deploy/build-deploy.mjs

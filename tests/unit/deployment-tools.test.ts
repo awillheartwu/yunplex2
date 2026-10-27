@@ -33,6 +33,7 @@ function workerHarness(options: { cancelWait?: boolean; copyFails?: boolean; pre
       expect(await readFile(join(args[1]!, 'ancestors.txt'), 'utf8')).toContain(revision)
       expect(await readFile(join(args[1]!, 'deploy', 'nas.compose.yml'), 'utf8')).toContain('NAS_APP_ROOT')
       expect(await readFile(join(args[1]!, 'scripts', 'deploy', 'retention.mjs'), 'utf8')).toContain('pruneImages')
+      expect(await readFile(join(args[1]!, 'scripts', 'deploy', 'deployment-lock.mjs'), 'utf8')).toContain('assertDeploymentLock')
       if (options.copyFails) throw new Error('copy failed')
     }
     if (args[0] === 'wait') {
@@ -51,6 +52,8 @@ it('copies only deployment tools and SHA ancestry, then waits for a separate wor
   const create = h.calls.find(args => args[0] === 'create')!
   expect(create).toContain('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock')
   expect(create).toContain('--network'); expect(create).toContain('none')
+  expect(create).toContain('node:24-alpine')
+  expect(create).not.toContain(config().image)
   const forwarded = create.filter((_, index) => create[index - 1] === '--env').map(value => value.split('=')[0])
   expect(forwarded.sort()).toEqual([
     'DOCKER_API_VERSION', 'NAS_APP_ROOT', 'NAS_BIND_ADDRESS', 'NAS_GID',
@@ -89,33 +92,50 @@ it('waits for a previous deployment and removes only its completed container', a
   expect(h.calls.findIndex(args => args[0] === 'create')).toBeGreaterThan(h.calls.findIndex(args => args[0] === 'rm'))
 })
 
-it('preserves a failed worker for diagnosis and fails the Actions step', async () => {
+it('collects failed worker logs before removing the stopped worker and failing the Actions step', async () => {
   const h = workerHarness({ failedWorker: true })
   await expect(startDeployment(config(), h.dependencies)).rejects.toThrow('worker failed')
   expect(h.calls).toContainEqual(['logs', '--tail', '80', 'new-worker'])
-  expect(h.calls.some(args => args[0] === 'rm')).toBe(false)
+  expect(h.calls.findIndex(args => args[0] === 'rm')).toBeGreaterThan(h.calls.findIndex(args => args[0] === 'logs'))
 })
 
-it('retains the newest three images, prior image and all container images without touching foreign tags', async () => {
+it('retains dependency ancestry, shared tags and running or stopped container images while collecting unused project nodes', async () => {
   const images = Array.from({ length: 7 }, (_, i) => ({
-    Id: `sha256:${i}`, Created: `2026-10-0${7 - i}T00:00:00Z`,
+    Id: `sha256:${i}`, Parent: 'sha256:dependency-parent', BuildCache: 'true',
     RepoTags: [`reyunplex:${String(i).repeat(40)}`],
   }))
+  images[2]!.RepoTags = []; images[2]!.Parent = 'sha256:3'
+  images[3]!.RepoTags = []; images[3]!.Parent = 'sha256:4'
+  images[4]!.RepoTags = ['reyunplex:build-deps']
   images[5]!.RepoTags.push('another-project:latest')
+  images.push({ Id: 'sha256:dependency-parent', Parent: '', BuildCache: 'true', RepoTags: [] })
+  const lockId = 'd'.repeat(64)
   const calls: string[][] = []
   const run = async (args: string[]) => {
     calls.push(args)
     if (args[0] === 'image' && args[1] === 'ls') return images.map(image => image.Id).join('\n')
-    if (args[0] === 'image' && args[1] === 'inspect') return JSON.stringify(images)
-    if (args[0] === 'ps') return 'app-container\nother-container'
-    if (args[0] === 'container') return 'sha256:6\nsha256:4'
+    if (args[0] === 'image' && args[1] === 'inspect') {
+      return images.filter(image => args.includes(image.Id)).map(image => JSON.stringify(image)).join('\n')
+    }
+    if (args[0] === 'ps') return args.includes('--filter') ? '' : 'app-container\nstopped-container'
+    if (args[0] === 'container' && args[2] === 'reyunplex-deploy-lock') {
+      return JSON.stringify({ Id: lockId, Name: '/reyunplex-deploy-lock', Labels: { 'reyunplex.role': 'deploy-lock', 'reyunplex.revision': revision } })
+    }
+    if (args[0] === 'container') return 'sha256:0\nsha256:6'
     return ''
   }
-  await pruneImages(run, ['sha256:3'])
-  expect(calls.filter(args => args[1] === 'rm')).toEqual([['image', 'rm', `reyunplex:${'5'.repeat(40)}`]])
-  expect(calls.filter(args => args[1] === 'prune')).toEqual([
-    ['image', 'prune', '--force', '--filter', 'label=reyunplex.build-cache=true', '--filter', 'until=168h'],
+  // The running app references 0; a stopped application references 6.
+  const report = await pruneImages(run, { revision, lockId })
+  expect(report.removed).toEqual(['sha256:1', 'sha256:2', 'sha256:3'])
+  expect(report.failed).toEqual([])
+  expect(report.blockedBy).toEqual([])
+  expect(new Set(report.skipped.map(image => image.id))).toEqual(new Set(['sha256:0', 'sha256:4', 'sha256:5', 'sha256:6', 'sha256:dependency-parent']))
+  expect(calls.filter(args => args[1] === 'rm')).toEqual([
+    ['image', 'rm', '--no-prune', `reyunplex:${'1'.repeat(40)}`],
+    ['image', 'rm', '--no-prune', 'sha256:2'],
+    ['image', 'rm', '--no-prune', 'sha256:3'],
   ])
+  expect(calls.some(args => args.includes('prune') || args.includes('--force') || args.includes('-f'))).toBe(false)
   expect(calls.flat()).not.toContain('another-project:latest')
 })
 

@@ -4,18 +4,19 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
-import { pruneImages } from './retention.mjs'
+import { collectImagesAndReleaseLock, ImageCleanupError, reportImageCleanupFailure } from './retention.mjs'
+import { acquireDeploymentLock, assertDeploymentLock } from './deployment-lock.mjs'
 
 const execute = promisify(execFile)
 const composeFile = fileURLToPath(new URL('../../deploy/nas.compose.yml', import.meta.url))
 const helperFile = new URL('./host-state.mjs', import.meta.url)
 const CONTAINER = 'reyunplex'
-const LOCK = 'reyunplex-deploy-lock'
 
 export function deploymentConfig(env) {
   const config = {
     image: env.REYUNPLEX_IMAGE,
     revision: env.REYUNPLEX_REVISION,
+    lockId: env.REYUNPLEX_DEPLOY_LOCK_ID,
     root: env.NAS_APP_ROOT,
     music: env.NAS_MUSIC_DIR?.trim().replace(/\/+$/, ''),
     address: env.NAS_BIND_ADDRESS || '0.0.0.0',
@@ -49,8 +50,10 @@ export async function docker(args, options = {}) {
     })
     pending.child.stdin.end(options.input)
     const { stdout, stderr } = await pending
+    if (options.log) { process.stdout.write(stdout); process.stderr.write(stderr) }
     return (args[0] === 'logs' ? stdout + stderr : stdout).trim()
   } catch (error) {
+    if (options.log) { process.stdout.write(error.stdout ?? ''); process.stderr.write(error.stderr ?? '') }
     if (options.allowFailure) return null
     const reason = String(error.stderr ?? '').trim()
     throw new Error(`Docker ${args[0]} failed (${error.code ?? 'interrupted'})${reason ? `: ${reason}` : ''}`, { cause: error })
@@ -98,20 +101,24 @@ export async function deploy(config, dependencies = {}) {
     throw new Error('Application did not become ready within the bounded wait')
   }
 
-  let lock = false, prepared = false, old = null, candidateAttempted = false, oldStopRequested = false, safeToUnlock = true
+  let lockId, prepared = false, old = null, candidateAttempted = false, oldStopRequested = false, safeToUnlock = true, operationFailed = false
   let state = { status: 'prepared', revision: config.revision, image: config.image, previousImage: null, backup: null, startedAt: new Date().toISOString() }
   const checkpoint = async status => {
     state = { ...state, status }
     await helper({ action: 'checkpoint', state })
   }
   try {
+    if (config.lockId) {
+      await assertDeploymentLock(run, config.revision, config.lockId)
+      lockId = config.lockId
+    }
     const info = JSON.parse(await run(['info', '--format', '{{json .}}']))
     if (info.OSType !== 'linux' || !['x86_64', 'amd64'].includes(info.Architecture)) throw new Error('Deployment requires the x86_64 NAS Docker daemon')
     await compose('config', '--quiet')
-    const image = JSON.parse(await run(['image', 'inspect', config.image]))[0]
-    if (image.Config?.Labels?.['org.opencontainers.image.revision'] !== config.revision || image.Os !== 'linux' || image.Architecture !== 'amd64') throw new Error('Image revision or architecture does not match the deployment')
-    await run(['create', '--name', LOCK, '--network', 'none', '--tmpfs', '/app/data', '--label', `reyunplex.revision=${config.revision}`, '--entrypoint', 'node', config.image, '-e', 'process.exit(0)'])
-    lock = true
+    const imageFields = '{"Revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}'
+    const image = JSON.parse(await run(['image', 'inspect', config.image, '--format', imageFields]))
+    if (image.Revision !== config.revision || image.Os !== 'linux' || image.Architecture !== 'amd64') throw new Error('Image revision or architecture does not match the deployment')
+    lockId ??= await acquireDeploymentLock(run, config.revision)
     // --mount refuses missing NAS paths; it cannot create a directory on an
     // accidental Docker daemon or confuse the job workspace with the NAS.
     await run(['run', '--rm', '--network', 'none', '--user', `${config.uid}:${config.gid}`, '--mount', `type=bind,source=${config.music},target=/music`, '--entrypoint', 'node', config.image, '-e', "require('node:fs').accessSync('/music',require('node:fs').constants.R_OK|require('node:fs').constants.W_OK)"])
@@ -161,13 +168,13 @@ export async function deploy(config, dependencies = {}) {
     // Cleanup must not turn an already healthy deployment into a failed one.
     try {
       await helper({ action: 'retain', keep: 3, backup: state.backup })
-      await pruneImages(run, [state.previousImage])
-    } catch { console.error('Deployment ready; retention cleanup failed, inspect disk usage') }
+    } catch (error) { console.error('Deployment ready; backup retention failed:', error.message) }
     return { image: config.image, backup: state.backup, port: config.port }
   } catch (error) {
+    operationFailed = true
     // A timed-out attached CLI can leave the backup helper running. End it
     // before allowing the old application to write to the source again.
-    if (lock) await removeHelper().catch(() => { safeToUnlock = false })
+    if (lockId) await removeHelper().catch(() => { safeToUnlock = false })
     if (candidateAttempted) {
       // New code may already have migrated SQLite or touched Plex/media.
       // Do not restore a database or restart an older image automatically.
@@ -182,10 +189,12 @@ export async function deploy(config, dependencies = {}) {
     if (current) console.error(JSON.stringify({ container: CONTAINER, image: current.Image, status: current.State.Status, exitCode: current.State.ExitCode, error: current.State.Error || null, backup: state.backup }))
     throw error
   } finally {
-    if (lock) {
+    if (lockId) {
       // An attached CLI timeout can leave its helper running in Docker.
       await removeHelper().catch(() => { safeToUnlock = false })
-      if (safeToUnlock) await run(['rm', LOCK], { allowFailure: true })
+      if (safeToUnlock) {
+        await collectImagesAndReleaseLock(run, { revision: config.revision, lockId }, { ready: state.status === 'ready', operationFailed })
+      } else reportImageCleanupFailure(new Error('Application or helper shutdown unconfirmed; deployment lock retained for manual inspection'), { ready: state.status === 'ready', operationFailed })
     }
   }
 }
@@ -204,7 +213,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     })
     console.log(`Deployment ready: ${result.image}; LAN port ${result.port}; backup ${result.backup ?? 'first installation'}`)
   } catch (error) {
-    console.error(`Deployment failed: ${error instanceof Error ? error.message : 'unknown error'}`)
-    process.exitCode = 1
+    console.error(error instanceof ImageCleanupError ? error.message : `Deployment failed: ${error instanceof Error ? error.message : 'unknown error'}`)
+    process.exitCode = error instanceof ImageCleanupError ? 2 : 1
   }
 }

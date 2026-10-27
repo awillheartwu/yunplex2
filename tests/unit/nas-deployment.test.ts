@@ -9,6 +9,7 @@ import { backup, verify } from '../../scripts/maintenance/bundle.mjs'
 
 const roots: string[] = []
 const revision = 'a'.repeat(40), previousRevision = 'b'.repeat(40)
+const lockId = 'd'.repeat(64)
 const variables = { REYUNPLEX_IMAGE: `reyunplex:${revision}`, REYUNPLEX_REVISION: revision, NAS_APP_ROOT: '/volume1/docker/reyunplex', NAS_MUSIC_DIR: '/volume1/music', NAS_UID: '1000', NAS_GID: '1000' }
 const config = () => deploymentConfig(variables)
 const owner = () => ({ uid: process.getuid!(), gid: process.getgid!() })
@@ -77,7 +78,7 @@ async function harness(options: { existing?: boolean; ready?: boolean; backupFai
   const root = await directory(), settings = config(), calls: string[][] = []
   const data = join(root, 'data')
   let current: FakeContainer | null = null
-  let helperRunning = false
+  let helperRunning = false, lockPresent = false
   if (options.existing) {
     await hostOperation({ action: 'prepare', ...owner() }, root)
     const db = new Database(join(data, 'data.db'))
@@ -100,14 +101,17 @@ async function harness(options: { existing?: boolean; ready?: boolean; backupFai
     if (options.unsupportedCpuQuota && args.some(arg => ['--cpus', '--cpu-period', '--cpu-quota'].includes(arg))) throw new Error('NanoCPUs can not be set, as your kernel does not support CPU CFS scheduler or the cgroup is not mounted')
     if (args[0] === 'info') return JSON.stringify({ OSType: 'linux', Architecture: 'x86_64' })
     if (args[0] === 'image' && args[1] === 'ls') return ''
-    if (args[0] === 'image') return JSON.stringify([{ Os: 'linux', Architecture: 'amd64', Config: { Labels: { 'org.opencontainers.image.revision': options.imageRevision ?? revision } } }])
-    if (args[0] === 'create') { if (options.lockExists) throw new Error('deployment lock already exists'); return 'lock-id' }
+    if (args[0] === 'image' && args[2] === 'node:24-alpine') return 'sha256:tool-image'
+    if (args[0] === 'image') return JSON.stringify({ Os: 'linux', Architecture: 'amd64', Revision: options.imageRevision ?? revision })
+    if (args[0] === 'create') { if (options.lockExists) throw new Error('deployment lock already exists'); lockPresent = true; return lockId }
     if (args[0] === 'container') {
+      if (args[2] === 'reyunplex-deploy-lock') return lockPresent ? JSON.stringify({ Id: lockId, Name: '/reyunplex-deploy-lock', Labels: { 'reyunplex.role': 'deploy-lock', 'reyunplex.revision': revision } }) : null
       if (args[2]?.startsWith('reyunplex-deploy-helper-')) return helperRunning ? JSON.stringify({ State: { Running: true } }) : null
+      if (args.includes('{{.Image}}')) return options.competitor ? competitor.Image : ''
       const target = args[2] === 'other-container' ? competitor : current
       return target ? JSON.stringify(target) : null
     }
-    if (args[0] === 'ps') return options.competitor ? 'other-container' : ''
+    if (args[0] === 'ps') return !args.includes('--filter') && options.competitor ? 'other-container' : ''
     if (args[0] === 'run' && io.input) {
       const payload = JSON.parse(args.at(-1)!)
       if (payload.action === 'backup' && options.backupFails) helperRunning = true
@@ -121,6 +125,7 @@ async function harness(options: { existing?: boolean; ready?: boolean; backupFai
       helperRunning = false
       return ''
     }
+    if (args[0] === 'rm' && args[1] === lockId) { lockPresent = false; return '' }
     if (args[0] === 'stop') {
       if (options.stopFails && current?.Id === 'new-container') return null
       if (current) Object.assign(current.State, { Running: false, Status: 'exited' })
@@ -153,7 +158,7 @@ it('deploys a fresh database and persists host Compose settings without any data
   expect(await deploy(h.settings, h.dependencies)).toMatchObject({ image: h.settings.image, backup: null, port: 3210 })
   expect(await state(h.root)).toMatchObject({ status: 'ready', revision, previousImage: null })
   expect(await readFile(join(h.root, '.env'), 'utf8')).toContain('NAS_APP_ROOT=/volume1/docker/reyunplex')
-  expect(h.calls.some(args => args[0] === 'rm' && args[1] === 'reyunplex-deploy-lock')).toBe(true)
+  expect(h.calls.some(args => args[0] === 'rm' && args[1] === lockId)).toBe(true)
   expect(h.calls.filter(args => args[0] === 'run' && args.includes('-i')).every(args => args.includes('--network') && args.includes('none'))).toBe(true)
   const helpers = h.calls.filter(args => args[0] === 'run' && args.includes('-i'))
   expect(helpers.filter(args => !args.at(-1)?.includes('"action":"prepare"')).every(args => args.includes(`type=bind,source=${h.settings.root},target=/application`))).toBe(true)
@@ -198,7 +203,7 @@ it('keeps the old application stopped and retains the lock if a timed-out backup
   const h = await harness({ existing: true, backupFails: true, helperStopFails: true })
   await expect(deploy(h.settings, h.dependencies)).rejects.toThrow('backup disk full')
   expect(h.current()?.State.Running).toBe(false)
-  expect(h.calls.some(args => args[0] === 'start' || (args[0] === 'rm' && args[1] === 'reyunplex-deploy-lock'))).toBe(false)
+  expect(h.calls.some(args => args[0] === 'start' || (args[0] === 'rm' && args[1] === lockId))).toBe(false)
   expect(await state(h.root)).toMatchObject({ status: 'failed-stop' })
 })
 
@@ -218,7 +223,7 @@ it('keeps the deployment lock if the failed candidate cannot be stopped', async 
   await expect(deploy(h.settings, h.dependencies)).rejects.toThrow()
   expect(h.current()?.State.Running).toBe(true)
   expect(await state(h.root)).toMatchObject({ status: 'failed-stop' })
-  expect(h.calls.some(args => args[0] === 'rm' && args[1] === 'reyunplex-deploy-lock')).toBe(false)
+  expect(h.calls.some(args => args[0] === 'rm' && args[1] === lockId)).toBe(false)
 })
 
 it.each([
