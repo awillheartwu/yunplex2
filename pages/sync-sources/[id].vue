@@ -28,14 +28,13 @@
           <article class="section-card"><span><AppIcon name="source" :size="16" />Plex 目标</span><strong :title="source.plexPlaylistName || source.neteasePlaylistName">{{ source.plexPlaylistName || source.neteasePlaylistName }}</strong><small>{{ source.plexPlaylistRatingKey ? '已连接 Plex 歌单' : '尚未连接' }}</small></article>
           <article class="section-card"><span><AppIcon name="calendar" :size="16" />下次同步</span><strong>{{ source.nextSyncAt ? new Date(source.nextSyncAt).toLocaleString() : '未排期' }}</strong><small>{{ source.syncIntervalMinutes ? `每 ${source.syncIntervalMinutes} 分钟` : '使用全局同步间隔' }}</small></article>
         </div>
-        <details class="source-maintenance" open><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新检查整张歌单，并按当前设置补齐歌曲、移除多余条目和调整顺序。"><button aria-label="完整比较" class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />检查同步</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新按标题、艺人、时长等规则评估系统自动选择的歌曲，生成一份新方案；你确认过或手动选择的关联会保留，审核确认后才会应用。"><button aria-label="重新分析自动匹配" class="btn btn-info btn-sm" :disabled="acting" @click="confirmReanalyze=true"><AppIcon name="refresh" :size="16" />重新分析匹配</button></ActionHint><ActionHint text="只按精确路径重新核对 YunPlex 托管文件与 Plex 的关联，再更新歌单；不会重新按标题/艺人评分，也不会覆盖手动选择。"><button aria-label="重建托管关联" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重建托管关联</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载由应用保存的音乐；新文件检查通过后替换旧文件，下载失败则保留旧文件。"><button aria-label="重新下载托管媒体" class="btn btn-warning btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="为现有音乐补全标签、歌词和独立图片；缺少音乐文件的歌曲会跳过，不调整 Plex 歌单。"><button aria-label="补全标签和词图" class="btn btn-info btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补全标签和词图</button></ActionHint><ActionHint text="移除这份收藏和未提交的方案，停止自动同步；音乐文件会保留。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
+        <details class="source-maintenance" open><summary><AppIcon name="settings" :size="17" /><span>维护此收藏<small>重新检查、补全媒体与删除</small></span><AppIcon name="chevronDown" :size="15" /></summary><div class="source-detail__operations"><ActionHint text="重新检查整张歌单，并按当前设置补齐歌曲、移除多余条目和调整顺序。"><button aria-label="完整比较" class="btn btn-info btn-sm" :disabled="acting" @click="sync('full')"><AppIcon name="search" :size="16" />检查同步</button></ActionHint><ActionHint v-if="source.type==='playlist'" :text="hasActiveInitialization ? '已有未完成的接管方案。请查看当前安排，需要调整时使用“重新分析当前方案”。' : '重新按标题、艺人、时长等规则评估系统自动选择的歌曲，生成一份新方案；你确认过或手动选择的关联会保留，审核确认后才会应用。'"><button :aria-label="hasActiveInitialization ? '查看当前接管方案' : '重新分析自动匹配'" class="btn btn-info btn-sm" :disabled="acting" @click="openMatchingReanalysis"><AppIcon name="refresh" :size="16" />{{ hasActiveInitialization ? '查看接管方案' : '重新分析匹配' }}</button></ActionHint><ActionHint text="只按精确路径重新核对 YunPlex 托管文件与 Plex 的关联，再更新歌单；不会重新按标题/艺人评分，也不会覆盖手动选择。"><button aria-label="重建托管关联" class="btn btn-soft btn-sm" :disabled="acting" @click="confirmRebuild=true"><AppIcon name="link" :size="16" />重建托管关联</button></ActionHint><ActionHint v-if="source.type==='playlist'" text="重新下载由应用保存的音乐；新文件检查通过后替换旧文件，下载失败则保留旧文件。"><button aria-label="重新下载托管媒体" class="btn btn-warning btn-sm" :disabled="acting" @click="openRedownload"><AppIcon name="download" :size="16" />重新下载</button></ActionHint><ActionHint text="为现有音乐补全标签、歌词和独立图片；缺少音乐文件的歌曲会跳过，不调整 Plex 歌单。"><button aria-label="补全标签和词图" class="btn btn-info btn-sm" :disabled="acting" @click="repair"><AppIcon name="repair" :size="16" />补全标签和词图</button></ActionHint><ActionHint text="移除这份收藏和未提交的方案，停止自动同步；音乐文件会保留。"><button aria-label="删除来源" class="btn btn-danger btn-sm" @click="confirmDelete=true"><AppIcon name="trash" :size="16" />删除收藏</button></ActionHint></div></details>
         <section v-if="recentRuns.length" class="section-card source-detail__section"><header><div><h2>最近运行</h2><p>该来源最近的任务记录。</p></div><button class="btn btn-ghost btn-xs" @click="openTab('runs')"><AppIcon name="activity" :size="14" />全部记录</button></header><div class="source-detail__runs"><RunCard v-for="run in recentRuns.slice(0,3)" :key="run.id" :run="run" /></div></section>
       </section>
       <SourceInitializationPanel v-else-if="activeTab==='initialization'" :key="source.id" :source-id="source.id" :source-type="source.type" @changed="refresh" @submitted="onInitializationSubmitted" @pending-change="initializationPending = $event" @media="openTab('media')" />
       <section v-else-if="activeTab==='media'" class="section-card source-detail__section"><SourceMediaDetails :source-id="source.id" @changed="refresh" /></section>
       <section v-else-if="activeTab==='runs'" class="source-detail__runs-tab"><header class="section-card source-detail__runs-header"><div><h2>运行记录</h2><p>查看该来源最近的接管、同步、下载与修复任务。</p></div><button class="btn btn-ghost btn-xs" @click="loadRuns"><AppIcon name="refresh" :size="13" />刷新</button></header><p v-if="runsLoading" class="text-muted text-sm" role="status">正在读取运行记录…</p><div v-else-if="runsError" class="source-detail__load-error" role="alert"><p>{{ runsError }}</p><button class="btn btn-secondary btn-sm" @click="loadRuns">重试运行记录</button></div><EmptyState v-else-if="!recentRuns.length" title="暂无运行记录" description="该来源还没有可显示的任务。" /><div v-else class="source-detail__runs"><RunCard v-for="run in recentRuns" :key="run.id" :run="run" /></div><NuxtLink :to="`/task-center?tab=runs&runSource=${source.id}`" class="btn btn-ghost w-fit">在活动中查看完整记录</NuxtLink></section>
       <SourceSettingsPanel v-if="settingsVisited" v-show="activeTab === 'settings'" :key="source.id" :source="source" @saved="onSaved" />
-      <p v-if="notice" class="source-detail__notice" role="status">{{ notice }}</p><p v-if="error" class="source-detail__error" role="alert">{{ error }}</p>
       <ConfirmDialog :visible="confirmDelete" title="删除同步源" message="删除后将停止这份收藏的自动同步，并清除未提交的方案。音乐文件和 Plex 歌单会保留。确定继续？" confirm-label="删除来源" variant="danger" :busy="deleting" @confirm="remove" @cancel="confirmDelete=false"><p class="text-sm text-muted">删除后将停止这份收藏的自动同步，并清除未提交的方案。音乐文件和 Plex 歌单会保留。确定继续？</p><p v-if="deleteError" class="text-sm text-danger mt-3" role="alert">{{ deleteError }}</p></ConfirmDialog>
       <ConfirmDialog :visible="confirmRebuild" title="重建托管关联并同步" message="按精确路径重新核对托管文件关联，再更新 Plex 歌单；不重新评估标题、艺人、时长，也不会覆盖手动选择。确定继续？" confirm-label="确认重建" @confirm="confirmRebuild=false; sync('rebuild_matching')" @cancel="confirmRebuild=false" /><ConfirmDialog :visible="confirmReanalyze" title="重新分析自动匹配" message="只重评自动选择、未人工确认的歌曲；confirmed 和 manual 关联会保留。分析完成后会生成新方案，不会直接改 Plex。确定继续？" confirm-label="开始重新分析" :busy="acting" @confirm="reanalyzeMatching" @cancel="confirmReanalyze=false" />
       <ConfirmDialog :visible="confirmRedownload" title="重新下载音乐并同步" message="" confirm-label="确认重新下载" variant="danger" :busy="acting" :confirm-disabled="redownloadLoading || !!redownloadError || !redownloadPreview?.snapshotAvailable" @confirm="runRedownload" @cancel="closeRedownload">
@@ -48,15 +47,18 @@
 <script setup lang="ts">
 import { sourceRequestProgress } from '~/lib/source-request-presentation'
 import { sseSubscribe } from '~/composables/sse'
+import { useFeedback } from '~/composables/useFeedback'
 import type { PlaylistSource } from '~~/server/lib/playlist/types'; import type { SyncMode } from '~~/server/lib/sync/service-state'; import type { TaskRunSummary } from '~~/server/lib/job/types'
 const loadError = ref(''), runsError = ref(''), runsLoading = ref(false), deleting = ref(false), deleteError = ref(''), coverFailed = ref(false)
 let sourceGeneration = 0, runsGeneration = 0
 interface RedownloadPreview { total:number; eligible:number; protectedExternal:number; protectedManual:number; snapshotAvailable:boolean }
+const feedback = useFeedback()
 const { error: sourceRequestError, requestState, trackRequest, syncSource: requestSourceSync } = useSourceSync()
-const route=useRoute();const router=useRouter();const api=useApi();const source=ref<PlaylistSource|null>(null);const loading=ref(true);const acting=ref(false);const notice=ref('');const error=ref('');const confirmDelete=ref(false);const confirmRebuild=ref(false);const confirmReanalyze=ref(false);const confirmRedownload=ref(false);const redownloadLoading=ref(false);const redownloadError=ref('');const redownloadPreview=ref<RedownloadPreview|null>(null);const takeOverExternal=ref(false);const recentRuns=ref<TaskRunSummary[]>([])
+const route=useRoute();const router=useRouter();const api=useApi();const source=ref<PlaylistSource|null>(null);const loading=ref(true);const acting=ref(false);const confirmDelete=ref(false);const confirmRebuild=ref(false);const confirmReanalyze=ref(false);const confirmRedownload=ref(false);const redownloadLoading=ref(false);const redownloadError=ref('');const redownloadPreview=ref<RedownloadPreview|null>(null);const takeOverExternal=ref(false);const recentRuns=ref<TaskRunSummary[]>([])
 const allowedTabs=['overview','initialization','media','runs','settings'];const activeTab=ref(allowedTabs.includes(String(route.query.tab))?String(route.query.tab):'overview');const tabs=[{key:'overview',label:'概览'},{key:'initialization',label:'首次媒体接管'},{key:'media',label:'歌曲与媒体'},{key:'runs',label:'运行记录'},{key:'settings',label:'设置'}]
 const requestPresentation = computed(() => requestState.value ? sourceRequestProgress(requestState.value) : null)
 const settingsVisited = ref(activeTab.value === 'settings')
+const hasActiveInitialization = computed(() => ['pending', 'analyzing', 'awaiting_review', 'applying'].includes(source.value?.initializationStatus || ''))
 const initializationGuard = ref<{ confirmNavigation: () => boolean | Promise<boolean> } | null>(null)
 const initializationPending = ref({ pending: false, analyzing: false })
 const onboardingIds = computed(() => {
@@ -77,6 +79,10 @@ async function openTab(tab:string) {
   syncTabQuery()
 }
 function onInitializationSubmitted() { void refresh() }
+function openMatchingReanalysis() {
+  if (hasActiveInitialization.value) void openTab('initialization')
+  else confirmReanalyze.value = true
+}
 async function refresh() {
   const id = String(route.params.id), generation = ++sourceGeneration
   loading.value = !source.value
@@ -103,45 +109,42 @@ async function loadRuns() {
 async function reanalyzeMatching() {
   if (!source.value) return
   acting.value = true
-  error.value = ''
   try {
     await api.post(`/playlist-sources/${source.value.id}/reanalyze-matching`, {})
     confirmReanalyze.value = false
-    notice.value = '已开始重新分析自动匹配'
+    feedback.info('已开始重新分析自动匹配')
     activeTab.value = 'initialization'
     await nextTick()
     syncTabQuery()
     await refresh()
-  } catch (value) { error.value = value instanceof Error ? value.message : '重新分析匹配失败' }
+  } catch (value) { feedback.error('重新分析匹配失败', value instanceof Error ? value.message : '请稍后重试') }
   finally { acting.value = false }
 }
 async function sync(mode: SyncMode) {
   if (!source.value) return
   acting.value = true
-  error.value = ''
   try {
     const data = await requestSourceSync(source.value.id, { mode })
     const result = data.results[0]
-    notice.value = result?.message || '请求已接受'
+    feedback.info(result?.message || '请求已接受')
     if (result?.requestId) await router.replace({ query: { ...route.query, request: result.requestId } })
     if (result?.kind === 'analysis' || result?.status === 'awaiting_review') openTab('initialization')
     await refresh()
-  } catch (value) { error.value = value instanceof Error ? value.message : '操作失败' }
+  } catch (value) { feedback.error('同步请求失败', value instanceof Error ? value.message : '请稍后重试') }
   finally { acting.value = false }
 }
-async function repair(){if(!source.value)return;acting.value=true;try{await api.post(`/playlist-sources/${source.value.id}/repair`,{});notice.value='补全任务已触发'}catch(value){error.value=value instanceof Error?value.message:'补全失败'}finally{acting.value=false}}
+async function repair(){if(!source.value)return;acting.value=true;try{await api.post(`/playlist-sources/${source.value.id}/repair`,{});feedback.info('补全任务已触发')}catch(value){feedback.error('补全任务提交失败',value instanceof Error?value.message:'请稍后重试')}finally{acting.value=false}}
 async function openRedownload(){if(!source.value)return;confirmRedownload.value=true;redownloadLoading.value=true;redownloadError.value='';redownloadPreview.value=null;takeOverExternal.value=false;try{redownloadPreview.value=await api.get<RedownloadPreview>(`/playlist-sources/${source.value.id}/redownload-preview`)}catch(value){redownloadError.value=value instanceof Error?value.message:'无法读取重新下载范围'}finally{redownloadLoading.value=false}}
 function closeRedownload(){if(acting.value)return;confirmRedownload.value=false;redownloadPreview.value=null;redownloadError.value='';takeOverExternal.value=false}
 async function runRedownload() {
   if (!source.value || !redownloadPreview.value?.snapshotAvailable) return
   acting.value = true
-  error.value = ''
   try {
     const result = await requestSourceSync(source.value.id, { mode: 'redownload_managed', takeOverExternal: takeOverExternal.value })
-    notice.value = result.results[0]?.message || '请求已接受'
+    feedback.info(result.results[0]?.message || '请求已接受')
     confirmRedownload.value = false
     await refresh()
-  } catch (value) { error.value = value instanceof Error ? value.message : '触发重新下载失败' }
+  } catch (value) { feedback.error('触发重新下载失败', value instanceof Error ? value.message : '请稍后重试') }
   finally { acting.value = false }
 }
 async function remove() {
@@ -155,13 +158,13 @@ watch(confirmDelete, visible => { if (visible) deleteError.value = '' })
 watch(() => route.query.tab, tab => { activeTab.value = allowedTabs.includes(String(tab)) ? String(tab) : 'overview' })
 watch(() => route.params.id, () => {
   sourceGeneration++; runsGeneration++
-  source.value = null; recentRuns.value = []; runsError.value = ''; notice.value = ''; error.value = ''; coverFailed.value = false
+  source.value = null; recentRuns.value = []; runsError.value = ''; coverFailed.value = false
   initializationPending.value = { pending: false, analyzing: false }
   void refresh()
 })
 onUnmounted(() => { sourceGeneration++; runsGeneration++ })
-function onSaved(value:PlaylistSource){source.value=value;notice.value='设置已保存'}
-watch(sourceRequestError, value => { if (value) error.value = value })
+function onSaved(value:PlaylistSource){source.value=value;feedback.success('设置已保存')}
+watch(sourceRequestError, value => { if (value) feedback.error('来源请求失败', value) })
 watch(() => requestState.value?.status, () => { if (!acting.value) void refresh() })
 function restoreRequest() {
   const id = typeof route.query.request === 'string' ? route.query.request : null
@@ -368,28 +371,6 @@ onUnmounted(() => { resumeUnsubscribe?.(); plexUnsubscribe?.() })
   align-items: center;
   gap: var(--space-2);
 }
-.source-detail__notice,
-.source-detail__error {
-  position: fixed;
-  z-index: 30;
-  right: 1rem;
-  bottom: 1rem;
-  max-width: 28rem;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  font-size: var(--text-xs);
-}
-.source-detail__notice {
-  color: var(--success);
-  background: var(--success-soft);
-  border: 1px solid var(--success-border);
-}
-.source-detail__error {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-border);
-}
 @media (max-width: 900px) {
   .source-detail__header {
     grid-template-columns: auto minmax(0, 1fr);
@@ -414,14 +395,6 @@ onUnmounted(() => { resumeUnsubscribe?.(); plexUnsubscribe?.() })
   }
   .source-detail__runs-header .btn {
     flex: none;
-  }
-}
-@media (max-width: 767px) {
-  .source-detail__notice,
-  .source-detail__error {
-    bottom: calc(5.5rem + env(safe-area-inset-bottom));
-    max-width: calc(100vw - 2rem);
-    overflow-wrap: anywhere;
   }
 }
 @media (max-width: 767px) {
