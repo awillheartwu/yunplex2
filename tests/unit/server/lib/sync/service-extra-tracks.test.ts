@@ -37,13 +37,15 @@ vi.mock('~~/server/lib/plex-client', () => ({
   initPlexClient: async () => undefined,
   getPlaylistSnapshotByRatingKey: remote.getPlaylistSnapshotByRatingKey,
   getPlaylistTracks: remote.getPlaylistTracks,
+  getPlaylistWriteTracks: remote.getPlaylistTracks,
+  assertPlexClientConfig: () => undefined,
   getTrackByRatingKey: remote.getTrackByRatingKey,
   getPlaylistUpdatedAt: async () => 1,
 }))
 vi.mock('~~/server/lib/sync/plex-reconciler', () => ({
   reconcileSource: remote.reconcileSource,
   triggerRescan: async () => undefined,
-  applyFullReorder: async () => ({ mutations: [] }),
+  applyFullReorder: async () => ({ inserted: 0, removed: 0, moved: 0, preserved: 0, mutations: [], failures: [] }),
 }))
 vi.mock('~~/server/lib/sync/plex-batch-match', () => ({
   matchTracksInPlexWithRetry: remote.matchTracksInPlexWithRetry,

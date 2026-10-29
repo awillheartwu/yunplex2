@@ -45,7 +45,7 @@ describe('Plex request failures', () => {
     const { initPlexClient, insertTrackIntoPlaylist, refreshLibrary } = await import('~~/server/lib/plex-client')
     await initPlexClient(config)
     transport.putQuery.mockRejectedValue(error)
-    await expect(insertTrackIntoPlaylist('playlist', 'track')).rejects.toBe(error)
+    await expect(insertTrackIntoPlaylist('playlist', '123')).rejects.toBe(error)
     expect(transport.putQuery).toHaveBeenCalledTimes(1)
     transport.query.mockResolvedValue({ MediaContainer: { Directory: [{ key: '12', refreshing: false }] } })
     transport.request.mockRejectedValue(error)

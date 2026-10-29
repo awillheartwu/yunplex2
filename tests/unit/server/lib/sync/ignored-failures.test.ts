@@ -34,6 +34,7 @@ const remote = vi.hoisted(() => ({
   getRecentlyAddedTracks: vi.fn(),
   getLibraryScanState: vi.fn(),
   insertTrackIntoPlaylist: vi.fn(),
+  insertTracksIntoPlaylist: vi.fn(),
   getPlaylistItemIds: vi.fn(),
   movePlaylistItemToTop: vi.fn(),
   movePlaylistItemAfter: vi.fn(),
@@ -61,6 +62,8 @@ vi.mock('~~/server/lib/plex-client', async importOriginal => {
     getPlaylistByRatingKey: remote.getPlaylistByRatingKey,
     findPlaylist: remote.findPlaylist,
     getPlaylistTracks: remote.getPlaylistTracks,
+    getPlaylistWriteTracks: remote.getPlaylistTracks,
+    assertPlexClientConfig: vi.fn(),
     getPlaylistUpdatedAt: remote.getPlaylistUpdatedAt,
     getSectionKey: remote.getSectionKey,
     getTracksByRatingKeys: remote.getTracksByRatingKeys,
@@ -69,6 +72,7 @@ vi.mock('~~/server/lib/plex-client', async importOriginal => {
     getRecentlyAddedTracks: remote.getRecentlyAddedTracks,
     getLibraryScanState: remote.getLibraryScanState,
     insertTrackIntoPlaylist: remote.insertTrackIntoPlaylist,
+    insertTracksIntoPlaylist: remote.insertTracksIntoPlaylist,
     getPlaylistItemIds: remote.getPlaylistItemIds,
     movePlaylistItemToTop: remote.movePlaylistItemToTop,
     movePlaylistItemAfter: remote.movePlaylistItemAfter,
@@ -209,10 +213,10 @@ async function runIgnoredSync(
     })
     remote.fetchNeteaseSongDetails.mockResolvedValue({ songs: [activeSong], rawSongs: [] })
     remote.initPlexClient.mockResolvedValue('machine-1')
-    remote.getPlaylistByRatingKey.mockResolvedValue({ title: 'Ignored Source', ratingKey: 'playlist-1' })
-    remote.findPlaylist.mockResolvedValue({ title: 'Ignored Source', ratingKey: 'playlist-1' })
+    remote.getPlaylistByRatingKey.mockResolvedValue({ title: 'Ignored Source', ratingKey: 'playlist-1', playlistType: 'audio', smart: 0 })
+    remote.findPlaylist.mockResolvedValue({ title: 'Ignored Source', ratingKey: 'playlist-1', playlistType: 'audio', smart: 0 })
     remote.getPlaylistSnapshotByRatingKey.mockResolvedValue({
-      playlist: { title: 'Ignored Source', ratingKey: 'playlist-1' },
+      playlist: { title: 'Ignored Source', ratingKey: 'playlist-1', playlistType: 'audio', smart: 0 },
       updatedAt: 10,
       tracks: playlistTracks,
     })
@@ -278,6 +282,7 @@ function expectIgnoredBoundary(
   expect(result.downloadTaskCount).toBe(0)
 
   expect(remote.insertTrackIntoPlaylist).not.toHaveBeenCalled()
+  expect(remote.insertTracksIntoPlaylist).not.toHaveBeenCalled()
   expect(remote.getPlaylistItemIds).not.toHaveBeenCalled()
   expect(remote.movePlaylistItemToTop).not.toHaveBeenCalled()
   expect(remote.movePlaylistItemAfter).not.toHaveBeenCalled()
@@ -313,6 +318,7 @@ function expectIgnoredBoundary(
 beforeEach(() => {
   vi.resetAllMocks()
   remote.insertTrackIntoPlaylist.mockRejectedValue(new Error('unexpected Plex insert'))
+  remote.insertTracksIntoPlaylist.mockRejectedValue(new Error('unexpected Plex batch insert'))
   remote.getPlaylistItemIds.mockRejectedValue(new Error('unexpected Plex item lookup'))
   remote.movePlaylistItemToTop.mockRejectedValue(new Error('unexpected Plex move'))
   remote.movePlaylistItemAfter.mockRejectedValue(new Error('unexpected Plex move'))

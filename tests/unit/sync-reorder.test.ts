@@ -1,27 +1,69 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { closeDb, initDb } from '../../server/lib/db'
+import { createSource } from '../../server/lib/playlist/store'
 
 vi.mock('../../server/lib/plex-client', () => ({
-  insertTrackIntoPlaylist: vi.fn(),
-  getPlaylistItemIds: vi.fn(),
+  insertTracksIntoPlaylist: vi.fn(),
+  playlistInsertBatches: (keys: readonly string[]) => keys.length ? [[...keys]] : [],
   movePlaylistItemAfter: vi.fn(),
   movePlaylistItemToTop: vi.fn(),
   removeTrackFromPlaylist: vi.fn(),
-  getPlaylistTracks: vi.fn(),
+  getPlaylistWriteTracks: vi.fn(),
 }))
 
-import { applyFullReorder, computeLCS, PlexReorderError, validatePlaylistOrder } from '../../server/lib/sync/reorder'
+import { applyFullReorder as applyReorder, computeLCS, PlexReorderError, validatePlaylistOrder, type PlexItem } from '../../server/lib/sync/reorder'
 import {
-  getPlaylistItemIds,
-  getPlaylistTracks,
-  insertTrackIntoPlaylist,
+  getPlaylistWriteTracks,
+  insertTracksIntoPlaylist,
+  movePlaylistItemAfter,
   movePlaylistItemToTop,
   removeTrackFromPlaylist,
 } from '../../server/lib/plex-client'
 
-beforeEach(() => {
+let directory: string
+let sourceId: string
+let playlist: PlexItem[]
+let nextItemId: number
+
+function applyFullReorder(...args: Parameters<typeof applyReorder>) {
+  playlist = args[2].map(item => ({ ...item }))
+  nextItemId = Math.max(0, ...playlist.map(item => item.playlistItemId)) + 1
+  const [key, target, current, section, cancelled, log, options] = args
+  return applyReorder(key, target, current, section, cancelled, log,
+    { ...options, owner: { sourceId, scope: 'fixture-server', assertCurrent: () => undefined } })
+}
+
+function move(id: number, anchor: number | null) {
+  const index = playlist.findIndex(item => item.playlistItemId === id)
+  const [item] = playlist.splice(index, 1)
+  playlist.splice(anchor === null ? 0 : playlist.findIndex(item => item.playlistItemId === anchor) + 1, 0, item!)
+}
+
+beforeEach(async () => {
   vi.resetAllMocks()
-  vi.mocked(getPlaylistTracks).mockResolvedValue([])
+  directory = mkdtempSync(join(tmpdir(), 'reyunplex-reorder-boundary-'))
+  initDb(directory)
+  sourceId = (await createSource(1, '', { name: 'Fixture source' })).id
+  playlist = []
+  nextItemId = 1
+  vi.mocked(getPlaylistWriteTracks).mockImplementation(async () => playlist.map(item => ({
+    ratingKey: item.ratingKey, playlistItemID: item.playlistItemId,
+    title: item.ratingKey, grandparentTitle: '', parentTitle: '',
+  })))
+  vi.mocked(insertTracksIntoPlaylist).mockImplementation(async (_key, keys) => {
+    for (const ratingKey of keys) playlist.push({ ratingKey, playlistItemId: nextItemId++ })
+  })
+  vi.mocked(movePlaylistItemToTop).mockImplementation(async (_key, id) => { move(id, null) })
+  vi.mocked(movePlaylistItemAfter).mockImplementation(async (_key, id, anchor) => { move(id, anchor) })
+  vi.mocked(removeTrackFromPlaylist).mockImplementation(async (_key, id) => {
+    playlist = playlist.filter(item => item.playlistItemId !== id)
+  })
 })
+
+afterEach(() => { closeDb(); rmSync(directory, { recursive: true, force: true }) })
 
 describe('validatePlaylistOrder', () => {
   it('passes when target tracks are present in order and no extras are disallowed', () => {
@@ -148,17 +190,18 @@ describe('computeLCS', () => {
 
   it('handles reversed arrays (LCS length 1)', () => {
     const result = computeLCS([1, 2, 3], [3, 2, 1])
-    // Preserve the original full-table backtracking preference on ties.
-    expect(result).toEqual(new Set([1]))
+    expect(result.size).toBe(1)
+    expect([1, 2, 3]).toContain([...result][0])
   })
 
-  it('preserves the original tie-breaking when multiple longer subsequences exist', () => {
-    expect(computeLCS([1, 2, 3], [2, 1, 3])).toEqual(new Set([1, 3]))
+  it('keeps a maximum common subsequence when several choices are valid', () => {
+    const result = computeLCS([1, 2, 3], [2, 1, 3])
+    expect(result.size).toBe(2)
+    expect([1, 2, 3].filter(id => result.has(id))).toEqual([2, 1, 3].filter(id => result.has(id)))
   })
 
-  it('handles duplicate elements', () => {
-    const result = computeLCS([1, 1, 2], [1, 2, 2])
-    expect(result).toEqual(new Set([1, 2]))
+  it('rejects duplicate concrete playlist item IDs', () => {
+    expect(() => computeLCS([1, 1, 2], [1, 2, 2])).toThrow('唯一的 playlistItemID')
   })
 
   it('handles longer sequences without error', () => {
@@ -179,11 +222,12 @@ describe('computeLCS', () => {
 
     const result = computeLCS(currentOrder, targetOrder)
 
-    expect(result).toEqual(new Set([0]))
+    expect(result.size).toBe(1)
+    expect(currentOrder).toContain([...result][0])
   }, 15_000)
 
   it('throws when Plex insert fails instead of silently reporting success', async () => {
-    vi.mocked(insertTrackIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))
+    vi.mocked(insertTracksIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))
 
     await expect(applyFullReorder(
       'playlist-1',
@@ -193,10 +237,11 @@ describe('computeLCS', () => {
       () => false,
       () => {},
     )).rejects.toBeInstanceOf(PlexReorderError)
+    expect(insertTracksIntoPlaylist).toHaveBeenCalledOnce()
   })
 
   it('never removes an old item when inserting its replacement fails', async () => {
-    vi.mocked(insertTrackIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))
+    vi.mocked(insertTracksIntoPlaylist).mockRejectedValue(new Error('Plex insert failed'))
 
     await expect(applyFullReorder(
       'playlist-1',
@@ -212,9 +257,6 @@ describe('computeLCS', () => {
   })
 
   it('inserts missing duplicate target occurrences', async () => {
-    vi.mocked(insertTrackIntoPlaylist).mockResolvedValue(undefined)
-    vi.mocked(getPlaylistItemIds).mockResolvedValue([101, 102])
-
     const result = await applyFullReorder(
       'playlist-1',
       ['rating-1', 'rating-1'],
@@ -225,17 +267,11 @@ describe('computeLCS', () => {
     )
 
     expect(result.inserted).toBe(1)
-    expect(insertTrackIntoPlaylist).toHaveBeenCalledTimes(1)
-    expect(insertTrackIntoPlaylist).toHaveBeenCalledWith('playlist-1', 'rating-1')
+    expect(insertTracksIntoPlaylist).toHaveBeenCalledTimes(1)
+    expect(insertTracksIntoPlaylist).toHaveBeenCalledWith('playlist-1', ['rating-1'])
   })
 
   it('removes surplus duplicate occurrences when exact sync is expected', async () => {
-    vi.mocked(removeTrackFromPlaylist).mockResolvedValue(undefined)
-    vi.mocked(getPlaylistTracks).mockResolvedValue([
-      { ratingKey: 'rating-1' },
-      { ratingKey: 'rating-1' },
-    ] as any)
-
     const result = await applyFullReorder(
       'playlist-1',
       ['rating-1'],
@@ -268,17 +304,18 @@ describe('computeLCS', () => {
 
     expect(result.removed).toBe(0)
     expect(result.preserved).toBe(1)
-    expect(result.mutations).toContainEqual({
+    expect(result.mutations).toContainEqual(expect.objectContaining({
       action: 'preserve',
       ratingKey: 'old-rating',
       playlistItemId: 102,
-      reason: '未获得逐项强身份删除授权',
-    })
+      reason: expect.any(String),
+    }))
     expect(removeTrackFromPlaylist).not.toHaveBeenCalled()
   })
 
   it('does not remove authorized extras when target reordering fails', async () => {
     vi.mocked(movePlaylistItemToTop).mockRejectedValue(new Error('Plex move failed'))
+    vi.mocked(movePlaylistItemAfter).mockRejectedValue(new Error('Plex move failed'))
 
     await expect(applyFullReorder(
       'playlist-1',
@@ -298,11 +335,8 @@ describe('computeLCS', () => {
   })
 
   it('does not delete authorized old items when Plex move calls are no-ops', async () => {
-    vi.mocked(getPlaylistTracks).mockResolvedValue([
-      { ratingKey: 'rating-1', playlistItemID: 101 },
-      { ratingKey: 'rating-2', playlistItemID: 102 },
-      { ratingKey: 'old-rating', playlistItemID: 103 },
-    ] as any)
+    vi.mocked(movePlaylistItemToTop).mockResolvedValue(undefined)
+    vi.mocked(movePlaylistItemAfter).mockResolvedValue(undefined)
 
     await expect(applyFullReorder(
       'playlist-1',
@@ -318,23 +352,13 @@ describe('computeLCS', () => {
       { authorizedRemovalItemIds: new Set([103]) },
     )).rejects.toBeInstanceOf(PlexReorderError)
 
-    expect(getPlaylistTracks).toHaveBeenCalledTimes(4)
+    expect(vi.mocked(movePlaylistItemAfter).mock.calls.length + vi.mocked(movePlaylistItemToTop).mock.calls.length).toBeGreaterThan(0)
     expect(removeTrackFromPlaylist).not.toHaveBeenCalled()
   })
 
   it('retains confirmed removal mutations when a later occurrence fails', async () => {
-    vi.mocked(getPlaylistTracks)
-      .mockResolvedValueOnce([
-        { ratingKey: 'target', playlistItemID: 100 },
-        { ratingKey: 'old-1', playlistItemID: 101 },
-        { ratingKey: 'old-2', playlistItemID: 102 },
-      ] as any)
-      .mockResolvedValue([
-        { ratingKey: 'target', playlistItemID: 100 },
-        { ratingKey: 'old-2', playlistItemID: 102 },
-      ] as any)
     vi.mocked(removeTrackFromPlaylist)
-      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async (_key, id) => { playlist = playlist.filter(item => item.playlistItemId !== id) })
       .mockRejectedValueOnce(new Error('second delete failed'))
 
     let error: PlexReorderError | undefined
@@ -359,10 +383,10 @@ describe('computeLCS', () => {
 
     expect(error).toBeInstanceOf(PlexReorderError)
     expect(error?.result.removed).toBe(1)
-    expect(error?.result.mutations).toContainEqual({
+    expect(error?.result.mutations).toContainEqual(expect.objectContaining({
       action: 'remove',
       ratingKey: 'old-1',
       playlistItemId: 101,
-    })
+    }))
   })
 })

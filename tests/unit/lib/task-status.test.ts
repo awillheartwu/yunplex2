@@ -71,7 +71,7 @@ describe('task status semantics', () => {
       ['成功', 1, 'success'],
       ['已存在', 42, 'existing'],
       ['历史提示', 1, 'warning'],
-      ['已移除', 1, 'warning'],
+      ['已移除', 1, 'neutral'],
       ['失败', 0, 'failure'],
     ])
   })
