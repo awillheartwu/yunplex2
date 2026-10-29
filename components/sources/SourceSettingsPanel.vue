@@ -36,6 +36,7 @@
       <div v-if="source.type === 'playlist'" class="source-settings__toggles">
         <ToggleField v-model="form.autoCreatePlexPlaylist" label="自动创建 Plex 歌单" hint="目标不存在时创建" />
       </div>
+      <SourcePlexTarget :source="source" @saved="emit('saved', $event)" />
     </section>
     <section class="section-card source-settings__section">
       <header>

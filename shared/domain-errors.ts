@@ -10,6 +10,7 @@ export type DomainErrorCode =
   | 'rate_limited'
   | 'netease_unavailable'
   | 'plex_unavailable'
+  | 'plex_write_uncertain'
   | 'filesystem_failed'
   | 'media_identity_conflict'
   | 'scheduler_interrupted'
@@ -42,6 +43,7 @@ export const DOMAIN_ERROR_CATALOG: Record<DomainErrorCode, Omit<DomainErrorDefin
   rate_limited: { code: 'rate_limited', category: 'netease', severity: 'warning', label: '请求受限', userMessage: '服务请求过于频繁，系统稍后可以重试。' },
   netease_unavailable: { code: 'netease_unavailable', category: 'netease', severity: 'warning', label: '网易云连接异常', userMessage: '暂时无法连接网易云服务，请检查网络或代理后重试。' },
   plex_unavailable: { code: 'plex_unavailable', category: 'plex', severity: 'warning', label: 'Plex 不可用', userMessage: '暂时无法连接 Plex，请检查服务状态和网络后重试。' },
+  plex_write_uncertain: { code: 'plex_write_uncertain', category: 'plex', severity: 'warning', label: 'Plex 写入结果待确认', userMessage: '上次 Plex 写入尚无完整读回证据，已停止后续写入。请核对实际歌单后重试；创建结果未知时需明确选择实际目标。' },
   filesystem_failed: { code: 'filesystem_failed', category: 'filesystem', severity: 'error', label: '文件写入失败', userMessage: '媒体目录无法读写，请检查挂载、权限和剩余空间。' },
   media_identity_conflict: { code: 'media_identity_conflict', category: 'media', severity: 'warning', label: '媒体身份冲突', userMessage: '候选媒体无法安全确认，需要手动选择或改为托管下载。' },
   scheduler_interrupted: { code: 'scheduler_interrupted', category: 'scheduler', severity: 'warning', label: '任务被中断', userMessage: '任务因服务重启或租约失效而中断，可以安全重试。' },

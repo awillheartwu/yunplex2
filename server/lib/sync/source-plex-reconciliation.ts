@@ -1,3 +1,9 @@
+import type { PlaylistWriteProgress } from '../../../shared/playlist-write'
+import { playlistIdentityValidator } from './playlist-write-identity'
+import { ensureSourcePlaylistTarget } from './source-playlist-target'
+import { assertPlaylistWriteContext, playlistServerScope } from './playlist-write-state'
+import { playlistWriteItems } from './playlist-write-snapshot'
+import { beginPlaylistSongConfirmation } from './playlist-song-outcomes'
 import { getMediaCorrection } from './media-corrections'
 import { openPlexScanEvents } from '../plex-scan-events'
 import type { AppConfig } from '../config/types'
@@ -6,7 +12,7 @@ import type { SyncState } from '../log/types'
 import type { PlaylistSource } from '../playlist/types'
 import type { RunBuilder } from '../run/builder'
 import {
-  getPlaylistTracks,
+  getPlaylistWriteTracks,
   getTrackByRatingKey,
 } from '../plex-client'
 import {
@@ -22,6 +28,8 @@ import {
 import {
   acquireIdentityMutationLock,
   applyVerifiedBindingsIfSnapshotCurrent,
+  assertBindingVersionsUnchanged,
+  assertBindingRatingKeysUnchanged,
   type BindingVersionSnapshot,
 } from './identity-coordinator'
 import {
@@ -95,6 +103,7 @@ interface ReconcilePlexPlaylistInput {
   isCancellationRequested: () => boolean
   throwIfCancelled: () => void
   setStage: (stage: SyncState['currentStage']) => void
+  onProgress?: (value: PlaylistWriteProgress) => void
   log: (level: 'warn' | 'error', message: string, detail?: string) => void
 }
 
@@ -134,15 +143,19 @@ export async function reconcilePlexPlaylist(
   // Song metadata remains shared; matchTrace is replaced when identity changes.
   const resolutions = downloadedResolutions.map(resolution => ({ ...resolution }))
   const extraTaskIds = new Map(previousExtraTaskIds)
+  const retryStatuses = new Map(job.getRun().songs.map(song => [song.id, song.status]))
+  const outcomes = beginPlaylistSongConfirmation(job, source.id)
+  try {
 
-  const reorderStep = job.startStep('reorder', '核对 Plex 媒体并更新歌单', {
-    context: {
-      ...stepContext,
-      plexPlaylistName: plexPlaylist.title || stepContext.plexPlaylistName,
-      plexPlaylistRatingKey: plexPlaylist.ratingKey,
-      sectionKey,
-    },
-  })
+  const reorderContext = { ...stepContext, plexPlaylistName: plexPlaylist.title || stepContext.plexPlaylistName,
+    plexPlaylistRatingKey: plexPlaylist.ratingKey, sectionKey }
+  const reorderStep = job.startStep('reorder', '核对 Plex 媒体并更新歌单', { context: reorderContext })
+  let createdCount = 0
+  const onProgress = (value: PlaylistWriteProgress) => {
+    job.updateStepProgress(reorderStep, value)
+    if (value.phase === 'creating') createdCount = value.confirmed
+    input.onProgress?.(value)
+  }
   setStage('refreshing_plex')
 
   const plexMatchResults = new Map<number, PlexMatchResult>()
@@ -152,7 +165,8 @@ export async function reconcilePlexPlaylist(
   const retryRequests = resolutions.flatMap((resolution, index) => {
     const currentSong = getResolutionTask(job, source.id, resolution)
     const filePath = currentSong?.filePath ?? resolution.filePath
-    return shouldAttemptPlexRetryForResolution(resolution.resolution, currentSong?.status, filePath)
+    return shouldAttemptPlexRetryForResolution(resolution.resolution,
+      currentSong ? retryStatuses.get(currentSong.id) ?? currentSong.status : undefined, filePath)
       ? [{ key: String(index), song: resolution.song, filePath }]
       : []
   })
@@ -173,7 +187,7 @@ export async function reconcilePlexPlaylist(
     throwIfCancelled()
     const songId = findResolutionTaskId(job, source.id, resolution)
     const currentSong = getResolutionTask(job, source.id, resolution)
-    const effectiveStatus = currentSong?.status
+    const effectiveStatus = currentSong ? retryStatuses.get(currentSong.id) ?? currentSong.status : undefined
     const effectiveFilePath = currentSong?.filePath ?? resolution.filePath
     if (effectiveFilePath && !resolution.filePath) resolution.filePath = effectiveFilePath
 
@@ -246,13 +260,6 @@ export async function reconcilePlexPlaylist(
         job.updateSong(songId, { metadata: { matchTrace: { ...resolution.matchTrace } } })
       }
     }
-    if (currentSong?.status === 'pending' && songId) {
-      job.updateSong(songId, {
-        status: 'success',
-        phase: 'done',
-        filePath: effectiveFilePath ?? undefined,
-      })
-    }
   }
 
   for (const resolution of resolutions) {
@@ -284,14 +291,44 @@ export async function reconcilePlexPlaylist(
     })
   }
 
-  const currentPlaylistTracks = (await getPlaylistTracks(plexPlaylist.ratingKey, 99999))
-    .filter(track => track.playlistItemID)
+  setStage('updating_plex_playlist')
+  const releaseBoundary = await acquireIdentityMutationLock()
+  try {
+    const currentBindings = applyVerifiedBindingsIfSnapshotCurrent(bindingVersionSnapshot, pendingVerifiedBindings, bindingRatingKeys)
+    assertResolvedIdentitiesCurrent(resolutions, currentBindings)
+    const writeIdentity = captureSourceConvergenceCheckpoint(currentIdOrder)
+    const owner = {
+      sourceId: source.id, scope: playlistServerScope(config),
+      assertCurrent: () => {
+        throwIfCancelled()
+        assertPlaylistWriteContext(source, config)
+        assertBindingVersionsUnchanged(writeIdentity.bindings)
+        assertBindingRatingKeysUnchanged(writeIdentity.plexRatingKeys)
+        input.assertRecoveryContextUnchanged?.()
+      },
+      ...playlistIdentityValidator(currentBindings, config),
+    }
+    owner.assertCurrent()
+    await ensureSourcePlaylistTarget({ source, config, playlist: plexPlaylist,
+      targets: buildStrongTargetOrder(resolutions.map(resolution => ({ neteaseSongId: resolution.song.id,
+        plexRatingKey: resolution.plexRatingKey, matchTrace: resolution.matchTrace }))), context: stepContext, owner, onProgress,
+      onTarget: key => job.updateStepContext(reorderStep, { plexPlaylistRatingKey: key }) })
+    reorderContext.plexPlaylistRatingKey = plexPlaylist.ratingKey
+    if (!plexPlaylist.ratingKey) {
+      job.finishStep(reorderStep, 'skipped', '尚无具备强身份的目标媒体，未创建 Plex 歌单')
+      return captureSourceConvergenceCheckpoint(currentIdOrder)
+    }
+  const currentPlaylistTracks = await getPlaylistWriteTracks(plexPlaylist.ratingKey)
+  owner.assertCurrent()
+  owner.validateTracks(currentPlaylistTracks)
+  const occurrenceItems = playlistWriteItems(currentPlaylistTracks)
   if (input.expectedPlexFingerprint && buildPlexPlaylistFingerprint(currentPlaylistTracks) !== input.expectedPlexFingerprint) {
     throw new Error('Plex 歌单在索引恢复期间被修改，本轮未执行歌单写入，请正常同步')
   }
   const currentItems = currentPlaylistTracks.map(track => ({
     ratingKey: track.ratingKey,
     playlistItemId: track.playlistItemID!,
+    filePaths: occurrenceItems.find(item => item.playlistItemId === track.playlistItemID)!.filePaths,
     observationKey: buildExtraTrackObservationKey(
       track.ratingKey,
       (track.Media ?? []).flatMap(media =>
@@ -445,27 +482,19 @@ export async function reconcilePlexPlaylist(
     }
   }
 
-  setStage('updating_plex_playlist')
-  let releaseIdentityLock: (() => void) | null = null
-  let reorderMutationsApplied = false
+
   let checkpoint: SourceConvergenceCheckpoint | undefined
+  let mutationSummary = ''
   try {
-    releaseIdentityLock = await acquireIdentityMutationLock()
+    owner.assertCurrent()
     input.assertRecoveryContextUnchanged?.()
     if (input.expectedPlexFingerprint) {
-      const writeSnapshot = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
+      const writeSnapshot = await getPlaylistWriteTracks(plexPlaylist.ratingKey)
       if (buildPlexPlaylistFingerprint(writeSnapshot) !== input.expectedPlexFingerprint) {
         throw new Error('Plex 歌单在索引恢复期间被修改，本轮未执行歌单写入，请正常同步')
       }
       input.assertRecoveryContextUnchanged?.()
     }
-    const currentBindings = applyVerifiedBindingsIfSnapshotCurrent(
-      bindingVersionSnapshot,
-      pendingVerifiedBindings,
-      bindingRatingKeys,
-    )
-    assertResolvedIdentitiesCurrent(resolutions, currentBindings)
-
     const reorderResult = await applyFullReorder(
       plexPlaylist.ratingKey,
       reconciliationPlan.targetOrder,
@@ -474,18 +503,19 @@ export async function reconcilePlexPlaylist(
       isCancellationRequested,
       (level, message) => log(level, message),
       {
+        owner, onProgress,
+        onConfirmed: applyConfirmedReorderMutations,
         authorizedRemovalItemIds: reconciliationPlan.authorizedRemovalItemIds,
         removalProtectionReason: reconciliationPlan.hasIncompleteTargetOrder
           ? '目标歌单尚有未建立强身份的歌曲'
           : '缺少可审计的旧身份',
       },
     )
-    applyConfirmedReorderMutations(reorderResult.mutations)
-    reorderMutationsApplied = true
-    const postPlaylistTracks = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
-    const postItems = postPlaylistTracks
-      .filter(track => track.playlistItemID)
-      .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
+    mutationSummary = `新增 ${createdCount + reorderResult.inserted} 项，调序 ${reorderResult.moved} 项，移除 ${reorderResult.removed} 项`
+    const postPlaylistTracks = await getPlaylistWriteTracks(plexPlaylist.ratingKey)
+    owner.assertCurrent()
+    owner.validateTracks(postPlaylistTracks)
+    const postItems = playlistWriteItems(postPlaylistTracks)
     const orderValidation = validatePlaylistOrder(reconciliationPlan.targetOrder, postItems, {
       allowExtra: reconciliationPlan.allowExtra,
     })
@@ -504,15 +534,16 @@ export async function reconcilePlexPlaylist(
       undefined,
       buildPlexPathSnapshot(postPlaylistTracks),
     )
+    const confirmedKeys = new Set(reconciliationPlan.targetOrder)
+    outcomes.confirm(resolutions.flatMap(resolution => resolution.plexRatingKey && confirmedKeys.has(resolution.plexRatingKey)
+      ? [findResolutionTaskId(job, source.id, resolution)].filter((id): id is string => Boolean(id)) : []))
     checkpoint = captureSourceConvergenceCheckpoint(currentIdOrder)
   } catch (error) {
     if (error instanceof PlexReorderCancelledError) {
-      applyConfirmedReorderMutations(error.result.mutations)
       throw error
     }
     if (error instanceof PlexReorderError) {
-      if (!reorderMutationsApplied) applyConfirmedReorderMutations(error.result.mutations)
-      const ratingKeyToSongIds = new Map<string, string[]>()
+        const ratingKeyToSongIds = new Map<string, string[]>()
       for (const resolution of resolutions) {
         if (!resolution.plexRatingKey) continue
         const taskSongId = findResolutionTaskId(job, source.id, resolution)
@@ -542,7 +573,7 @@ export async function reconcilePlexPlaylist(
     }
 
     try {
-      const partialTracks = await getPlaylistTracks(plexPlaylist.ratingKey, 99999)
+      const partialTracks = await getPlaylistWriteTracks(plexPlaylist.ratingKey)
       recordSourceObservation(source.id, {
         plexFingerprint: buildPlexPlaylistFingerprint(partialTracks),
         plexPaths: buildPlexPathSnapshot(partialTracks),
@@ -551,8 +582,6 @@ export async function reconcilePlexPlaylist(
       // Preserve and report the original mutation failure.
     }
     throw error
-  } finally {
-    releaseIdentityLock?.()
   }
 
   throwIfCancelled()
@@ -560,10 +589,16 @@ export async function reconcilePlexPlaylist(
     && target.matchTrace?.identity?.bindingStatus === 'active'
     && ['path', 'manual'].includes(target.matchTrace.identity.method)).length
   const sharedCount = resolvedCount - strongTargetOrder.length
-  job.finishStep(reorderStep, 'success', sharedCount > 0
+  const completionMessage = sharedCount > 0
     ? `Plex 歌单重排完成，${resolvedCount} 首来源歌曲对应 ${strongTargetOrder.length} 个 Plex 媒体，${sharedCount} 首共用已有媒体`
-    : 'Plex 歌单重排完成')
+    : 'Plex 歌单重排完成'
+  job.finishStep(reorderStep, 'success', `${completionMessage}；${mutationSummary}`)
   return checkpoint!
+  } finally { releaseBoundary() }
+  } catch (error) {
+    outcomes.defer(error)
+    throw error
+  } finally { outcomes.defer() }
 }
 
 /**

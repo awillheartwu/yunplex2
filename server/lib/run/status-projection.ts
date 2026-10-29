@@ -1,5 +1,5 @@
 import type { getDb } from '../db'
-import type { JobStatus, SourceRequestStatus, TaskRunType } from '../job/types'
+import type { JobStatus, SourceRequestStatus, TaskRun, TaskRunType } from '../job/types'
 import type { RunIssueCounts, SongStatus } from '../job/types'
 import { summarizeRunIssues } from '../../../lib/run-issues'
 
@@ -15,6 +15,7 @@ export type TaskRunDynamicFields = {
   issueCounts: RunIssueCounts
   awaitingSourceSync: boolean
   sourceRequestStatus: SourceRequestStatus | null
+  initializationResult?: TaskRun['initializationResult']
 }
 
 const awaitingActionSchemaSupport = new WeakMap<object, boolean>()
@@ -97,6 +98,15 @@ export function projectTaskRunDynamicFields(db: RunDatabase, row: TaskRunStatusR
     source_request_status: SourceRequestStatus | null
   }
 
+  const initialization = row.type === 'source_initialization'
+    ? db.prepare('SELECT commit_result_json FROM source_initializations WHERE run_id = ?').get(row.id) as { commit_result_json: string | null } | undefined
+    : undefined
+  let initializationResult: TaskRun['initializationResult']
+  if (initialization?.commit_result_json) {
+    const { applied, downloads, deferred, conflicts } = JSON.parse(initialization.commit_result_json) as NonNullable<TaskRun['initializationResult']>
+    initializationResult = { applied, downloads, deferred, conflicts }
+  }
+
   return {
     issueCounts: summarizeRunIssues((db.prepare(`SELECT item_id AS id,source_id AS sourceId,
       netease_song_id AS neteaseSongId,status FROM task_run_song_changes WHERE run_id=?
@@ -104,5 +114,6 @@ export function projectTaskRunDynamicFields(db: RunDatabase, row: TaskRunStatusR
       .all(row.id) as { id: string; sourceId?: string; neteaseSongId?: number; status: SongStatus }[])),
     awaitingSourceSync: result.awaiting_source_sync === 1,
     sourceRequestStatus: result.source_request_status,
+    initializationResult,
   }
 }

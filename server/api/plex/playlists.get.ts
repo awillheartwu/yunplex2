@@ -1,6 +1,6 @@
 import { success, fail } from '../../lib/response'
 import { readConfig } from '../../lib/config/store'
-import { initPlexClient, listPlaylists } from '../../lib/plex-client'
+import { initPlexClient, isWritableAudioPlaylist, listPlaylists } from '../../lib/plex-client'
 
 export default defineEventHandler(async () => {
   const cfg = readConfig()
@@ -9,7 +9,7 @@ export default defineEventHandler(async () => {
   try {
     await initPlexClient(cfg.plex)
     const playlists = await listPlaylists()
-    return success(playlists)
+    return success(playlists.filter(isWritableAudioPlaylist))
   } catch (err) {
     return fail(err, 1, 'plex_unavailable')
   }

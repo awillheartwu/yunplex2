@@ -29,6 +29,16 @@ export interface PlexTrack {
   }>
 }
 
+export interface PlexPlaylist {
+  title: string
+  ratingKey: string
+  playlistType?: string
+  smart?: boolean | number | string
+}
+export function isWritableAudioPlaylist(playlist: PlexPlaylist): boolean {
+  return playlist.playlistType === 'audio' && [false, 0, '0'].includes(playlist.smart as boolean | number | string)
+}
+
 let client: ReturnType<typeof createPlexHttpClient> | null = null
 let machineId = ''
 let clientFingerprint = ''
@@ -132,6 +142,7 @@ function invalidateAllSectionPathIndexes(): void {
 
 export function createPlexClient(config: PlexConfig) {
   const nextFingerprint = JSON.stringify([config.server, config.port, config.token, config.section])
+  if (client && clientFingerprint === nextFingerprint) return client
   if (clientFingerprint && clientFingerprint !== nextFingerprint) {
     invalidateAllSectionPathIndexes()
     machineId = ''
@@ -141,24 +152,35 @@ export function createPlexClient(config: PlexConfig) {
   return client
 }
 
+export function assertPlexClientConfig(config: PlexConfig): void {
+  if (clientFingerprint !== JSON.stringify([config.server, config.port, config.token, config.section])) {
+    throw Object.assign(new Error('Plex 连接在等待期间已变化，本轮停止继续写入'), { code: 'concurrent_operation' })
+  }
+}
+
 export async function initPlexClient(config: PlexConfig): Promise<string> {
   const initializedClient = createPlexClient(config)
 
   const res = await initializedClient.query('/')
   const nextMachineId = (res as { MediaContainer?: { machineIdentifier?: string } }).MediaContainer
     ?.machineIdentifier ?? ''
+  if (client !== initializedClient) {
+    throw Object.assign(new Error('Plex 连接在初始化期间已变化，请重新读取'), { code: 'concurrent_operation' })
+  }
   if (machineId && nextMachineId && machineId !== nextMachineId) invalidateAllSectionPathIndexes()
   machineId = nextMachineId
-  return machineId
+  return nextMachineId
 }
 
 export async function findPlaylist(playlistName: string) {
   if (!client) throw new Error('Plex client not initialized')
   const res = (await client.query('/playlists')) as {
-    MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] }
+    MediaContainer?: { Metadata?: PlexPlaylist[] }
   }
   const metadata = res.MediaContainer?.Metadata ?? []
-  return metadata.find((item) => item.title === playlistName) ?? null
+  const matches = metadata.filter((item) => item.title === playlistName && isWritableAudioPlaylist(item))
+  if (matches.length > 1) throw Object.assign(new Error(`Plex 中存在多个同名歌单「${playlistName}」，请在收藏设置中明确选择目标`), { code: 'plex_write_uncertain' })
+  return matches[0] ?? null
 }
 
 export function isPlexNotFoundError(error: unknown): boolean {
@@ -181,11 +203,11 @@ export function isPlexNotFoundError(error: unknown): boolean {
 }
 
 /** Direct playlist lookup by ratingKey — used when ID binding is established */
-export async function getPlaylistByRatingKey(ratingKey: string): Promise<{ title: string; ratingKey: string } | null> {
+export async function getPlaylistByRatingKey(ratingKey: string): Promise<PlexPlaylist | null> {
   if (!client) throw new Error('Plex client not initialized')
   try {
     const res = (await client.query(`/playlists/${ratingKey}`)) as {
-      MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] | { title: string; ratingKey: string } }
+      MediaContainer?: { Metadata?: PlexPlaylist[] | PlexPlaylist }
     }
     const raw = res.MediaContainer?.Metadata
     if (!raw) return null
@@ -245,24 +267,45 @@ export async function getPlaylistUpdatedAt(ratingKey: string): Promise<number | 
   }
 }
 
-export async function listPlaylists(): Promise<Array<{ title: string; ratingKey: string }>> {
+export async function listPlaylists(): Promise<PlexPlaylist[]> {
   if (!client) throw new Error('Plex client not initialized')
   const res = (await client.query('/playlists')) as {
-    MediaContainer?: { Metadata?: { title: string; ratingKey: string }[] }
+    MediaContainer?: { Metadata?: PlexPlaylist[] }
   }
   const items = res.MediaContainer?.Metadata ?? []
   return Array.isArray(items) ? items : [items]
 }
 
-export async function createPlaylist(name: string, sectionKey: string): Promise<{ title: string; ratingKey: string }> {
+export function playlistContentUri(ratingKeys: readonly string[]): string {
+  if (!machineId) throw new Error('Plex client not initialized (no machineId)')
+  if (!ratingKeys.length || ratingKeys.some(key => !/^\d+$/.test(key))) throw new Error('Plex 歌单需要真实媒体 ID')
+  return `server://${machineId}/com.plexapp.plugins.library/library/metadata/${ratingKeys.join(',')}`
+}
+
+export function playlistInsertBatches(ratingKeys: readonly string[]): string[][] {
+  const batches: string[][] = []
+  let batch: string[] = []
+  for (const key of ratingKeys) {
+    if (batch.length && (batch.length >= 100 || encodeURIComponent(playlistContentUri([...batch, key])).length > 4096)) {
+      batches.push(batch)
+      batch = []
+    }
+    batch.push(key)
+    playlistContentUri(batch)
+  }
+  if (batch.length) batches.push(batch)
+  return batches
+}
+
+export async function createPlaylist(name: string, ratingKeys: readonly string[]): Promise<{ title: string; ratingKey: string }> {
   if (!client) throw new Error('Plex client not initialized')
   if (!machineId) throw new Error('Plex client not initialized (no machineId)')
-  const uri = `server://${machineId}/com.plexapp.plugins.library/library/metadata/${sectionKey}`
+  const uri = playlistContentUri(ratingKeys)
   const res = (await client.postQuery(`/playlists?type=audio&title=${encodeURIComponent(name)}&smart=0&uri=${encodeURIComponent(uri)}`)) as {
     MediaContainer?: { Metadata?: Array<{ title: string; ratingKey: string }> }
   }
   const item = res.MediaContainer?.Metadata?.[0]
-  if (!item) throw new Error('创建 Plex 歌单失败，未返回结果')
+  if (!item || !/^\d+$/.test(String(item.ratingKey))) throw new Error('创建 Plex 歌单失败，未返回可确认的歌单 ID')
   return item
 }
 
@@ -271,16 +314,18 @@ export async function getPlaylistTracks(
   limit: number,
 ): Promise<PlexTrack[]> {
   if (!client) throw new Error('Plex client not initialized')
+  const playlistClient = client
   const boundedLimit = Math.max(0, Math.floor(limit))
   if (boundedLimit === 0) return []
 
   const tracks: PlexTrack[] = []
   const pageSize = Math.min(500, boundedLimit)
   let start = 0
+  let observedTotal: number | undefined
   while (tracks.length < boundedLimit) {
     const remaining = boundedLimit - tracks.length
     const size = Math.min(pageSize, remaining)
-    const res = (await client.query(
+    const res = (await playlistClient.query(
       `/playlists/${playlistKey}/items?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${size}`,
     )) as {
       MediaContainer?: {
@@ -289,14 +334,26 @@ export async function getPlaylistTracks(
       }
     }
     const page = extractMetadata(res)
+    const totalSize = Number(res.MediaContainer?.totalSize)
+    if (Number.isFinite(totalSize)) {
+      if (observedTotal !== undefined && observedTotal !== totalSize) {
+        throw Object.assign(new Error('Plex 歌单在分页读取期间发生变化，请重新核对'), { code: 'concurrent_operation' })
+      }
+      observedTotal = totalSize
+      if (!page.length && start < totalSize) throw new Error('Plex 歌单分页结果不完整，不能确认当前成员')
+    }
     tracks.push(...page.slice(0, remaining))
     if (page.length === 0) break
     start += page.length
-    const totalSize = Number(res.MediaContainer?.totalSize)
     if (Number.isFinite(totalSize) && start >= totalSize) break
     if (!Number.isFinite(totalSize) && page.length < size) break
   }
   return tracks
+}
+
+/** Mutation evidence must include every occurrence, without a display-limit truncation. */
+export function getPlaylistWriteTracks(playlistKey: string): Promise<PlexTrack[]> {
+  return getPlaylistTracks(playlistKey, Number.MAX_SAFE_INTEGER)
 }
 
 export async function getSectionKey(section: string): Promise<string | null> {
@@ -452,10 +509,12 @@ export async function insertTrackIntoPlaylist(
   playlistKey: string,
   trackRatingKey: string,
 ): Promise<void> {
+  await insertTracksIntoPlaylist(playlistKey, [trackRatingKey])
+}
+
+export async function insertTracksIntoPlaylist(playlistKey: string, ratingKeys: readonly string[]): Promise<void> {
   if (!client) throw new Error('Plex client not initialized')
-  await client.putQuery(
-    `/playlists/${playlistKey}/items?uri=server%3A%2F%2F${machineId}%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F${trackRatingKey}&includeExternalMedia=1&`,
-  )
+  await client.putQuery(`/playlists/${playlistKey}/items?uri=${encodeURIComponent(playlistContentUri(ratingKeys))}&includeExternalMedia=1`)
 }
 
 export async function getPlaylistItemId(

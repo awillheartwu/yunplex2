@@ -33,7 +33,7 @@ export function getSyncService(getConfig: () => AppConfig) {
     return {
       ...run,
       durationMs: Date.now() - new Date(run.startedAt).getTime(),
-      songs: run.songs.filter((song) => song.status !== 'pending' && song.status !== 'skipped_existing'),
+      songs: run.songs.filter((song) => song.status !== 'skipped_existing'),
     }
   }
 
@@ -117,7 +117,7 @@ export function getSyncService(getConfig: () => AppConfig) {
           job,
           signal,
           options: options ?? {},
-          observer: { stage: setStage, failure: addFailure, log },
+          observer: { stage: setStage, failure: addFailure, log, playlistProgress: setPlaylistProgress },
           readCurrentConfig: getConfig,
         })
         throwIfCancelled()
@@ -151,7 +151,7 @@ export function getSyncService(getConfig: () => AppConfig) {
         const j =
           state.cancellationReason === 'shutdown'
             ? job.finish('failed', '任务因服务停止中断')
-            : job.finish('cancelled', '用户取消')
+            : job.finish('cancelled', '用户取消；已确认的文件和 Plex 变更已保留，未完成部分下次继续核对')
         if (!dryRun) saveSyncRun(j)
         finishState(null)
         return { ...state }
@@ -222,7 +222,9 @@ export function getSyncService(getConfig: () => AppConfig) {
   }
 
   function setStage(stage: SyncState['currentStage']) {
+    if (stage === 'fetching_playlist' || stage === 'idle') state.playlistProgress = null
     state.currentStage = stage
+    if (!['downloading', 'processing_tags'].includes(stage)) state.currentSong = null
     const history = (state.stageHistory ??= [])
     if (!history.includes(stage)) history.push(stage)
     state.currentSourceName = currentSourceName || null
@@ -242,6 +244,18 @@ export function getSyncService(getConfig: () => AppConfig) {
   function addFailure(songName: string, reason: string) {
     state.failures.push({ songName, reason, timestamp: new Date().toISOString() })
   }
+  let lastPlaylistEvent = 0
+  function setPlaylistProgress(value: NonNullable<SyncState['playlistProgress']>) {
+    const previous = state.playlistProgress
+    state.playlistProgress = { ...value }
+    const now = Date.now()
+    if ((!previous || previous.phase !== value.phase || previous.batch !== value.batch || previous.confirmed !== value.confirmed)
+      && currentRun && !state.dryRun) saveSyncRun(currentRun.getRun())
+    if (previous?.phase !== value.phase || previous.batch !== value.batch || now - lastPlaylistEvent >= 250 || value.confirmed === value.total) {
+      lastPlaylistEvent = now
+      emitEvent({ type: 'playlist-progress', data: { stage: state.currentStage, playlistProgress: { ...value } }, timestamp: new Date(now).toISOString() })
+    }
+  }
   function finishState(result: SyncState['lastSyncResult']) {
     state.lastSyncAt = new Date().toISOString()
     state.lastSyncResult = result
@@ -252,6 +266,7 @@ export function getSyncService(getConfig: () => AppConfig) {
     state.currentStage = 'idle'
     state.currentSourceName = null
     state.progress = null
+    state.playlistProgress = null
     state.currentSong = null
     emitEvent({
       type: 'stage-change',

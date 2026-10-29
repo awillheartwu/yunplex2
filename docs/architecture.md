@@ -77,6 +77,8 @@ sync/source-requests.ts 接受请求
 
 `effective-settings.ts` 按来源实际生效值识别需要重新核对的配置变化；`source-checkpoint.ts` 保存本轮写入边界确认的绑定版本、实际 Plex 编号和文件快照。完整协调和纯换序共用 `source-finalization.ts` 收尾，最后一次网络等待后核对快照，再同步保存结果与对齐证据。媒体验证可以记录成员情况或要求重新对齐，来源待协调标记只由完整执行同步后的收尾清除。
 
+完整同步和纯换序共用 `reorder.ts`：按具体条目计算缺项，用唯一 `playlistItemID` 的 LIS 规划移动，再移除获准条目。`source-playlist-target.ts` 只在强身份目标形成后创建歌单并尽早绑定实际 ID；`playlist-mutations.ts` 串行提交有界批次并核对批前、批后快照，`playlist-write-identity.ts` 核对媒体路径，`playlist-write-snapshot.ts` 核对具体条目、次数和顺序。`playlist-write-state.ts` 在 `app_state` 为每个来源保留一个未确认写入边界，不增加操作历史表；后续运行先证明该边界，再继续写入。具体创建、恢复与人工确认规则见[同步流程](sync-flow.md#plex-完成条件)。
+
 错误处理按下表分工。执行模块报告实际失败或完成事实，恢复模块安排后续动作，页面读取当前投影。
 
 | 模块                                                                 | 职责                                                         |

@@ -6,6 +6,7 @@ import {
   songStatusPresentation,
   type TaskSemanticTone,
 } from '~~/lib/task-status'
+import { playlistProgressLabel } from './playlist-progress'
 
 export interface RunTimelineDetail {
   id: string
@@ -260,7 +261,7 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
       id: step.id,
       occurredAt: step.startedAt,
       title: step.title,
-      description: step.message || '该步骤未提供额外说明',
+      description: [step.message, step.context?.playlistProgress ? playlistProgressLabel(step.context.playlistProgress) : ''].filter(Boolean).join(' · ') || '该步骤未提供额外说明',
       subjectLabel: subjectLabel || undefined,
       tone: stepTone(step),
       icon: stepIcon(step),

@@ -5,11 +5,12 @@ import type { NeteaseSong } from '../netease'
 import type { PlaylistSource } from '../playlist/types'
 import { recordAppliedPlexPlaylistFingerprint } from '../playlist/store'
 import {
-  findPlaylist,
   getPlaylistByRatingKey,
-  getPlaylistTracks,
+  getPlaylistWriteTracks,
+  getTracksByRatingKeys,
   getSectionKey,
   initPlexClient,
+  isWritableAudioPlaylist,
 } from '../plex-client'
 import type { RunBuilder } from '../run/builder'
 import { joinArtist } from './artist-utils'
@@ -30,6 +31,11 @@ import { applyFullReorder } from './plex-reconciler'
 import { PlexReorderError, createPlaylistOrderError, validatePlaylistOrder } from './reorder'
 import { validateCachedTargetOrder } from './reorder-cache'
 import { buildPlexReorderStepError, markPlexReorderFailures } from './reorder-failure-reporting'
+import type { PlaylistWriteProgress } from '../../../shared/playlist-write'
+import { assertPlaylistWriteContext, pendingPlaylistWrite, playlistServerScope } from './playlist-write-state'
+import { playlistIdentityValidator } from './playlist-write-identity'
+import { playlistWriteItems } from './playlist-write-snapshot'
+import { beginPlaylistSongConfirmation } from './playlist-song-outcomes'
 
 interface PureSourceReorderInput {
   source: PlaylistSource
@@ -43,6 +49,7 @@ interface PureSourceReorderInput {
   throwIfCancelled: () => void
   setStage?: (stage: SyncStage) => void
   log: (level: 'warn' | 'error', message: string) => void
+  onProgress?: (value: PlaylistWriteProgress) => void
 }
 
 interface PureSourceReorderResult {
@@ -72,6 +79,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     setStage,
     log,
   } = input
+  if (!source.plexPlaylistRatingKey || pendingPlaylistWrite(source.id)) return null
 
   const identityBindings = getActiveSongIdentityBindings(currentIdOrder)
   const bindingVersionSnapshot = new Map([...new Set(currentIdOrder)].map(songId => [
@@ -98,20 +106,23 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     if (conflictingLookupOwner(songId, ratingKey, claimed, identityBindings) !== undefined) return null
     claimed.set(ratingKey, songId)
   }
-  const cacheValidation = await validateCachedTargetOrder(songs, cacheKeys, undefined, bindingPaths, config)
+  const playlist = await getPlaylistByRatingKey(source.plexPlaylistRatingKey)
+  if (!playlist) return null
+  if (!isWritableAudioPlaylist(playlist)) return null
+  const snapshotTracks = await getPlaylistWriteTracks(playlist.ratingKey)
+  const snapshotByKey = new Map(snapshotTracks.map(track => [String(track.ratingKey), track]))
+  const missingKeys = [...new Set(cacheKeys.values())].filter(key => !snapshotByKey.has(key))
+  const missingTracks = await getTracksByRatingKeys(missingKeys)
+  missingTracks.forEach((track, key) => snapshotByKey.set(key, track))
+  const cacheValidation = await validateCachedTargetOrder(songs, cacheKeys,
+    async key => snapshotByKey.get(key) ?? null, bindingPaths, config)
   const targetOrder = cacheValidation.targetOrder
   if (!targetOrder) {
     log('warn', `歌单「${source.name || source.neteasePlaylistName}」纯重排缓存未通过校验，回退到完整对比`)
     return null
   }
 
-  const playlist = source.plexPlaylistRatingKey
-    ? await getPlaylistByRatingKey(source.plexPlaylistRatingKey)
-    : await findPlaylist(source.plexPlaylistName || source.neteasePlaylistName)
-  if (!playlist) return null
-  const currentItems = (await getPlaylistTracks(playlist.ratingKey, 99999))
-    .filter(track => track.playlistItemID)
-    .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
+  const currentItems = playlistWriteItems(snapshotTracks)
   const remainingTargets = new Set(targetOrder)
   if (currentItems.some(item => !remainingTargets.delete(item.ratingKey))) return null
 
@@ -130,6 +141,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
   const result: PureSourceReorderResult = { plexPlaylist: playlist,
     checkpoint: captureSourceConvergenceCheckpoint(currentIdOrder), verifiedPlaylistItems: [] }
   if (dryRun) return result
+  const outcomes = beginPlaylistSongConfirmation(job, source.id)
 
   setStage?.('refreshing_plex')
 
@@ -141,6 +153,22 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     releaseIdentityLock = await acquireIdentityMutationLock()
     assertBindingVersionsUnchanged(bindingVersionSnapshot)
     const currentBindings = getActiveSongIdentityBindings(currentIdOrder)
+    const owner = {
+      sourceId: source.id, scope: playlistServerScope(config),
+      assertCurrent: () => {
+        throwIfCancelled()
+        assertPlaylistWriteContext(source, config)
+        assertBindingVersionsUnchanged(bindingVersionSnapshot)
+        const latest = getActiveSongIdentityBindings(currentIdOrder)
+        for (const [songId, ratingKey] of cacheKeys) {
+          if (latest.get(songId)?.plexRatingKey !== ratingKey) {
+            throw new Error(`歌曲 #${songId} 的身份已变化，本轮已中止旧身份的 Plex 重排`)
+          }
+        }
+      },
+      ...playlistIdentityValidator(currentBindings, config),
+    }
+    owner.assertCurrent()
     for (const [songId, ratingKey] of cacheKeys) {
       if (currentBindings.get(songId)?.plexRatingKey !== ratingKey) {
         throw new Error(`歌曲 #${songId} 的身份已变化，本轮已安全中止 Plex 重排，请重试同步`)
@@ -153,12 +181,15 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
       sectionKey,
       isCancellationRequested,
       (level, message) => log(level, message),
-      { removalProtectionReason: '纯重排快捷路径不执行删除' },
+      { owner, removalProtectionReason: '纯重排快捷路径不执行删除', onProgress: value => {
+        job.updateStepProgress(reorderStep, value)
+        input.onProgress?.(value)
+      } },
     )
-    const postPlaylistTracks = await getPlaylistTracks(playlist.ratingKey, 99999)
-    const postItems = postPlaylistTracks
-      .filter(track => track.playlistItemID)
-      .map(track => ({ ratingKey: track.ratingKey, playlistItemId: track.playlistItemID! }))
+    const postPlaylistTracks = await getPlaylistWriteTracks(playlist.ratingKey)
+    owner.assertCurrent()
+    owner.validateTracks(postPlaylistTracks)
+    const postItems = playlistWriteItems(postPlaylistTracks)
     const orderValidation = validatePlaylistOrder(targetOrder, postItems, { allowExtra: false })
     if (!orderValidation.ok) {
       throw createPlaylistOrderError(orderValidation, postItems, reorderResult)
@@ -172,9 +203,11 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
     result.verifiedPlaylistItems = postPlaylistTracks.map(track => ({ ratingKey: track.ratingKey,
       plexFilePaths: track.Media?.flatMap(media => media.Part?.flatMap(part => part.file ? [part.file] : []) ?? []) ?? [] }))
     result.checkpoint = captureSourceConvergenceCheckpoint(currentIdOrder)
-    job.finishStep(reorderStep, 'success', songs.length > targetOrder.length
+    outcomes.confirm(job.getRun().songs.filter(song => song.sourceId === source.id).map(song => song.id))
+    const completionMessage = songs.length > targetOrder.length
       ? `Plex 歌单重排完成，${songs.length} 首来源歌曲对应 ${targetOrder.length} 个 Plex 媒体`
-      : 'Plex 歌单重排完成')
+      : 'Plex 歌单重排完成'
+    job.finishStep(reorderStep, 'success', `${completionMessage}；新增 ${reorderResult.inserted} 项，调序 ${reorderResult.moved} 项`)
   } catch (error) {
     if (error instanceof PlexReorderError) {
       const ratingKeyToSongIds = new Map<string, string[]>()
@@ -195,6 +228,7 @@ export async function tryApplyPureSourceReorder(input: PureSourceReorderInput): 
       })
       job.failStep(reorderStep, 'Plex 歌单重排失败', buildPlexReorderStepError(error))
     }
+    outcomes.defer(error)
     throw error
   } finally {
     releaseIdentityLock?.()

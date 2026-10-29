@@ -29,8 +29,10 @@ export function captureSourceConvergenceCheckpoint(sourceSongIds: number[], iden
 /** The caller commits synchronously after this check; no network wait may follow it. */
 export function sourceConvergenceCheckpointIsCurrent(source: PlaylistSource, config: AppConfig, checkpoint: SourceConvergenceCheckpoint): boolean {
   const current = getSource(source.id)
-  if (!current || current.plexPlaylistRatingKey !== source.plexPlaylistRatingKey
-    || sourceConvergenceSettingsKey(current, readConfigFromDb()) !== sourceConvergenceSettingsKey(source, config)) return false
+  const latestConfig = readConfigFromDb()
+  if (!current || current.enabled !== source.enabled || latestConfig.sync.enabled !== config.sync.enabled
+    || latestConfig.plex.token !== config.plex.token || current.plexPlaylistRatingKey !== source.plexPlaylistRatingKey
+    || sourceConvergenceSettingsKey(current, latestConfig) !== sourceConvergenceSettingsKey(source, config)) return false
   const ids = [...checkpoint.bindings.keys()]
   const bindings = getSongIdentityBindings(ids)
   const assets = getLocalMediaAssets(ids)

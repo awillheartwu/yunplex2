@@ -32,6 +32,7 @@ export type SyncStage =
   | 'maintenance'
 
 export interface SyncState {
+  playlistProgress?: import('../../../shared/playlist-write').PlaylistWriteProgress | null
   currentRunId?: string | null
   isRunning: boolean
   currentStage: SyncStage

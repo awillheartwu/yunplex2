@@ -10,7 +10,7 @@ export const FAST_RETRY_DELAY_MS = 30_000
 /** Execution policy; problem status only records unresolved, ignored or resolved. */
 const RECOVERY_ACTIONS: Record<DomainErrorCode, 'retry' | 'paused' | 'manual'> = {
   copyright_restricted: 'manual', authentication_failed: 'paused', plex_authentication_failed: 'paused',
-  rate_limited: 'retry', netease_unavailable: 'retry', plex_unavailable: 'retry',
+  rate_limited: 'retry', netease_unavailable: 'retry', plex_unavailable: 'retry', plex_write_uncertain: 'manual',
   filesystem_failed: 'paused', media_identity_conflict: 'manual',
   scheduler_interrupted: 'retry', concurrent_operation: 'retry',
   failed_download: 'retry', failed_tags: 'retry', failed_plex_match: 'retry', failed_plex_insert: 'retry',

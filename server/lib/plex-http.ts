@@ -59,7 +59,7 @@ export function createPlexHttpClient(config: PlexConfig) {
       if (timeout.aborted) {
         throw Object.assign(new Error(`Plex ${method} ${url.pathname} 请求超时（耗时 ${Date.now() - started} ms）`), { code: 'ETIMEDOUT' })
       }
-      if (error instanceof SyntaxError) throw new Error(`Plex ${method} ${url.pathname} 未返回有效 JSON`, { cause: error })
+      if (error instanceof SyntaxError) throw Object.assign(new Error(`Plex ${method} ${url.pathname} 未返回有效 JSON`, { cause: error }), { provider: 'plex' })
       const cause = (error as { cause?: { code?: string } } | null)?.cause
       if ((error as { httpStatus?: number } | null)?.httpStatus) throw error
       const code = cause?.code ?? (error as { code?: string } | null)?.code

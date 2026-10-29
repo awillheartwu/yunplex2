@@ -367,6 +367,7 @@ export function deleteSource(id: string): boolean {
     }
     db.prepare('UPDATE download_tasks SET source_id=NULL WHERE source_id=?').run(id)
     db.prepare('UPDATE run_file_tasks SET source_id=NULL WHERE source_id=?').run(id)
+    db.prepare('DELETE FROM app_state WHERE key=?').run(`plex-playlist-write:${id}`)
     const result = db.prepare('DELETE FROM playlist_sources WHERE id = ?').run(id)
     return result.changes > 0
   })()

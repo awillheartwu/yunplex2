@@ -45,7 +45,7 @@ export function createInitialState(): SyncState {
     currentSourceName: null,
     lastSyncAt: null, lastSyncResult: null, syncCount: 0,
     successCount: 0, failureCount: 0, currentSong: null,
-    progress: null, failures: [], dryRun: false,
+    progress: null, playlistProgress: null, failures: [], dryRun: false,
   }
 }
 

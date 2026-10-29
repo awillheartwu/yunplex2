@@ -5,6 +5,7 @@ export type SourceScheduleStatus = 'idle' | 'queued' | 'running' | 'success' | '
 export type SourceInitializationStatus = 'pending' | 'analyzing' | 'awaiting_review' | 'applying' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 
 export interface PlaylistSource {
+  pendingPlexWrite?: import('../../../shared/playlist-write').PlaylistWriteNotice | null
   plexNotice?: import('../../../shared/plex-monitor').PlexSourceNotice | null
   id: string
   neteasePlaylistId: number

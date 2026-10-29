@@ -36,10 +36,12 @@ import { captureSourceConvergenceCheckpoint } from './source-checkpoint'
 import { plexRecoveryConfigFingerprint } from './plex-index-recovery'
 import { addMissingDetailSongs, loadSourceSongSnapshot, resolveSourceSkipState } from './source-preparation'
 import { detectPlexPathDrift, resolveTrustedSongSnapshot } from './source-snapshot'
+import { pendingPlaylistWrite } from './playlist-write-state'
 
 export type SourceExecutionOptions = Readonly<Omit<SyncRunOptions, 'sourceIds'>>
 
 export interface SourceExecutionObserver {
+  playlistProgress?: (value: import('../../../shared/playlist-write').PlaylistWriteProgress) => void
   stage: (stage: SyncStage) => void
   failure: (songName: string, reason: string) => void
   log: (level: 'warn' | 'error', message: string, detail?: string) => void
@@ -65,6 +67,7 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
   return withExternalRequestSignal(input.signal, async () => {
     const { config, options, job, observer, readCurrentConfig } = input
     const source = { ...input.source }
+    if (pendingPlaylistWrite(source.id)) source.requiresMatchReconcile = true
     const cfg = { ...config, netease: { ...config.netease, quality: source.quality ?? config.netease.quality } }
     const mode = options.mode ?? 'normal'
     const modePolicy = resolveSyncModePolicy(mode)
@@ -376,6 +379,7 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
           throwIfCancelled,
           setStage,
           log: (level, message) => log(level, message),
+          onProgress: observer.playlistProgress,
         })
         if (reordered) {
           return await finalizeSourceConvergence({ ...finalization, ...reordered, fullVerification: false, neteaseCursor })
@@ -546,6 +550,7 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
           throwIfCancelled,
           setStage,
           log,
+          onProgress: observer.playlistProgress,
         })
       }
 
@@ -556,7 +561,10 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
       })
       return sourceResult
     } catch (error) {
-      if (input.signal.aborted || error instanceof CancellationError) throw new CancellationError()
+      if (input.signal.aborted || error instanceof CancellationError) {
+        if (!dryRun) updateSource(source.id, { requiresMatchReconcile: true })
+        throw new CancellationError()
+      }
       const result = recordSourceConvergenceFailure({ source, job, context: stepContext, error,
         stage, dryRun, authoritativeTrackCount: sourceTrackCount })
       log('error', `歌单「${source.name}」同步失败: ${result.summary}`)

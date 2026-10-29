@@ -192,6 +192,16 @@ export class RunBuilder {
     }
   }
 
+  updateStepProgress(id: string, progress: import('../../../shared/playlist-write').PlaylistWriteProgress): void {
+    this.updateStepContext(id, { playlistProgress: { ...progress } })
+  }
+
+  updateStepContext(id: string, context: import('../job/types').JobStepContext): void {
+    const step = this.activeSteps.get(id)
+    if (!step) return
+    step.context = { ...step.context, ...context }
+  }
+
   // Song lifecycle
   updateSong(songId: string, update: Partial<Pick<SongTask, 'status' | 'phase' | 'filePath' | 'fileType' | 'metadata' | 'error' | 'ops'>>): void {
     const song = this.songMap.get(songId)

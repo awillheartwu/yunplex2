@@ -83,6 +83,7 @@ function ensureSharedRealtime() {
     if (!sharedState.value || !data.songName) return
     sharedState.value.currentSong = data.songName as string
   }))
+  sharedUnsubs.push(sseSubscribe('playlist-progress', () => sharedLogRefresh.run()))
   sharedUnsubs.push(sseSubscribe('log', () => {
     sharedLogRefresh.run()
   }))

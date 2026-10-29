@@ -2,6 +2,7 @@ import { success, fail } from '../../lib/response'
 import { getSource, updateSourceSettings } from '../../lib/playlist/store'
 import { getSyncWorker } from '../../lib/sync/instance'
 import { isAudioQuality, type AudioQuality } from '../../../shared/audio-quality'
+import { playlistWriteNotice } from '../../lib/sync/playlist-write-state'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -59,5 +60,5 @@ export default defineEventHandler(async (event) => {
 
   getSyncWorker()?.update()
 
-  return success(updated, '歌单源更新成功')
+  return success({ ...updated, pendingPlexWrite: playlistWriteNotice(id) }, '歌单源更新成功')
 })

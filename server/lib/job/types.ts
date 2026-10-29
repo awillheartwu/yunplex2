@@ -74,6 +74,7 @@ export interface StepError {
 }
 
 export interface JobStepContext {
+  playlistProgress?: import('../../../shared/playlist-write').PlaylistWriteProgress
   sourceId?: string
   sourceName?: string
   sourceType?: 'playlist' | 'album' | string
@@ -142,6 +143,7 @@ export interface TaskRun extends Omit<SyncJob, 'type'> {
   sourceRequestStatus?: SourceRequestStatus | null
   /** Current exception handling state, read separately from the historical run result. */
   currentFailures?: RunFailureHandlingState[]
+  initializationResult?: { applied: number; downloads: number; deferred: number; conflicts: number }
 }
 
 // ── Query / filter types ──

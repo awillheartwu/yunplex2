@@ -20,6 +20,10 @@
           </li>
         </ol>
         <p v-if="run.live?.currentSong" class="activity-run__summary">当前歌曲：{{ run.live.currentSong }}</p>
+        <div v-if="run.live?.playlistProgress && run.live.playlistProgress.total > 0" class="activity-run__progress">
+          <div class="activity-run__progress-heading"><span>歌单变更 · 已读回确认 {{ run.live.playlistProgress.confirmed }} / {{ run.live.playlistProgress.total }}</span></div>
+          <progress :value="run.live.playlistProgress.confirmed" :max="run.live.playlistProgress.total" aria-label="当前歌单阶段已读回确认的进度" />
+        </div>
         <div v-if="progress" class="activity-run__progress">
           <div class="activity-run__progress-heading"><span>{{ fileProgress ? '本次文件处理' : '当前阶段' }} · 已处理 {{ progress.current }} / {{ progress.total }}</span><strong>{{ percent(Math.floor(progress.current / progress.total * 100)) }}%</strong></div>
           <progress :value="progress.current" :max="progress.total" :aria-label="fileProgress ? '本次文件处理进度' : '当前阶段处理进度'" />
@@ -56,7 +60,7 @@
         <NuxtLink v-if="state === 'waiting' && run.type === 'source_initialization'" :to="activityPlanLink(run)" class="btn btn-primary btn-sm">查看接管方案<AppIcon name="chevronRight" :size="14" /></NuxtLink>
         <NuxtLink :to="detailLink" class="btn btn-secondary btn-sm">运行详情</NuxtLink>
         <button v-if="run.files && run.files.counts.pending + run.files.counts.downloading + run.files.counts.tagging > 0" class="btn btn-secondary btn-sm" :disabled="controlling || stale" @click="toggleDownloads">{{ controlling ? '处理中…' : run.files.paused ? '继续下载' : '暂停下载' }}</button>
-        <button v-if="run.live && run.type === 'sync'" class="btn btn-ghost btn-sm" :disabled="cancelling || stale" title="取消当前同步批次，包含同批次尚未执行的来源" @click="$emit('cancel', run.id)">取消本批同步</button>
+        <button v-if="run.live && run.type === 'sync'" class="btn btn-ghost btn-sm" :disabled="cancelling || stale" title="停止后续同步，包含同批次尚未执行的来源；已完成的文件和 Plex 变更会保留" @click="$emit('cancel', run.id)">取消本批同步</button>
       </div>
     </footer>
   </article>

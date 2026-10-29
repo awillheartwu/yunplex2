@@ -16,6 +16,7 @@ import { pauseDownloadQueue } from '../download/queue-control'
 import type { MatchTrace } from './types'
 import type { BindingVersionSnapshot } from './identity-coordinator'
 import { sourceConvergenceCheckpointIsCurrent, type SourceConvergenceCheckpoint } from './source-checkpoint'
+import { pendingPlaylistWrite } from './playlist-write-state'
 
 interface PlexPlaylistIdentity {
   ratingKey: string
@@ -65,6 +66,7 @@ export function recordSourceConvergenceFailure(input: {
       lastStatus: status,
       lastError: message,
       lastJobId: job.getId(),
+      requiresMatchReconcile: true,
       ...(input.authoritativeTrackCount === undefined ? {} : { trackCount: input.authoritativeTrackCount }),
     })
   }
@@ -153,7 +155,7 @@ export async function finalizeSourceConvergence(
   }
 
   if (!dryRun) {
-    if (!sourceConvergenceCheckpointIsCurrent(source, input.config, input.checkpoint)) {
+    if (pendingPlaylistWrite(source.id) || !sourceConvergenceCheckpointIsCurrent(source, input.config, input.checkpoint)) {
       const summary = '同步期间配置或媒体关联已变化，等待下次对齐'
       updateSource(source.id, { lastSyncedAt: new Date().toISOString(), lastJobId: job.getId(),
         lastStatus: 'partial', lastError: summary, requiresMatchReconcile: true })

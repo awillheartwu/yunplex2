@@ -24,6 +24,7 @@
           <span><AppIcon name="calendar" :size="13" />{{ formatTime(job.startedAt) }}</span>
           <span><AppIcon name="clock" :size="13" />{{ formatRunDuration(job.durationMs) }}</span>
           <span><AppIcon name="play" :size="13" />{{ runTriggerLabel(job.trigger) }}</span>
+          <span v-if="job.type === 'sync' || job.type === 'repair'"><AppIcon name="music" :size="13" />监控总曲目 {{ playlistTotalSongs }}</span>
         </div>
       </div>
     </section>
@@ -52,28 +53,7 @@
       </div>
     </section>
 
-    <section class="run-detail__stats" aria-label="运行结果统计">
-      <div v-if="job.type !== 'manual_download'" class="run-stat semantic-neutral">
-        <AppIcon name="list" :size="16" />
-        <p>{{ job.totalSongs }}</p>
-        <span>已处理</span>
-      </div>
-      <div v-if="job.type !== 'manual_download'" class="run-stat semantic-neutral">
-        <AppIcon name="music" :size="16" />
-        <p>{{ playlistTotalSongs }}</p>
-        <span>监控总曲目</span>
-      </div>
-      <div
-        v-for="item in resultItems"
-        :key="item.key"
-        class="run-stat"
-        :class="semanticToneClass(item.tone)"
-      >
-        <AppIcon :name="item.icon" :size="16" />
-        <p>{{ item.count }}</p>
-        <span>{{ item.label }}</span>
-      </div>
-    </section>
+    <JobResultStats :job="job" @filter="applyResultFilter" />
 
     <section v-if="job.detailsExpired" class="section-card run-detail__expired" role="status">
       <AppIcon name="archive" :size="18" />
@@ -122,18 +102,20 @@
     </section>
 
     <section
-      v-if="!job.detailsExpired && job.status !== 'running' && job.songs.length === 0"
+      v-if="!job.detailsExpired && job.type !== 'source_initialization' && job.status !== 'running' && job.songs.length === 0"
       class="section-card p-4 text-sm text-muted"
       role="status"
     >
-      本次运行没有需要记录的歌曲变化或异常；未变化歌曲只计入上方统计。
+      <template v-if="hasAggregateSongResults">本次运行的单曲明细不可用，请以上方汇总统计为准。</template>
+      <template v-else>本次运行没有需要记录的歌曲变化或异常；未变化歌曲只计入上方统计。</template>
     </section>
 
     <!-- Changed and exceptional song results grouped by source -->
     <section v-if="!job.detailsExpired && job.songs.length > 0" ref="songSection" tabindex="-1" class="section-card overflow-hidden">
       <div class="run-detail__song-toolbar">
         <div class="run-detail__song-title">
-          <h3>变化与异常</h3>
+          <h3>歌曲状态</h3>
+          <span class="text-xs text-muted">本次明细 {{ job.songs.length }} 条</span>
           <button
             type="button"
             class="icon-button run-detail__collapse-all"
@@ -145,24 +127,11 @@
             <AppIcon name="listCollapse" :size="15" />
           </button>
         </div>
-        <div class="run-detail__song-filters" aria-label="按歌曲状态筛选">
-          <button
-            v-for="f in songFilters"
-            :key="f.key"
-            type="button"
-            class="btn btn-ghost btn-sm run-detail__song-filter"
-            :class="{ 'is-active': songFilter === f.key }"
-            :aria-pressed="songFilter === f.key"
-            @click="songFilter = f.key"
-          >
-            <AppIcon :name="f.icon" :size="12" />
-            <span>{{ f.label }}</span>
-            <strong :class="semanticToneClass(f.tone)">{{ f.count }}</strong>
-          </button>
-        </div>
+        <JobSongFilters v-model="songFilter" :songs="job.songs" />
       </div>
 
-      <template v-if="songGroups.length === 0">
+      <EmptyState v-if="filteredSongCount === 0" title="该分类没有歌曲" description="可以切换其他分类查看本次运行的结果。" />
+      <template v-else-if="songGroups.length === 0">
         <div class="divide-y divide-[var(--border-primary)]">
           <SongRow
             v-for="song in filteredSongs"
@@ -185,7 +154,7 @@
               <AppIcon name="source" :size="12" class="text-muted-deep" />
               <SourceBadge :type="(sourceTypeMap[group.sourceId] as 'playlist' | 'album') || 'playlist'" :subscribed="sourceSubscribedMap[group.sourceId]" />
               <span class="run-detail__song-group-name">{{ group.sourceName }}</span>
-              <span class="run-detail__song-group-stats" aria-label="来源内歌曲状态统计">
+              <span class="run-detail__song-group-stats" aria-label="来源当前显示的明细状态统计">
                 <span
                   v-for="stat in group.stats"
                   :key="stat.key"
@@ -255,13 +224,13 @@ import {
 import { buildRunTimeline } from '~~/lib/run-timeline'
 import {
   isFailedSongStatus,
-  runResultItems,
   semanticToneClass,
   SONG_STATUS_BUCKETS,
   songMatchesStatusBucket,
   songStatusPresentation,
   songStatusBucketCount,
   type SongStatusBucket,
+  type SongStatusFilter,
   type TaskSemanticTone,
 } from '~~/lib/task-status'
 
@@ -277,7 +246,7 @@ function hasFailedSongs(group: SongGroup): boolean {
   return group.songs.some((song) => isFailedSongStatus(song.status)
     || ['copyright_restricted', 'ignored_failure'].includes(song.status))
 }
-const songFilter = ref<SongStatusBucket>('all')
+const songFilter = ref<SongStatusFilter>('all')
 const sourceNameMap = ref<Record<string, string>>({})
 const sourceTypeMap = ref<Record<string, string>>({})
 const sourceSubscribedMap = ref<Record<string, boolean>>({})
@@ -285,6 +254,8 @@ const playlistTotalSongs = ref(0)
 const timelineCollapsed = ref(false)
 const collapsedGroups = reactive(new Set<string>())
 const renderLimit = ref(100)
+watch(songFilter, () => { renderLimit.value = 100; expandedSong.value = null })
+watch(() => props.job.id, () => { songFilter.value = 'all'; renderLimit.value = 100 })
 
 function toggleGroup(sourceId: string) {
   if (collapsedGroups.has(sourceId)) collapsedGroups.delete(sourceId)
@@ -317,7 +288,6 @@ const displaySummary = computed(() => props.job.awaitingSourceSync
   ? '下载完成，待同步'
   : runSummaryLabel(props.job.summary, typeIdentity.value.description, props.job.status))
 const typeIdentity = computed(() => runTypeIdentity(props.job.type))
-const resultItems = computed(() => runResultItems(props.job))
 const timelineItems = computed(() => buildRunTimeline(props.job))
 const failedSongs = computed(() => props.job.songs.filter(song => isFailedSongStatus(song.status)))
 const currentFailureCounts = computed(() => {
@@ -404,11 +374,6 @@ const mediaPolicyItems = computed(() => {
   )
 })
 
-const songFilters = computed(() => SONG_STATUS_BUCKETS.map(bucket => ({
-  ...bucket,
-  count: songStatusBucketCount(props.job.songs, bucket.key),
-})))
-
 function applyFilter(songs: SongTask[]): SongTask[] {
   return songs.filter(song => songMatchesStatusBucket(song.status, songFilter.value))
 }
@@ -416,6 +381,23 @@ function applyFilter(songs: SongTask[]): SongTask[] {
 const allFilteredSongs = computed(() => applyFilter(props.job.songs))
 const filteredSongCount = computed(() => allFilteredSongs.value.length)
 const filteredSongs = computed(() => allFilteredSongs.value.slice(0, renderLimit.value))
+const hasAggregateSongResults = computed(() => props.job.successSongs > 0
+  || props.job.skippedSongs > 0
+  || props.job.removedSongs > 0
+  || props.job.failedSongs > 0
+  || props.job.warnings > 0
+  || Object.values(props.job.issueCounts ?? {}).some(count => count > 0))
+
+function applyResultFilter(filter: SongStatusFilter) {
+  songFilter.value = filter
+  renderLimit.value = 100
+  expandedSong.value = null
+  collapsedGroups.clear()
+  nextTick(() => {
+    songSection.value?.scrollIntoView({ block: 'start' })
+    songSection.value?.focus({ preventScroll: true })
+  })
+}
 
 const songGroups = computed<SongGroup[]>(() => {
   const hasSourceIds = props.job.songs.some((s) => s.sourceId)
@@ -571,44 +553,33 @@ onUnmounted(() => {
 .run-detail__hero>div>p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-sm);line-height:var(--body-leading)}
 .run-detail__hero-meta{display:flex;align-items:center;gap:var(--space-2_5) var(--space-4);flex-wrap:wrap;margin-top:var(--space-3);color:var(--text-tertiary);font-size:var(--text-xs)}
 .run-detail__hero-meta span{display:inline-flex;align-items:center;gap:var(--space-1_5)}
-.run-detail__stats{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--space-3)}
-.run-stat{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;align-items:center;column-gap:var(--space-2);min-width:0;padding:var(--space-3);border:1px solid;border-radius:var(--radius-lg)}
-.run-stat>.app-icon{grid-row:1 / span 2}
-.run-stat p{margin:0;font-size:var(--text-md);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;line-height:1.15}
-.run-stat span{overflow:hidden;color:currentColor;font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:1.25;text-overflow:ellipsis;white-space:nowrap;opacity:.82}
 .run-detail__section-toggle{display:flex;width:100%;min-height:4rem;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);border:0;border-bottom:1px solid var(--border-primary);background:transparent;color:var(--text-primary);text-align:left;cursor:pointer;transition:background var(--duration-fast) ease}
 .run-detail__section-toggle:hover{background:var(--bg-hover)}
 .run-detail__section-toggle>span{display:flex;flex-direction:column;gap:var(--space-0_5)}
 .run-detail__section-toggle strong{font-size:var(--text-base);font-weight:var(--font-weight-bold)}
 .run-detail__section-toggle small{color:var(--text-tertiary);font-size:var(--text-xs);font-weight:var(--font-weight-medium)}
 .run-detail__timeline{padding:var(--space-4)}
-.run-detail__song-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;min-height:4rem;align-items:center;gap:var(--space-3);padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--border-primary)}
+.run-detail__song-toolbar{display:flex;justify-content:space-between;min-height:4rem;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--space-5);border-bottom:1px solid var(--border-primary)}
 .run-detail__song-title{display:flex;align-items:center;gap:var(--space-2_5);min-width:0}
 .run-detail__song-title h3{margin:0;color:var(--text-primary);white-space:nowrap}
 .run-detail__collapse-all:hover:not(:disabled){border-color:var(--accent-border);background:var(--accent-muted);color:var(--accent-strong);transform:translateY(-1px)}
 .run-detail__collapse-all:disabled{opacity:.45;cursor:not-allowed}
-.run-detail__collapse-all:focus-visible,.run-detail__song-filter:focus-visible,.run-detail__song-group-toggle:focus-visible,.run-detail__retry-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.run-detail__song-filters{display:flex;max-width:100%;align-items:center;gap:var(--space-1);flex-wrap:wrap}
-.run-detail__song-filter.is-active{background:var(--accent-muted);color:var(--accent)}
-.run-detail__song-filter strong{min-width:1.5rem;padding:var(--space-0_5) var(--space-2);border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);font-variant-numeric:tabular-nums}
+.run-detail__collapse-all:focus-visible,.run-detail__song-group-toggle:focus-visible,.run-detail__retry-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .run-detail__song-group{display:flex;min-height:3.25rem;align-items:center;gap:var(--space-3);padding:var(--space-1_5) var(--space-5);border-bottom:1px solid var(--border-primary);background:var(--bg-app)}
 .run-detail__song-group-toggle{display:flex;min-width:0;min-height:2.75rem;flex:1;align-items:center;gap:var(--space-2_5);padding:0;border:0;background:transparent;color:var(--text-primary);text-align:left;cursor:pointer}
 .run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:var(--body-leading);overflow-wrap:anywhere}
 .run-detail__song-group-toggle:hover .run-detail__song-group-stats{filter:saturate(1.08)}
 .run-detail__song-group-stats{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-1_5);flex-wrap:wrap;transition:filter var(--duration-fast) ease}
 .run-detail__song-group-stat{display:inline-flex;min-height:1.35rem;align-items:center;gap:var(--space-1);padding:.08rem var(--space-2);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;white-space:nowrap}
-@media(max-width:1180px){.run-detail__stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:720px){
   .run-detail__errors{flex-wrap:wrap;padding:var(--space-4);gap:var(--space-3)}
   .run-detail__error-actions{width:100%;padding-left:3.25rem}
   .run-detail__hero{grid-template-columns:1fr}
   .run-detail__hero-icon{width:2.75rem;height:2.75rem}
-  .run-detail__stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .run-detail__id{max-width:9rem}
   .run-detail__section-toggle small{display:none}
   .run-detail__timeline{padding:var(--space-3_5)}
-  .run-detail__song-toolbar{align-items:flex-start;flex-direction:column}
-  .run-detail__song-filters{justify-content:flex-start}
+  .run-detail__song-toolbar{align-items:stretch;flex-direction:column;padding:var(--space-3)}
   .run-detail__song-group{align-items:flex-start;flex-direction:column;gap:var(--space-1_5);padding:var(--space-2) var(--space-4)}
   .run-detail__song-group-toggle{width:100%;align-items:flex-start;flex-wrap:wrap;gap:var(--space-2)}
   .run-detail__song-group-name{flex:1 1 calc(100% - 7rem);font-size:var(--text-sm);line-height:var(--body-leading)}
