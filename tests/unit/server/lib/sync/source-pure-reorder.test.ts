@@ -55,7 +55,7 @@ describe('pure Source reorder', () => {
     const dir = mkdtempSync(join(tmpdir(), 'reyunplex-pure-reorder-'))
     tempDirs.push(dir)
     initDb(dir)
-    const persistedSource = await createSource(1, '', { type: 'album', name: 'Source' })
+    const persistedSource = await createSource(1, '', { type: 'album', name: 'Source', coverUrl: '/fixture-cover' })
     const source = updateSource(persistedSource.id, { plexPlaylistRatingKey: 'playlist-1' })!
     writeFileSync(join(dir, 'song.flac'), 'fLaCfixture')
     const config = structuredClone(DEFAULT_CONFIG)

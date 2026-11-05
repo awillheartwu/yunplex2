@@ -302,7 +302,7 @@ export async function reconcilePlexPlaylist(
       assertCurrent: () => {
         throwIfCancelled()
         assertPlaylistWriteContext(source, config)
-        assertBindingVersionsUnchanged(writeIdentity.bindings)
+        assertBindingVersionsUnchanged(writeIdentity.bindings, true)
         assertBindingRatingKeysUnchanged(writeIdentity.plexRatingKeys)
         input.assertRecoveryContextUnchanged?.()
       },

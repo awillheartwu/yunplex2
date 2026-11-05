@@ -270,15 +270,13 @@ export function enqueueManualSourceSync(sourceId: string, now = new Date()): str
   return id
 }
 
-/** Record interrupted sync attempts; only unfinished preparation is immediately resumed. */
+/** Startup only, before the new consumer claims work. Container PIDs can repeat. */
 export function recoverInterruptedSourceRequests(now = new Date()): number {
   const db = getDb()
-  const currentOwnerPrefix = `source-scheduler:${process.pid}:%`
   const rows = db.prepare(`
       SELECT id, source_id, request_kind, run_id FROM source_sync_queue
       WHERE status = 'running'
-        AND (lease_owner IS NULL OR lease_owner NOT LIKE ?)
-    `).all(currentOwnerPrefix) as InterruptedSourceRequest[]
+    `).all() as InterruptedSourceRequest[]
   return settleInterruptedSourceRequests(rows, '来源同步因服务重启中断', now)
 }
 

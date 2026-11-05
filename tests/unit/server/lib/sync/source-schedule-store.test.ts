@@ -9,6 +9,7 @@ import { closeDb, getDb, initDb } from '~~/server/lib/db'
 import { getSource, updateSource } from '~~/server/lib/playlist/store'
 import { getSourceFailureStatus } from '~~/server/lib/sync/failure-policy'
 import { queryFailureRecords } from '~~/server/lib/tasks/failure-queries'
+import { recoverInterruptedRuns } from '~~/server/lib/run/recovery'
 import {
   claimNextSourceRequest,
   enqueueManualSourceSync,
@@ -124,6 +125,22 @@ describe('source schedule store', () => {
     expect(recoverInterruptedSourceRequests(restartedAt)).toBe(1)
     expect(claimNextSourceRequest('new-worker', restartedAt)).toBeNull()
     expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id = ?').get(first!.id)).toEqual({ status: 'failed' })
+  })
+
+  it('settles a crashed container even when the new Node process reuses its PID', () => {
+    const now = new Date('2026-08-28T00:00:00.000Z')
+    insertSource('source-1', now)
+    const requestId = enqueueManualSourceSync('source-1', now)
+    const old = claimNextSourceRequest(`source-scheduler:${process.pid}:previous-boot`, now)!
+    getDb().prepare("INSERT INTO task_runs(id,type,status,started_at) VALUES('interrupted-run','sync','running',?)").run(now.toISOString())
+    getDb().prepare('UPDATE source_sync_queue SET run_id=? WHERE id=?').run('interrupted-run', old.id)
+
+    expect(recoverInterruptedSourceRequests(new Date(now.getTime() + 1000))).toBe(1)
+    recoverInterruptedRuns()
+
+    expect(getDb().prepare('SELECT status FROM source_sync_queue WHERE id=?').get(requestId)).toEqual({ status: 'failed' })
+    expect(getDb().prepare("SELECT status FROM task_runs WHERE id='interrupted-run'").get()).toEqual({ status: 'failed' })
+    expect(getSourceScheduleSnapshot().runningCount).toBe(0)
   })
 
   it('counts repeated interruptions without automatically ignoring them', () => {
