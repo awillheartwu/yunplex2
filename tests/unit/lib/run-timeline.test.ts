@@ -90,9 +90,9 @@ describe('run timeline', () => {
       title: '发现 1 首歌曲已存在',
       tone: 'existing',
     })
-    expect(timeline.find(item => item.id === 'run-1:ignored')).toMatchObject({
-      title: '1 项需要关注',
-      description: '包含待处理歌曲，以及按当前策略保留、未从 Plex 歌单移除的条目',
+    expect(timeline.find(item => item.id === 'run-1:skipped')).toMatchObject({
+      title: '1 项已跳过',
+      description: '包含版权受限和已忽略的歌曲',
       tone: 'ignored',
     })
     expect(timeline.find(item => item.id === 'run-1:success')?.details[0]?.title).toBe('成功歌曲')
@@ -212,10 +212,31 @@ describe('run timeline', () => {
       ],
     }))
 
-    expect(timeline.find(item => item.id === 'run-1:ignored')?.details[0]).toMatchObject({
+    expect(timeline.find(item => item.id === 'run-1:skipped')?.details[0]).toMatchObject({
       subjectLabel: '来源 B',
       description: '来源：来源 B · 艺人 C · 专辑 C',
     })
+  })
+
+  it('keeps 111 skipped items out of the 15 items requiring attention', () => {
+    const run = makeRun({ warnings: 126,
+      issueCounts: { manual: 15, ignored: 111, deferred: 0, preserved: 0, restricted: 0 },
+      songs: [
+        { id: 'manual', songName: 'Manual choice', artist: '', album: '', status: 'awaiting_manual_match', phase: 'done' },
+        { id: 'ignored', songName: 'Ignored', artist: '', album: '', status: 'ignored_failure', phase: 'done' },
+      ],
+    })
+    const timeline = buildRunTimeline(run)
+    expect(timeline.find(item => item.id === 'run-1:attention')).toMatchObject({ title: '15 项需要关注' })
+    expect(timeline.find(item => item.id === 'run-1:attention')?.details.map(item => item.title)).toEqual(['Manual choice'])
+    expect(timeline.find(item => item.id === 'run-1:skipped')).toMatchObject({ title: '111 项已跳过' })
+    expect(timeline.find(item => item.id === 'run-1:warnings')).toBeUndefined()
+  })
+
+  it('preserves summary-only warning evidence without inventing actionable song details', () => {
+    const timeline = buildRunTimeline(makeRun({ warnings: 3, songs: [], detailsExpired: true }))
+    expect(timeline.find(item => item.id === 'run-1:attention')).toBeUndefined()
+    expect(timeline.find(item => item.id === 'run-1:warnings')).toMatchObject({ title: '3 项历史提示', details: [] })
   })
 
   it('represents an active run without claiming that it finished', () => {

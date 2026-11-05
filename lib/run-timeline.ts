@@ -2,7 +2,7 @@ import type { JobStep, JobStepContext, SongTask, TaskRun } from '~~/server/lib/j
 import { runStatusLabel, runTriggerLabel, runTypeLabel } from '~~/lib/run-presentation'
 import {
   isFailedSongStatus,
-  isAttentionSongStatus,
+  songMatchesStatusBucket,
   songStatusPresentation,
   type TaskSemanticTone,
 } from '~~/lib/task-status'
@@ -291,7 +291,13 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
 
   const outcomeTime = lastKnownTime(run)
   const existingSongs = run.songs.filter(song => song.status === 'skipped_existing')
-  const attentionSongs = run.songs.filter(song => isAttentionSongStatus(song.status) || song.status === 'extra_skipped')
+  const attentionSongs = run.songs.filter(song => songMatchesStatusBucket(song.status, 'attention') && !isFailedSongStatus(song.status))
+  const skippedSongs = run.songs.filter(song => songMatchesStatusBucket(song.status, 'skipped'))
+  const attentionCount = run.issueCounts
+    ? run.issueCounts.deferred + run.issueCounts.manual + run.issueCounts.preserved
+    : attentionSongs.length
+  const skippedCount = run.issueCounts ? run.issueCounts.ignored + run.issueCounts.restricted : skippedSongs.length
+  const historicalCount = Math.max(0, run.warnings - attentionCount - skippedCount)
   const failedSongs = run.songs.filter(song => isFailedSongStatus(song.status))
   const successSongs = run.songs.filter(song => song.status === 'success')
   const removedSongs = run.songs.filter(song => song.status === 'removed')
@@ -309,18 +315,26 @@ export function buildRunTimeline(run: TaskRun): RunTimelineItem[] {
       shouldShowSongSource,
     ))
   }
-  if (run.warnings > 0) {
+  if (attentionCount > 0) {
     items.push(resultItem(
-      `${run.id}:ignored`,
-      `${run.warnings} 项需要关注`,
+      `${run.id}:attention`,
+      `${attentionCount} 项需要关注`,
       '包含待处理歌曲，以及按当前策略保留、未从 Plex 歌单移除的条目',
-      'ignored',
-      'ignored',
+      'warning',
+      'warn',
       outcomeTime,
       attentionSongs,
       sourceNameById,
       shouldShowSongSource,
     ))
+  }
+  if (skippedCount > 0) {
+    items.push(resultItem(`${run.id}:skipped`, `${skippedCount} 项已跳过`, '包含版权受限和已忽略的歌曲',
+      'ignored', 'ignored', outcomeTime, skippedSongs, sourceNameById, shouldShowSongSource))
+  }
+  if (historicalCount > 0) {
+    items.push(resultItem(`${run.id}:warnings`, `${historicalCount} 项历史提示`, '仅保留汇总，无法据此确定具体待处理歌曲',
+      'warning', 'warn', outcomeTime, [], sourceNameById, shouldShowSongSource))
   }
   if (run.failedSongs > 0) {
     items.push(resultItem(
