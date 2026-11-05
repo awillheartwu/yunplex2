@@ -158,7 +158,7 @@ python3 "$RUN/helpers/nas-release.py" status --root "$RUN"
 
 `launch` 只在 NAS 启动有截止时间的采样进程，不创建提醒或自动复核。默认前 12 小时空闲，后 12 小时每 30 分钟同步这两首。已有空闲观察、只补持续同步时，设置 `observationMode: "periodic_sync"` 和 `durationSeconds: 43200`，立即开始约 24 轮周期同步。该模式只补同步覆盖，不代替新候选镜像的完整 24 小时观察。每分钟采集测试实例运行指标、SSE 开关后的连接数，以及两实例 Docker 资源和正式服务就绪状态。
 
-候选修复复验中，`nas-runtime.mjs` 的 `deferred-choice` 会在专用歌单移除另一首曲目并取消一首关联，核对待选择决定被保留、另一首仍能补回及媒体哈希不变；随后用 `restore-deferred` 恢复基线。中断测试还记录重启前后的实际 Node PID、任务终态及是否在旧租约到期前收尾。`browser/run-timeline-classification.spec.ts` 使用明确的分类夹具验证候选前端；对 NAS 专用实例运行时，`YUNPLEX_ACCEPTANCE_SESSION_FILE` 仅指向本次测试会话文件，不使用正式服务会话。
+候选修复复验中，专用实例将未验证媒体策略显式设为等待手动选择。`nas-runtime.mjs` 的 `deferred-choice` 会取消外部媒体的手工接管，并在专用歌单移除另一首托管曲目，核对待选择决定被保留、另一首仍能补回及媒体哈希不变；随后用 `restore-deferred` 恢复基线。托管文件仍可按准确路径重新关联，默认自动下载策略也不等于等待手选，不将这些正常行为误判为取消关联失败。中断测试还记录重启前后的实际 Node PID、任务终态及是否在旧租约到期前收尾。`browser/run-timeline-classification.spec.ts` 使用明确的分类夹具验证候选前端；对 NAS 专用实例运行时，`YUNPLEX_ACCEPTANCE_SESSION_FILE` 仅指向本次测试会话文件，不使用正式服务会话。
 
 只读探测失败按阶段与次数记入 `probeErrorCounts`，不永久关闭后续负载。私有实例的读取失败会跳过本轮写入，下一次读回并核对基线后再继续；正式服务的就绪探测超时仅记录。写入请求执行失败或结果不明、实例更换或退出、媒体/歌单/任务基线变化、队列不排空、额外文件任务、SSE 未释放仍会暂停后续写入，继续收集只读证据。测试实例限制内存 `1 GiB`，连续五次 RSS 超过 `768 MiB` 也会暂停。内存趋势结合预热后与最后两小时的中位数、连接数和工作负载人工判断，单次峰值不直接判成泄漏。
 

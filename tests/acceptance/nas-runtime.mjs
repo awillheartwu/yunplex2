@@ -135,6 +135,7 @@ async function setup() {
   defaults.plex = { ...cfg.plex, server: 'http://127.0.0.1', port: 3010, section: fixture.title }
   defaults.download = { ...defaults.download, dir: '/mnt/acceptance', plexLibraryPathPrefix: fixture.mediaRoot }
   defaults.sync = { ...defaults.sync, enabled: false, songLimit: 2, downloadConcurrency: 1, autoDownloadAlbum: false,
+    unverifiedMediaPolicy: 'wait_manual',
     plexScanRetries: 12, plexScanRetryDelaySec: 5 }
   await api('/setup/complete', { config: defaults })
   return { libraryKey: fixture.libraryKey, seedIndexed: true }
@@ -195,9 +196,11 @@ async function cleanup() {
 }
 async function deferredChoice() {
   const before = { items: await items(), files: files() }
-  const bindings = db.prepare("SELECT netease_song_id,plex_rating_key,updated_at FROM song_identity_bindings WHERE status='active' ORDER BY netease_song_id").all()
+  const bindings = db.prepare("SELECT b.netease_song_id,b.plex_rating_key,b.updated_at,a.ownership FROM song_identity_bindings b JOIN local_media_assets a ON a.netease_song_id=b.netease_song_id WHERE b.status='active' ORDER BY b.netease_song_id").all()
   if (bindings.length !== 2) throw new Error('Deferred-choice fixture needs two active identities')
-  const [deferred, other] = bindings
+  const deferred = bindings.find(binding => binding.ownership === 'external')
+  const other = bindings.find(binding => binding.ownership === 'managed')
+  if (!deferred || !other) throw new Error('Deferred-choice fixture needs adopted external and managed media')
   const key = await ownPlaylist(), removed = before.items.find(item => item.key === other.plex_rating_key)
   if (!removed) throw new Error('Other fixture song is absent before deferred test')
   save('deferred-proof', { ...deferred, ...before })
