@@ -41,5 +41,27 @@
         "sha256": "0fac2374380621b22e6b50451057721a9c52935b02d16d106a9f04897f061d0e"
       }
     ]
+  },
+  {
+    "package": "https-proxy-agent",
+    "version": "5.0.1",
+    "files": [
+      {
+        "file": "https-proxy-agent-5.0.1-README-license.txt",
+        "source": "https://github.com/TooTallNate/node-https-proxy-agent/blob/d0d80cc0482f20495aa8595f802e1a9f3b1b3409/README.md#license",
+        "sha256": "5aa012c5c5e970177d1ff9144121a598fa082434391061504b2d77a70289097f"
+      }
+    ]
+  },
+  {
+    "package": "degenerator",
+    "version": "5.0.1",
+    "files": [
+      {
+        "file": "degenerator-5.0.1-README-license.txt",
+        "source": "https://github.com/TooTallNate/proxy-agents/blob/d5cdaa1b774c699c75b543eb4b112290d261e321/packages/degenerator/README.md#license",
+        "sha256": "5aa012c5c5e970177d1ff9144121a598fa082434391061504b2d77a70289097f"
+      }
+    ]
   }
 ]

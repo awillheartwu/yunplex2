@@ -151,7 +151,7 @@ docker exec -i "$container_id" node --input-type=module - /app/.output/server "$
   < "$(dirname "$0")/tag-runtime-smoke.mjs" || fail 'Tag worker runtime check failed'
 echo '==> Checking bundled project, dependency and font notices'
 notices=$(container_node 'const fs=require("node:fs"); const own=fs.readFileSync("/app/LICENSE","utf8"); const metadata=require("/app/release.json"); const third=fs.readFileSync("/app/THIRD_PARTY_NOTICES.md","utf8"); const index=JSON.parse(fs.readFileSync("/app/.output/licenses/npm/index.json","utf8")); const fonts=["Inter-OFL.txt","JetBrainsMono-OFL.txt"].every(name=>fs.readFileSync("/app/.output/public/fonts/"+name,"utf8").includes("SIL OPEN FONT LICENSE")); if(metadata.license!=="MIT"||!own.includes("YunPlex contributors")||!third.length||!index.packages.length||!fonts)process.exit(1); process.stdout.write("notices:ok runtime-texts-missing:"+index.missingRuntimeNotices.length)')
-case "$notices" in *'notices:ok '*) echo "    $notices" ;; *) fail 'Bundled license notices are missing or invalid' ;; esac
+case "$notices" in 'notices:ok runtime-texts-missing:0') echo "    $notices" ;; *) fail 'Bundled license notices are missing or invalid' ;; esac
 echo '==> Runtime resources after readiness'
 docker stats --no-stream --format 'Memory: {{.MemUsage}}; CPU: {{.CPUPerc}}' "$container_id"
 
