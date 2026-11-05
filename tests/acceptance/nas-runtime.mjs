@@ -90,10 +90,19 @@ function state() {
     failures: db.prepare('SELECT id,status,failure_kind,song_id,download_task_ids FROM failure_records').all() }
 }
 async function start(mode = 'full') {
-  const result = await api(`/playlist-sources/${fixture.sourceId}/sync`, { mode })
-  const request = result.data.results?.[0]
-  if (request?.status !== 'accepted' || !request.requestId) throw new Error('Sync request not accepted')
-  return request
+  for (let attempt = 0; attempt < 180; attempt++) {
+    if (db.prepare("SELECT COUNT(*) n FROM source_sync_queue WHERE status IN ('pending','running')").get().n) {
+      await delay(1000)
+      continue
+    }
+    const result = await api(`/playlist-sources/${fixture.sourceId}/sync`, { mode })
+    const request = result.data.results?.[0]
+    // Only an explicit busy response proves no request was submitted; unknown writes are never retried.
+    if (request?.status === 'busy') { await delay(1000); continue }
+    if (request?.status !== 'accepted' || !request.requestId) throw new Error(`Sync request not accepted (${request?.status || 'missing'})`)
+    return request
+  }
+  throw new Error('Previous private workload did not become idle within three minutes')
 }
 async function settle(requestId, expect = 'success') {
   for (let i = 0; i < 180; i++) {
