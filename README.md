@@ -125,3 +125,7 @@ pnpm start
 参与开发请先阅读 [AGENTS.md](AGENTS.md)；模块入口见[代码结构](docs/architecture.md)，验证方式见[测试说明](tests/README.md)。项目使用 Nuxt 4、Nitro 和 SQLite，单个应用进程即可运行。
 
 问题与建议可提交到 [Issues](https://github.com/awillheartwu/yunplex2/issues)。反馈时附上应用版本、现象与复现步骤；日志和截图请先隐去 Cookie、Token 等凭据。
+
+## 许可证
+
+YunPlex 自有代码采用 [MIT](LICENSE)，公开署名为 **YunPlex contributors**。第三方组件及内置字体保留原许可，见[第三方声明](THIRD_PARTY_NOTICES.md)。

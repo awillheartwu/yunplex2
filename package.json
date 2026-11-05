@@ -2,6 +2,8 @@
   "name": "yunplex2",
   "version": "2.0.9",
   "private": true,
+  "license": "MIT",
+  "author": "YunPlex contributors",
   "repository": {
     "type": "git",
     "url": "https://github.com/awillheartwu/yunplex2.git"
@@ -17,7 +19,7 @@
   },
   "scripts": {
     "dev": "NODE_OPTIONS=--no-deprecation nuxt dev",
-    "build": "nuxt build",
+    "build": "nuxt build && node scripts/package-licenses.mjs",
     "preview": "nuxt preview",
     "start": "NODE_OPTIONS=--no-deprecation node .output/server/index.mjs",
     "commit": "git-cz",

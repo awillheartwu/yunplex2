@@ -15,7 +15,8 @@ ARG REYUNPLEX_REVISION
 RUN REYUNPLEX_REVISION=$REYUNPLEX_REVISION pnpm build && rm -rf .output/server/node_modules/@neteasecloudmusicapienhanced/api/public
 
 FROM node:24-alpine AS runtime
-LABEL org.opencontainers.image.title="YunPlex"
+LABEL org.opencontainers.image.title="YunPlex" \
+      org.opencontainers.image.licenses="MIT"
 
 ARG REYUNPLEX_VERSION
 ARG REYUNPLEX_REVISION
@@ -33,6 +34,7 @@ ENV NITRO_PORT=3000
 COPY --from=build /app/.output ./.output
 COPY scripts/maintenance ./maintenance
 COPY package.json ./release.json
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 
 # Keep the default data directory writable for the non-root runtime user.
 RUN mkdir -p /app/data && chown node:node /app/data
