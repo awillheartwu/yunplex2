@@ -38,6 +38,8 @@ YunPlex 是一个自托管的音乐同步工具，适合已经使用 Plex、希�
 
 ### Docker Compose 源码构建
 
+公开源码是整理后的 2.0.9 快照，Git 提交与正式镜像的构建提交不同。要安装已验收的镜像，请使用下方的 [GHCR 安装步骤](#使用-ghcr-镜像)。
+
 需要 Git、Docker 和 Docker Compose：
 
 ```bash
