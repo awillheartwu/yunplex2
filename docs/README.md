@@ -12,6 +12,6 @@
 | 开发者     | 开发、验证、分支和发布约定                 | [项目指引](../AGENTS.md)               |
 | 界面维护者 | 页面文案、设置搜索、控件与样式归属         | [界面规范](design-system.md)           |
 | 验证人员   | 版本收尾、隔离测试与真实环境验收           | [测试说明](../tests/README.md)         |
-| 发布维护者 | 剩余验收、分发准备与后续功能               | [待办](../ROADMAP.md)                  |
+| 发布维护者 | 剩余验收与后续功能                         | [待办](../ROADMAP.md)                  |
 
 字体来源与许可随字体文件保存在 [public/fonts/README.md](../public/fonts/README.md)。

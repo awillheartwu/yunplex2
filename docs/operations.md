@@ -46,7 +46,7 @@ Compose 的 `.env` 用于替换模板变量，额外运行参数必须在服务�
 5. 只推送 main 到负责 NAS 部署的远端，触发现有 CI、镜像验证、备份和部署。本次正式 tag 暂留本地，不能与 main 一起推送。
 6. 分别检查 CI、NAS 就绪、页面版本与 SHA，以及真实业务结果。部署通过不代表用户最终确认 release。
 7. 用户最终确认本次 release 并授权公开分发后，只推送对应的正式 tag，例如 `git push <远端> refs/tags/v2.0.9`，自动触发 **Publish accepted YunPlex image to GHCR**。推 tag 代表分发确认，任务会复用已验收镜像并最后更新 `latest`。失败时可从 `main` 手动重试，输入同一 `tag`；仅重试固定标签时可关闭 `update_latest`，目标仍须是当前已验收的 NAS 部署。不要推送全部 tags。
-8. 在 GitHub 包设置确认 GHCR 包为 public，用无凭据客户端按固定版本拉取并运行，核对 digest、架构、初始化、持久化和重启，再宣布分发完成。同步将 README 中的镜像占位地址替换为实际分发地址，并给出固定版本入口。
+8. 确认 GHCR 包公开，用无凭据客户端按固定版本拉取并在隔离环境运行，核对 digest、架构、初始化、持久化、重启和备份恢复，再宣布分发完成。更新 README 中的固定版本入口和镜像摘要。
 
 分发由 [.forgejo/workflows/publish.yml](../.forgejo/workflows/publish.yml) 调用 [publish.mjs](../scripts/release/publish.mjs)，只发布 `linux/amd64`，使用与 NAS 部署相同的 Docker daemon。它核对 tag 与代码版本、镜像 OCI labels、正在运行的镜像 ID、`deployment.json` 的 ready 状态和实时就绪接口；不会构建镜像、替换容器或写应用数据。目标镜像缺失、部署未完成或版本不符时停止，重新构建需要重新验收。
 

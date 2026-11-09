@@ -11,7 +11,7 @@ YunPlex 是一个自托管的音乐同步工具，适合已经使用 Plex、希�
 
 收藏管理、首次接管、下载进度和异常处理都在网页中完成，适合在 NAS 上持续运行。
 
-> 当前处于首版发布准备阶段，版本基线为 `2.0.9`，版本记录见[更新日志](CHANGELOG.md)。正式镜像的地址与可用版本以实际发布结果为准。
+> 当前版本为 `2.0.9`，版本记录见[更新日志](CHANGELOG.md)。
 
 ## 主要功能
 
@@ -56,12 +56,12 @@ docker compose up -d --build
 
 ### 使用 GHCR 镜像
 
-正式镜像在 release 最终确认后发布，仅提供 `linux/amd64`；其他架构需从源码自行构建。GHCR 地址、固定版本与 digest 以对应 release 的分发结果为准，下面的镜像地址需要替换。
+正式镜像由 [GHCR 镜像包](https://github.com/users/awillheartwu/packages/container/package/yunplex) 分发，仅提供 `linux/amd64`；其他架构需从源码自行构建。下方示例使用固定版本 `2.0.9`。
 
 下载 [deploy/ghcr.compose.yml](deploy/ghcr.compose.yml)，将以下内容保存为同目录的 `.env`：
 
 ```dotenv
-YUNPLEX_IMAGE=ghcr.io/你的账号/yunplex:2.0.9
+YUNPLEX_IMAGE=ghcr.io/awillheartwu/yunplex:2.0.9
 YUNPLEX_DATA_DIR=/path/to/yunplex/data
 YUNPLEX_MUSIC_DIR=/path/to/music
 YUNPLEX_UID=1000
@@ -69,7 +69,9 @@ YUNPLEX_GID=1000
 YUNPLEX_PORT=3210
 ```
 
-替换镜像账号和两个本机绝对目录，先创建专用数据目录，确认音乐目录已存在，并让配置的 UID/GID 可以读写这两个目录，再执行：
+要锁定 `2.0.9` 的镜像内容，可将 `YUNPLEX_IMAGE` 设为 `ghcr.io/awillheartwu/yunplex@sha256:c66da21e3e6e80e0c091327c0286c451e9ac716cf2011fea1323c56b6e60ec15`。
+
+填写两个本机绝对目录，先创建专用数据目录，确认音乐目录已存在，并让配置的 UID/GID 可以读写这两个目录，再执行：
 
 ```bash
 docker compose -f ghcr.compose.yml pull
