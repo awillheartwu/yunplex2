@@ -2,23 +2,20 @@
   <NuxtLink
     :to="`/task-center/runs/${run.id}`"
     class="run-card"
-    :aria-label="`查看${runTypeLabel(run.type)}运行：${displaySummary}`"
   >
     <div class="run-card__icon" :class="`run-card__icon--${typeTone}`">
       <AppIcon :name="runTypeIcon(run.type)" :size="18" />
     </div>
     <div class="run-card__body">
-      <div class="run-card__heading">
-        <h3 :title="displaySummary">{{ displaySummary }}</h3>
-        <StatusBadge :status="badgeStatus" :label="displayStatusLabel" size="sm" />
-      </div>
       <div class="run-card__meta">
         <span class="run-card__type">{{ runTypeLabel(run.type) }}</span>
         <span>{{ runTriggerLabel(run.trigger) }}</span>
         <span class="run-card__source" :title="run.source || '系统任务'">{{ run.source || '系统任务' }}</span>
+        <span v-if="run.awaitingSourceSync">下载完成，待同步</span>
       </div>
+      <StatusBadge :status="badgeStatus" :label="displayStatusLabel" size="sm" />
     </div>
-    <div class="run-card__results" aria-label="运行结果">
+    <div class="run-card__results">
       <span class="run-card__total">{{ run.status === 'failed' && run.totalSongs === 0 ? '本轮未完成核对' : `共 ${run.totalSongs} 项` }}</span>
       <span
         v-for="item in visibleResults"
@@ -40,7 +37,6 @@ import type { TaskRunSummary } from '~~/server/lib/job/types'
 import {
   formatRunDuration,
   runBadgeStatus,
-  runSummaryLabel,
   runStatusLabel,
   runTriggerLabel,
   runTypeIcon,
@@ -53,9 +49,6 @@ const props = defineProps<{ run: TaskRunSummary }>()
 const typeTone = computed(() => runTypeTone(props.run.type))
 const badgeStatus = computed(() => props.run.sourceRequestStatus === 'pending' ? 'idle' : runBadgeStatus(props.run.status))
 const displayStatusLabel = computed(() => props.run.sourceRequestStatus === 'pending' ? '等待执行' : runStatusLabel(props.run.status))
-const displaySummary = computed(() => props.run.awaitingSourceSync
-  ? '下载完成，待同步'
-  : runSummaryLabel(props.run.summary, `${runTypeLabel(props.run.type)}运行`, props.run.status).split('；', 1)[0])
 const visibleResults = computed(() => runResultItems(props.run as TaskRunSummary & { warnings: number }).filter(item => item.count > 0))
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -65,7 +58,7 @@ function formatTime(value: string) {
 <style scoped>
 .run-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, .65fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.5fr) auto auto;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-4);
@@ -94,16 +87,13 @@ function formatTime(value: string) {
 .run-card__icon--sync, .run-card__icon--initialization { color: var(--run-sync); }
 .run-card__icon--download { color: var(--run-download); }
 .run-card__icon--repair { color: var(--run-repair); }
-.run-card__body { min-width: 0; }
-.run-card__heading { display: flex; align-items: center; gap: var(--space-2); }
-.run-card__heading h3 { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.run-card__heading > span { flex: none; }
+.run-card__body { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .run-card__meta {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
-  margin-top: var(--space-1);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }

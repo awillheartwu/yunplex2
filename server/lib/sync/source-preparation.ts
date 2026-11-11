@@ -9,7 +9,8 @@ import {
   type NeteaseSong,
 } from '../netease'
 import { loadNeteaseRawSongs, saveNeteaseRawSongs } from '../netease-song-cache'
-import { getSourceFailurePolicy, shouldDeferFailure, type SourceFailurePolicy } from './failure-policy'
+import { getOpenMediaIdentityConflict, getSourceFailurePolicy, shouldDeferFailure, type SourceFailurePolicy } from './failure-policy'
+import { mediaIdentityConflictTrace } from './download-diagnostics'
 import { confirmSongDetailsAvailable } from '../tasks/completion'
 
 export interface SourceSongSnapshot {
@@ -113,31 +114,38 @@ export function addMissingDetailSongs(
   const missingIds = new Set(missingSongDetailIds)
   for (const [neteaseIndex, missingSongId] of sourceSongIds.entries()) {
     if (!missingIds.has(missingSongId)) continue
+    const failure = failurePolicy.failuresBySongId[missingSongId]
+    const mediaConflict = getOpenMediaIdentityConflict(failure)
+    const songName = `网易云歌曲 #${missingSongId}`
     const [taskSongId] = job.addSongs(sourceId, [{
-      songName: `网易云歌曲 #${missingSongId}`,
-      artist: '详情未返回',
+      songName,
+      artist: mediaConflict ? '未知艺人' : '详情未返回',
       album: '未知专辑',
-      status: failurePolicy.failuresBySongId[missingSongId]?.status === 'ignored' ? 'ignored_failure'
-        : shouldDeferFailure(failurePolicy.failuresBySongId[missingSongId], maxFailureAttempts) ? 'awaiting_retry' : 'failed_download',
+      status: failure?.status === 'ignored' ? 'ignored_failure'
+        : mediaConflict ? 'awaiting_manual_match'
+          : shouldDeferFailure(failure, maxFailureAttempts) ? 'awaiting_retry' : 'failed_download',
       neteaseSongId: missingSongId,
       neteaseIndex,
     }])
     if (!taskSongId) continue
+    const phase = mediaConflict?.phase ?? 'download'
     job.updateSong(taskSongId, {
-      phase: 'download',
+      phase,
       error: {
-        title: '网易云未返回歌曲详情',
-        message: '无法获取目标歌曲信息，本轮保持 Plex 歌单不变',
-        stage: 'download',
-        code: 'source_missing',
-        songName: `网易云歌曲 #${missingSongId}`,
+        title: mediaConflict ? '媒体身份冲突' : '网易云未返回歌曲详情',
+        message: mediaConflict?.message ?? '无法获取目标歌曲信息，本轮保持 Plex 歌单不变',
+        stage: phase,
+        code: mediaConflict ? 'media_identity_conflict' : 'source_missing',
+        songName,
       },
       metadata: {
-        matchTrace: {
-          source: 'download_required',
-          decision: 'preserved',
-          deletionProtectionReason: '网易云 song_detail 未返回该 trackId，本轮目标不完整',
-        },
+        matchTrace: mediaConflict
+          ? { ...mediaIdentityConflictTrace(mediaConflict.message) }
+          : {
+              source: 'download_required',
+              decision: 'preserved',
+              deletionProtectionReason: '网易云 song_detail 未返回该 trackId，本轮目标不完整',
+            },
       },
     })
   }

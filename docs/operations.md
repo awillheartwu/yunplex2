@@ -37,7 +37,7 @@ Compose 的 `.env` 用于替换模板变量，额外运行参数必须在服务�
 
 ## 正式发版与 GHCR 分发
 
-版本以 `package.json` 为准，基线是 `2.0.9`。侧栏和系统信息显示版本与构建 SHA。正式发版是一批通过验收的交付，不是每次开发提交；本地镜像仍使用 `reyunplex:<完整 SHA>`。`commit-and-tag-version` 负责准备版本和 `CHANGELOG.md`，NAS 部署和公开分发分别执行。
+侧栏和系统信息显示 `package.json` 中的版本和构建 SHA。正式发版是一批通过验收的交付，不是每次开发提交；本地镜像仍使用 `reyunplex:<完整 SHA>`。`commit-and-tag-version` 负责准备版本和 `CHANGELOG.md`，NAS 部署和公开分发分别执行。
 
 1. 在 `dev` 开发，按[版本收尾](../tests/README.md#版本收尾)完成检查，由用户验收功能。
 2. 用户明确授权本次发版、提交、推送和 NAS 部署后，先提交本版改动，确认 `dev` 工作区干净并已取得已有 release tags。首次使用 `pnpm release:first --dry-run` 预览，再执行 `pnpm release:first`；保留 `package.json` 当前版本，生成变更日志和 release commit，不创建 tag。以后使用 `pnpm release:patch`、`release:minor`、`release:major`；`pnpm release` 可根据规范提交推荐提升级别。首次发版不能用普通 patch 命令。

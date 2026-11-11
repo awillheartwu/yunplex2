@@ -1,6 +1,6 @@
 import type { DownloadTask } from '../download/queue'
 import type { SongStatus, SongTask } from '../job/types'
-import type { TrackResolution } from './types'
+import type { MatchTrace, TrackResolution } from './types'
 import type { DomainErrorCode } from '../../../shared/domain-errors'
 import { getDomainErrorDefinition, isTagFailureMessage } from '../../../shared/domain-errors'
 import { classifyErrorCode } from '../domain-error'
@@ -49,6 +49,27 @@ function diagnosisFromCode(code: DomainErrorCode, filePath?: string | null, erro
     errorCode: code,
     retryable: definition.retryable,
   }
+}
+
+export function mediaIdentityConflictTrace(message: string): MatchTrace {
+  return {
+    source: 'identity_conflict',
+    message,
+    conflictReason: message,
+    decision: 'preserved',
+    deletionProtectionReason: '媒体身份冲突尚未解决，等待用户选择；本轮不修改对应 Plex 条目',
+  }
+}
+
+export function markMediaIdentityConflictAwaitingManual(resolution: TrackResolution, message: string): void {
+  const protectedAudioPath = resolution.mediaPolicy?.protectedAudioPath
+  resolution.resolution = 'awaiting_manual'
+  resolution.plexRatingKey = undefined
+  resolution.mediaPolicy = {
+    disposition: 'wait_manual',
+    ...(protectedAudioPath ? { protectedAudioPath } : {}),
+  }
+  resolution.matchTrace = { ...resolution.matchTrace, ...mediaIdentityConflictTrace(message) }
 }
 
 export function classifyDownloadTaskFailure(task: Pick<DownloadTask, 'errorCode' | 'errorPhase' | 'error' | 'filePath'> | null | undefined): DownloadFailureDiagnosis {

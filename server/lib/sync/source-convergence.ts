@@ -17,7 +17,7 @@ import { resolveEffectiveSourceSyncSettings } from './effective-settings'
 import { resolveSyncModePolicy } from './mode-policy'
 import { observePlaylistSourceTracks } from './match-management-store'
 import { captureBindingVersions } from './identity-coordinator'
-import { getSourceFailurePolicy, getSourceFailureStatus, shouldDeferFailure } from './failure-policy'
+import { getOpenMediaIdentityConflict, getSourceFailurePolicy, getSourceFailureStatus, shouldDeferFailure } from './failure-policy'
 import { observeFailureSubject } from '../tasks/failure-records'
 import { confirmSourceRead } from '../tasks/completion'
 import { CancellationError, type SyncRunOptions } from './service-state'
@@ -37,6 +37,7 @@ import { plexRecoveryConfigFingerprint } from './plex-index-recovery'
 import { addMissingDetailSongs, loadSourceSongSnapshot, resolveSourceSkipState } from './source-preparation'
 import { detectPlexPathDrift, resolveTrustedSongSnapshot } from './source-snapshot'
 import { pendingPlaylistWrite } from './playlist-write-state'
+import { markMediaIdentityConflictAwaitingManual } from './download-diagnostics'
 
 export type SourceExecutionOptions = Readonly<Omit<SyncRunOptions, 'sourceIds'>>
 
@@ -442,6 +443,13 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
 
       // Update job song statuses from TrackResolution results
       for (const r of comparedResolutions) {
+        const deferredFailure = r.resolution === 'ignored_failure'
+          ? failurePolicy.failuresBySongId[r.song.id]
+          : undefined
+        const mediaConflict = getOpenMediaIdentityConflict(deferredFailure)
+        if (mediaConflict) {
+          markMediaIdentityConflictAwaitingManual(r, mediaConflict.message)
+        }
         const songId = job.findSongIdByIndex(source.id, r.neteaseIndex)
           ?? job.findSongId(source.id, r.song.id)
         if (!songId) continue
@@ -453,9 +461,21 @@ export async function executeSourceConvergence(input: SourceExecutionInput): Pro
             title: '媒体身份冲突', message: r.matchTrace?.message ?? 'Plex 媒体身份不唯一，无法安全选择',
             code: 'media_identity_conflict', stage: 'plex_match', songName: r.song.name, artist: splitArtists(r.song.artists)[0],
           } })
+        } else if (mediaConflict) {
+          job.updateSong(songId, {
+            status: 'awaiting_manual_match',
+            phase: mediaConflict.phase,
+            error: {
+              title: '媒体身份冲突',
+              message: mediaConflict.message,
+              code: 'media_identity_conflict',
+              stage: mediaConflict.phase,
+              songName: r.song.name,
+              artist: splitArtists(r.song.artists)[0],
+            },
+          })
         } else if (r.resolution === 'ignored_failure') {
-          const entry = failurePolicy.failuresBySongId[r.song.id]
-          job.updateSong(songId, { status: entry?.status === 'ignored' ? 'ignored_failure' : 'awaiting_retry', phase: entry?.phase || 'download' })
+          job.updateSong(songId, { status: deferredFailure?.status === 'ignored' ? 'ignored_failure' : 'awaiting_retry', phase: deferredFailure?.phase || 'download' })
         } else {
           const projection = projectStaticResolutionStatus(r.resolution)
           if (projection) job.updateSong(songId, projection)

@@ -155,7 +155,7 @@ test('run detail opens all failure states and an ignored item can be retried dir
   await page.getByRole('button', { name: /查看明细/, exact: true }).click()
   const ignoredRow = page.getByRole('article').filter({ hasText: 'Ignored Song' })
   const resolvedRow = page.getByRole('article').filter({ hasText: 'Resolved Song' })
-  await expect(ignoredRow.getByText('当前：已手动忽略', { exact: true })).toBeVisible()
+  await expect(ignoredRow.getByText('当前：已忽略', { exact: true })).toBeVisible()
   await expect(resolvedRow.getByText('当前：已解决', { exact: true })).toBeVisible()
   expect(listRequests.at(-1)?.get('status')).toBe('all')
   expect(listRequests.at(-1)?.get('runId')).toBe('run-with-failures')

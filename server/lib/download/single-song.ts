@@ -75,7 +75,6 @@ async function executeSingleSong(
 ): Promise<{ filePath: string; fileType: string; ops: SongOps; audioOperation: 'downloaded' | 'redownloaded' | 'reused'; audioCache?: DownloadAudioCache }> {
   const mode: DownloadMode = config.downloadMode ?? 'full'
   const downloadDir = resolve(config.downloadDir)
-  const previousAsset = getLocalMediaAsset(songId)
   const cachedAudio = config.audioCache ? findCachedAudio(config.audioCache) : null
 
   // 1. Fetch song detail
@@ -104,21 +103,11 @@ async function executeSingleSong(
     fileType = songUrl.type
   }
 
-  // 2. Fetch lyrics (if enabled)
-  const lyricData = config.downloadLyrics
-    ? await fetchLyric(song.id, config.cookie, config.lyricOrder, config.downloadTranslatedLyric)
-    : undefined
-  signal?.throwIfAborted()
-
-  // 3. Fetch album detail for richer metadata
-  const albumDetail = await fetchAlbumDetail(song.album.id, config.cookie)
-  signal?.throwIfAborted()
-
-  // 4. Parse artists
+  // 2. Parse artists
   const splitArtists = createSplitArtists(config.multiArtistFormat as MultiArtistFormat)
   const [albumArtist, trackArtist] = splitArtists(song.artists)
 
-  // 5. Build download path (use audioPath override if provided)
+  // 3. Build the target using the resolved audio format
   let targetPath: string
   let relativePath: string
 
@@ -159,19 +148,33 @@ async function executeSingleSong(
     relativePath = buildDownloadPath(config.pathFormat, pathVars, fileType)
     targetPath = join(downloadDir, relativePath)
   }
-  if (
-    config.target?.kind === 'computed'
-    && config.target.protectedPath
-    && plexPathsExactlyEqual(targetPath, resolve(config.target.protectedPath))
-  ) {
-    throw new Error('命名模板指向受保护的已有文件；请选择复用该文件或调整命名模板，未自动改名或覆盖')
-  }
-  return withMediaWriteTarget(targetPath, songId, async () => {
-    const targetIsKnownManaged = previousAsset?.ownership === 'managed'
-      && plexPathsExactlyEqual(resolve(previousAsset.filePath), targetPath)
-    if (config.target?.kind === 'computed' && config.target.requireManagedCopy && !targetIsKnownManaged && existsSync(targetPath)) {
+
+  const computedTarget = config.target?.kind === 'computed' ? config.target : undefined
+  const protectedPath = computedTarget?.protectedPath ? resolve(computedTarget.protectedPath) : undefined
+  function assertCopyTargetAvailable(filePath: string): void {
+    if (protectedPath && plexPathsExactlyEqual(filePath, protectedPath)) {
+      throw Object.assign(new Error('命名模板指向受保护的已有文件；请选择复用该文件或调整命名模板，未自动改名或覆盖'), { code: 'media_identity_conflict' })
+    }
+    if (!(protectedPath || computedTarget?.requireManagedCopy) || !existsSync(filePath)) return
+
+    const asset = getLocalMediaAsset(songId)
+    if (asset?.status !== 'active' || asset.ownership !== 'managed' || !plexPathsExactlyEqual(asset.filePath, filePath)) {
       throw Object.assign(new Error('命名模板的目标文件已存在且未被接管；请选择复用该文件或调整命名模板，未自动改名或覆盖'), { code: 'media_identity_conflict' })
     }
+  }
+
+  return withMediaWriteTarget(targetPath, songId, async () => {
+    // 4. Check the actual destination before fetching metadata or writing files
+    assertCopyTargetAvailable(targetPath)
+
+    // 5. Fetch lyrics (if enabled) and album details
+    const lyricData = config.downloadLyrics
+      ? await fetchLyric(song.id, config.cookie, config.lyricOrder, config.downloadTranslatedLyric)
+      : undefined
+    signal?.throwIfAborted()
+    const albumDetail = await fetchAlbumDetail(song.album.id, config.cookie)
+    signal?.throwIfAborted()
+
     const audioExists = existsSync(targetPath) && validateLocalAudioFile(targetPath).valid
 
     // 6. Determine what to skip based on mode and file existence
@@ -244,13 +247,17 @@ async function executeSingleSong(
           songId, filePath: result.filePath, taskId: config.taskId, signal,
           manualBindingVersion: config.manualBindingVersion, taskCreatedAt: config.taskCreatedAt,
         }, async () => {
+          const publishCheckedFile = () => {
+            assertCopyTargetAvailable(result.filePath)
+            publish()
+          }
           if (config.commit) await config.commit({
             ...result, fileType,
             audioOperation: result.ops.download === 'ok'
               ? mode === 'replace' ? 'redownloaded' : 'downloaded' : 'reused',
             audioCache: config.audioCache,
-          }, publish)
-          else publish()
+          }, publishCheckedFile)
+          else publishCheckedFile()
         }),
         ...(config.audioCache && !skipAudio ? {
           audioCache: config.audioCache,

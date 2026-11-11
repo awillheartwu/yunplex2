@@ -10,7 +10,7 @@ import {
 } from '../download/queue'
 import { createFileTaskWaitHandle, getSourceFileRetryTasks, resumeSourceFileTasks, submitFileTasks } from '../download/file-task-command'
 import { getDownloadWorker } from '../download/worker'
-import { classifyDownloadTaskFailure } from './download-diagnostics'
+import { classifyDownloadTaskFailure, markMediaIdentityConflictAwaitingManual } from './download-diagnostics'
 import { getActiveSongIdentityBindings } from './identity-store'
 import { normalizePlexPath } from './identity-normalization'
 import { getLocalMediaAsset } from './local-media-store'
@@ -78,14 +78,17 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
   for (const resolution of resolutions) {
     if (resolution.resolution !== 'needs_download' || downloadPlans.has(resolution.song.id)) continue
     const replace = resolution.mediaPolicy?.disposition === 'redownload_replaced'
+    const correction = !dryRun ? getMediaCorrection(resolution.song.id) : null
+    const requireManagedCopy = !dryRun
+      && (Boolean(correction) || resolution.mediaPolicy?.disposition === 'download_missing')
     downloadPlans.set(resolution.song.id, {
       resolution,
       mode: replace ? 'replace' : 'full',
       ...(resolution.mediaPolicy?.audioPath
         ? { target: { kind: 'existing' as const, path: resolution.mediaPolicy.audioPath } }
         : resolution.mediaPolicy?.protectedAudioPath
-          ? { target: { kind: 'computed' as const, protectedPath: resolution.mediaPolicy.protectedAudioPath, requireManagedCopy: Boolean(!dryRun && getMediaCorrection(resolution.song.id)) } }
-          : !dryRun && getMediaCorrection(resolution.song.id) ? {target:{kind:'computed' as const,requireManagedCopy:true}} : {}),
+          ? { target: { kind: 'computed' as const, protectedPath: resolution.mediaPolicy.protectedAudioPath, requireManagedCopy } }
+          : requireManagedCopy ? { target: { kind: 'computed' as const, requireManagedCopy: true } } : {}),
     })
   }
 
@@ -125,8 +128,9 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
   }
 
   const songsToDownload = [...downloadPlans.values()].map(plan => plan.resolution)
-  const needsPlexRefresh = songsToDownload.length > 0 || (!dryRun && resolutions.some(resolution=>Boolean(getMediaCorrection(resolution.song.id)?.staged_asset_json)))
+  const needsPlexRefreshWithoutDownloads = (!dryRun && resolutions.some(resolution => Boolean(getMediaCorrection(resolution.song.id)?.staged_asset_json)))
     || resolutions.some(resolution => resolution.resolution === 'found_on_disk')
+  let needsPlexRefresh = songsToDownload.length > 0 || needsPlexRefreshWithoutDownloads
   const queuedDownloadTasks = new Map<number, DownloadTask>()
 
   if (!dryRun && songsToDownload.length > 0) {
@@ -196,26 +200,34 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
     setStage('processing_tags')
 
     for (const resolution of resolutions.filter(item => downloadPlans.has(item.song.id))) {
+      const task = queuedDownloadTasks.get(resolution.song.id) ?? null
       const songId = job.findSongIdByIndex(source.id, resolution.neteaseIndex)
         ?? job.findSongId(source.id, resolution.song.id)
-      if (!songId) continue
 
-      const task = queuedDownloadTasks.get(resolution.song.id) ?? null
       if (!task || task.status === 'failed') {
         const diagnosis = classifyDownloadTaskFailure(task)
+        const mediaConflict = diagnosis.errorCode === 'media_identity_conflict'
+        const status = mediaConflict ? 'awaiting_manual_match' : diagnosis.status
+        if (mediaConflict) {
+          markMediaIdentityConflictAwaitingManual(resolution, task?.error ?? diagnosis.title)
+        }
+        if (!songId) continue
         const artist = splitArtists(resolution.song.artists)[0]
         const resolvedFilePath = task?.filePath ?? resolution.filePath
         if (resolvedFilePath) resolution.filePath = resolvedFilePath
 
         job.updateSong(songId, {
-          status: diagnosis.status,
+          status,
           phase: diagnosis.phase,
           filePath: resolvedFilePath ?? undefined,
           fileType: task?.fileType ?? undefined,
+          ...(mediaConflict && resolution.matchTrace
+            ? { metadata: { matchTrace: { ...resolution.matchTrace } } }
+            : {}),
           ...(task?.error
             ? {
                 error: {
-                  title: diagnosis.title,
+                  title: mediaConflict ? '媒体身份冲突' : diagnosis.title,
                   message: task.error,
                   stage: diagnosis.phase,
                   code: diagnosis.errorCode,
@@ -226,15 +238,17 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
             : {}),
         })
         if (task?.error) {
-          if (diagnosis.status === 'failed_tags') {
+          if (mediaConflict) {
+            log('warn', `等待手动选择媒体: ${resolution.song.name}`, task.error)
+          } else if (status === 'failed_tags') {
             addFailure(resolution.song.name, task.error)
             log('error', `标签写入失败: ${resolution.song.name}`, task.error)
-          } else if (diagnosis.status !== 'copyright_restricted') {
+          } else if (status !== 'copyright_restricted') {
             addFailure(resolution.song.name, task.error)
             log('error', `下载失败: ${resolution.song.name}`, task.error)
           }
         }
-      } else if (task.status === 'done') {
+      } else if (task.status === 'done' && songId) {
         const previousFilePath = resolution.filePath
         resolution.filePath = task.filePath ?? resolution.filePath
         if (
@@ -265,8 +279,16 @@ export async function applySourceDownloads(input: ApplySourceDownloadsInput): Pr
         ?? job.getSong(source.id, resolution.song.id)
       return song?.status === 'success'
     }).length
-    const failCount = songsToDownload.length - okCount
-    job.finishStep(downloadStep, failCount > 0 ? 'partial' : 'success', `${okCount} 首成功，${failCount} 首失败`)
+    const manualCount = songsToDownload.filter(resolution => resolution.resolution === 'awaiting_manual').length
+    const failCount = songsToDownload.length - okCount - manualCount
+    const summary = [
+      `${okCount} 首成功`,
+      manualCount > 0 ? `${manualCount} 首等待手动选择` : '',
+      failCount > 0 ? `${failCount} 首失败` : '',
+    ].filter(Boolean).join('，')
+    job.finishStep(downloadStep, failCount > 0 || manualCount > 0 ? 'partial' : 'success', summary)
+
+    if (manualCount === songsToDownload.length) needsPlexRefresh = needsPlexRefreshWithoutDownloads
   } else if (dryRun && songsToDownload.length > 0) {
     const downloadStep = job.startStep(
       'download',

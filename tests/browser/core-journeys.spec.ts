@@ -673,7 +673,7 @@ test('completed download waiting for source sync is visible in history and detai
   })
 
   await page.goto('/task-center?tab=runs')
-  const runCard = page.getByRole('link', { name: '查看手动下载运行：下载完成，待同步', exact: true })
+  const runCard = page.getByRole('link', { name: /手动下载.*待同步歌单.*下载完成，待同步.*等待执行/ })
   await expect(runCard).toBeVisible()
   await expect(runCard).toContainText('下载完成，待同步')
   await expect(runCard).toContainText('等待执行')

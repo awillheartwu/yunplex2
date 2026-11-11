@@ -6,6 +6,7 @@ import { confirmPlaylistItemAbsent, supersedePlaylistItemRemoval } from '../task
 
 export interface SourceFailurePolicyEntry {
   failureKind: string
+  failureReason: string
   occurrenceCount: number
   attemptCount: number
   status: 'open' | 'ignored'
@@ -35,7 +36,7 @@ function phaseForFailureKind(failureKind: string): SourceFailurePolicyEntry['pha
 export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   // A newly approved replacement can proceed without deleting older failure history.
   const rows = getDb().prepare(`
-    SELECT subject_key, song_id, failure_kind, occurrence_count, attempt_count, last_seen_at, status
+    SELECT subject_key, song_id, failure_kind, failure_reason, occurrence_count, attempt_count, last_seen_at, status
     FROM failure_records
     WHERE source_id = ?
       AND status IN ('open', 'ignored')
@@ -55,6 +56,7 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
     subject_key: string
     song_id: number | null
     failure_kind: string
+    failure_reason: string
     occurrence_count: number
     attempt_count: number
     last_seen_at: string
@@ -66,6 +68,7 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   for (const row of rows) {
     const entry: SourceFailurePolicyEntry = {
       failureKind: row.failure_kind,
+      failureReason: row.failure_reason,
       occurrenceCount: row.occurrence_count,
       attemptCount: row.attempt_count,
       status: row.status,
@@ -77,6 +80,14 @@ export function getSourceFailurePolicy(sourceId: string): SourceFailurePolicy {
   }
 
   return { failuresBySongId, removalFailures }
+}
+
+export function getOpenMediaIdentityConflict(entry: SourceFailurePolicyEntry | undefined) {
+  if (entry?.status !== 'open' || entry.failureKind !== 'media_identity_conflict') return null
+  return {
+    phase: entry.phase,
+    message: entry.failureReason || resolveDomainErrorDefinition('media_identity_conflict').userMessage,
+  }
 }
 
 /** A missing concrete item is already removed; an ignored present item stays untouched. */

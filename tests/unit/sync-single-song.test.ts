@@ -63,6 +63,7 @@ import { fetchSongDetail, getSongUrl, fetchLyric, fetchAlbumDetail } from '../..
 import { downloadSong } from '../../server/lib/tag-writer'
 import { existsSync } from 'node:fs'
 import { validateLocalAudioFile } from '../../server/lib/media-validation'
+import { getLocalMediaAsset } from '../../server/lib/sync/local-media-store'
 
 const mockConfig: SingleSongConfig = {
   quality: 'lossless',
@@ -298,14 +299,71 @@ describe('downloadSingleSong', () => {
     )
   })
 
-  it('reports a protected template-path collision without renaming or overwriting the file', async () => {
+  it('rejects a protected same-name target before metadata lookup or audio writing', async () => {
     const protectedPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.flac'
+    vi.mocked(existsSync).mockImplementation(path => path === protectedPath)
 
     await expect(downloadSingleSong(123456, {
       ...mockConfig,
       target: { kind: 'computed', protectedPath },
-    })).rejects.toThrow('未自动改名或覆盖')
+    })).rejects.toMatchObject({ code: 'media_identity_conflict' })
     expect(downloadSong).not.toHaveBeenCalled()
+    expect(fetchLyric).not.toHaveBeenCalled()
+    expect(fetchAlbumDetail).not.toHaveBeenCalled()
+  })
+
+  it('writes an independent MP3 copy when only the same-stem FLAC is protected', async () => {
+    const protectedPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.flac'
+    const targetPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.mp3'
+    vi.mocked(existsSync).mockImplementation(path => path === protectedPath)
+    vi.mocked(getSongUrl).mockResolvedValue({ url: 'https://example.com/song.mp3', type: 'mp3' })
+    vi.mocked(downloadSong).mockResolvedValue({
+      filePath: targetPath,
+      ops: { download: 'ok', lyric: 'ok', tags: 'ok', cover: 'skipped' },
+    })
+
+    const result = await downloadSingleSong(123456, {
+      ...mockConfig,
+      target: { kind: 'computed', protectedPath, requireManagedCopy: true },
+    })
+
+    expect(result.filePath).toBe(targetPath)
+    expect(downloadSong).toHaveBeenCalledWith(
+      'https://example.com/song.mp3',
+      expect.any(Object),
+      'mp3',
+      expect.any(String),
+      expect.any(Object),
+      'Artist A/Test Album (2023)/Test Song.mp3',
+      undefined,
+    )
+  })
+
+  it('blocks publication when an unowned target appears before commit', async () => {
+    const targetPath = '/tmp/music/Artist A/Test Album (2023)/Test Song.mp3'
+    let targetExists = false
+    let targetContent = 'existing file'
+    const publish = vi.fn(() => { targetContent = 'downloaded file' })
+    vi.mocked(getSongUrl).mockResolvedValue({ url: 'https://example.com/song.mp3', type: 'mp3' })
+    vi.mocked(existsSync).mockImplementation(path => targetExists && path === targetPath)
+    vi.mocked(getLocalMediaAsset).mockReturnValue(null)
+    vi.mocked(downloadSong).mockImplementationOnce(async (_url, _meta, _fileType, _downloadDir, options) => {
+      targetExists = true
+      const result = {
+        filePath: targetPath,
+        ops: { download: 'ok' as const, lyric: 'ok' as const, tags: 'ok' as const, cover: 'skipped' as const },
+      }
+      await options.commitFile?.(result, publish)
+      return result
+    })
+
+    await expect(downloadSingleSong(123456, {
+      ...mockConfig,
+      target: { kind: 'computed', requireManagedCopy: true },
+    })).rejects.toMatchObject({ code: 'media_identity_conflict' })
+
+    expect(publish).not.toHaveBeenCalled()
+    expect(targetContent).toBe('existing file')
   })
 
   it('uses audioPath override for ancillary file location', async () => {
