@@ -1,0 +1,242 @@
+.form-input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  box-shadow: none;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+  outline: none;
+}
+.form-input::placeholder {
+  color: var(--text-tertiary);
+}
+.form-input:hover:not(:disabled) {
+  border-color: var(--border-secondary);
+}
+.form-input:focus {
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.form-input:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+select.form-input {
+  cursor: pointer;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-tertiary) 50%),
+    linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.125rem) 50%,
+    calc(100% - .875rem) 50%;
+  background-size:
+    .25rem .25rem,
+    .25rem .25rem;
+  background-repeat: no-repeat;
+  padding-right: var(--space-9);
+}
+/* Action weight and size are independent; mobile controls retain a 44px target. */
+.btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  min-height: var(--control-height);
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1_5);
+  padding: 0 var(--space-3_5);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-normal);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  letter-spacing: normal;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+  white-space: nowrap;
+  user-select: none;
+  text-decoration: none;
+}
+.btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: none;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  box-shadow: none;
+}
+.btn-secondary {
+  background: var(--bg-control);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+  box-shadow: none;
+}
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.btn-soft {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.btn-soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.btn-info {
+  background: var(--running-soft);
+  color: var(--running);
+}
+.btn-info:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--running) 18%, transparent);
+}
+.btn-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.btn-warning:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+.btn.text-danger { color: var(--danger); background: var(--danger-soft); }
+.btn-sm {
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.btn-xs {
+  min-height: var(--control-height-xs);
+  padding: 0 var(--space-2_5);
+  font-size: var(--text-sm);
+}
+.btn > .app-icon { width: 1rem; height: 1rem; }
+input[type='checkbox'] {
+  appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  flex-shrink: 0;
+}
+input[type='checkbox']:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+input[type='checkbox']:checked,
+input[type='checkbox']:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+input[type='checkbox']:checked::before {
+  content: '';
+  display: block;
+  width: 0.38rem;
+  height: 0.62rem;
+  margin: 0.12rem auto 0;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type='checkbox']:indeterminate::before {
+  content: '';
+  display: block;
+  width: .55rem;
+  height: 0;
+  margin: .4rem auto 0;
+  border: solid var(--on-accent);
+  border-width: 0 0 2px;
+  transform: none;
+}
+input[type='checkbox']:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+input[type='checkbox']:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.icon-button:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.icon-button:focus-visible,
+.btn:focus-visible,
+.form-input:focus-visible,
+.list-select__trigger:focus-visible,
+.filter-chip:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+  box-shadow: var(--focus-ring);
+}
+
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--accent);
+}
+
+[data-setting-target] {
+  scroll-margin-block: calc(var(--app-topbar-block-size) + var(--space-6));
+}
+.setting-search-target {
+  outline: var(--focus-width) solid transparent;
+  outline-offset: var(--focus-offset);
+  animation: setting-search-highlight calc(var(--duration-slow) * 8) ease-out;
+}
+.setting-search-target:focus-visible { outline-color: var(--accent); }
+@keyframes setting-search-highlight {
+  from { outline-color: var(--accent); }
+  to { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .setting-search-target { animation: none; outline-color: var(--accent); }
+}

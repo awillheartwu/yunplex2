@@ -1,0 +1,123 @@
+<template>
+  <section :id="sectionKey ? settingTargetId('section:' + sectionKey) : undefined" class="section-card config-section" :class="{ 'config-section--open': !collapsed }" :data-setting-target="sectionKey ? 'section:' + sectionKey : undefined">
+    <div class="config-section__top">
+    <button
+      class="config-section__header"
+      type="button"
+      :aria-expanded="!collapsed"
+      @click="$emit('toggle')"
+    >
+      <span class="config-section__heading">
+        <span class="config-section__title-row">
+          <span class="config-section__icon"><slot name="icon" /></span>
+          <span class="config-section__title type-h3" role="heading" aria-level="3">{{ title }}</span>
+          <slot name="status" />
+        </span>
+        <span v-if="description" class="config-section__description">{{ description }}</span>
+      </span>
+      <Chevron :open="!collapsed" />
+    </button>
+    <div v-if="$slots.actions" class="config-section__actions"><slot name="actions" /></div>
+    </div>
+    <div v-show="!collapsed" class="config-section__body">
+      <slot />
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { getSettingsTarget, settingTargetId, type SettingsSectionKey } from '~/lib/settings-catalog'
+import { useSettingsFocusRequest } from '~/composables/useSettingsFocusRequest'
+const props = defineProps<{ title: string; description?: string; sectionKey?: SettingsSectionKey; searchTab?: string; searchKeywords?: string; collapsed: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
+const route = useRoute()
+const focusRequest = useSettingsFocusRequest()
+watch([() => route.query.setting, focusRequest, () => props.sectionKey], ([value]) => {
+  const target = getSettingsTarget(value)
+  if (route.path === '/config' && target && props.sectionKey === target.sectionKey && props.collapsed) emit('toggle')
+}, { immediate: true, flush: 'post' })
+</script>
+
+<style scoped>
+.config-section {
+  overflow: hidden;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.config-section--open {
+  border-color: var(--border-primary);
+}
+
+.config-section__top { display: flex; align-items: center; gap: var(--space-3); border-bottom: 1px solid transparent; }
+.config-section--open .config-section__top { border-bottom-color: var(--border-primary); background: var(--bg-input); }
+.config-section__actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding-right: var(--space-4); flex-shrink: 0; }
+.config-section__header {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  width: 100%;
+  min-height: 4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.config-section__header:hover {
+  background: var(--bg-hover);
+}
+
+.config-section--open .config-section__header {
+  background: transparent;
+}
+
+.config-section__heading {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.config-section__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.config-section__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.config-section__title {
+  color: var(--text-primary);
+}
+
+.config-section__description {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--body-leading);
+}
+
+.config-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .config-section__top { flex-wrap: wrap; }
+  .config-section__header { flex-basis: 100%; }
+  .config-section__actions { padding: 0 var(--space-4) var(--space-3); }
+  .config-section__header,
+  .config-section__body {
+    padding-inline: var(--space-4);
+  }
+}
+</style>

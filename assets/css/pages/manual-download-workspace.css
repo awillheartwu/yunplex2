@@ -1,0 +1,84 @@
+/* Import frame and feedback; steps own their styles in ManualDownloadSteps. */
+.manual-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  min-width: 0;
+  padding-bottom: var(--space-6);
+}
+.manual-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.manual-alert-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+.manual-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: var(--body-leading);
+}
+.manual-alert > svg {
+  flex: none;
+  margin-top: var(--space-1);
+}
+.manual-alert > div {
+  min-width: 0;
+}
+.manual-alert strong {
+  display: block;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.manual-alert span {
+  display: block;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.manual-alert--success {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+.manual-alert--warning {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+.manual-alert--danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+.manual-submitted {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.manual-submitted h2 {
+  margin: 0;
+  color: var(--text-primary);
+}
+.manual-submitted__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+@media (max-width: 720px) {
+  .manual-page {
+    gap: var(--space-5);
+  }
+  .manual-submitted__actions {
+    width: 100%;
+    margin-left: 0;
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "name": "yunplex2",
+  "version": "2.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "YunPlex contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awillheartwu/yunplex2.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "NODE_OPTIONS=--no-deprecation nuxt dev",
+    "build": "nuxt build && node scripts/package-licenses.mjs",
+    "preview": "nuxt preview",
+    "start": "NODE_OPTIONS=--no-deprecation node .output/server/index.mjs",
+    "commit": "git-cz",
+    "release": "node scripts/release/prepare.mjs",
+    "release:first": "node scripts/release/prepare.mjs first",
+    "release:minor": "node scripts/release/prepare.mjs minor",
+    "release:major": "node scripts/release/prepare.mjs major",
+    "release:patch": "node scripts/release/prepare.mjs patch",
+    "release:tag": "node scripts/release/tag.mjs",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "nuxt prepare && tsc --noEmit",
+    "check:ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:styles && pnpm check:repo-size && pnpm build && git diff --check",
+    "check:repo-size": "node scripts/check-repo-size.mjs",
+    "diagnose:sync-source": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-sync-source.ts",
+    "diagnose:auto-sync": "NODE_OPTIONS=--no-deprecation jiti scripts/diagnose-auto-sync.ts",
+    "acceptance:auto-sync": "vitest run tests/unit/auto-sync-acceptance.test.ts tests/unit/server/lib/sync/source-schedule-store.test.ts tests/unit/server/lib/sync/worker.test.ts --reporter=verbose",
+    "acceptance:media-reuse": "vitest run tests/unit/server/lib/sync/lookup.test.ts tests/unit/server/lib/sync/identity-store.test.ts tests/unit/server/lib/sync/identity-coordinator.test.ts tests/unit/server/lib/sync/reconciliation-plan.test.ts tests/unit/server/lib/plex-client-path-index.test.ts --reporter=verbose",
+    "format": "prettier --write .",
+    "prepare": "husky",
+    "check:styles": "node scripts/check-design-tokens.mjs"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.17.0",
+    "@neteasecloudmusicapienhanced/api": "^4.41.1",
+    "better-sqlite3": "^12.10.0",
+    "chinese-conv": "^4.0.0",
+    "dayjs": "^1.11.20",
+    "flac-bindings": "5.0.0",
+    "image-size": "2.0.2",
+    "music-metadata": "11.16.1",
+    "node-id3": "^0.2.9",
+    "nuxt": "^4.4.6",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@nuxtjs/tailwindcss": "^6.12.0",
+    "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0",
+    "color-name": "1.1.4",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "jiti": "^2.7.0",
+    "postcss": "8.5.15",
+    "postcss-value-parser": "4.2.0",
+    "prettier": "^3.8.3",
+    "commit-and-tag-version": "^13.2.2",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^4.1.7"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  }
+}

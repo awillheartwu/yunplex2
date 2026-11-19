@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 650" fill="none">
+  <defs>
+    <radialGradient id="background" cx="0" cy="0" r="1" gradientTransform="translate(340 180) rotate(65) scale(540 560)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fffcf5"/>
+      <stop offset="1" stop-color="#e9e4d8"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="140" y1="90" x2="380" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#30342d"/>
+      <stop offset="1" stop-color="#555a4e"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="395" y1="95" x2="530" y2="365" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#efa422"/>
+      <stop offset=".45" stop-color="#f6c43b"/>
+      <stop offset="1" stop-color="#ee9222"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="170" y1="490" x2="370" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ed753d"/>
+      <stop offset="1" stop-color="#df542b"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="390" y1="550" x2="558" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e66b38"/>
+      <stop offset=".5" stop-color="#efa12a"/>
+      <stop offset="1" stop-color="#f3c33a"/>
+    </linearGradient>
+    <filter id="mark-shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#705238" flood-opacity=".12"/>
+    </filter>
+  </defs>
+  <rect x="1.5" y="1.5" width="677" height="647" rx="138.5" fill="url(#background)" stroke="#d8d1c3" stroke-width="3"/>
+  <g filter="url(#mark-shadow)">
+    <path d="M334 90h138c75 0 130 59 130 133 0 79-62 143-139 143h-77c-6 0-10-4-10-10v-46c0-6 4-10 10-10h69c38 0 69-30 69-68s-30-68-69-68h-35c-11 0-15-1-23-8l-72-58c-5-4-4-8 9-8Z" fill="url(#gold)"/>
+    <path d="M455 164c68 0 128 38 143 92-15 63-69 110-135 110h-77c-6 0-10-4-10-10v-46c0-6 4-10 10-10h69c38 0 69-30 69-68s-30-68-69-68Z" fill="url(#orange)" opacity=".8"/>
+    <path d="M120 94h158c23 0 46 8 65 24l45 39c8 7 12 14 12 24v58c0 17-10 30-24 37v-20c0-11-2-16-10-23l-64-55c-6-5-16-13-30-13H120c-8 0-12-4-12-12v-47c0-8 4-12 12-12Z" fill="url(#ink)"/>
+    <path d="M123 229h144c22 0 34-8 49-20v68c-17 12-36 16-58 16h-62l92 87c12 12 17 23 17 38v32l-47-14-143-129c-5-5-7-10-7-17v-45c0-9 5-16 15-16Z" fill="url(#ink)"/>
+    <path d="m316 209 39 33c7 6 10 14 10 27v194c0 58-54 115-120 115-55 0-105-33-105-76 0-44 44-84 98-84 36 0 62 12 78 33V209Z" fill="url(#orange)"/>
+    <g fill="url(#bars)">
+      <rect x="390" y="470" width="45" height="84" rx="22.5"/>
+      <rect x="452" y="435" width="46" height="119" rx="23"/>
+      <rect x="515" y="399" width="47" height="155" rx="23.5"/>
+    </g>
+  </g>
+</svg>

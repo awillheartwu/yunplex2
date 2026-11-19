@@ -1,0 +1,606 @@
+<template>
+  <div class="run-detail">
+    <div class="run-detail__nav">
+      <button class="btn btn-ghost run-detail__back" type="button" @click="$emit('back')">
+        <AppIcon name="chevronLeft" :size="14" />
+        返回运行记录
+      </button>
+      <span class="run-detail__id">ID: {{ job.id }}</span>
+    </div>
+
+    <section class="section-card run-detail__hero" :class="`run-detail__hero--${typeIdentity.tone}`">
+      <div class="run-detail__hero-icon" aria-hidden="true">
+        <AppIcon :name="typeIdentity.icon" :size="24" />
+      </div>
+      <div class="run-detail__hero-copy">
+        <div class="run-detail__hero-labels">
+          <RunTypeBadge :type="job.type" />
+          <StatusBadge :status="badgeStatus" :label="displayStatusLabel" />
+          <span v-if="job.dryRun && job.type !== 'source_initialization'" class="run-detail__preview">预览运行</span>
+        </div>
+        <h2>{{ displaySummary }}</h2>
+        <p>{{ typeIdentity.description }}</p>
+        <div class="run-detail__hero-meta">
+          <span><AppIcon name="calendar" :size="13" />{{ formatTime(job.startedAt) }}</span>
+          <span><AppIcon name="clock" :size="13" />{{ formatRunDuration(job.durationMs) }}</span>
+          <span><AppIcon name="play" :size="13" />{{ runTriggerLabel(job.trigger) }}</span>
+          <span v-if="job.type === 'sync' || job.type === 'repair'"><AppIcon name="music" :size="13" />监控总曲目 {{ playlistTotalSongs }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="failedSongs.length > 0 || job.currentFailures?.length" class="section-card run-detail__errors" :class="`run-detail__errors--${currentFailureStatus}`" :role="currentFailureStatus === 'open' ? 'alert' : 'status'">
+      <span class="run-detail__error-icon"><AppIcon name="warn" :size="22" /></span>
+      <div class="run-detail__error-copy">
+        <strong>{{ currentFailureTitle }}</strong>
+        <div v-if="job.currentFailures?.length" class="run-detail__failure-states">
+          <StatusBadge v-for="item in currentRecoveryCounts" :key="item.label" :status="item.resolved ? 'ok' : 'warning'" :label="`${item.label} ${item.count} 项`" />
+        </div>
+        <ul>
+          <li v-for="item in failureSummaries.slice(0, 2)" :key="item.message">
+            <p>{{ item.message }}</p>
+            <span>{{ item.names.slice(0, 3).join('、') }}{{ item.names.length > 3 ? ` 等 ${item.names.length} 首` : '' }}</span>
+          </li>
+        </ul>
+        <p v-if="job.status === 'running'" class="run-detail__error-note">任务仍在执行后续步骤，当前进度见下方时间线。</p>
+        <p v-else-if="currentFailureStatus === 'ignored'" class="run-detail__error-note">已忽略的问题不再自动处理，可到异常处理手动重试；下方保留本次失败的历史原因。</p>
+        <p v-else-if="job.currentFailures?.length" class="run-detail__error-note">下方保留本次失败的历史原因，当前处理状态显示在上方。</p>
+        <p v-else class="run-detail__error-note">这里保留本次失败结果；当前处理状态见异常处理。</p>
+      </div>
+      <div class="run-detail__error-actions">
+        <NuxtLink :to="{ path: '/task-center', query: { tab: 'failures', failureRun: job.id, failureStatus: 'all' } }" class="btn btn-soft btn-sm">查看异常处理<AppIcon name="arrowRight" :size="14" /></NuxtLink>
+        <button v-if="failedSongs.length" class="btn btn-ghost btn-sm" type="button" @click="applyResultFilter('failure')">查看本次失败</button>
+      </div>
+    </section>
+
+    <JobResultStats :job="job" @filter="applyResultFilter" />
+
+    <section v-if="job.detailsExpired" class="section-card run-detail__expired" role="status">
+      <AppIcon name="archive" :size="18" />
+      <div>
+        <strong>变化明细已按保留策略清理</strong>
+        <p>运行摘要和统计仍然保留。</p>
+      </div>
+      <NuxtLink to="/task-center?tab=failures" class="btn btn-ghost btn-xs">查看异常</NuxtLink>
+    </section>
+
+    <section v-if="mediaPolicyItems.length > 0" class="section-card p-4" aria-label="缺失媒体策略统计">
+      <div class="mb-3">
+        <h3>缺失媒体策略</h3>
+        <p class="mt-1 text-2xs text-muted">按已登记资产和人工决定统计本轮处理路径</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div
+          v-for="item in mediaPolicyItems"
+          :key="item.key"
+          class="rounded-lg border px-3 py-2"
+          style="border-color:var(--border-primary);background:var(--bg-app)"
+        >
+          <p class="text-base font-bold">{{ item.count }}</p>
+          <span class="text-2xs text-muted">{{ item.label }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="!job.detailsExpired" class="section-card overflow-hidden">
+      <button
+        type="button"
+        class="run-detail__section-toggle"
+        :class="timelineCollapsed ? 'border-b-transparent' : ''"
+        :aria-expanded="!timelineCollapsed"
+        @click="timelineCollapsed = !timelineCollapsed"
+      >
+        <span>
+          <strong>执行时间线</strong>
+          <small>按过程聚合关键结果</small>
+        </span>
+        <AppIcon name="chevronRight" :size="12" class="shrink-0 transition-transform" :class="timelineCollapsed ? '' : 'rotate-90'" />
+      </button>
+      <div v-show="!timelineCollapsed" class="run-detail__timeline">
+        <JobTimeline :items="timelineItems" />
+      </div>
+    </section>
+
+    <section
+      v-if="!job.detailsExpired && job.type !== 'source_initialization' && job.status !== 'running' && job.songs.length === 0"
+      class="section-card p-4 text-sm text-muted"
+      role="status"
+    >
+      <template v-if="hasAggregateSongResults">本次运行的单曲明细不可用，请以上方汇总统计为准。</template>
+      <template v-else>本次运行没有需要记录的歌曲变化或异常；未变化歌曲只计入上方统计。</template>
+    </section>
+
+    <!-- Changed and exceptional song results grouped by source -->
+    <section v-if="!job.detailsExpired && job.songs.length > 0" ref="songSection" tabindex="-1" class="section-card overflow-hidden">
+      <div class="run-detail__song-toolbar">
+        <div class="run-detail__song-title">
+          <h3>歌曲状态</h3>
+          <span class="text-xs text-muted">本次明细 {{ job.songs.length }} 条</span>
+          <button
+            type="button"
+            class="icon-button run-detail__collapse-all"
+            :disabled="songGroups.length === 0"
+            title="全部折叠"
+            aria-label="全部折叠歌曲来源"
+            @click="collapseAllGroups"
+          >
+            <AppIcon name="listCollapse" :size="15" />
+          </button>
+        </div>
+        <div class="run-detail__song-filters">
+          <JobSongFilters v-model="songFilter" :counts="songFilterCounts" />
+          <p v-if="songFilterCounts.ignored" class="px-1 text-xs text-muted">默认不显示已忽略歌曲，可在「已跳过」查看。</p>
+        </div>
+      </div>
+
+      <EmptyState v-if="songFilter === 'all' && filteredSongCount === 0" title="本次明细中的歌曲均已忽略" description="可以在「已跳过」中查看这些歌曲。">
+        <button type="button" class="btn btn-secondary btn-sm" @click="applyResultFilter('skipped')">查看已跳过</button>
+      </EmptyState>
+      <EmptyState v-else-if="filteredSongCount === 0" title="该分类没有歌曲" description="可以切换其他分类查看本次运行的结果。" />
+      <template v-else-if="songGroups.length === 0">
+        <div class="divide-y divide-[var(--border-primary)]">
+          <SongRow
+            v-for="song in filteredSongs"
+            :key="song.id"
+            :song="song"
+            :failure-state="failureStateForSong(song)"
+            :expanded="expandedSong === song.id"
+            :retrying="retryingSongs.has(song.id)"
+            @toggle="expandedSong = expandedSong === song.id ? null : song.id"
+            @retry="handleRetry(song)"
+          />
+        </div>
+      </template>
+
+      <template v-else>
+        <div v-for="group in songGroups" :key="group.sourceId">
+          <div class="run-detail__song-group">
+            <button class="run-detail__song-group-toggle" type="button" :aria-expanded="!collapsedGroups.has(group.sourceId)" @click="toggleGroup(group.sourceId)">
+              <AppIcon name="chevronRight" :size="12" class="transition-transform shrink-0" :class="collapsedGroups.has(group.sourceId) ? '' : 'rotate-90'" />
+              <AppIcon name="source" :size="12" class="text-muted-deep" />
+              <SourceBadge :type="(sourceTypeMap[group.sourceId] as 'playlist' | 'album') || 'playlist'" :subscribed="sourceSubscribedMap[group.sourceId]" />
+              <span class="run-detail__song-group-name">{{ group.sourceName }}</span>
+              <span class="run-detail__song-group-stats" aria-label="来源当前显示的明细状态统计">
+                <span
+                  v-for="stat in group.stats"
+                  :key="stat.key"
+                  class="run-detail__song-group-stat"
+                  :class="semanticToneClass(stat.tone)"
+                >
+                  <AppIcon :name="stat.icon" :size="10" />
+                  {{ stat.count }} {{ stat.label }}
+                </span>
+              </span>
+            </button>
+            <button
+              v-if="hasFailedSongs(group)"
+              class="btn btn-secondary run-detail__retry-source"
+              :class="retryingSources.has(group.sourceId) ? 'text-muted-deep cursor-not-allowed' : 'text-accent hover:bg-[var(--accent-muted)]'"
+              :disabled="retryingSources.has(group.sourceId)"
+              @click.stop="handleRetryAll(group.sourceId)"
+            >{{ retryingSources.has(group.sourceId) ? '同步中...' : '重试未忽略的异常' }}</button>
+          </div>
+          <div v-if="!collapsedGroups.has(group.sourceId)" class="divide-y divide-[var(--border-primary)]">
+            <SongRow
+              v-for="song in group.songs"
+              :key="song.id"
+              :song="song"
+              :failure-state="failureStateForSong(song)"
+              :expanded="expandedSong === song.id"
+              :retrying="retryingSongs.has(song.id)"
+              @toggle="expandedSong = expandedSong === song.id ? null : song.id"
+              @retry="handleRetry(song)"
+            />
+          </div>
+        </div>
+      </template>
+
+      <div v-if="filteredSongCount > renderLimit" class="p-4 border-t border-[var(--border-primary)] text-center">
+        <button class="btn btn-ghost btn-sm" type="button" @click="renderLimit += 100">
+          显示更多（{{ Math.min(renderLimit, filteredSongCount) }} / {{ filteredSongCount }}）
+        </button>
+      </div>
+    </section>
+
+    <!-- Repair task: no per-song details -->
+    <section v-else-if="!job.detailsExpired && job.type === 'repair'" class="section-card overflow-hidden">
+      <div class="px-5 py-3 border-b border-[var(--border-primary)]">
+        <h3>歌曲清单</h3>
+      </div>
+      <div class="p-5">
+        <p class="text-xs text-muted">补全任务不记录单首歌曲详情，请查看上方统计数字或日志页。</p>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { failureStatePresentation } from '~~/lib/failure-presentation'
+import type { TaskRun, SongStatus, SongTask } from '~~/server/lib/job/types'
+import type { RunFailureHandlingState } from '~~/shared/failure-handling'
+import { sseSubscribe } from '~~/composables/sse'
+import {
+  formatRunDuration,
+  runBadgeStatus,
+  runSummaryLabel,
+  runStatusLabel,
+  runTriggerLabel,
+  runTypeIdentity,
+} from '~~/lib/run-presentation'
+import { buildRunTimeline } from '~~/lib/run-timeline'
+import {
+  isFailedSongStatus,
+  semanticToneClass,
+  SONG_STATUS_BUCKETS,
+  songMatchesStatusBucket,
+  songStatusPresentation,
+  type SongStatusBucket,
+  type SongStatusFilter,
+  type TaskSemanticTone,
+} from '~~/lib/task-status'
+
+const props = defineProps<{ job: TaskRun }>()
+const emit = defineEmits<{ back: []; refresh: [] }>()
+
+const api = useApi()
+const expandedSong = ref<string | null>(null)
+const retryingSongs = ref<Set<string>>(new Set())
+const retryingSources = ref<Set<string>>(new Set())
+
+function hasFailedSongs(group: SongGroup): boolean {
+  return group.songs.some(song => failureStateForSong(song)?.status !== 'resolved'
+    && !matchesSongFilter(song, 'ignored')
+    && (isFailedSongStatus(song.status) || ['copyright_restricted', 'ignored_failure'].includes(song.status)))
+}
+const songFilter = ref<SongStatusFilter>('all')
+const sourceNameMap = ref<Record<string, string>>({})
+const sourceTypeMap = ref<Record<string, string>>({})
+const sourceSubscribedMap = ref<Record<string, boolean>>({})
+const playlistTotalSongs = ref(0)
+const timelineCollapsed = ref(false)
+const collapsedGroups = reactive(new Set<string>())
+const renderLimit = ref(100)
+function resetSongList() {
+  renderLimit.value = 100
+  expandedSong.value = null
+  collapsedGroups.clear()
+}
+watch(songFilter, resetSongList)
+watch(() => props.job.id, () => { songFilter.value = 'all'; resetSongList() })
+
+function toggleGroup(sourceId: string) {
+  if (collapsedGroups.has(sourceId)) collapsedGroups.delete(sourceId)
+  else collapsedGroups.add(sourceId)
+}
+function collapseAllGroups() {
+  for (const g of songGroups.value) {
+    collapsedGroups.add(g.sourceId)
+  }
+}
+
+interface SongGroup {
+  sourceId: string
+  sourceName: string
+  stats: SongGroupStat[]
+  songs: SongTask[]
+}
+
+interface SongGroupStat {
+  key: SongStatusBucket
+  label: string
+  count: number
+  tone: TaskSemanticTone
+  icon: string
+}
+
+const badgeStatus = computed(() => props.job.sourceRequestStatus === 'pending' ? 'idle' : runBadgeStatus(props.job.status))
+const displayStatusLabel = computed(() => props.job.sourceRequestStatus === 'pending' ? '等待执行' : runStatusLabel(props.job.status))
+const displaySummary = computed(() => props.job.awaitingSourceSync
+  ? '下载完成，待同步'
+  : runSummaryLabel(props.job.summary, typeIdentity.value.description, props.job.status))
+const typeIdentity = computed(() => runTypeIdentity(props.job.type))
+const timelineItems = computed(() => buildRunTimeline(props.job))
+const failedSongs = computed(() => props.job.songs.filter(song => isFailedSongStatus(song.status)))
+const currentFailureCounts = computed(() => {
+  const counts = { open: 0, ignored: 0, resolved: 0 }
+  for (const failure of props.job.currentFailures ?? []) counts[failure.status]++
+  return counts
+})
+const currentFailureStatus = computed(() => currentFailureCounts.value.open ? 'open'
+  : currentFailureCounts.value.ignored ? 'ignored' : currentFailureCounts.value.resolved ? 'resolved' : 'open')
+const currentRecoveryCounts = computed(() => {
+  const groups = new Map<string, number>()
+  for (const state of props.job.currentFailures ?? []) {
+    const label = failureStatePresentation(state).label
+    groups.set(label, (groups.get(label) ?? 0) + 1)
+  }
+  return [...groups].map(([label, count]) => ({ label, count, resolved: label === '已解决' }))
+})
+const currentFailureTitle = computed(() => {
+  if (currentFailureCounts.value.open) return currentRecoveryCounts.value.filter(item => !item.resolved).map(item => `${item.label} ${item.count} 项`).join('，')
+  if (currentFailureCounts.value.ignored) return currentFailureCounts.value.resolved ? '当前无待处理异常' : '本次运行的异常已全部忽略'
+  if (currentFailureCounts.value.resolved) return '本次运行的异常已全部解决'
+  return `本次运行有 ${failedSongs.value.length} 首失败`
+})
+const currentFailureBySong = computed(() => {
+  const states = new Map<string, RunFailureHandlingState>()
+  const priority = { open: 0, ignored: 1, resolved: 2 }
+  for (const failure of props.job.currentFailures ?? []) {
+    const target = failure.songId ?? (failure.plexPlaylistItemId
+      ? `plex:${failure.plexPlaylistRatingKey}:${failure.plexPlaylistItemId}` : null)
+    if (target === null) continue
+    const key = `${failure.sourceId ?? ''}:${target}`
+    const previous = states.get(key)
+    if (!previous || priority[failure.status] < priority[previous.status]) states.set(key, failure)
+  }
+  return states
+})
+function failureStateForSong(song: SongTask) {
+  const target = song.neteaseSongId ?? `plex:${song.metadata?.plexPlaylistRatingKey}:${song.metadata?.plexPlaylistItemId}`
+  return currentFailureBySong.value.get(`${song.sourceId ?? ''}:${target}`)
+}
+const failureSummaries = computed(() => {
+  const groups = new Map<string, { message: string; names: string[] }>()
+  for (const song of failedSongs.value) {
+    const message = song.error?.message || songStatusPresentation(song.status).label
+    const group = groups.get(message) || { message, names: [] }
+    group.names.push(song.songName)
+    groups.set(message, group)
+  }
+  return [...groups.values()]
+})
+const songSection = ref<HTMLElement | null>(null)
+const mediaPolicyItems = computed(() => {
+  const labels: Record<string, string> = {
+    manual_exempt: '保留手动选择',
+    reuse_managed: '使用已下载文件',
+    reuse_external: '使用已有文件',
+    register_managed: '找回下载记录',
+    register_external: '记录已有文件',
+    download_missing: '缺失下载',
+    redownload_replaced: '替换下载',
+    wait_manual: '等待手动选择',
+  }
+  const counts = new Map<string, number>()
+  for (const song of props.job.songs) {
+    const trace = song.metadata?.matchTrace
+    const evidence = trace && typeof trace.evidence === 'object' && trace.evidence
+      ? trace.evidence as Record<string, unknown>
+      : null
+    const disposition = typeof evidence?.mediaPolicy === 'string'
+      ? evidence.mediaPolicy
+      : null
+    if (disposition) counts.set(disposition, (counts.get(disposition) ?? 0) + 1)
+  }
+  return [...counts.entries()].flatMap(([key, count]) =>
+    labels[key] ? [{ key, count, label: labels[key] }] : [],
+  )
+})
+
+function listSongStatus(song: SongTask): SongStatus | null {
+  const current = failureStateForSong(song)
+  if (current?.status === 'ignored') return 'ignored_failure'
+  // A formerly ignored row remains visible in All, without inventing a new run outcome.
+  return current && song.status === 'ignored_failure' ? null : song.status
+}
+
+function matchesSongFilter(song: SongTask, filter: SongStatusFilter): boolean {
+  const status = listSongStatus(song)
+  if (filter === 'all') return status !== 'ignored_failure'
+  return status !== null && songMatchesStatusBucket(status, filter)
+}
+
+function countSongs(songs: SongTask[], filter: SongStatusFilter): number {
+  return songs.filter(song => matchesSongFilter(song, filter)).length
+}
+
+const songFilterCounts = computed(() => Object.fromEntries(
+  [...SONG_STATUS_BUCKETS.map(bucket => bucket.key), 'failure' as const]
+    .map(key => [key, countSongs(props.job.songs, key)]),
+) as Record<SongStatusBucket, number>)
+const allFilteredSongs = computed(() => props.job.songs.filter(song => matchesSongFilter(song, songFilter.value)))
+const filteredSongCount = computed(() => allFilteredSongs.value.length)
+const filteredSongs = computed(() => allFilteredSongs.value.slice(0, renderLimit.value))
+const hasAggregateSongResults = computed(() => props.job.successSongs > 0
+  || props.job.skippedSongs > 0
+  || props.job.removedSongs > 0
+  || props.job.failedSongs > 0
+  || props.job.warnings > 0
+  || Object.values(props.job.issueCounts ?? {}).some(count => count > 0))
+
+function applyResultFilter(filter: SongStatusFilter) {
+  songFilter.value = filter
+  resetSongList()
+  nextTick(() => {
+    songSection.value?.scrollIntoView({ block: 'start' })
+    songSection.value?.focus({ preventScroll: true })
+  })
+}
+
+const songGroups = computed<SongGroup[]>(() => {
+  const hasSourceIds = props.job.songs.some((s) => s.sourceId)
+  if (!hasSourceIds) return []
+
+  const groups = new Map<string, SongTask[]>()
+  for (const s of filteredSongs.value) {
+    const key = s.sourceId || '__unknown__'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(s)
+  }
+
+  return Array.from(groups.entries()).map(([sourceId, songs]) => {
+    const name = sourceNameMap.value[sourceId] || sourceId.slice(0, 8)
+    return { sourceId, sourceName: name, stats: buildSongGroupStats(songs), songs }
+  })
+})
+
+function buildSongGroupStats(songs: SongTask[]): SongGroupStat[] {
+  const total: SongGroupStat = {
+    key: 'all',
+    label: '首',
+    count: songs.length,
+    tone: 'neutral',
+    icon: 'music',
+  }
+  const breakdown = SONG_STATUS_BUCKETS
+    .filter(bucket => bucket.key !== 'all')
+    .map(bucket => ({ ...bucket, count: countSongs(songs, bucket.key) }))
+    .filter(stat => stat.count > 0)
+  return [total, ...breakdown]
+}
+
+async function fetchSourceNames() {
+  try {
+    const sources = await api.get<Array<{
+      id: string
+      name: string
+      type: string
+      trackCount: number
+      enabled: boolean
+      subscribed: boolean
+    }>>('/playlist-sources')
+    for (const s of sources) {
+      sourceNameMap.value[s.id] = s.name
+      sourceTypeMap.value[s.id] = s.type
+      sourceSubscribedMap.value[s.id] = s.subscribed ?? false
+    }
+    playlistTotalSongs.value = sources
+      .filter(s => s.enabled)
+      .reduce((sum, s) => sum + (s.trackCount || 0), 0)
+
+    // Auto-collapse groups with >100 songs
+    for (const g of songGroups.value) {
+      if (g.songs.length > 100) collapsedGroups.add(g.sourceId)
+    }
+  } catch { /* ignore */ }
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+async function handleRetry(song: SongTask) {
+  if (retryingSongs.value.has(song.id)) return
+  retryingSongs.value.add(song.id)
+  retryingSongs.value = new Set(retryingSongs.value) // trigger reactivity
+  try {
+    if (props.job.type === 'manual_download') {
+      await api.post(`/downloads/tasks/${song.id}/retry`)
+    } else {
+      await api.post(`/runs/${props.job.id}/retry-song`, { songId: song.id })
+    }
+    emit('refresh')
+  } catch {
+    // API feedback already reports the failure.
+  } finally {
+    retryingSongs.value.delete(song.id)
+    retryingSongs.value = new Set(retryingSongs.value)
+  }
+}
+
+async function handleRetryAll(sourceId: string) {
+  if (retryingSources.value.has(sourceId)) return
+  retryingSources.value.add(sourceId)
+  retryingSources.value = new Set(retryingSources.value)
+  try {
+    await api.post(`/playlist-sources/${sourceId}/retry-failed`)
+    emit('refresh')
+  } catch {
+    retryingSources.value.delete(sourceId)
+    retryingSources.value = new Set(retryingSources.value)
+  }
+}
+
+const unsubs: Array<() => void> = []
+
+onMounted(() => {
+  fetchSourceNames()
+  // Clear batch-retry state when any sync finishes
+  unsubs.push(sseSubscribe('stage-change', (data) => {
+    const { stage } = data as Record<string, unknown>
+    if (stage === 'idle') {
+      retryingSources.value = new Set()
+      emit('refresh')
+    }
+  }))
+})
+
+onUnmounted(() => {
+  for (const u of unsubs) u()
+})
+</script>
+
+<style scoped>
+.run-detail__errors{display:flex;align-items:flex-start;gap:var(--space-4);padding:var(--space-5);border-left:3px solid var(--danger);background:linear-gradient(100deg,var(--danger-soft),transparent 65%),var(--bg-surface)}
+.run-detail__error-icon{display:flex;align-items:center;justify-content:center;flex:none;width:2.5rem;height:2.5rem;border-radius:var(--radius-md);background:var(--danger-soft);color:var(--danger)}
+.run-detail__error-copy{min-width:0;flex:1;color:var(--text-primary)}
+.run-detail__error-copy>strong{font-size:var(--text-md)}
+.run-detail__failure-states{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-2)}
+.run-detail__errors--ignored{border-left-color:var(--warning);background:linear-gradient(100deg,var(--warning-soft),transparent 65%),var(--bg-surface)}
+.run-detail__errors--ignored .run-detail__error-icon{background:var(--warning-soft);color:var(--warning)}
+.run-detail__errors--resolved{border-left-color:var(--success);background:linear-gradient(100deg,var(--success-soft),transparent 65%),var(--bg-surface)}
+.run-detail__errors--resolved .run-detail__error-icon{background:var(--success-soft);color:var(--success)}
+.run-detail__errors ul{display:grid;gap:var(--space-2_5);list-style:none;padding:0;margin:var(--space-2_5) 0}
+.run-detail__errors li p{color:var(--text-primary);font-size:var(--text-sm)}
+.run-detail__errors li span,.run-detail__error-note{color:var(--text-secondary);font-size:var(--text-xs)}
+.run-detail__error-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+.run-detail__errors p{margin:0;overflow-wrap:anywhere}
+.run-detail{display:flex;flex-direction:column;gap:var(--space-5)}
+.run-detail__nav{display:flex;min-height:2.75rem;align-items:center;justify-content:space-between;gap:var(--space-4)}
+.run-detail__back:hover{color:var(--text-primary)}
+.run-detail__id{overflow:hidden;color:var(--text-tertiary);font-family:var(--font-mono);font-size:var(--text-xs);text-overflow:ellipsis;white-space:nowrap}
+.run-detail__expired{display:flex;align-items:center;gap:var(--space-3_5);padding:var(--space-4);color:var(--text-secondary)}
+.run-detail__expired>div{min-width:0;flex:1}.run-detail__expired strong{display:block;color:var(--text-primary);font-size:var(--text-sm)}.run-detail__expired p{margin:var(--space-1) 0 0;font-size:var(--text-xs)}
+.run-detail__hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-4);padding:var(--space-5);overflow:hidden}
+.run-detail__hero::after{content:"";position:absolute;top:-5rem;right:-4rem;width:14rem;height:14rem;border-radius:var(--radius-full);background:currentColor;filter:blur(1px);opacity:.035;pointer-events:none}
+.run-detail__hero--sync{color:var(--run-sync);background:linear-gradient(135deg,var(--run-sync-soft),transparent 46%),var(--bg-surface)}
+.run-detail__hero--download{color:var(--run-download);background:linear-gradient(135deg,var(--run-download-soft),transparent 46%),var(--bg-surface)}
+.run-detail__hero--repair{color:var(--run-repair);background:linear-gradient(135deg,var(--run-repair-soft),transparent 46%),var(--bg-surface)}
+.run-detail__hero-icon{display:flex;width:3.25rem;height:3.25rem;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:var(--radius-xl);background:color-mix(in srgb,currentColor 10%,var(--bg-surface));box-shadow:var(--shadow-xs)}
+.run-detail__hero-copy{min-width:0;color:var(--text-primary)}
+.run-detail__hero-labels{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.run-detail__preview{display:inline-flex;min-height:1.75rem;align-items:center;padding:0 var(--space-2);border:1px solid var(--ignored-border);border-radius:var(--radius-full);background:var(--ignored-soft);color:var(--ignored);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
+.run-detail__hero h2{margin:var(--space-3) 0 0;color:var(--text-primary)}
+.run-detail__hero>div>p{margin:var(--space-1) 0 0;color:var(--text-secondary);font-size:var(--text-sm);line-height:var(--body-leading)}
+.run-detail__hero-meta{display:flex;align-items:center;gap:var(--space-2_5) var(--space-4);flex-wrap:wrap;margin-top:var(--space-3);color:var(--text-tertiary);font-size:var(--text-xs)}
+.run-detail__hero-meta span{display:inline-flex;align-items:center;gap:var(--space-1_5)}
+.run-detail__section-toggle{display:flex;width:100%;min-height:4rem;align-items:center;justify-content:space-between;gap:var(--space-4);padding:var(--space-3) var(--space-4);border:0;border-bottom:1px solid var(--border-primary);background:transparent;color:var(--text-primary);text-align:left;cursor:pointer;transition:background var(--duration-fast) ease}
+.run-detail__section-toggle:hover{background:var(--bg-hover)}
+.run-detail__section-toggle>span{display:flex;flex-direction:column;gap:var(--space-0_5)}
+.run-detail__section-toggle strong{font-size:var(--text-base);font-weight:var(--font-weight-bold)}
+.run-detail__section-toggle small{color:var(--text-tertiary);font-size:var(--text-xs);font-weight:var(--font-weight-medium)}
+.run-detail__timeline{padding:var(--space-4)}
+.run-detail__song-toolbar{display:flex;justify-content:space-between;min-height:4rem;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--space-5);border-bottom:1px solid var(--border-primary)}
+.run-detail__song-filters{min-width:0}
+.run-detail__song-title{display:flex;align-items:center;gap:var(--space-2_5);min-width:0}
+.run-detail__song-title h3{margin:0;color:var(--text-primary);white-space:nowrap}
+.run-detail__collapse-all:hover:not(:disabled){border-color:var(--accent-border);background:var(--accent-muted);color:var(--accent-strong);transform:translateY(-1px)}
+.run-detail__collapse-all:disabled{opacity:.45;cursor:not-allowed}
+.run-detail__collapse-all:focus-visible,.run-detail__song-group-toggle:focus-visible,.run-detail__retry-source:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.run-detail__song-group{display:flex;min-height:3.25rem;align-items:center;gap:var(--space-3);padding:var(--space-1_5) var(--space-5);border-bottom:1px solid var(--border-primary);background:var(--bg-app)}
+.run-detail__song-group-toggle{display:flex;min-width:0;min-height:2.75rem;flex:1;align-items:center;gap:var(--space-2_5);padding:0;border:0;background:transparent;color:var(--text-primary);text-align:left;cursor:pointer}
+.run-detail__song-group-name{min-width:0;flex:1;color:var(--text-primary);font-size:var(--text-xs);font-weight:var(--font-weight-semibold);line-height:var(--body-leading);overflow-wrap:anywhere}
+.run-detail__song-group-toggle:hover .run-detail__song-group-stats{filter:saturate(1.08)}
+.run-detail__song-group-stats{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-1_5);flex-wrap:wrap;transition:filter var(--duration-fast) ease}
+.run-detail__song-group-stat{display:inline-flex;min-height:1.35rem;align-items:center;gap:var(--space-1);padding:.08rem var(--space-2);border:1px solid;border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:var(--font-weight-bold);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:720px){
+  .run-detail__errors{flex-wrap:wrap;padding:var(--space-4);gap:var(--space-3)}
+  .run-detail__error-actions{width:100%;padding-left:3.25rem}
+  .run-detail__hero{grid-template-columns:1fr}
+  .run-detail__hero-icon{width:2.75rem;height:2.75rem}
+  .run-detail__id{max-width:9rem}
+  .run-detail__section-toggle small{display:none}
+  .run-detail__timeline{padding:var(--space-3_5)}
+  .run-detail__song-toolbar{align-items:stretch;flex-direction:column;padding:var(--space-3)}
+  .run-detail__song-group{align-items:flex-start;flex-direction:column;gap:var(--space-1_5);padding:var(--space-2) var(--space-4)}
+  .run-detail__song-group-toggle{width:100%;align-items:flex-start;flex-wrap:wrap;gap:var(--space-2)}
+  .run-detail__song-group-name{flex:1 1 calc(100% - 7rem);font-size:var(--text-sm);line-height:var(--body-leading)}
+  .run-detail__song-group-stats{flex:1 1 100%;justify-content:flex-start;padding-left:var(--space-12)}
+}
+</style>

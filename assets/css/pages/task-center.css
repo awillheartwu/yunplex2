@@ -1,0 +1,30 @@
+/* The global sidebar owns app navigation; activity views are horizontal tabs. */
+.task-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  padding-bottom: var(--space-6);
+}
+.activity-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.activity-navigation {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.activity-content {
+  min-width: 0;
+}
+@media (max-width: 720px) {
+  .activity-navigation {
+    align-self: stretch;
+  }
+  .activity-navigation :deep(.page-tabs__tab) {
+    flex: 1;
+    min-width: 0;
+    padding-inline: var(--space-2);
+  }
+}

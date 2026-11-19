@@ -1,0 +1,59 @@
+import type { SyncJob } from '../job/types'
+import type { SyncMode } from './service-state'
+import { resolveDomainErrorDefinition } from '../../../shared/domain-errors'
+
+export function buildSyncRunSummary(params: {
+  job: SyncJob
+  sourceCount: number
+  mode: SyncMode
+}): string {
+  const { job, sourceCount, mode } = params
+  const summaryPrefix = mode === 'redownload_managed'
+    ? '重新下载托管音频并同步'
+    : mode === 'rebuild_matching'
+      ? '重新评估自动匹配并全量同步'
+      : mode === 'preview'
+        ? '[预览]'
+        : ''
+  if (mode === 'preview') return `${summaryPrefix} ${sourceCount} 个歌单源`.trim()
+  const issueCounts = job.issueCounts
+  const historical = issueCounts ? Math.max(0, job.warnings - Object.values(issueCounts).reduce((sum, count) => sum + count, 0)) : job.warnings
+  const issues = issueCounts ? [
+    issueCounts.deferred ? `${issueCounts.deferred} 首等待恢复` : '',
+    issueCounts.manual ? `${issueCounts.manual} 首等待选择媒体` : '',
+    issueCounts.restricted ? `${issueCounts.restricted} 首版权受限` : '',
+    issueCounts.ignored ? `${issueCounts.ignored} 首已忽略` : '',
+    issueCounts.preserved ? `${issueCounts.preserved} 项保留未删` : '',
+    historical ? `${historical} 项历史提示` : '',
+  ].filter(Boolean).join('，') : job.warnings > 0 ? `${job.warnings} 项历史提示` : ''
+  if (job.status === 'failed' && job.totalSongs === 0) {
+    const failures = job.steps.flatMap(step => {
+      if (step.status !== 'failed' || !step.error) return []
+      const cause = resolveDomainErrorDefinition(step.error.code, step.error.message)
+      return [cause.code === 'unknown_error' ? '同步失败，请查看详情' : cause.label]
+    })
+    return `${sourceCount} 个源，${[...new Set(failures)].join('、') || '同步失败，请查看详情'}`
+  }
+  if (mode === 'redownload_managed') {
+    const counts = [
+      job.successSongs > 0 ? `重新下载 ${job.successSongs} 首` : '',
+      job.skippedSongs > 0 ? `保护或保留 ${job.skippedSongs} 首` : '',
+      job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
+      issues,
+    ].filter(Boolean)
+    return `${summaryPrefix}：${sourceCount} 个源，${counts.length > 0 ? counts.join('，') : '没有可处理歌曲'}`
+  }
+  const unchangedCount = job.steps.filter(step => step.type === 'unchanged').length
+  const ignoredSourceCount = job.steps.filter(step => step.type === 'source_deferred').length
+  const counts = [
+    ignoredSourceCount > 0 ? `${ignoredSourceCount} 个源等待恢复` : '',
+    unchangedCount > 0 ? (unchangedCount === sourceCount ? '无需变更' : `${unchangedCount} 个源无需变更`) : '',
+    job.successSongs > 0 ? `新增 ${job.successSongs} 首` : '',
+    job.skippedSongs > 0 ? `已存在 ${job.skippedSongs} 首` : '',
+    job.removedSongs > 0 ? `移除 ${job.removedSongs} 首` : '',
+    job.failedSongs > 0 ? `失败 ${job.failedSongs} 首` : '',
+    issues,
+  ].filter(Boolean)
+  const detail = counts.join('，') || `无需变更（目标 ${job.totalSongs} 首）`
+  return `${summaryPrefix ? `${summaryPrefix}：` : ''}${sourceCount} 个源，${detail}`
+}

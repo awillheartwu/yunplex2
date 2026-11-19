@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-ui);
+  font-size: calc(16px * var(--font-scale, 1));
+  min-height: 100%;
+  /* Keep page and fixed controls the same width while dialogs lock body scrolling. */
+  scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: var(--body-leading);
+}
+
+.dark body {
+  background: var(--bg-app);
+}
+
+#__nuxt {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-shell {
+  min-block-size: var(--app-shell-min-block-size);
+}
+
+.app-main {
+  min-block-size: 0;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.v-enter-active,
+.v-leave-active {
+  transition: opacity var(--duration-fast) ease;
+}
+.v-enter-from,
+.v-leave-to {
+  opacity: 0;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a[href] {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--accent-muted);
+  color: var(--accent-strong);
+}
+
+/* Semantic typography is shared by every page and dialog. */
+h1, h2, h3, h4, h5, h6, .type-h3, .type-h4 {
+  font-family: var(--font-ui);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--heading-leading);
+  letter-spacing: normal;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+h1 { font-size: var(--heading-1-size); }
+h2 { font-size: var(--heading-2-size); }
+h3, .type-h3 { font-size: var(--heading-3-size); }
+h4, h5, h6, .type-h4 { font-size: var(--heading-4-size); }
+p { line-height: var(--body-leading); font-weight: var(--font-weight-normal); }
+p + p { margin-top: var(--body-paragraph-gap); }
+
+code,
+pre,
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+:where(.app-icon) {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.text-success {
+  color: var(--success);
+}
+.text-warning {
+  color: var(--warning);
+}
+.text-danger {
+  color: var(--danger);
+}
+.text-accent {
+  color: var(--accent);
+}
+.text-muted {
+  color: var(--text-secondary);
+}
+.text-muted-deep {
+  color: var(--text-tertiary);
+}
+
+.bg-success {
+  background: var(--success);
+}
+.bg-existing {
+  background: var(--existing);
+}
+.bg-warning {
+  background: var(--warning);
+}
+.bg-danger {
+  background: var(--danger);
+}
+.bg-running {
+  background: var(--running);
+}
+.bg-accent {
+  background: var(--accent);
+}
+
+.semantic-success {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success-border);
+}
+.semantic-existing {
+  color: var(--existing);
+  background: var(--existing-soft);
+  border-color: var(--existing-border);
+}
+.semantic-ignored {
+  color: var(--ignored);
+  background: var(--ignored-soft);
+  border-color: var(--ignored-border);
+}
+.semantic-warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
+}
+.semantic-failure {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+.semantic-running {
+  color: var(--running);
+  background: var(--running-soft);
+  border-color: var(--running-border);
+}
+.semantic-neutral {
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border-color: var(--border-primary);
+}

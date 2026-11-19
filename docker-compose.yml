@@ -1,0 +1,32 @@
+services:
+  yunplex2:
+    build: .
+    container_name: yunplex2
+    user: '${YUNPLEX2_UID:-1000}:${YUNPLEX2_GID:-1000}'
+    init: true
+    ports:
+      - '${YUNPLEX2_BIND_ADDRESS:-0.0.0.0}:3210:3000'
+    volumes:
+      - ./data:/app/data
+      # 下载目录也需要挂载
+      - /your/nas/music:/mnt/nas
+    environment:
+      - NITRO_HOST=0.0.0.0
+      - NITRO_PORT=3000
+      - YUNPLEX2_TRUSTED_PROXIES=${YUNPLEX2_TRUSTED_PROXIES:-}
+      - NUXT_DATA_DIR=/app/data
+      - YUNPLEX2_DOWNLOAD_DIR=/mnt/nas
+      - YUNPLEX2_SYNC_ENABLED=false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    stop_grace_period: 2m
+    restart: unless-stopped

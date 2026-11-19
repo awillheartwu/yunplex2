@@ -1,0 +1,463 @@
+<template>
+  <div ref="containerRef" class="relative">
+    <!-- Trigger -->
+    <button
+      ref="triggerEl"
+      class="date-range-trigger"
+      :style="{
+        background: open ? 'var(--bg-surface)' : 'var(--bg-app)',
+        borderColor: hasFilter ? 'var(--accent)' : 'var(--border-primary)',
+        color: hasFilter ? 'var(--accent)' : 'var(--text-secondary)',
+      }"
+      type="button"
+      :aria-expanded="open"
+      @click="open ? closePanel() : openPanel()"
+    >
+      <AppIcon name="calendar" :size="13" />
+      <span class="max-w-[160px] truncate">{{ triggerLabel }}</span>
+      <span v-if="hasFilter" class="text-2xs px-1 py-0 rounded-full shrink-0" style="background:var(--accent-glow);color:var(--accent)">●</span>
+    </button>
+
+    <!-- Popover (Teleport to body to avoid stacking-context traps) -->
+    <Teleport to="body">
+      <div
+        v-if="open"
+        class="date-range-backdrop fixed inset-0"
+        :style="{ zIndex: OVERLAY_LAYERS.nestedBackdrop }"
+        @click.self="closePanel()"
+      />
+      <div
+        v-if="open"
+        ref="panelEl"
+        class="date-range-popover fixed overflow-hidden rounded-xl border shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+        aria-label="日期范围"
+        :style="{
+          top: panelTop + 'px',
+          left: panelLeft + 'px',
+          width: panelWidth + 'px',
+          maxHeight: panelMaxHeight + 'px',
+          zIndex: OVERLAY_LAYERS.nestedPopover,
+          background: 'var(--bg-surface)',
+          borderColor: 'var(--border-primary)',
+        }"
+      >
+        <!-- Calendar grids -->
+        <div class="date-range-calendars flex">
+          <div
+            v-for="(cal, ci) in visibleMonths"
+            :key="`${cal.year}-${cal.month}`"
+            class="date-range-month flex-1 p-3"
+            :style="ci === 0 && visibleMonths.length > 1 ? { borderRight: '1px solid var(--border-primary)' } : {}"
+          >
+          <!-- Month header -->
+          <div class="flex items-center justify-between mb-2">
+            <button
+              v-if="ci === 0"
+              class="date-range-nav-button"
+              style="color:var(--text-tertiary)"
+              type="button"
+              aria-label="上一个月"
+              @click="shiftMonth(-1)"
+            >
+              <AppIcon name="chevronLeft" :size="10" />
+            </button>
+            <span class="text-xs font-medium" style="color:var(--text-primary)">{{ monthLabel(cal.year, cal.month) }}</span>
+            <button
+              v-if="ci === visibleMonths.length - 1"
+              class="date-range-nav-button"
+              style="color:var(--text-tertiary)"
+              type="button"
+              aria-label="下一个月"
+              @click="shiftMonth(1)"
+            >
+              <AppIcon name="chevronRight" :size="10" />
+            </button>
+          </div>
+
+          <!-- Day-of-week headers -->
+          <div class="grid grid-cols-7 mb-1">
+            <span v-for="d in dowLabels" :key="d" class="text-2xs text-center py-0.5" style="color:var(--text-tertiary)">{{ d }}</span>
+          </div>
+
+          <!-- Day cells -->
+          <div class="grid grid-cols-7 gap-y-0.5">
+            <button
+              v-for="(day, di) in cal.days" :key="di"
+              class="date-range-day aspect-square rounded text-xs flex items-center justify-center transition-colors"
+              :class="isDayDisabled(day) ? 'pointer-events-none opacity-20' : 'cursor-pointer'"
+              :style="dayCellStyle(day)"
+              type="button"
+              @click="onDayClick(day)"
+            >{{ day.label }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets + Apply -->
+      <div class="date-range-presets px-3 pb-3 flex items-center gap-1.5" style="border-top:1px solid var(--border-primary);padding-top:10px">
+        <button
+          v-for="p in presets" :key="p.label"
+          class="date-range-preset text-2xs px-2 py-1 rounded transition-colors cursor-pointer"
+          :style="isPresetActive(p) ? { background: 'var(--accent-glow)', color: 'var(--accent)' } : { color: 'var(--text-tertiary)' }"
+          :class="isPresetActive(p) ? '' : 'hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'"
+          @click="applyPreset(p); closePanel()"
+        >{{ p.label }}</button>
+        <button
+          v-if="hasFilter"
+          class="date-range-preset text-2xs px-2 py-1 rounded cursor-pointer hover:bg-[var(--bg-hover)] transition-colors text-muted ml-auto"
+          @click="clearFilter(); closePanel()"
+        >清除</button>
+      </div>
+    </div>
+    </Teleport>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
+import { OVERLAY_LAYERS } from '~~/lib/overlay-layers'
+import { useRafThrottleFn } from '~~/composables/useTiming'
+import { useDialogFocus } from '~~/composables/useDialogFocus'
+
+export interface DateRangeValue {
+  from: string | null
+  to: string | null
+}
+
+const props = defineProps<{ modelValue: DateRangeValue; minDate?: string | null }>()
+const emit = defineEmits<{ 'update:modelValue': [value: DateRangeValue] }>()
+
+const open = ref(false)
+const triggerEl = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
+useDialogFocus(open, panelEl, closePanel)
+const panelTop = ref(0)
+const panelLeft = ref(0)
+const panelWidth = ref(420)
+const panelMaxHeight = ref(560)
+const baseDate = ref(new Date())
+const isMobileViewport = ref(false)
+
+function openPanel() {
+  updatePanelPosition()
+  open.value = true
+  nextTick(() => updatePanelPosition())
+}
+
+function updatePanelPosition() {
+  if (triggerEl.value) {
+    const rect = triggerEl.value.getBoundingClientRect()
+    const mobile = window.matchMedia('(max-width: 767px)').matches
+    isMobileViewport.value = mobile
+    const panelW = mobile ? Math.min(420, Math.max(280, window.innerWidth - 16)) : Math.min(420, window.innerWidth - 16)
+    const viewportGutter = 8
+    const panelH = panelEl.value?.offsetHeight || 390
+    const availableHeight = Math.max(280, mobile ? window.innerHeight * 0.82 : window.innerHeight - viewportGutter * 2)
+    panelWidth.value = panelW
+    panelMaxHeight.value = availableHeight
+
+    const belowTop = rect.bottom + 6
+    const aboveTop = rect.top - panelH - 6
+    panelTop.value = belowTop + panelH <= window.innerHeight - viewportGutter
+      ? belowTop
+      : Math.max(viewportGutter, aboveTop)
+
+    // Align right edge of panel with right edge of button
+    let left = rect.right - panelW
+    // Clamp: don't go beyond viewport edges
+    if (left < viewportGutter) left = viewportGutter
+    if (left + panelW > window.innerWidth - viewportGutter) left = window.innerWidth - panelW - viewportGutter
+    panelLeft.value = left
+  }
+}
+
+function closePanel() {
+  open.value = false
+  pickingFrom.value = null
+}
+
+// Track the selection steps: 0=none, 1=picked from, 2=picked range
+const pickingFrom = ref<string | null>(null)
+
+const hasFilter = computed(() => !!(props.modelValue?.from || props.modelValue?.to))
+
+const triggerLabel = computed(() => {
+  const v = props.modelValue
+  if (v?.from && v?.to) {
+    if (v.from === v.to) return v.from
+    return `${v.from} ~ ${v.to}`
+  }
+  if (v?.from) return `${v.from} 起`
+  if (v?.to) return `至 ${v.to}`
+  return '日期筛选'
+})
+
+// ── Calendar building ──
+
+interface DayCell {
+  label: number
+  year: number
+  month: number
+  day: number
+  date: string // YYYY-MM-DD
+  isOtherMonth: boolean
+}
+
+const leftMonth = computed(() => buildCalendar(baseDate.value.getFullYear(), baseDate.value.getMonth()))
+const rightMonth = computed(() => {
+  const d = new Date(baseDate.value)
+  d.setMonth(d.getMonth() + 1)
+  return buildCalendar(d.getFullYear(), d.getMonth())
+})
+const visibleMonths = computed(() => isMobileViewport.value ? [leftMonth.value] : [leftMonth.value, rightMonth.value])
+
+function buildCalendar(year: number, month: number): { year: number; month: number; days: DayCell[] } {
+  const days: DayCell[] = []
+  const firstDay = new Date(year, month, 1)
+  const startDow = firstDay.getDay() // 0=Sun
+
+  // Pad previous month
+  const prevMonth = new Date(year, month, 0)
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = prevMonth.getDate() - i
+    days.push(makeCell(prevMonth.getFullYear(), prevMonth.getMonth(), d, true))
+  }
+
+  // Current month
+  const lastDay = new Date(year, month + 1, 0)
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    days.push(makeCell(year, month, d, false))
+  }
+
+  // Pad next month to fill 6 rows
+  const remaining = 42 - days.length
+  const nextMonth = new Date(year, month + 1, 1)
+  for (let d = 1; d <= remaining; d++) {
+    days.push(makeCell(nextMonth.getFullYear(), nextMonth.getMonth(), d, true))
+  }
+
+  return { year, month, days }
+}
+
+function makeCell(year: number, month: number, day: number, isOtherMonth: boolean): DayCell {
+  const m = String(month + 1).padStart(2, '0')
+  const dd = String(day).padStart(2, '0')
+  return { label: day, year, month, day, date: `${year}-${m}-${dd}`, isOtherMonth }
+}
+
+// ── Interaction ──
+
+function onDayClick(day: DayCell) {
+  if (day.isOtherMonth) {
+    baseDate.value = new Date(day.year, day.month, 1)
+    return
+  }
+
+  if (!pickingFrom.value || (pickingFrom.value && props.modelValue?.to)) {
+    // Start a new range
+    pickingFrom.value = day.date
+    emit('update:modelValue', { from: day.date, to: null })
+  } else if (pickingFrom.value === day.date) {
+    // Same day clicked twice → entire day
+    emit('update:modelValue', { from: day.date, to: day.date })
+    closePanel()
+  } else {
+    // Complete the range
+    const from = pickingFrom.value!
+    const to = day.date
+    if (from <= to) {
+      emit('update:modelValue', { from, to })
+    } else {
+      emit('update:modelValue', { from: to, to: from })
+    }
+    closePanel()
+  }
+}
+
+const todayStr = today()
+function isDayDisabled(day: DayCell): boolean {
+  if (day.isOtherMonth) return true
+  if (day.date > todayStr) return true
+  if (props.minDate && day.date < props.minDate) return true
+  if (pickingFrom.value && day.date < pickingFrom.value) return true
+  return false
+}
+
+function dayCellStyle(day: DayCell): Record<string, string> {
+  const v = props.modelValue
+  const s: Record<string, string> = { color: 'var(--text-primary)' }
+
+  if (day.isOtherMonth) {
+    s.color = 'var(--text-tertiary)'
+    s.opacity = '0.25'
+  }
+
+  // Highlight range
+  if (v?.from && v?.to && day.date >= v.from && day.date <= v.to) {
+    s.background = 'var(--accent-glow)'
+    s.color = 'var(--accent)'
+  }
+
+  // Highlight from/to endpoints
+  if (day.date === v?.from || day.date === v?.to) {
+    s.background = 'var(--accent)'
+    s.color = 'var(--on-accent)'
+    s.borderRadius = 'var(--radius-sm)'
+  }
+
+  // Highlight picking-from
+  if (pickingFrom.value && day.date === pickingFrom.value) {
+    s.background = 'var(--accent)'
+    s.color = 'var(--on-accent)'
+    s.borderRadius = 'var(--radius-sm)'
+  }
+
+  // Hover effect (managed by CSS class)
+
+  return s
+}
+
+// ── Month nav ──
+
+function shiftMonth(delta: number) {
+  const d = new Date(baseDate.value)
+  d.setMonth(d.getMonth() + delta)
+  baseDate.value = d
+}
+
+function monthLabel(year: number, month: number): string {
+  return `${year}年${month + 1}月`
+}
+
+// ── Presets ──
+
+interface Preset { label: string; from: string | null; to: string | null }
+
+const presets: Preset[] = [
+  { label: '全部', from: null, to: null },
+  { label: '今天', from: today(), to: today() },
+  { label: '近7天', from: daysAgo(6), to: today() },
+  { label: '近30天', from: daysAgo(29), to: today() },
+]
+
+function today(): string {
+  return localDateString(new Date())
+}
+function daysAgo(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return localDateString(d)
+}
+function localDateString(date: Date): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function isPresetActive(p: Preset): boolean {
+  return props.modelValue?.from === p.from && props.modelValue?.to === p.to
+}
+
+function applyPreset(p: Preset) {
+  emit('update:modelValue', { from: p.from, to: p.to })
+}
+
+function clearFilter() {
+  emit('update:modelValue', { from: null, to: null })
+}
+
+const dowLabels = ['日', '一', '二', '三', '四', '五', '六']
+
+function handleViewportChange() {
+  isMobileViewport.value = window.matchMedia('(max-width: 767px)').matches
+  if (open.value) updatePanelPosition()
+}
+
+const viewportChangeThrottle = useRafThrottleFn(handleViewportChange)
+const handleViewportChangeOnFrame = () => viewportChangeThrottle.run()
+
+onMounted(() => {
+  isMobileViewport.value = window.matchMedia('(max-width: 767px)').matches
+  window.addEventListener('resize', handleViewportChangeOnFrame)
+  window.addEventListener('scroll', handleViewportChangeOnFrame, true)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleViewportChangeOnFrame)
+  window.removeEventListener('scroll', handleViewportChangeOnFrame, true)
+})
+</script>
+
+<style scoped>
+.date-range-trigger {
+  display: flex;
+  min-block-size: var(--control-height);
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-1_5);
+  overflow: hidden;
+  flex-shrink: 0;
+  padding-inline: var(--space-3);
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease, color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.date-range-trigger:focus-visible,
+.date-range-nav-button:focus-visible,
+.date-range-day:focus-visible,
+.date-range-preset:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+
+.date-range-nav-button {
+  display: flex;
+  inline-size: var(--control-height);
+  block-size: var(--control-height);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-surface);
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.date-range-nav-button:hover {
+  background: var(--bg-hover);
+}
+
+.date-range-day {
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+}
+
+.date-range-presets {
+  flex-wrap: wrap;
+}
+
+.date-range-preset {
+  min-block-size: 2rem;
+}
+
+@media (min-width: 768px) {
+  .date-range-trigger {
+    min-block-size: 2.25rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .date-range-day {
+    min-inline-size: 2.25rem;
+    min-block-size: 2.25rem;
+  }
+}
+</style>

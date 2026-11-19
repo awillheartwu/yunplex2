@@ -1,0 +1,96 @@
+<script setup lang="ts">
+import { onBeforeUnmount } from 'vue'
+import type { SourceInitializationSummary } from '../../server/lib/source-initialization/types'
+import type { AppConfig } from '../../server/lib/config/types'
+import { DEFAULT_INITIALIZATION_MATCHING, type MatchingPreviewResult } from '../../shared/initialization-matching'
+const props = defineProps<{ visible: boolean; submitError?: string; sourceId: string; initialization: SourceInitializationSummary; busy: boolean }>()
+const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const api = useApi()
+const loading = ref(true), error = ref(''), preview = ref<MatchingPreviewResult | null>(null)
+let comparisonRequest = 0
+async function compare() {
+  const request = ++comparisonRequest
+  loading.value = true; error.value = ''
+  try {
+    const config = await api.get<AppConfig>('/config')
+    const result = await api.post<MatchingPreviewResult>('/initialization-matching/preview', {
+      sourceId: props.sourceId, initializationId: props.initialization.id,
+      config: config.initializationMatching ?? DEFAULT_INITIALIZATION_MATCHING,
+    })
+    if (request === comparisonRequest) preview.value = result
+  } catch (err) { if (request === comparisonRequest) error.value = err instanceof Error ? err.message : '无法读取比较结果' }
+  finally { if (request === comparisonRequest) loading.value = false }
+}
+const changed = computed(() => preview.value?.items.filter(item => item.change !== 'unchanged') ?? [])
+watch(() => props.visible, visible => { if (visible) void compare() }, { immediate: true })
+onBeforeUnmount(() => { comparisonRequest++ })
+</script>
+
+<template>
+  <AppDrawer :visible="visible" title="重新分析当前方案" wide :busy="busy" @close="emit('cancel')">
+  <section class="matching-reanalysis" aria-label="重新分析当前方案前比较" :aria-busy="loading">
+    <header class="matching-reanalysis__heading">
+      <AppIcon name="refresh" :size="18" />
+      <div><h3>按当前设置重新分析当前方案</h3></div>
+    </header>
+    <div class="matching-reanalysis__notice">
+      <strong>会重新生成一份方案</strong>
+      <p>已经确认的媒体关联会保留；之前没提交的选择需要重新确认。</p>
+    </div>
+    <p v-if="initialization.matchingConfig && !initialization.rulesCompatible" class="matching-reanalysis__context">旧方案的匹配规则已经更新，下面的对比按当前规则重新计算，结果不会和旧方案完全一致。</p>
+    <p v-if="!initialization.matchingConfig" class="matching-reanalysis__context">旧方案没有记录当时的匹配设置，下面的对比只能按当前设置计算，看不出旧规则的差异。</p>
+    <div v-if="loading" class="matching-reanalysis__feedback" role="status"><AppIcon name="loader" :size="16" class="animate-spin" />正在计算新旧设置的差异…</div>
+    <div v-if="error" class="matching-reanalysis__feedback matching-reanalysis__error" role="alert"><span>{{ error }}</span><button class="btn btn-ghost btn-sm" @click="compare">重试比较</button></div>
+    <template v-if="preview && !loading && !error">
+      <p v-for="warning in preview.musicBrainz?.warnings ?? []" :key="warning" role="status" class="matching-reanalysis__context">{{ warning }}</p>
+      <div class="matching-reanalysis__comparison" aria-label="新旧设置对比结果">
+        <div><span>可推荐</span><p><span>{{ preview.before.recommended }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.recommended }}</strong></p><small>旧设置 → 当前设置</small></div>
+        <div><span>无候选</span><p><span>{{ preview.before.unmatched }}</span><AppIcon name="arrowRight" :size="16" /><strong>{{ preview.after.unmatched }}</strong></p><small>旧设置 → 当前设置</small></div>
+        <div><span>结果有变化</span><p><strong>{{ changed.length }}</strong><small>首</small></p><small>按最新数据计算</small></div>
+      </div>
+      <details v-if="changed.length" class="matching-reanalysis__samples"><summary>查看变化的前 20 首</summary><ul><li v-for="item in changed.slice(0, 20)" :key="item.songId"><strong>{{ item.title }}</strong><p>{{ item.reasons.join('；') }}<span v-if="item.conflicts.length">；{{ item.conflicts.join('；') }}</span></p></li></ul></details>
+      <p v-else class="matching-reanalysis__context">这次对比没有发现变化。</p>
+      <p class="matching-reanalysis__context">以上只是预览；确认后会重新读取最新数据并生成新方案。</p>
+    </template>
+  </section>
+  <template #footer>
+    <p v-if="submitError" class="matching-reanalysis__error" role="alert">{{ submitError }}</p>
+    <div class="matching-reanalysis__actions">
+      <button class="btn btn-primary" :disabled="busy || loading || !preview || !!error" @click="emit('confirm')">确认并重新分析当前方案</button>
+      <button class="btn btn-ghost" :disabled="busy" @click="emit('cancel')">保留当前方案</button>
+      <NuxtLink class="btn btn-ghost" :to="{ path: '/config', query: { tab: 'matching', source: sourceId } }">调整匹配规则</NuxtLink>
+    </div>
+  </template>
+  </AppDrawer>
+</template>
+<style scoped>
+.matching-reanalysis { min-width: 0; padding: var(--space-4); display: grid; gap: var(--space-4); font-size: var(--text-sm); }
+.matching-reanalysis p { margin: 0; overflow-wrap: anywhere; }
+.matching-reanalysis__heading { display: flex; align-items: flex-start; gap: var(--space-3); }
+.matching-reanalysis__heading > svg { margin-top: var(--space-1); color: var(--accent); flex-shrink: 0; }
+.matching-reanalysis__heading h3 { margin: 0 0 var(--space-1); font-size: var(--text-base); font-weight: var(--font-weight-bold); }
+.matching-reanalysis__context { color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.6; }
+.matching-reanalysis__notice { padding: var(--space-3) var(--space-4); border-left: 3px solid var(--warning); background: var(--warning-soft); border-radius: var(--radius-sm); }
+.matching-reanalysis__notice strong { display: block; margin-bottom: var(--space-1); font-size: var(--text-sm); }
+.matching-reanalysis__notice p { color: var(--text-secondary); font-size: var(--text-xs); }
+.matching-reanalysis__comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border-primary); border-radius: var(--radius-md); }
+.matching-reanalysis__comparison > div { min-width: 0; padding: var(--space-4); }
+.matching-reanalysis__comparison > div + div { border-left: 1px solid var(--border-primary); }
+.matching-reanalysis__comparison > div > span, .matching-reanalysis__comparison small { color: var(--text-secondary); font-size: var(--text-xs); }
+.matching-reanalysis__comparison p { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; font-size: var(--text-lg); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.matching-reanalysis__comparison p > span, .matching-reanalysis__comparison svg { color: var(--text-tertiary); }
+.matching-reanalysis__comparison strong { font-weight: var(--font-weight-bold); }
+.matching-reanalysis__samples { min-width: 0; }
+.matching-reanalysis__samples summary { width: fit-content; cursor: pointer; color: var(--text-secondary); font-size: var(--text-xs); }
+.matching-reanalysis__samples ul { list-style: none; padding: 0; margin: var(--space-3) 0 0; max-height: 18rem; overflow: auto; }
+.matching-reanalysis__samples li { padding: var(--space-3) 0; border-bottom: 1px solid var(--border-primary); overflow-wrap: anywhere; }
+.matching-reanalysis__samples li p { color: var(--text-secondary); font-size: var(--text-xs); margin-top: var(--space-1); }
+.matching-reanalysis__feedback { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) 0; color: var(--text-secondary); }
+.matching-reanalysis__error { color: var(--danger); }
+.matching-reanalysis__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@media (max-width: 640px) {
+  .matching-reanalysis__comparison { grid-template-columns: 1fr; }
+  .matching-reanalysis__comparison > div + div { border-left: 0; border-top: 1px solid var(--border-primary); }
+  .matching-reanalysis__comparison > div { padding: var(--space-3); }
+}
+</style>

@@ -1,0 +1,438 @@
+import type { AppConfig } from '../config/types'
+import { getDb, readConfigFromDb } from '../db'
+import { getSource, listSources, updateSource } from '../playlist/store'
+import type { PlaylistSource } from '../playlist/types'
+import { getLatestInitialization } from '../source-initialization/store'
+import { acceptSourceRequest } from './source-requests'
+import { persistSourceRequest, SOURCE_RECOVERY_REQUEST_SQL, type SourceRequestInput, type SourceRequestKind } from './request-store'
+import { parseJsonOr } from '../json'
+import { recordFailure } from '../tasks/failure-records'
+import { scheduleSourceRecovery, sourceRecoveryGate } from './recovery'
+
+export type SourceConvergenceRequestStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface SourceConvergenceRequest {
+  id: string
+  sourceId: string
+  scheduleWindow: string
+  attempts: number
+  leaseOwner: string
+  trigger: SourceRequestInput['trigger']
+  kind: SourceRequestKind
+  plexRecoverySnapshot: SourceRequestInput['plexRecoverySnapshot'] | null
+  retrySongIds?: number[]
+  mode: NonNullable<SourceRequestInput['mode']>
+  initializationId: string | null
+  followUpOf: string | null
+  runId: string | null
+  takeOverExternal: boolean
+}
+
+export interface SourceScheduleSnapshot {
+  queueDepth: number
+  runningCount: number
+  oldestQueuedAt: string | null
+  nextSyncAt: string | null
+  lastError: string | null
+}
+
+interface QueueRow {
+  id: string
+  source_id: string
+  schedule_window: string
+  attempts: number
+  request_kind: SourceRequestKind
+  plex_recovery_json: string | null
+  retry_song_ids_json: string | null
+  mode: NonNullable<SourceRequestInput['mode']>
+  trigger: SourceRequestInput['trigger']
+  initialization_id: string | null
+  follow_up_of: string | null
+  run_id: string | null
+  take_over_external: number
+}
+
+const COMPLETED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+const FAILED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+export const SOURCE_REQUEST_LEASE_MS = 90 * 1000
+
+function validDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+export function effectiveSourceIntervalMinutes(source: PlaylistSource, config: AppConfig): number {
+  return Math.max(1, Math.min(1440, source.syncIntervalMinutes ?? (config.sync.intervalMinutes || 30)))
+}
+
+export function nextSourceDueAt(source: PlaylistSource, config: AppConfig, now: Date): Date {
+  const intervalMs = effectiveSourceIntervalMinutes(source, config) * 60 * 1000
+  const lastSynced = validDate(source.lastSyncedAt)
+  const persisted = validDate(source.nextSyncAt)
+  const lastScheduled = validDate(source.lastScheduledAt)
+  const failedAfterLastSync = source.lastScheduleStatus === 'failed'
+    && (!lastSynced || !lastScheduled || lastScheduled.getTime() >= lastSynced.getTime())
+  if (failedAfterLastSync && persisted) return persisted
+  if (lastSynced) return new Date(lastSynced.getTime() + intervalMs)
+  return persisted ?? now
+}
+
+function pruneFinishedRequests(now: Date): void {
+  const db = getDb()
+  db.prepare(`
+    DELETE FROM source_sync_queue
+    WHERE status IN ('completed','cancelled') AND finished_at < ?
+  `).run(new Date(now.getTime() - COMPLETED_RETENTION_MS).toISOString())
+  db.prepare(`
+    DELETE FROM source_sync_queue
+    WHERE status = 'failed' AND finished_at < ?
+  `).run(new Date(now.getTime() - FAILED_RETENTION_MS).toISOString())
+}
+
+function recoverExpiredSourceRequests(now: Date): number {
+  const rows = getDb().prepare(`
+    SELECT id, source_id, request_kind, run_id
+    FROM source_sync_queue
+    WHERE status = 'running'
+      AND lease_expires_at IS NOT NULL
+      AND lease_expires_at <= ?
+  `).all(now.toISOString()) as InterruptedSourceRequest[]
+  return settleInterruptedSourceRequests(rows, '来源执行租约过期', now)
+}
+
+type InterruptedSourceRequest = Pick<QueueRow, 'id' | 'source_id' | 'request_kind' | 'run_id'>
+
+/** Failed sync attempts use the normal next schedule; preparation retains its durable continuation. */
+function settleInterruptedSourceRequests(rows: InterruptedSourceRequest[], message: string, now: Date): number {
+  if (!rows.length) return 0
+  const db = getDb()
+  const config = readConfigFromDb()
+  const nowIso = now.toISOString()
+  return db.transaction(() => {
+    let settled = 0
+    for (const row of rows) {
+      const failed = row.request_kind === 'convergence' || row.request_kind === 'plex_recovery'
+      const result = db.prepare(`UPDATE source_sync_queue
+        SET status = ?, available_at = ?, finished_at = ?, updated_at = ?,
+          lease_owner = NULL, lease_expires_at = NULL, last_error = ?
+        WHERE id = ? AND status = 'running'`)
+        .run(failed ? 'failed' : 'pending', nowIso, failed ? nowIso : null, nowIso, message, row.id)
+      if (!result.changes) continue
+      settled++
+      const source = getSource(row.source_id)
+      if (!source) continue
+      if (failed) {
+        recordFailure({ sourceId: source.id, sourceName: source.name, songName: '来源同步',
+          runId: row.run_id, runType: 'sync', failureKind: 'scheduler_interrupted', failureReason: message,
+          occurredAt: nowIso })
+      }
+      updateSource(source.id, {
+        lastScheduleStatus: failed ? 'failed' : 'queued', lastScheduleError: message,
+        ...(failed ? { nextSyncAt: new Date(now.getTime() + effectiveSourceIntervalMinutes(source, config) * 60_000).toISOString(),
+          lastScheduledAt: nowIso, lastStatus: 'failed' as const, lastError: message } : {}),
+      })
+    }
+    return settled
+  })()
+}
+
+/** Graceful shutdown uses the same durable outcome as restart interruption. */
+export function interruptSourceRequest(request: SourceConvergenceRequest): void {
+  settleInterruptedSourceRequests([{ id: request.id, source_id: request.sourceId,
+    request_kind: request.kind, run_id: request.runId }], '来源同步因服务停止中断', new Date())
+}
+
+/** Persist one idempotent Source Convergence Request for every due Playlist Source. */
+export function reconcileSourceSchedules(config: AppConfig, now = new Date()): number {
+  const db = getDb()
+  const nowIso = now.toISOString()
+  return db.transaction(() => {
+    pruneFinishedRequests(now)
+    recoverExpiredSourceRequests(now)
+    let enqueued = 0
+    const sources = listSources()
+
+    for (const source of sources) {
+      const initialization = source.type === 'playlist' ? getLatestInitialization(source.id) : null
+      if (initialization && ['analyzing', 'awaiting_review', 'applying'].includes(initialization.status)) {
+        db.prepare(`UPDATE source_sync_queue SET status='cancelled', finished_at=?, updated_at=?, last_error='等待首次媒体接管确认' WHERE source_id=? AND status='pending' AND request_kind IN ('convergence','plex_recovery') AND follow_up_of IS NULL`)
+          .run(nowIso, nowIso, source.id)
+        if (source.nextSyncAt !== null || source.lastScheduleStatus !== 'idle') {
+          updateSource(source.id, { nextSyncAt: null, lastScheduleStatus: 'idle', lastScheduleError: null })
+        }
+        continue
+      }
+      if (!source.enabled || !config.sync.enabled) {
+        const cancelled = db.prepare(`
+          UPDATE source_sync_queue
+          SET status = 'cancelled', finished_at = ?, updated_at = ?,
+              lease_owner = NULL, lease_expires_at = NULL,
+              last_error = '来源或自动同步已停用'
+          WHERE source_id = ? AND status = 'pending' AND (trigger = 'schedule' OR request_kind = 'plex_recovery' OR ${SOURCE_RECOVERY_REQUEST_SQL})
+        `).run(nowIso, nowIso, source.id)
+        if (
+          cancelled.changes > 0
+          || source.nextSyncAt !== null
+          || source.lastScheduleStatus !== 'idle'
+          || source.lastScheduleError !== null
+        ) {
+          updateSource(source.id, {
+            nextSyncAt: null,
+            lastScheduleStatus: 'idle',
+            lastScheduleError: null,
+          })
+        }
+        continue
+      }
+
+      const lastSynced = validDate(source.lastSyncedAt)
+      const lastScheduled = validDate(source.lastScheduledAt)
+      const manualSyncSupersededFailure = source.lastScheduleStatus === 'failed'
+        && lastSynced
+        && lastScheduled
+        && lastSynced.getTime() > lastScheduled.getTime()
+      if (manualSyncSupersededFailure) {
+        updateSource(source.id, {
+          lastScheduleStatus: 'idle',
+          lastScheduleError: null,
+        })
+      }
+
+      if (source.lastSyncedAt) {
+        const superseded = db.prepare(`
+          UPDATE source_sync_queue
+          SET status = 'cancelled', finished_at = ?, updated_at = ?,
+              lease_owner = NULL, lease_expires_at = NULL,
+              last_error = '已被较新的手动同步取代'
+          WHERE source_id = ? AND status = 'pending' AND trigger='schedule' AND request_kind='convergence' AND created_at <= ?
+        `).run(nowIso, nowIso, source.id, source.lastSyncedAt)
+        if (superseded.changes > 0) {
+          updateSource(source.id, {
+            lastScheduleStatus: 'idle',
+            lastScheduleError: null,
+          })
+        }
+      }
+
+      const recoveryGate = sourceRecoveryGate(source.id, config, false)
+      if (recoveryGate && recoveryGate.action !== 'retry') {
+        if (source.nextSyncAt) updateSource(source.id, { nextSyncAt: null })
+        continue
+      }
+      const active = db.prepare(`SELECT COUNT(CASE WHEN status='running'
+          OR NOT (${SOURCE_RECOVERY_REQUEST_SQL}) THEN 1 END) AS count,
+        MIN(CASE WHEN status='pending' THEN available_at END) AS available_at
+        FROM source_sync_queue WHERE source_id=? AND status IN ('pending','running')`)
+        .get(source.id) as { count: number; available_at: string | null }
+      const scheduledAt = nextSourceDueAt(source, config, now)
+      const dueAt = recoveryGate?.nextRetryAt && Date.parse(recoveryGate.nextRetryAt) > scheduledAt.getTime()
+          ? new Date(recoveryGate.nextRetryAt) : scheduledAt
+      const nextAt = active.available_at && Date.parse(active.available_at) < dueAt.getTime()
+        ? active.available_at : dueAt.toISOString()
+      if (source.nextSyncAt !== nextAt) updateSource(source.id, { nextSyncAt: nextAt })
+      if (dueAt.getTime() > now.getTime() || active.count) continue
+
+      const accepted = acceptSourceRequest(source, config, { sourceId: source.id, trigger: 'schedule', scheduleWindow: dueAt.toISOString(), now })
+      if (accepted.status !== 'accepted') continue
+      enqueued++
+      updateSource(source.id, { lastScheduleStatus: 'queued', lastScheduledAt: nowIso, lastScheduleError: null })
+    }
+    db.prepare(`UPDATE source_initializations SET status='cancelled', summary='分析请求已取消'
+      WHERE status='pending' AND EXISTS (SELECT 1 FROM source_sync_queue q WHERE q.initialization_id=source_initializations.id AND q.status='cancelled')`).run()
+    db.prepare(`UPDATE task_runs SET status='cancelled',finished_at=?,summary='分析请求已取消'
+      WHERE status='running' AND type='source_initialization' AND EXISTS
+        (SELECT 1 FROM source_initializations si WHERE si.run_id=task_runs.id AND si.status='cancelled')`).run(nowIso)
+    return enqueued
+  })()
+}
+
+/** Persist one user-requested convergence run, even when automatic scheduling is disabled. */
+export function enqueueManualSourceSync(sourceId: string, now = new Date()): string {
+  const db = getDb()
+  const source = getSource(sourceId)
+  if (!source) throw new Error('同步来源不存在')
+  if (!source.enabled) throw new Error('同步来源已禁用')
+  const existing = db.prepare(`
+    SELECT id FROM source_sync_queue
+    WHERE source_id = ? AND status IN ('pending','running')
+    ORDER BY created_at ASC LIMIT 1
+  `).get(sourceId) as { id: string } | undefined
+  if (existing) return existing.id
+
+  const nowIso = now.toISOString()
+  const id = persistSourceRequest({ sourceId, kind: 'convergence', trigger: 'user', now })
+  updateSource(sourceId, {
+    lastScheduleStatus: 'queued',
+    lastScheduledAt: nowIso,
+    lastScheduleError: null,
+  })
+  return id
+}
+
+/** Startup only, before the new consumer claims work. Container PIDs can repeat. */
+export function recoverInterruptedSourceRequests(now = new Date()): number {
+  const db = getDb()
+  const rows = db.prepare(`
+      SELECT id, source_id, request_kind, run_id FROM source_sync_queue
+      WHERE status = 'running'
+    `).all() as InterruptedSourceRequest[]
+  return settleInterruptedSourceRequests(rows, '来源同步因服务重启中断', now)
+}
+
+/** Lease the oldest due request. Only this interface may transition pending -> running. */
+export function claimNextSourceRequest(
+  leaseOwner: string,
+  now = new Date(),
+  leaseMs = SOURCE_REQUEST_LEASE_MS,
+): SourceConvergenceRequest | null {
+  const db = getDb()
+  const nowIso = now.toISOString()
+  return db.transaction(() => {
+    db.prepare(`
+      UPDATE source_sync_queue
+      SET status = 'cancelled', finished_at = ?, updated_at = ?,
+          last_error = '来源已停用'
+      WHERE status = 'pending'
+        AND allow_disabled = 0 AND source_id IN (SELECT id FROM playlist_sources WHERE enabled = 0)
+    `).run(nowIso, nowIso)
+
+    const row = db.prepare(`
+      SELECT queue.*
+      FROM source_sync_queue queue
+      JOIN playlist_sources source ON source.id = queue.source_id
+      WHERE queue.status = 'pending' AND queue.available_at <= ? AND (source.enabled = 1 OR queue.allow_disabled = 1)
+        AND NOT EXISTS (SELECT 1 FROM source_sync_queue WHERE status = 'running')
+      ORDER BY queue.available_at ASC, queue.created_at ASC, queue.batch_position ASC, queue.rowid ASC
+      LIMIT 1
+    `).get(nowIso) as QueueRow | undefined
+    if (!row) return null
+
+    const result = db.prepare(`
+      UPDATE OR IGNORE source_sync_queue
+      SET status = 'running', lease_owner = ?, lease_expires_at = ?,
+          attempts = attempts + 1, started_at = COALESCE(started_at, ?), updated_at = ?
+      WHERE id = ? AND status = 'pending'
+    `).run(
+      leaseOwner,
+      new Date(now.getTime() + leaseMs).toISOString(),
+      nowIso,
+      nowIso,
+      row.id,
+    )
+    if (result.changes === 0) return null
+    updateSource(row.source_id, {
+      lastScheduleStatus: 'running',
+      lastScheduleError: null,
+    })
+    return {
+      id: row.id,
+      sourceId: row.source_id,
+      scheduleWindow: row.schedule_window,
+      attempts: row.attempts + 1,
+      leaseOwner,
+      trigger: row.trigger, kind: row.request_kind, mode: row.mode,
+      plexRecoverySnapshot: parseJsonOr<SourceRequestInput['plexRecoverySnapshot'] | null>(row.plex_recovery_json, null),
+      retrySongIds: parseJsonOr<number[] | undefined>(row.retry_song_ids_json, undefined),
+      initializationId: row.initialization_id, followUpOf: row.follow_up_of, runId: row.run_id, takeOverExternal: Boolean(row.take_over_external),
+    }
+  })()
+}
+
+export function attachSourceRequestRun(request: SourceConvergenceRequest, runId: string): boolean {
+  return getDb().prepare(`
+    UPDATE source_sync_queue
+    SET run_id = ?, updated_at = ?
+    WHERE id = ? AND status = 'running' AND lease_owner = ?
+  `).run(runId, new Date().toISOString(), request.id, request.leaseOwner).changes > 0
+}
+
+export function renewSourceRequestLease(
+  requestId: string,
+  leaseOwner: string,
+  now = new Date(),
+  leaseMs = SOURCE_REQUEST_LEASE_MS,
+): boolean {
+  return getDb().prepare(`
+    UPDATE source_sync_queue
+    SET lease_expires_at = ?, updated_at = ?
+    WHERE id = ? AND status = 'running' AND lease_owner = ?
+  `).run(
+    new Date(now.getTime() + leaseMs).toISOString(),
+    now.toISOString(),
+    requestId,
+    leaseOwner,
+  ).changes > 0
+}
+
+export function finishSourceRequest(
+  request: SourceConvergenceRequest,
+  result: 'success' | 'partial' | 'failure',
+  config: AppConfig,
+  error: string | null,
+  now = new Date(),
+): void {
+  const db = getDb()
+  const nowIso = now.toISOString()
+  db.transaction(() => {
+    const source = getSource(request.sourceId)
+    if (!source) {
+      db.prepare(`
+        UPDATE source_sync_queue
+        SET status = 'cancelled', finished_at = ?, updated_at = ?,
+            lease_owner = NULL, lease_expires_at = NULL,
+            last_error = '来源已删除'
+        WHERE id = ?
+      `).run(nowIso, nowIso, request.id)
+      return
+    }
+    const cancelled = Boolean((db.prepare('SELECT cancel_requested_at FROM source_sync_queue WHERE id=?').get(request.id) as { cancel_requested_at: string | null } | undefined)?.cancel_requested_at)
+      || Boolean(request.initializationId && getLatestInitialization(request.sourceId)?.status === 'cancelled')
+    const queueStatus: SourceConvergenceRequestStatus = cancelled ? 'cancelled' : result === 'failure' ? 'failed' : 'completed'
+    const nextSyncAt = new Date(
+      now.getTime() + effectiveSourceIntervalMinutes(source, config) * 60 * 1000,
+    ).toISOString()
+    const queueUpdate = db.prepare(`
+      UPDATE source_sync_queue
+      SET status = ?, run_id = COALESCE(run_id, ?), last_error = ?, finished_at = ?, updated_at = ?,
+          lease_owner = NULL, lease_expires_at = NULL
+      WHERE id = ? AND status = 'running' AND lease_owner = ?
+    `).run(queueStatus, source.lastJobId, error, nowIso, nowIso, request.id, request.leaseOwner)
+    if (queueUpdate.changes === 0) return
+    updateSource(source.id, {
+      nextSyncAt,
+      lastScheduleStatus: cancelled ? 'idle' : result === 'failure' ? 'failed' : result,
+      lastScheduledAt: nowIso,
+      lastScheduleError: error,
+    })
+    if (!cancelled) scheduleSourceRecovery(source.id, config)
+  })()
+}
+
+export function getSourceScheduleSnapshot(): SourceScheduleSnapshot {
+  const db = getDb()
+  const counts = db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS queue_depth,
+      SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_count,
+      MIN(CASE WHEN status = 'pending' THEN created_at END) AS oldest_queued_at
+    FROM source_sync_queue
+  `).get() as { queue_depth: number | null; running_count: number | null; oldest_queued_at: string | null }
+  const next = db.prepare(`
+    SELECT MIN(next_sync_at) AS next_sync_at
+    FROM playlist_sources WHERE enabled = 1 AND next_sync_at IS NOT NULL
+  `).get() as { next_sync_at: string | null }
+  const failed = db.prepare(`
+    SELECT last_schedule_error
+    FROM playlist_sources
+    WHERE last_schedule_status = 'failed' AND last_schedule_error IS NOT NULL
+    ORDER BY last_scheduled_at DESC LIMIT 1
+  `).get() as { last_schedule_error: string } | undefined
+  return {
+    queueDepth: Number(counts.queue_depth ?? 0),
+    runningCount: Number(counts.running_count ?? 0),
+    oldestQueuedAt: counts.oldest_queued_at,
+    nextSyncAt: next.next_sync_at,
+    lastError: failed?.last_schedule_error ?? null,
+  }
+}

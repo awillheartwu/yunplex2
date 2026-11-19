@@ -1,0 +1,28 @@
+node_modules/
+.output/
+.nuxt/
+dist/
+/data/*
+!/data/.gitkeep
+/backups/
+*.log
+test-results/
+playwright-report/
+/artifacts/
+.env
+.env.*
+!.env.example
+!.env.sample
+test/
+.DS_Store
+.claude/
+.agents/
+CLAUDE.md
+
+# Local tooling
+.pnpm-store/
+.husky/
+skills-lock.json
+
+# Local issue screenshots
+/问题/

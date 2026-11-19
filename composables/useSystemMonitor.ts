@@ -1,0 +1,198 @@
+import { buildSystemDiagnosticReport } from '~~/lib/system-diagnostics'
+import { useIntervalFn } from '~~/composables/useTiming'
+import { useFeedback } from '~~/composables/useFeedback'
+import { buildMemoryDetails, exactMemoryBytes, formatMemoryMiB, memoryBytes, type SystemMemoryInput } from '~~/lib/system-memory'
+import { MEBIBYTE } from '~~/shared/system-memory'
+
+type Tone = 'ok' | 'warning' | 'error' | 'idle'
+
+export interface SystemStats extends SystemMemoryInput {
+  cpu: number
+  mem: { rss: number; heapUsed: number; heapTotal: number; external: number }
+  uptime: number
+  pid: number
+  dbSize: number
+  plexOk: boolean
+  neteaseOk: boolean
+  dirWritable: boolean
+  dependencyCheckedAt?: number
+  dependencyCacheExpiresAt?: number
+  dependencyCacheTtlMs?: number
+  scheduler: {
+    enabled: boolean
+    scheduled: boolean
+    heartbeatAt: string | null
+    queueDepth: number
+    runningCount: number
+    oldestQueuedAt: string | null
+    nextSyncAt: string | null
+    lastError: string | null
+  } | null
+  timestamp: number
+}
+
+export interface SystemInfo {
+  version?: string
+  platform?: string
+  nodeVersion?: string
+  docker?: boolean | string
+}
+
+export interface SystemKpiCard { key: string; label: string; value: string; detail: string; tone: Tone; exactValue?: string }
+export interface SystemHealthItem { key: string; label: string; value: string; detail: string; tone: Tone }
+/** memory is process RSS in MiB. */
+export interface SystemResourceTrendPoint { timestamp: number; cpu: number; memory: number }
+
+function toneForCpu(value?: number): Tone {
+  if (value === undefined) return 'idle'
+  if (value >= 80) return 'error'
+  if (value >= 55) return 'warning'
+  return 'ok'
+}
+
+function toneForMemory(stats: SystemStats | null): Tone {
+  const rss = memoryBytes(stats, 'rss')
+  if (rss === null) return 'idle'
+  if (rss >= 1536 * MEBIBYTE) return 'error'
+  if (rss >= 1024 * MEBIBYTE) return 'warning'
+  return 'ok'
+}
+
+function toneForDb(size?: number): Tone {
+  if (size === undefined) return 'idle'
+  if (size >= 512) return 'error'
+  if (size >= 128) return 'warning'
+  return 'ok'
+}
+
+function formatDateTime(ts?: number): string {
+  if (!ts) return '尚未检测'
+  return new Date(ts).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function formatUptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m`
+  return `${Math.floor(seconds)}s`
+}
+
+async function writeClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+export function useSystemMonitor() {
+  const api = useApi()
+  const feedback = useFeedback()
+  const { state: syncState } = useSync()
+  const stats = ref<SystemStats | null>(null)
+  const info = ref<SystemInfo | null>(null)
+  const healthRefreshing = ref(false)
+  const resourceTrend = ref<SystemResourceTrendPoint[]>([])
+  const dependencyCheckedLabel = computed(() => formatDateTime(stats.value?.dependencyCheckedAt))
+  const memoryDetails = computed(() => buildMemoryDetails(stats.value))
+  const rssMiB = computed(() => {
+    const bytes = memoryBytes(stats.value, 'rss')
+    return bytes === null ? null : bytes / MEBIBYTE
+  })
+  const schedulerSchedule = computed<{ label: string; tone: Tone }>(() => {
+    const scheduler = stats.value?.scheduler
+    if (!scheduler?.enabled) return { label: '', tone: 'idle' }
+    if (scheduler.lastError) return { label: '调度需关注', tone: 'warning' }
+    if (scheduler.runningCount > 0) return { label: `正在执行 · 等待 ${scheduler.queueDepth}`, tone: 'warning' }
+    if (scheduler.queueDepth > 0) return { label: `等待 ${scheduler.queueDepth} 个来源`, tone: 'warning' }
+    if (scheduler.nextSyncAt) return { label: `下次 ${formatDateTime(new Date(scheduler.nextSyncAt).getTime())}`, tone: 'ok' }
+    return { label: scheduler.scheduled ? '自动同步已计划' : '等待自动同步排期', tone: scheduler.scheduled ? 'ok' : 'warning' }
+  })
+  const schedulerScheduleLabel = computed(() => schedulerSchedule.value.label)
+  const schedulerScheduleTone = computed(() => schedulerSchedule.value.tone)
+
+  const kpiCards = computed<SystemKpiCard[]>(() => [
+    { key: 'cpu', label: 'CPU', value: stats.value ? `${stats.value.cpu}%` : '--', detail: '当前进程采样', tone: toneForCpu(stats.value?.cpu) },
+    {
+      key: 'memory', label: '进程内存',
+      value: formatMemoryMiB(rssMiB.value),
+      detail: stats.value ? '全部线程 · 当前 PID' : '等待采样', tone: toneForMemory(stats.value),
+      exactValue: exactMemoryBytes(stats.value, 'rss'),
+    },
+    { key: 'uptime', label: '运行时间', value: stats.value ? formatUptime(stats.value.uptime) : '--', detail: stats.value ? `PID ${stats.value.pid}` : '等待进程信息', tone: stats.value ? 'ok' : 'idle' },
+    { key: 'database', label: '数据库', value: formatMemoryMiB(stats.value?.dbSize), detail: '数据库文件 · 自动保留', tone: toneForDb(stats.value?.dbSize) },
+  ])
+
+  const healthItems = computed<SystemHealthItem[]>(() => [
+    { key: 'plex', label: 'Plex', value: !stats.value ? '待检测' : stats.value.plexOk ? '可连接' : '无法连接', detail: '媒体库与歌单更新', tone: !stats.value ? 'idle' : stats.value.plexOk ? 'ok' : 'error' },
+    { key: 'netease', label: '网易云', value: !stats.value ? '待检测' : stats.value.neteaseOk ? '已登录' : '未登录/失效', detail: '歌单与下载链接', tone: !stats.value ? 'idle' : stats.value.neteaseOk ? 'ok' : 'error' },
+    { key: 'download-dir', label: '下载目录', value: !stats.value ? '待检测' : stats.value.dirWritable ? '可写入' : '不可写', detail: '音频与标签写入', tone: !stats.value ? 'idle' : stats.value.dirWritable ? 'ok' : 'error' },
+    { key: 'sync', label: '同步', value: !syncState.value ? '读取中' : syncState.value.isRunning ? '运行中' : syncState.value?.lastSyncResult === 'failure' ? '最近失败' : syncState.value?.lastSyncResult === 'partial' ? '需关注' : '空闲', detail: syncState.value?.currentSourceName || syncState.value?.currentSong || '当前任务状态', tone: !syncState.value ? 'idle' : syncState.value.isRunning || syncState.value?.lastSyncResult === 'partial' ? 'warning' : syncState.value?.lastSyncResult === 'failure' ? 'error' : 'ok' },
+  ])
+
+  const overallTone = computed<Tone>(() => {
+    if (!stats.value) return 'idle'
+    if (healthItems.value.some(item => item.tone === 'error') || kpiCards.value.some(item => item.tone === 'error')) return 'error'
+    if (healthItems.value.some(item => item.tone === 'warning') || kpiCards.value.some(item => item.tone === 'warning')) return 'warning'
+    return 'ok'
+  })
+
+  async function fetchStats() {
+    try {
+      const next = await api.get<SystemStats>('/system/stats')
+      stats.value = next
+      const previous = resourceTrend.value.at(-1)
+      const rss = memoryBytes(next, 'rss')
+      if (rss !== null && previous?.timestamp !== next.timestamp) {
+        resourceTrend.value = [
+          ...resourceTrend.value,
+          { timestamp: next.timestamp, cpu: next.cpu, memory: rss / MEBIBYTE },
+        ].slice(-30)
+      }
+    } catch {
+      feedback.warning('系统状态更新失败', '稍后会自动重试。')
+    }
+  }
+
+  async function refreshDependencyHealth() {
+    healthRefreshing.value = true
+    try {
+      const health = await api.post<Pick<SystemStats, 'plexOk' | 'neteaseOk' | 'dirWritable' | 'dependencyCheckedAt' | 'dependencyCacheExpiresAt' | 'dependencyCacheTtlMs'>>('/system/health/check')
+      if (stats.value) stats.value = { ...stats.value, ...health }
+      else await fetchStats()
+      feedback.success('健康检查已刷新')
+    } catch (error) {
+      feedback.error('健康检查失败', error instanceof Error ? error.message : '请稍后重试')
+    } finally {
+      healthRefreshing.value = false
+    }
+  }
+
+  async function copyDiagnostics() {
+    try {
+      await writeClipboard(JSON.stringify(buildSystemDiagnosticReport({ info: info.value, stats: stats.value }), null, 2))
+      feedback.success('诊断信息已复制', '敏感配置不会包含在诊断信息中。')
+    } catch {
+      feedback.error('复制失败', '当前浏览器不允许写入剪贴板。')
+    }
+  }
+
+  const statsPolling = useIntervalFn(() => { void fetchStats() }, 10000)
+  onMounted(async () => {
+    try { info.value = await api.get<SystemInfo>('/system/info') } catch { /* diagnostics remain partially available */ }
+    await fetchStats()
+    statsPolling.start()
+  })
+  onUnmounted(() => statsPolling.stop())
+
+  return { copyDiagnostics, dependencyCheckedLabel, healthItems, healthRefreshing, kpiCards, memoryDetails, overallTone, refreshDependencyHealth, resourceTrend, schedulerScheduleLabel, schedulerScheduleTone }
+}

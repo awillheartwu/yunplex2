@@ -1,0 +1,272 @@
+import { URL_PATTERNS } from '~~/composables/useManualDownload'
+import {
+  MANUAL_DOWNLOAD_QUALITY_LABELS,
+  formatManualDuration,
+  formatManualRelativeTime,
+  formatManualTotalDuration,
+  manualQualityLabel,
+  manualResourceTypeLabel,
+} from '~~/composables/useManualDownloadPresentation'
+import { useFeedback } from '~~/composables/useFeedback'
+
+export function useManualDownloadPage() {
+  const feedback = useFeedback()
+  const api = useApi()
+
+  interface ParseHistoryItem {
+    id: string
+    input: string
+    type: 'playlist' | 'album' | 'songs' | null
+    title: string
+    artist: string
+    coverUrl: string
+    trackCount: number
+    parsedAt: string
+  }
+
+  const {
+    parseState,
+    inputValue,
+    resourceType,
+    detectHint,
+    title,
+    artist,
+    coverUrl,
+    tracks,
+    neteaseId,
+    trackCount,
+    albumInfo,
+    resourceDescription,
+    resourceUpdatedAt,
+    quality,
+    downloadLyrics,
+    downloadImages,
+    embedMetadata,
+    error,
+    saveError,
+    resourceFailures,
+    downloadResult,
+    downloading,
+    allSelected,
+    selectedCount,
+    parse,
+    download,
+    downloadAndSave,
+    toggleAll,
+    toggleTrack,
+    reset,
+  } = useManualDownload()
+
+  const parsedInput = ref('')
+  const inputChanged = computed(() => parseState.value === 'preview' && inputValue.value.trim() !== parsedInput.value)
+  const parseHistory = ref<ParseHistoryItem[]>([])
+  const PARSE_HISTORY_KEY = 'yunplex-manual-parse-history'
+  const PARSE_HISTORY_LIMIT = 10
+
+  const placeholderText = 'https://music.163.com/playlist?id=123456\n或输入歌曲、歌单、专辑 ID'
+
+  const qualityOptions = Object.entries(MANUAL_DOWNLOAD_QUALITY_LABELS).map(([value, label]) => ({ value, label }))
+  const qualityLabel = computed(() => manualQualityLabel(quality.value))
+  const qualityShortLabel = computed(() => {
+    if (quality.value === 'jymaster') return 'SQ'
+    if (quality.value === 'hires') return 'Hi-Res'
+    if (quality.value === 'lossless') return '无损'
+    return qualityLabel.value
+  })
+  const qualityBadgeTone = computed(() => quality.value === 'jymaster' || quality.value === 'hires' || quality.value === 'lossless' ? 'gold' : 'green')
+  const totalDurationLabel = computed(() => formatManualTotalDuration(
+    tracks.value.reduce((total, track) => total + (track.dt || 0), 0),
+  ))
+  const canSaveAsSource = computed(() => parseState.value === 'preview' && resourceType.value && resourceType.value !== 'songs' && neteaseId.value)
+  const saveAsSource = ref(false)
+  const existingSource = ref<{ id: string; name: string } | null>(null)
+  const sourceLookupLoading = ref(false)
+  const sourceLookupError = ref('')
+  watch([parseState, resourceType, neteaseId], async (_value, _previous, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    saveAsSource.value = false
+    existingSource.value = null
+    sourceLookupError.value = ''
+    sourceLookupLoading.value = false
+    if (!canSaveAsSource.value) return
+    sourceLookupLoading.value = true
+    try {
+      const sources = await api.get<Array<{ id: string; name: string; type: string; neteasePlaylistId: number }>>('/playlist-sources')
+      if (!cancelled) existingSource.value = sources.find(source => source.type === resourceType.value && source.neteasePlaylistId === neteaseId.value) || null
+    } catch {
+      if (!cancelled) sourceLookupError.value = '暂时无法核对已有收藏，本次仍可只下载歌曲。'
+    } finally {
+      if (!cancelled) sourceLookupLoading.value = false
+    }
+  })
+
+  const parsedTargetLine = computed(() => {
+    if (neteaseId.value) return `当前目标 ID ${neteaseId.value}，已生成可选择下载列表。`
+    return `当前目标为 ${trackCount.value} 首单曲集合，已生成可选择下载列表。`
+  })
+
+  const resultEmptyTitle = computed(() => {
+    if (parseState.value === 'parsing') return '正在解析资源'
+    return '尚未解析资源'
+  })
+
+  const resultMetaLine = computed(() => {
+    if (parseState.value === 'idle') return '解析后会显示资源类型、艺人、专辑和曲目数。'
+    if (parseState.value === 'parsing') return '正在拉取网易云元数据。'
+    const parts = [manualResourceTypeLabel(resourceType.value)]
+    if (artist.value) parts.push(artist.value)
+    if (albumInfo.value?.company) parts.push(albumInfo.value.company)
+    if (albumInfo.value?.publishTime) parts.push(String(new Date(albumInfo.value.publishTime).getFullYear()))
+    return parts.join(' · ')
+  })
+
+  function onPaste(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData('text') || ''
+    if (URL_PATTERNS.some((p) => p.pattern.test(text))) {
+      nextTick(() => {
+        if (inputValue.value.trim()) void handleParse()
+      })
+    }
+  }
+
+  async function handleParse() {
+    if (parseState.value === 'parsing' || downloading.value) return
+    const input = inputValue.value.trim()
+    await parse()
+    if (parseState.value === 'preview') parsedInput.value = input
+    rememberParsedResource()
+  }
+
+  async function handleDownload() {
+    if (inputChanged.value || downloading.value || downloadResult.value) return
+    const result = await download()
+    if (result) {
+      if (result.selectionFailures?.length) {
+        feedback.warning('下载任务已创建', `已加入 ${result.total} 首，${result.selectionFailures.length} 首在最新资源中不可用`)
+      } else {
+        feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
+      }
+    } else if (error.value) {
+      feedback.error('下载任务创建失败', error.value)
+    }
+  }
+
+  async function handleDownloadAndSave() {
+    if (inputChanged.value || downloading.value || downloadResult.value) return
+    const result = await downloadAndSave()
+    if (result?.savedAsSource) {
+      feedback.success('已保存收藏并提交下载', `已加入 ${result.total} 首歌曲，自动同步保持关闭`)
+    } else if (result) {
+      feedback.success('下载任务已创建', `已加入 ${result.total} 首歌曲`)
+    } else if (error.value) {
+      feedback.error('创建同步源并下载失败', error.value)
+    }
+  }
+
+  async function handleSubmitDownload() {
+    if (saveAsSource.value) {
+      if (sourceLookupLoading.value || sourceLookupError.value || existingSource.value) return
+      await handleDownloadAndSave()
+    } else await handleDownload()
+  }
+
+  function startNew() {
+    reset()
+    inputValue.value = ''
+    parsedInput.value = ''
+  }
+
+  function resetOptions() {
+    quality.value = 'jymaster'
+    downloadLyrics.value = true
+    downloadImages.value = true
+    embedMetadata.value = true
+  }
+
+  function invertSelection() {
+    for (const track of tracks.value) {
+      track.selected = !track.selected
+    }
+  }
+
+  function clearSelection() {
+    for (const track of tracks.value) track.selected = false
+  }
+
+  function artistsLine(track: { artists?: { name: string }[] }) {
+    return track.artists?.map((item) => item.name).join(' / ') || '-'
+  }
+
+  function formatResourceDate(timestamp: number) {
+    return new Date(timestamp).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  }
+
+  function hideBrokenImage(event: Event) {
+    const img = event.target as HTMLImageElement
+    img.style.display = 'none'
+  }
+
+  function loadParseHistory() {
+    try {
+      const raw = localStorage.getItem(PARSE_HISTORY_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as ParseHistoryItem[]
+      parseHistory.value = parsed.filter((item) => item && item.id && item.title).slice(0, PARSE_HISTORY_LIMIT)
+    } catch {
+      parseHistory.value = []
+    }
+  }
+
+  function saveParseHistory() {
+    try {
+      localStorage.setItem(PARSE_HISTORY_KEY, JSON.stringify(parseHistory.value.slice(0, PARSE_HISTORY_LIMIT)))
+    } catch {
+      // localStorage can be unavailable in private contexts.
+    }
+  }
+
+  function rememberParsedResource() {
+    if (parseState.value !== 'preview' || tracks.value.length === 0) return
+    const item: ParseHistoryItem = {
+      id: `${resourceType.value || 'resource'}:${neteaseId.value || tracks.value.map((track) => track.id).join(',')}`,
+      input: inputValue.value.trim(),
+      type: resourceType.value,
+      title: title.value || '未命名资源',
+      artist: artist.value,
+      coverUrl: coverUrl.value,
+      trackCount: trackCount.value,
+      parsedAt: new Date().toISOString(),
+    }
+    parseHistory.value = [item, ...parseHistory.value.filter((historyItem) => historyItem.id !== item.id)].slice(0, PARSE_HISTORY_LIMIT)
+    saveParseHistory()
+  }
+
+  async function restoreParseHistory(item: ParseHistoryItem) {
+    inputValue.value = item.input
+    await handleParse()
+  }
+
+  function clearParseHistory() {
+    parseHistory.value = []
+    saveParseHistory()
+    feedback.success('解析历史已清空')
+  }
+
+  onMounted(() => {
+    loadParseHistory()
+  })
+
+  return {
+    albumInfo, allSelected, artist, artistsLine, canSaveAsSource, clearParseHistory, clearSelection, coverUrl, detectHint,
+    download, downloadAndSave, downloadImages, downloading, downloadLyrics, downloadResult, embedMetadata, error,
+    existingSource, formatManualDuration, formatManualRelativeTime, formatResourceDate, handleDownload, handleDownloadAndSave, handleParse, handleSubmitDownload, inputChanged, startNew,
+    hideBrokenImage, inputValue, invertSelection, loadParseHistory, manualResourceTypeLabel, neteaseId, onPaste, parse, PARSE_HISTORY_KEY, PARSE_HISTORY_LIMIT,
+    parsedTargetLine, parseHistory, parseState, placeholderText,
+    quality, qualityBadgeTone, qualityLabel, qualityOptions, qualityShortLabel,
+    rememberParsedResource, resetOptions, resourceDescription, resourceType, resourceUpdatedAt, restoreParseHistory, resultEmptyTitle, resultMetaLine,
+    resourceFailures, saveError, saveAsSource, sourceLookupError, sourceLookupLoading,
+    saveParseHistory, selectedCount, title, toggleAll, toggleTrack, totalDurationLabel, trackCount,
+    tracks,
+  }
+}

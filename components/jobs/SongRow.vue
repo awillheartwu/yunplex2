@@ -1,0 +1,211 @@
+<template>
+  <div class="song-row" :class="toneClass">
+    <button
+      class="song-row__button"
+      type="button"
+      :aria-expanded="expanded"
+      @click="$emit('toggle')"
+    >
+      <!-- Status dot -->
+      <div
+        class="song-status-dot"
+        :class="toneClass"
+      />
+
+      <!-- Info -->
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-[var(--text-primary)]">{{ song.songName }}</p>
+        <p class="text-2xs text-muted-deep">{{ song.artist }} · {{ song.album }}</p>
+      </div>
+
+      <!-- Status badge -->
+      <div class="song-row__statuses">
+        <FailureStatusBadge v-if="failureState" :state="failureState" />
+        <span class="song-status-badge" :class="failureState ? 'song-status-badge--historical' : toneClass">
+          <AppIcon :name="statusPresentation.icon" :size="11" :class="{ 'animate-spin': song.status === 'downloading' }" />
+          {{ failureState ? `本次：${statusLabel}` : statusLabel }}
+        </span>
+      </div>
+
+      <!-- Expand arrow -->
+      <AppIcon name="chevronRight" :size="12" class="shrink-0 transition-transform" :class="expanded ? 'rotate-90' : ''" />
+    </button>
+
+    <!-- Expanded detail -->
+    <div v-if="expanded" class="song-row__expanded">
+      <div class="song-row__detail-card">
+        <FailureStatusBadge v-if="failureState" :state="failureState" details />
+        <!-- Skipped existing -->
+        <template v-if="song.status === 'skipped_existing'">
+          <p class="text-2xs text-muted-deep">歌曲已在 Plex 库中，本次未做处理</p>
+          <p v-if="!matchTrace" class="text-2xs text-muted-deep">历史记录未保存匹配证据。</p>
+        </template>
+
+        <!-- Ignored failure -->
+        <template v-else-if="song.status === 'ignored_failure'">
+          <p class="text-2xs text-muted-deep">本次运行跳过了已忽略的问题，未重新处理这首歌曲。</p>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mt-2"
+            :disabled="retrying"
+            :aria-label="retrying ? `正在重新尝试 ${song.songName}` : `重新尝试 ${song.songName}`"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重新尝试' }}</button>
+        </template>
+
+        <!-- Copyright restricted -->
+        <template v-else-if="song.status === 'copyright_restricted'">
+          <p class="text-2xs text-muted-deep">此歌曲受版权保护，网易云不提供下载链接</p>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mt-2"
+            :disabled="retrying"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重试下载' }}</button>
+        </template>
+
+        <!-- Removed -->
+        <template v-else-if="song.status === 'removed'">
+          <p class="text-2xs text-muted-deep">此歌曲已从 Plex 歌单中移除（不再存在于网易云歌单）</p>
+          <p v-if="!matchTrace" class="text-2xs text-muted-deep">历史记录未保存删除证据。</p>
+        </template>
+
+        <!-- Extra skipped -->
+        <template v-else-if="song.status === 'extra_skipped'">
+          <p class="text-2xs text-muted-deep">此歌曲存在于 Plex 歌单，但不在本轮网易云目标中。由于本轮目标不完整或开启了保留额外歌曲，系统未删除它。</p>
+          <p v-if="matchTrace?.deletionProtectionReason" class="text-2xs text-warning">{{ matchTrace.deletionProtectionReason }}</p>
+        </template>
+
+        <!-- Success / Failed — show ops + details -->
+        <template v-else>
+          <button
+            v-if="showRetry"
+            class="btn btn-secondary btn-sm mb-2"
+            :disabled="retrying"
+            @click.stop="$emit('retry')"
+          >{{ retrying ? '重试中...' : '重试处理' }}</button>
+          <div v-if="song.ops" class="flex items-center gap-4 mb-2">
+            <span class="inline-flex items-center gap-1 text-2xs" :class="song.ops.download === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.download === 'ok' ? 'check' : 'x'" :size="11" /> 下载
+            </span>
+            <span v-if="song.ops.lyric !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.lyric === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.lyric === 'ok' ? 'check' : 'x'" :size="11" /> 歌词
+            </span>
+            <span v-if="song.ops.tags !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.tags === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.tags === 'ok' ? 'check' : 'x'" :size="11" /> 标签
+            </span>
+            <span v-if="song.ops.cover !== 'skipped'" class="inline-flex items-center gap-1 text-2xs" :class="song.ops.cover === 'ok' ? 'text-success' : 'text-danger'">
+              <AppIcon :name="song.ops.cover === 'ok' ? 'check' : 'x'" :size="11" /> 封面
+            </span>
+          </div>
+
+          <template v-if="song.filePath">
+            <div class="song-row__field">
+              <span class="text-muted-deep">文件路径</span>
+              <span class="text-muted font-mono">{{ song.filePath }}</span>
+            </div>
+            <div class="song-row__field">
+              <span class="text-muted-deep">格式</span>
+              <span class="text-muted">{{ song.fileType?.toUpperCase() }}</span>
+            </div>
+          </template>
+          <template v-if="song.metadata">
+            <div v-if="song.metadata.quality" class="song-row__field">
+              <span class="text-muted-deep">音质</span>
+              <span class="text-muted">{{ song.metadata.quality }}</span>
+            </div>
+            <div v-if="song.metadata.duration" class="song-row__field">
+              <span class="text-muted-deep">时长</span>
+              <span class="text-muted">{{ formatDuration(song.metadata.duration) }}</span>
+            </div>
+            <div v-if="song.metadata.trackNumber" class="song-row__field">
+              <span class="text-muted-deep">曲目号</span>
+              <span class="text-muted">{{ song.metadata.trackNumber }}</span>
+            </div>
+          </template>
+          <div v-if="matchTrace" class="song-row__match-trace">
+            <div class="song-row__field">
+              <span class="text-muted-deep">匹配方式</span>
+              <span class="text-muted">{{ matchTraceLabel }}</span>
+            </div>
+            <div v-if="matchTrace.identity?.plexFilePath" class="song-row__field">
+              <span class="text-muted-deep">身份路径</span>
+              <span class="text-muted font-mono">{{ matchTrace.identity.plexFilePath }}</span>
+            </div>
+            <p v-if="matchTrace.deletionProtectionReason" class="text-2xs text-warning">{{ matchTrace.deletionProtectionReason }}</p>
+          </div>
+        </template>
+        <ErrorPanel v-if="song.error" :error="song.error" />
+        <NuxtLink v-if="mediaLink" :to="mediaLink" class="btn btn-soft btn-sm" :aria-label="`为 ${song.songName} 选择媒体`">选择媒体<AppIcon name="arrowRight" :size="14" /></NuxtLink>
+        <p v-else-if="needsMediaSelection" class="text-2xs text-muted-deep">请打开对应收藏的「歌曲与媒体」，搜索这首歌曲后选择媒体。</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import type { SongTask } from '~~/server/lib/job/types'
+import type { FailureHandlingState } from '~~/shared/failure-handling'
+import { canRetrySong } from '~~/shared/failure-handling'
+import { sourceMediaLink } from '~~/shared/source-media-navigation'
+import { failureStatePresentation } from '~~/lib/failure-presentation'
+import {
+  semanticToneClass,
+  songStatusPresentation,
+} from '~~/lib/task-status'
+
+const props = defineProps<{ song: SongTask; expanded: boolean; retrying?: boolean; failureState?: FailureHandlingState }>()
+defineEmits<{ toggle: []; retry: [] }>()
+
+const showRetry = computed(() => {
+  const target = props.song.neteaseSongId || (props.song.metadata?.plexPlaylistRatingKey && props.song.metadata?.plexPlaylistItemId)
+  return props.failureState?.status !== 'resolved' && canRetrySong(props.song.status) && !!target
+})
+const needsMediaSelection = computed(() => props.failureState?.status !== 'resolved'
+  && (props.song.status === 'awaiting_manual_match' || props.song.error?.code === 'media_identity_conflict'
+    || props.failureState?.errorCode === 'media_identity_conflict'))
+const mediaLink = computed(() => needsMediaSelection.value ? sourceMediaLink(props.song.sourceId, props.song.neteaseSongId) : null)
+
+const statusPresentation = computed(() => songStatusPresentation(props.song.status))
+const toneClass = computed(() => semanticToneClass(props.failureState ? failureStatePresentation(props.failureState).tone : statusPresentation.value.tone))
+const statusLabel = computed(() => statusPresentation.value.label)
+type Trace = {
+  source?: string; message?: string; decision?: string; deletionProtectionReason?: string
+  identity?: { method?: string; plexFilePath?: string }
+}
+const matchTrace = computed(() => props.song.metadata?.matchTrace as Trace | undefined)
+const matchTraceLabel = computed(() => {
+  const trace = matchTrace.value
+  if (!trace) return ''
+  const methods: Record<string, string> = {
+    manual: '使用你选定的 Plex 文件', path: '使用路径一致的已下载文件',
+  }
+  if (trace.identity?.method) return methods[trace.identity.method] || trace.identity.method
+  if (trace.decision === 'preserved') return '暂时保留原有条目'
+  return trace.message || trace.source || '历史数据未验证'
+})
+
+function formatDuration(ms: number): string {
+  const sec = Math.round(ms / 1000)
+  const min = Math.floor(sec / 60)
+  const s = String(sec % 60).padStart(2, '0')
+  return `${min}:${s}`
+}
+</script>
+
+<style scoped>
+.song-row{border-left:3px solid;border-left-color:currentColor}
+.song-row.semantic-success,.song-row.semantic-existing{background:var(--bg-surface)}
+.song-row__button{display:flex;width:100%;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-5);border:0;background:transparent;text-align:left;cursor:pointer;transition:background var(--duration-fast) ease}
+.song-row__button:hover{background:color-mix(in srgb,currentColor 7%,var(--bg-surface))}
+.song-status-dot{width:.5rem;height:.5rem;flex:none;border:0;border-radius:var(--radius-full);background:currentColor}
+.song-status-badge{display:inline-flex;align-items:center;gap:var(--space-1);flex:none;padding:var(--space-0_5) var(--space-2);border:1px solid;border-radius:var(--radius-md);font-size:var(--text-xs);font-weight:var(--font-weight-bold)}
+.song-row__statuses{display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-1);flex:none}
+.song-status-badge--historical{color:var(--text-secondary);border-color:var(--border-primary);font-weight:var(--font-weight-normal)}
+.song-row__expanded{padding:0 var(--space-5) var(--space-4) var(--space-12)}
+.song-row__detail-card{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);border:1px solid var(--border-primary);border-radius:var(--radius-md);background:var(--bg-app);text-align:left}
+.song-row__detail-card>.btn{align-self:flex-start}
+.song-row__field{display:grid;grid-template-columns:5rem minmax(0,1fr);gap:var(--space-2);align-items:baseline;font-size:var(--text-xs);text-align:left}
+.song-row__field>span{min-width:0;overflow-wrap:anywhere}
+.song-row__match-trace{display:flex;flex-direction:column;gap:var(--space-1_5);padding-top:var(--space-2);border-top:1px solid var(--border-primary)}
+</style>

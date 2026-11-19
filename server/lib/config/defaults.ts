@@ -1,0 +1,58 @@
+import type { AppConfig } from './types'
+import { DEFAULT_INITIALIZATION_MATCHING } from '../../../shared/initialization-matching'
+
+export const DEFAULT_CONFIG: AppConfig = {
+  netease: {
+    cookie: '',
+    quality: 'jymaster',
+  },
+  plex: {
+    server: '',
+    port: 32400,
+    token: '',
+    section: '音乐',
+  },
+  download: {
+    dir: '/mnt/nas',
+    plexLibraryPathPrefix: '',
+    downloadLyrics: true,
+    embedMetadata: true,
+    embedCover: true,
+    saveAlbumCover: false,
+    saveArtistImage: false,
+  },
+  sync: {
+    intervalMinutes: 30,
+    songLimit: 10,
+    downloadConcurrency: 3,
+    plexScanRetries: 5,
+    plexScanRetryDelaySec: 15,
+    forceFullCompare: false,
+    reconcileOnPlexDrift: true,
+    fullCompareAfterSkips: 5,
+    fullCompareAfterDays: 7,
+    autoDownloadAlbum: false,
+    skipPlexPlaylist: false,
+    skipRemoveExtraTracks: false,
+    extraTrackRemovalPolicy: 'balanced',
+    maxFailureAttempts: 3,
+    unverifiedMediaPolicy: 'download_managed',
+    initializeMediaOnFirstSync: true,
+    enabled: false,
+    logRetentionDays: 30,
+    jobRetentionSuccessDays: 7,
+    jobRetentionFailedDays: 30,
+    downloadTaskRetentionDays: 30,
+  },
+  other: {
+    multiArtistFormat: 'ampersand',
+    lyricOrder: 'original_first',
+    downloadTranslatedLyric: true,
+    downloadRomajiLyric: false,
+    artistAliases: {},
+    applyAliasToAlbum: false,
+    pathFormat: '{artist}/{album}/{title}',
+    fontScale: 1.0,
+  },
+  initializationMatching: structuredClone(DEFAULT_INITIALIZATION_MATCHING),
+}
